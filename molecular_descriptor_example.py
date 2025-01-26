@@ -5,7 +5,7 @@ import json
 from mace.calculators import MACECalculator
 from preprocessing import get_global_descriptor
 import matplotlib.pyplot as plt
-
+from SmilesIterator import FileSmilesIterator
 from analysis import get_PCA
 
 encoder_params = torch.load("/home/steffen/projects/mol_descriptors/transformer_model/transformer_encoder.pth")
@@ -22,17 +22,18 @@ mace_calculator = MACECalculator(model_path=MACE_PATH, device='cuda')
 smiles_list = []
 data_mat = None
 
-with open("./data/enols_thiols.smi", "r") as f:
-    for smiles in f:
-        smiles = smiles[:-1] # Removes newline character
-        smiles_list.append(smiles)
-        global_descriptor = get_global_descriptor(smiles,encoder,calculator=mace_calculator)
-        global_descriptor = global_descriptor.squeeze(0)
 
-        if data_mat == None:
-            data_mat = global_descriptor
-        else:
-            data_mat = torch.vstack((data_mat, global_descriptor))
+smiles_iter = FileSmilesIterator("./data/enols_thiols.smi")
+
+for smiles in smiles_iter:
+    smiles_list.append(smiles)
+    global_descriptor = get_global_descriptor(smiles,encoder,calculator=mace_calculator)
+    global_descriptor = global_descriptor.squeeze(0)
+
+    if data_mat == None:
+        data_mat = global_descriptor
+    else:
+        data_mat = torch.vstack((data_mat, global_descriptor))
 
 
 principle_components = get_PCA(data_mat,k=2)

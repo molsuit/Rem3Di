@@ -1,6 +1,6 @@
 
 
-from ase.optimize import BFGS
+from ase.optimize import BFGSLineSearch, BFGS
 from rdkit2ase import rdkit2ase
 
 import rdkit.Chem as Chem
@@ -11,10 +11,13 @@ import math
 
 from model.model import TransformerEncoder
 import torch
+from SmilesIterator import SmilesIterator
 
 
-def get_mace_descriptors(smiles,calculator,BFGS_tol= 0.05):
-    atoms = get_ase_atoms(smiles)
+
+
+
+def get_mace_descriptors(atoms: Atoms,calculator,BFGS_tol= 0.05):
     atoms.calc = calculator
     dyn = BFGS(atoms,logfile=None)
     dyn.run(fmax=BFGS_tol)
@@ -30,28 +33,25 @@ def get_ase_atoms(smiles) -> Atoms:
     return atoms
 
 
-def get_max_molecule_size(smiles_path: str, max_num_molecules = math.inf) -> int:
+def get_max_molecule_size(smiles_iterator: SmilesIterator, max_num_molecules = math.inf) -> int:
     max_atoms = 0
-    
-    with open(smiles_path, "r") as f:
-        for i, smiles in enumerate(f):
-            smiles = f.readline()
-            smiles = smiles[:-1] # Remove newline character
-            mol = Chem.MolFromSmiles(smiles)
-            mol = Chem.AddHs(mol)
-            num_atoms = mol.GetNumAtoms()
-            if num_atoms > max_atoms:
-                max_atoms = num_atoms
-
-            if i >= max_num_molecules:
-                break
+    for i, smiles in enumerate(smiles_iterator):
+        mol = Chem.MolFromSmiles(smiles)
+        mol = Chem.AddHs(mol)
+        num_atoms = mol.GetNumAtoms()
+        if num_atoms > max_atoms:
+            
+            max_atoms = num_atoms
+        if i >= max_num_molecules:
+            break
 
     return max_atoms
 
 
 def get_global_descriptor(smiles : str, encoder: TransformerEncoder,calculator):
     # TODO: Maybe check SMILES validity?
-    mace_des = get_mace_descriptors(smiles,calculator)
+    atoms = get_ase_atoms(smiles)
+    mace_des = get_mace_descriptors(atoms,calculator)
     mace_des = torch.tensor(mace_des).unsqueeze(0).float()
     encoder.eval()
     with torch.no_grad():
