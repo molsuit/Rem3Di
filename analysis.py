@@ -1,5 +1,5 @@
 import torch
-
+import matplotlib.pyplot as plt
 
 
 def get_PCA(data_mat,k):
@@ -18,3 +18,14 @@ def get_fingerprint_correlation():
     """
     
     pass
+
+
+def plot_delta_histogram(delta):
+    """
+    Plot a histogram of the differences between the predictions and the true values
+    """
+    fig = plt.figure()
+    plt.hist(delta, bins=50)
+    plt.xlabel("Difference between prediction and true value")
+    plt.ylabel("Frequency")
+    return fig

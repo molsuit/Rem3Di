@@ -19,8 +19,10 @@ class EncoderBlock(nn.Module):
         """
         super().__init__()
 
-        
-
+        self.input_dim = input_dim
+        self.embedding_dim = embedding_dim
+        self.num_heads = num_heads
+    
         # Attention layer
         self.q = nn.Linear(input_dim,embedding_dim)
         self.k = nn.Linear(input_dim,embedding_dim)
