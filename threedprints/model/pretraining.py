@@ -1,19 +1,17 @@
-import torch.optim as optim
-import numpy as np
 import torch
-
-from torch.nn.functional import mse_loss
 from model.model import Transformer
 from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LRScheduler
 from torch.optim.lr_scheduler import LambdaLR
 
+
 def get_random_mask(padding_mask, masking_probability=0.15):
-    random_numbers = torch.where(padding_mask.bool(), torch.rand_like(padding_mask), torch.zeros_like(padding_mask))
+    random_numbers = torch.where(
+        padding_mask.bool(),
+        torch.rand_like(padding_mask),
+        torch.zeros_like(padding_mask),
+    )
     reconstruction_mask = random_numbers < masking_probability
     return reconstruction_mask
-
-
 
 
 def atomic_embedding_loss(decoder_prediction, atomic_embedding, reconstruction_mask):
@@ -22,7 +20,6 @@ def atomic_embedding_loss(decoder_prediction, atomic_embedding, reconstruction_m
     atomic_embedding: torch.Tensor of shape (batch_size, set_dim, embedding_dim)
     reconstruction_mask: torch.Tensor of shape (batch_size, set_dim)
     """
-
 
     mask = reconstruction_mask.unsqueeze(-1).type_as(decoder_prediction)
 
@@ -37,8 +34,14 @@ def atomic_embedding_loss(decoder_prediction, atomic_embedding, reconstruction_m
     return loss
 
 
-def train_loop(data_loader,model : Transformer,optimizer: Optimizer, scheduler,hyperparameter,device):
-
+def train_loop(
+    data_loader,
+    model: Transformer,
+    optimizer: Optimizer,
+    scheduler,
+    hyperparameter,
+    device,
+):
     running_tloss = 0.0
     masking_probability = hyperparameter["masking_probability"]
 
@@ -46,20 +49,23 @@ def train_loop(data_loader,model : Transformer,optimizer: Optimizer, scheduler,h
     optimizer.zero_grad()
 
     for batch, (embeddings, padding_mask) in enumerate(data_loader):
-        
-        reconstruction_mask = get_random_mask(padding_mask,masking_probability)
+        reconstruction_mask = get_random_mask(padding_mask, masking_probability)
 
         embeddings = embeddings.to(device)
         padding_mask = padding_mask.to(device)
         reconstruction_mask = reconstruction_mask.to(device)
 
-
         # TODO: Harmonize the definition of the padding mask. Torch True = padded, prev: True = not padded
 
-        decoder_prediction = model(embeddings,
-                                   padding_mask = torch.logical_not(padding_mask), reconstruction_mask = reconstruction_mask)
+        decoder_prediction = model(
+            embeddings,
+            padding_mask=torch.logical_not(padding_mask),
+            reconstruction_mask=reconstruction_mask,
+        )
 
-        loss = atomic_embedding_loss(decoder_prediction,embeddings,reconstruction_mask)
+        loss = atomic_embedding_loss(
+            decoder_prediction, embeddings, reconstruction_mask
+        )
 
         loss.backward()
         optimizer.step()
@@ -71,51 +77,45 @@ def train_loop(data_loader,model : Transformer,optimizer: Optimizer, scheduler,h
     avg_tloss = running_tloss / (batch + 1)
 
     return avg_tloss
-    
 
-def validation_loop(data_loader,model : Transformer, hyperparameter,device="cuda"):
-    
+
+def validation_loop(data_loader, model: Transformer, hyperparameter, device="cuda"):
     running_vloss = 0.0
     # Set the model to evaluation mode, disabling dropout and using population
     # statistics for batch normalization.
- 
-
 
     with torch.no_grad():
-
         model.eval()
         masking_probability = hyperparameter["masking_probability"]
 
-
         for batch, (embeddings, padding_mask) in enumerate(data_loader):
+            reconstruction_mask = get_random_mask(padding_mask, masking_probability)
 
-
-            reconstruction_mask = get_random_mask(padding_mask,masking_probability)
-            
             embeddings = embeddings.to(device)
             padding_mask = padding_mask.to(device)
             reconstruction_mask = reconstruction_mask.to(device)
 
-            decoder_prediction = model(embeddings,
-                                       padding_mask = torch.logical_not(padding_mask), reconstruction_mask = reconstruction_mask)
+            decoder_prediction = model(
+                embeddings,
+                padding_mask=torch.logical_not(padding_mask),
+                reconstruction_mask=reconstruction_mask,
+            )
 
-
-            loss = atomic_embedding_loss(decoder_prediction,embeddings,reconstruction_mask)
+            loss = atomic_embedding_loss(
+                decoder_prediction, embeddings, reconstruction_mask
+            )
             running_vloss += loss.item()
         avg_vloss = running_vloss / (batch + 1)
         return avg_vloss
-    
-
 
 
 def get_warmup_inverse_sqrt_scheduler(optimizer, warmup_steps, d_model):
-
     def lr_lambda(current_step):
         if current_step == 0:
             return 0
-        scale = d_model ** -0.5
+        scale = d_model**-0.5
         if current_step < warmup_steps:
-            return scale * (current_step * warmup_steps ** -1.5)
-        return scale * (current_step ** -0.5)
+            return scale * (current_step * warmup_steps**-1.5)
+        return scale * (current_step**-0.5)
 
     return LambdaLR(optimizer, lr_lambda, last_epoch=-1)
