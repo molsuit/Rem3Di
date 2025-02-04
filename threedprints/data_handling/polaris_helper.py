@@ -14,7 +14,7 @@ def remove_molecules_with_no_data(regression_targets, regression_masks, smiles):
     return regression_targets, regression_masks, smiles
 
 
-def pretreat_polaris_dataset(smiles: list[str], regression_targets, metadata: dict):
+def pretreat_polaris_dataset(smiles: list[str], regression_targets):
     # Pretreat polaris benchmark data for regression. Creates the Masks required for multitask training and removes nans. Also removes the smiles from the subset that do not have any data for the required target.
 
     regression_masks = np.where(np.isnan(regression_targets), False, True)
@@ -30,4 +30,4 @@ def pretreat_polaris_dataset(smiles: list[str], regression_targets, metadata: di
 
     regression_targets = np.where(np.isnan(regression_targets), 0, regression_targets)
 
-    return smiles, regression_targets, regression_masks, metadata
+    return smiles, regression_targets, regression_masks

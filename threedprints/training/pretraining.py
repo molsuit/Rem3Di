@@ -1,7 +1,8 @@
 import torch
-from model.model import Transformer
 from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LambdaLR
+
+from threedprints.model.model import Transformer
+from threedprints.training.training_config import TrainingConfig
 
 
 def get_random_mask(padding_mask, masking_probability=0.15):
@@ -39,16 +40,16 @@ def train_loop(
     model: Transformer,
     optimizer: Optimizer,
     scheduler,
-    hyperparameter,
+    training_config: TrainingConfig,
     device,
 ):
     running_tloss = 0.0
-    masking_probability = hyperparameter["masking_probability"]
+    masking_probability = training_config.masking_probability
 
     model.train()
     optimizer.zero_grad()
 
-    for batch, (embeddings, padding_mask) in enumerate(data_loader):
+    for _batch, (embeddings, padding_mask) in enumerate(data_loader):
         reconstruction_mask = get_random_mask(padding_mask, masking_probability)
 
         embeddings = embeddings.to(device)
@@ -74,21 +75,23 @@ def train_loop(
 
         running_tloss += loss.item()
 
-    avg_tloss = running_tloss / (batch + 1)
+    avg_tloss = running_tloss / (_batch + 1)
 
     return avg_tloss
 
 
-def validation_loop(data_loader, model: Transformer, hyperparameter, device="cuda"):
+def validation_loop(
+    data_loader, model: Transformer, training_config: TrainingConfig, device="cuda"
+):
     running_vloss = 0.0
     # Set the model to evaluation mode, disabling dropout and using population
     # statistics for batch normalization.
 
     with torch.no_grad():
         model.eval()
-        masking_probability = hyperparameter["masking_probability"]
+        masking_probability = training_config.masking_probability
 
-        for batch, (embeddings, padding_mask) in enumerate(data_loader):
+        for _batch, (embeddings, padding_mask) in enumerate(data_loader):
             reconstruction_mask = get_random_mask(padding_mask, masking_probability)
 
             embeddings = embeddings.to(device)
@@ -105,17 +108,5 @@ def validation_loop(data_loader, model: Transformer, hyperparameter, device="cud
                 decoder_prediction, embeddings, reconstruction_mask
             )
             running_vloss += loss.item()
-        avg_vloss = running_vloss / (batch + 1)
+        avg_vloss = running_vloss / (_batch + 1)
         return avg_vloss
-
-
-def get_warmup_inverse_sqrt_scheduler(optimizer, warmup_steps, d_model):
-    def lr_lambda(current_step):
-        if current_step == 0:
-            return 0
-        scale = d_model**-0.5
-        if current_step < warmup_steps:
-            return scale * (current_step * warmup_steps**-1.5)
-        return scale * (current_step**-0.5)
-
-    return LambdaLR(optimizer, lr_lambda, last_epoch=-1)

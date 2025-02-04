@@ -4,7 +4,7 @@ import numpy as np
 import polaris as po
 import torch
 
-from threedprints.data_handling.Dataset import DatasetFactory
+from threedprints.data_handling.dataset import DatasetFactory
 from threedprints.model.model import TransformerEncoder
 from threedprints.model.regression_heads import SingleRegressionModel
 from threedprints.utils.analysis import plot_delta_histogram

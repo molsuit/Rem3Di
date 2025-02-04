@@ -1,4 +1,4 @@
-import json
+from dataclasses import asdict
 
 import torch
 from torch import nn, optim
@@ -6,25 +6,25 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, random_split
 
 from threedprints.data_handling.dataset import DatasetFactory
+from threedprints.model.architecture_config import (
+    ArchitectureConfig,
+    AttentionLayerConfig,
+)
 from threedprints.model.model import TransformerEncoder
 from threedprints.model.regression_heads import SingleRegressionModel
+from threedprints.training.training_config import TrainingConfig
+from threedprints.utils.config_utils import to_yaml
 
-MODEL_DIR = "/home/steffen/projects/mol_descriptors/transformer_model/adme-fang-sol"
+MODEL_DIR = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/adme-fang-sol"
 
-hyperparameter = {
-    "batch_size": 64,
-    "masking_probability": 0.15,
-    "epochs": 1000,
-    "learning_rate": 1e-4,
-}
+training_config = TrainingConfig(batch_size=16, epochs=100, learning_rate=1e-3)
 
-# TODO: Recommend making this into a dataclass, defined next to the model
-architecture_parameter = {
-    "input_dim": 256,
-    "num_heads": 8,
-    "dim_feedforward": 128,
-    "embedding_dim": 256,
-}
+attention_layer_config = AttentionLayerConfig(
+    input_dim=256, num_heads=8, dim_feedforward=64, embedding_dim=256
+)
+architecture_config = ArchitectureConfig(
+    N_layers=2, attention_layer=attention_layer_config
+)
 
 # TODO: recommend to define scripts in a main function, then do the following:
 # if __name__ == "__main__":
@@ -38,39 +38,42 @@ dataset.normalize_targets()
 
 training_data, validation_data = random_split(dataset, [0.7, 0.3])
 
-hyperparameter["total_steps"] = len(training_data) * hyperparameter["epochs"]
+training_config.total_steps = len(training_data) * training_config.epochs
 
 training_loader = DataLoader(
-    training_data, batch_size=hyperparameter["batch_size"], shuffle=True, drop_last=True
+    training_data, batch_size=training_config.batch_size, shuffle=True, drop_last=True
 )
 validation_loader = DataLoader(
-    validation_data, batch_size=hyperparameter["batch_size"], shuffle=True, drop_last=True
+    validation_data,
+    batch_size=training_config.batch_size,
+    shuffle=True,
+    drop_last=True,
 )
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-encoder = TransformerEncoder(num_layers=2, **architecture_parameter)
+encoder = TransformerEncoder(num_layers=2, **asdict(architecture_config))
 
 
 model = SingleRegressionModel(hidden_dim=256, output_dim=1, encoder=encoder).to(device)
 
 
-num_opt_steps = hyperparameter["epochs"] * len(training_loader)
-optimizer = optim.AdamW(model.parameters(), lr=hyperparameter["learning_rate"])
+num_opt_steps = training_config.epochs * len(training_loader)
+optimizer = optim.AdamW(model.parameters(), lr=training_config.learning_rate)
 scheduler = OneCycleLR(
-    optimizer, max_lr=hyperparameter["learning_rate"], total_steps=num_opt_steps
+    optimizer, max_lr=training_config.learning_rate, total_steps=num_opt_steps
 )
 
 
 loss_fn = nn.MSELoss()
 
-for epoch in range(hyperparameter["epochs"]):
+for epoch in range(training_config.epochs):
     running_tloss = 0.0
 
     model.train()
     optimizer.zero_grad()
 
-    for batch, (
+    for _batch, (
         embeddings,
         padding_mask,
         regression_targets,
@@ -95,13 +98,13 @@ for epoch in range(hyperparameter["epochs"]):
         running_tloss += loss.item()
 
     avg_tloss = (
-        running_tloss / (batch + 1)
+        running_tloss / (_batch + 1)
     )  # TODO: if you don't have anything else to do, you could use TorchMetrics to calculate the loss. It's a bit of a hassle to set up though
 
     running_vloss = 0.0
     model.eval()
 
-    for batch, (
+    for _batch, (
         embeddings,
         padding_mask,
         regression_targets,
@@ -118,15 +121,14 @@ for epoch in range(hyperparameter["epochs"]):
 
         running_vloss += loss.item()
 
-    avg_vloss = running_vloss / (batch + 1)
+    avg_vloss = running_vloss / (_batch + 1)
     print(f"Epoch {epoch} Training Loss: {avg_tloss} Validation Loss: {avg_vloss}")
 
 # undo the normalization
-final_loss = avg_vloss * dataset.metadata["std"][0]
+final_loss = avg_vloss
 print(final_loss)
 
 
 torch.save(model.state_dict(), f"{MODEL_DIR}/regression_model.pth")
 
-with open(f"{MODEL_DIR}/architecture_parameters.json", "w") as f:
-    json.dump(architecture_parameter, f)  # Store architecture parameters
+to_yaml(f"{MODEL_DIR}/architecture_config.yaml", architecture_config)
