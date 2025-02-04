@@ -3,16 +3,16 @@ import math
 import rdkit.Chem as Chem
 import torch
 from ase import Atoms
-from ase.optimize import BFGS
-from model.model import TransformerEncoder
+from ase.optimize import LBFGS
+from threedprints.model.model import TransformerEncoder
 from rdkit.Chem import AllChem
 from rdkit2ase import rdkit2ase
-from threescriptors.data_handling.smiles_iterator import SmilesIterator
+from threedprints.data_handling.smiles_iterator import SmilesIterator
 
 
 def get_mace_descriptors(atoms: Atoms, calculator, BFGS_tol=0.05, max_steps=100):
     atoms.calc = calculator
-    dyn = BFGS(atoms, logfile=None)
+    dyn = LBFGS(atoms, logfile=None)
     converged = dyn.run(fmax=BFGS_tol, steps=max_steps)
     if not converged:
         raise ValueError("BFGS did not converge")

@@ -7,14 +7,17 @@ from torch.utils.data import DataLoader, random_split
 
 from threedprints.data_handling.dataset import DatasetFactory
 from threedprints.model.model import TransformerEncoder
-from threedprints.model.regression_heads import SingleRegressionModel
+from threedprints.model.regression_heads import SingleRegressionModel, MultiTaskRegressionModel
 
-MODEL_DIR = "/home/steffen/projects/mol_descriptors/transformer_model/adme-fang-sol"
+from threedprints.model.regression_training import multitask_masked_loss
+
+
+MODEL_DIR = "/data/fast-pc-06/snw30/projects/threescriptor/transformer_model/adme-fang-sol"
 
 hyperparameter = {
     "batch_size": 64,
     "masking_probability": 0.15,
-    "epochs": 1000,
+    "epochs": 100,
     "learning_rate": 1e-4,
 }
 
@@ -22,7 +25,7 @@ hyperparameter = {
 architecture_parameter = {
     "input_dim": 256,
     "num_heads": 8,
-    "dim_feedforward": 128,
+    "dim_feedforward": 1024,
     "embedding_dim": 256,
 }
 
@@ -31,7 +34,7 @@ architecture_parameter = {
 #     main()
 
 dataset = DatasetFactory.from_disk(
-    "/home/steffen/projects/mol_descriptors/data/adme-fang-v1-solubility"
+    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/adme-fang-v1"
 )
 
 dataset.normalize_targets()
@@ -39,6 +42,7 @@ dataset.normalize_targets()
 training_data, validation_data = random_split(dataset, [0.7, 0.3])
 
 hyperparameter["total_steps"] = len(training_data) * hyperparameter["epochs"]
+
 
 training_loader = DataLoader(
     training_data, batch_size=hyperparameter["batch_size"], shuffle=True, drop_last=True
@@ -49,10 +53,8 @@ validation_loader = DataLoader(
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-encoder = TransformerEncoder(num_layers=2, **architecture_parameter)
-
-
-model = SingleRegressionModel(hidden_dim=256, output_dim=1, encoder=encoder).to(device)
+encoder = TransformerEncoder(num_layers=4, **architecture_parameter)
+model = MultiTaskRegressionModel(hidden_dim=256, output_dim=1,encoder=encoder,task_list = dataset.metadata["target_cols"])
 
 
 num_opt_steps = hyperparameter["epochs"] * len(training_loader)
@@ -61,8 +63,7 @@ scheduler = OneCycleLR(
     optimizer, max_lr=hyperparameter["learning_rate"], total_steps=num_opt_steps
 )
 
-
-loss_fn = nn.MSELoss()
+model.to(device)
 
 for epoch in range(hyperparameter["epochs"]):
     running_tloss = 0.0
@@ -76,6 +77,7 @@ for epoch in range(hyperparameter["epochs"]):
         regression_targets,
         regression_masks,
     ) in enumerate(training_loader):
+        
         embeddings = embeddings.to(device)
         padding_mask = padding_mask.to(device)
         regression_targets = regression_targets.to(device)
@@ -85,7 +87,7 @@ for epoch in range(hyperparameter["epochs"]):
 
         prediction = model(embeddings, padding_mask=torch.logical_not(padding_mask))
 
-        loss = loss_fn(prediction, regression_targets)
+        loss = multitask_masked_loss(predictions=prediction, labels=regression_targets, regression_mask= regression_masks)
 
         loss.backward()
         optimizer.step()
@@ -107,6 +109,7 @@ for epoch in range(hyperparameter["epochs"]):
         regression_targets,
         regression_masks,
     ) in enumerate(validation_loader):
+        
         embeddings = embeddings.to(device)
         padding_mask = padding_mask.to(device)
         regression_targets = regression_targets.to(device)
@@ -114,7 +117,7 @@ for epoch in range(hyperparameter["epochs"]):
 
         prediction = model(embeddings, padding_mask=torch.logical_not(padding_mask))
 
-        loss = loss_fn(prediction, regression_targets)
+        loss = multitask_masked_loss(predictions=prediction, labels=regression_targets, regression_mask= regression_masks)
 
         running_vloss += loss.item()
 

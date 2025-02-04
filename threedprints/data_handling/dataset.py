@@ -6,10 +6,11 @@ import h5py
 import numpy as np
 import torch
 import torch.utils.data as data
-from data_handling.preprocessing import get_ase_atoms, get_mace_descriptors
-from threescriptors.data_handling.smiles_iterator import SmilesIterator
+from threedprints.data_handling.preprocessing import get_ase_atoms, get_mace_descriptors
+from threedprints.data_handling.smiles_iterator import SmilesIterator
 from torch import from_numpy
 from tqdm import tqdm
+from typing import Optional
 
 
 class BaseAtomicDataset(data.Dataset, ABC):
@@ -176,8 +177,8 @@ class DatasetFactory:
         iterator: SmilesIterator,
         mace_caluclator,
         metadata,
-        regression_target: np.array | None = None,
-        regression_masks: np.array | None = None,
+        regression_target: Optional[np.ndarray] = None,
+        regression_masks: Optional[np.ndarray] = None,
     ):
         N_molecules = metadata["N_molecules"]
         BFGS_tol = metadata["BFGS_tol"]
@@ -262,8 +263,8 @@ class DatasetFactory:
         iterator: SmilesIterator,
         mace_caluclator,
         metadata,
-        regression_target: np.array | None = None,
-        regression_masks: np.array | None = None,
+        regression_target: Optional[np.ndarray] = None,
+        regression_masks: Optional[np.ndarray] = None,
         chunk_size=500,
         directory=None,
     ):

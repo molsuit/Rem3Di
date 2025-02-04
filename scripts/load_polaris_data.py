@@ -2,42 +2,47 @@ import polaris as po
 from mace.calculators import MACECalculator
 
 from threedprints.data_handling.dataset import DatasetFactory
+from threedprints.data_handling.data_config import DatasetConfig
+
 from threedprints.data_handling.polaris_helper import pretreat_polaris_dataset
 from threedprints.data_handling.preprocessing import (
     get_max_molecule_size,
 )
 from threedprints.data_handling.smiles_iterator import ListSmilesIterator
+from dataclasses import asdict
+
 
 # Load the benchmark from the Hub
-benchmark = po.load_benchmark("biogen/adme-fang-SOLU-reg-v1")
+dataset = po.load_dataset("biogen/adme-fang-v1")
+dataset.cache()
 
-# Get the train and test data-loaders
-train, test = benchmark.get_train_test_split()
+smiles = dataset.table['MOL_smiles'].to_list()
+target_cols = ["LOG_RLM_CLint", "LOG_SOLUBILITY"]
+targets = dataset.table[target_cols].to_numpy()
 
-smiles = train.inputs
-targets = train.targets
+#benchmark = po.load_benchmark("biogen/adme-fang-SOLU-reg-v1")
+## Get the train and test data-loaders
+#train, test = benchmark.get_train_test_split()
+#smiles = train.inputs
+##targets = train.targets
+#
+#print(smiles)
+#print(targets)
+#print(train.target_cols)
 
-print(smiles)
-print(targets)
-print(train.target_cols)
 
-MACE_PATH = "/home/steffen/projects/mol_descriptors/mace_model/2023-12-10-mace-128-L0_energy_epoch-249.model"
+MODEL_DIR = "/data/fast-pc-06/snw30/projects/models"
+MACE_PATH = f"{MODEL_DIR}/mace-omat-0-medium.model"
 
-mace_calculator = MACECalculator(model_path=MACE_PATH, device="cuda", enable_cueq=True)
+mace_calculator = MACECalculator(model_path=MACE_PATH, device="cuda",enable_cueq=True)
 
-metadata = {
-    "max_atoms": 93,
-    "BFGS_tol": 0.05,
-    "BFGS_max_steps": 250,
-    "dataset_type": "Regression",
-    "N_molecules": 750,
-    "embedding_size": 256,
-    "target_cols": ["LOG_SOLUBILITY"],
-}
+dataset_config = DatasetConfig(target_cols,N_molecules=1000,embedding_size=256,max_atoms=None,BFGS_max_steps=250,BFGS_tol=0.05,dataset_type="Regression")
 
-smiles_iterator = ListSmilesIterator(smiles)
-max_size = get_max_molecule_size(smiles_iterator)
-print(max_size)
+if dataset_config.max_atoms is None:
+    smiles_iterator = ListSmilesIterator(smiles)
+    dataset_config.max_atoms = get_max_molecule_size(smiles_iterator)
+
+metadata = asdict(dataset_config)
 
 smiles, regression_targets, regression_masks, metadata = pretreat_polaris_dataset(
     smiles, targets, metadata
@@ -50,5 +55,5 @@ dataset = DatasetFactory.from_smiles(
 )
 
 dataset.store_data_to_disk(
-    "/home/steffen/projects/mol_descriptors/data/adme-fang-v1-solubility"
+    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/adme-fang-v1"
 )
