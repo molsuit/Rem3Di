@@ -1,0 +1,29 @@
+[project]
+name = "threedprints"
+version = "0.1.0"
+description = ""
+
+authors = [
+    { name = "Steffen Wedig", email = "snw30@cam.ac.uk" },
+]
+
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.5.1",
+    "ase>=3.24.0",
+    "polaris-lib>=0.11.4",
+    "rdkit>=2024.9.4",
+    "cuequivariance==0.1.0",
+    "cuequivariance-torch==0.1.0",
+    "cuequivariance-ops-torch-cu12==0.1.0"
+]
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+lint.select = ["I", "UP", "F", "E", "W", "C90", "B", "A", "RUF"]
+lint.ignore = ["E501", "B008"]
