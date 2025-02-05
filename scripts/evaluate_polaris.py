@@ -4,10 +4,10 @@ import numpy as np
 import polaris as po
 import torch
 
-from threedprints.data_handling.dataset import DatasetFactory
-from threedprints.model.model import TransformerEncoder
-from threedprints.model.regression_heads import SingleRegressionModel
-from threedprints.utils.analysis import plot_delta_histogram
+from threedscriptors.data_handling.dataset import DatasetFactory
+from threedscriptors.model.model import TransformerEncoder
+from threedscriptors.model.regression_heads import SingleRegressionModel
+from threedscriptors.utils.analysis import plot_delta_histogram
 
 # Load the benchmark from the Hub
 benchmark = po.load_benchmark("biogen/adme-fang-SOLU-reg-v1")

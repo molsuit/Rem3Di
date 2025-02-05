@@ -1,13 +1,13 @@
 import polaris as po
 from mace.calculators import MACECalculator
 
-from threedprints.data_handling.data_config import DatasetConfig
-from threedprints.data_handling.dataset import DatasetFactory
-from threedprints.data_handling.polaris_helper import pretreat_polaris_dataset
-from threedprints.data_handling.preprocessing import (
+from threedscriptors.data_handling.data_config import DatasetConfig
+from threedscriptors.data_handling.dataset import DatasetFactory
+from threedscriptors.data_handling.polaris_helper import pretreat_polaris_dataset
+from threedscriptors.data_handling.preprocessing import (
     get_max_molecule_size,
 )
-from threedprints.data_handling.smiles_iterator import ListSmilesIterator
+from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 
 # Load the benchmark from the Hub
 dataset = po.load_dataset("biogen/adme-fang-v1")

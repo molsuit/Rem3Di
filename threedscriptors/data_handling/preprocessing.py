@@ -4,10 +4,11 @@ import rdkit.Chem as Chem
 import torch
 from ase import Atoms
 from ase.optimize import LBFGS
-from threedprints.model.model import TransformerEncoder
 from rdkit.Chem import AllChem
 from rdkit2ase import rdkit2ase
-from threedprints.data_handling.smiles_iterator import SmilesIterator
+
+from threedscriptors.data_handling.smiles_iterator import SmilesIterator
+from threedscriptors.model.model import TransformerEncoder
 
 
 def get_mace_descriptors(atoms: Atoms, calculator, BFGS_tol=0.05, max_steps=100):

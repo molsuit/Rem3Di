@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from threedprints.model.model import TransformerEncoder
+from threedscriptors.model.model import TransformerEncoder
 
 
 class SingleRegressionModel(nn.Module):

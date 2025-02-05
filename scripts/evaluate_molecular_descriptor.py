@@ -4,10 +4,10 @@ import matplotlib.pyplot as plt
 import torch
 from mace.calculators import MACECalculator
 
-from threedprints.data_handling.preprocessing import get_global_descriptor
-from threedprints.data_handling.smiles_iterator import FileSmilesIterator
-from threedprints.model.model import TransformerEncoder
-from threedprints.utils.analysis import get_PCA
+from threedscriptors.data_handling.preprocessing import get_global_descriptor
+from threedscriptors.data_handling.smiles_iterator import FileSmilesIterator
+from threedscriptors.model.model import TransformerEncoder
+from threedscriptors.utils.analysis import get_PCA
 
 encoder_params = torch.load(
     "/home/steffen/projects/mol_descriptors/transformer_model/transformer_encoder.pth"

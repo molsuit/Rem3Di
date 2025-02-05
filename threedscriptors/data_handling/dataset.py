@@ -8,10 +8,13 @@ import torch.utils.data as data
 from torch import from_numpy
 from tqdm import tqdm
 
-from threedprints.data_handling.data_config import DatasetConfig
-from threedprints.data_handling.preprocessing import get_ase_atoms, get_mace_descriptors
-from threedprints.data_handling.smiles_iterator import SmilesIterator
-from threedprints.utils.config_utils import from_yaml, to_yaml
+from threedscriptors.data_handling.data_config import DatasetConfig
+from threedscriptors.data_handling.preprocessing import (
+    get_ase_atoms,
+    get_mace_descriptors,
+)
+from threedscriptors.data_handling.smiles_iterator import SmilesIterator
+from threedscriptors.utils.config_utils import from_yaml, to_yaml
 
 
 class BaseAtomicDataset(data.Dataset, ABC):

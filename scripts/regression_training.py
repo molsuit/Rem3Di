@@ -5,15 +5,15 @@ from torch import nn, optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, random_split
 
-from threedprints.data_handling.dataset import DatasetFactory
-from threedprints.model.architecture_config import (
+from threedscriptors.data_handling.dataset import DatasetFactory
+from threedscriptors.model.architecture_config import (
     ArchitectureConfig,
     AttentionLayerConfig,
 )
-from threedprints.model.model import TransformerEncoder
-from threedprints.model.regression_heads import SingleRegressionModel
-from threedprints.training.training_config import TrainingConfig
-from threedprints.utils.config_utils import to_yaml
+from threedscriptors.model.model import TransformerEncoder
+from threedscriptors.model.regression_heads import SingleRegressionModel
+from threedscriptors.training.training_config import TrainingConfig
+from threedscriptors.utils.config_utils import to_yaml
 
 MODEL_DIR = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/adme-fang-sol"
 

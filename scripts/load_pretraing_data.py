@@ -1,7 +1,7 @@
 from mace.calculators import MACECalculator
 
-from threedprints.data_handling.dataset import DatasetFactory
-from threedprints.data_handling.smiles_iterator import FileSmilesIterator
+from threedscriptors.data_handling.dataset import DatasetFactory
+from threedscriptors.data_handling.smiles_iterator import FileSmilesIterator
 
 MACE_PATH = "/home/steffen/projects/mol_descriptors/mace_model/2023-12-10-mace-128-L0_energy_epoch-249.model"
 
