@@ -15,5 +15,6 @@ class DatasetConfig:
     dataset_type: DatasetTypes
     BFGS_tol: int
     BFGS_max_steps: int
+    chirality: bool
     mean: Tensor | None = None
     std: Tensor | None = None

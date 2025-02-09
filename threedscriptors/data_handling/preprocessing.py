@@ -3,7 +3,8 @@ import math
 import rdkit.Chem as Chem
 import torch
 from ase import Atoms
-from ase.optimize import LBFGS
+from ase.optimize import LBFGSLineSearch
+from mace.calculators import MACECalculator
 from rdkit.Chem import AllChem
 from rdkit2ase import rdkit2ase
 
@@ -11,15 +12,12 @@ from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 from threedscriptors.model.model import TransformerEncoder
 
 
-def get_mace_descriptors(atoms: Atoms, calculator, BFGS_tol=0.05, max_steps=100):
+def relax_atoms(atoms: Atoms, calculator: MACECalculator, BFGS_tol=0.05, max_steps=100):
     atoms.calc = calculator
-    dyn = LBFGS(atoms, logfile=None)
+    dyn = LBFGSLineSearch(atoms, logfile=None)
     converged = dyn.run(fmax=BFGS_tol, steps=max_steps)
     if not converged:
-        raise ValueError("BFGS did not converge")
-
-    descriptors = calculator.get_descriptors(atoms)
-    return descriptors
+        raise ValueError("LBFGS did not converge")
 
 
 def get_ase_atoms(smiles) -> Atoms:
@@ -55,10 +53,12 @@ def get_atom_species_in_smiles(smiles_iterator: SmilesIterator):
     return atom_species_set
 
 
-def get_global_descriptor(smiles: str, encoder: TransformerEncoder, calculator):
+def get_global_descriptor(
+    smiles: str, encoder: TransformerEncoder, calculator: MACECalculator
+):
     # TODO: Maybe check SMILES validity?
     atoms = get_ase_atoms(smiles)
-    mace_des = get_mace_descriptors(atoms, calculator)
+    mace_des = calculator.get_descriptors(atoms, invariants_only=True)
     mace_des = torch.tensor(mace_des).unsqueeze(0).float()
     encoder.eval()
     with torch.no_grad():

@@ -23,13 +23,10 @@ from threedscriptors.training.training_config import TrainingConfig
 from threedscriptors.utils.config_utils import to_yaml
 
 MODEL_DIR = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/adme-fang-sol"
-DATA_DIR = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data"
-
-# TODO: Recommend making this into a dataclass, defined next to the model
-
+DATA_DIR = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/adme-fang-v1"
 
 attention_layer_config = AttentionLayerConfig(
-    input_dim=256, num_heads=8, dim_feedforward=64, embedding_dim=256
+    input_dim=256, num_heads=8, dim_feedforward=512, embedding_dim=256, dropout=0.0
 )
 architecture_config = ArchitectureConfig(
     N_layers=2, attention_layer=attention_layer_config
@@ -39,6 +36,7 @@ training_config = TrainingConfig(
 )
 
 dataset = DatasetFactory.from_disk(DATA_DIR)
+dataset.dataset_config.dataset_type = "Pretraining"
 
 training_data, validation_data, test_data = random_split(dataset, [0.8, 0.1, 0.1])
 
@@ -48,7 +46,7 @@ training_loader = DataLoader(
     training_data, batch_size=training_config.batch_size, shuffle=True, drop_last=True
 )
 validation_loader = DataLoader(
-    training_data, batch_size=training_config.batch_size, shuffle=True, drop_last=True
+    validation_data, batch_size=training_config.batch_size, shuffle=True, drop_last=True
 )
 
 device = "cuda" if torch.cuda.is_available() else "cpu"

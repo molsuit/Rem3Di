@@ -1,5 +1,5 @@
 import polaris as po
-from mace.calculators import MACECalculator
+from mace.calculators import mace_off
 
 from threedscriptors.data_handling.data_config import DatasetConfig
 from threedscriptors.data_handling.dataset import DatasetFactory
@@ -14,7 +14,7 @@ dataset = po.load_dataset("biogen/adme-fang-v1")
 
 
 smiles = dataset.table["MOL_smiles"].to_list()
-target_cols = ["LOG_RLM_CLint", "LOG_SOLUBILITY"]
+target_cols = ["LOG_HLM_CLint", "LOG_RLM_CLint", "LOG_SOLUBILITY", "LOG_MDR1-MDCK_ER"]
 targets = dataset.table[target_cols].to_numpy()
 
 # benchmark = po.load_benchmark("biogen/adme-fang-SOLU-reg-v1")
@@ -29,18 +29,20 @@ targets = dataset.table[target_cols].to_numpy()
 
 
 MODEL_DIR = "/data/fast-pc-06/snw30/projects/models"
-MACE_PATH = f"{MODEL_DIR}/mace-omat-0-medium.model"
+MACE_PATH = f"{MODEL_DIR}/MACE-OFF23b_medium.model"
 
-mace_calculator = MACECalculator(model_path=MACE_PATH, device="cuda", enable_cueq=True)
+mace_calculator = mace_off("medium", "cuda", enable_cueq=True)
+
 
 dataset_config = DatasetConfig(
     target_cols,
-    N_molecules=10,
-    embedding_size=256,
+    N_molecules=1000,
+    embedding_size=128,
     max_atoms=None,
-    BFGS_max_steps=250,
-    BFGS_tol=0.05,
+    BFGS_max_steps=500,
+    BFGS_tol=0.1,
     dataset_type="Regression",
+    chirality=True,
 )
 
 if dataset_config.max_atoms is None:

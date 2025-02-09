@@ -8,3 +8,4 @@ class TrainingConfig:
     learning_rate: float
     total_steps: int | None = None
     masking_probability: float | None = None
+    wandb_active: bool = False

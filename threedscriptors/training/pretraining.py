@@ -6,10 +6,11 @@ from threedscriptors.training.training_config import TrainingConfig
 
 
 def get_random_mask(padding_mask, masking_probability=0.15):
+    # Padding mask denotes the padded atoms that should not be masked during pretraining
     random_numbers = torch.where(
-        padding_mask.bool(),
+        torch.logical_not(padding_mask.bool()),
         torch.rand_like(padding_mask),
-        torch.zeros_like(padding_mask),
+        torch.ones_like(padding_mask),
     )
     reconstruction_mask = random_numbers < masking_probability
     return reconstruction_mask
@@ -49,7 +50,7 @@ def train_loop(
     model.train()
     optimizer.zero_grad()
 
-    for _batch, (embeddings, padding_mask) in enumerate(data_loader):
+    for _batch, (embeddings, padding_mask, _, _) in enumerate(data_loader):
         reconstruction_mask = get_random_mask(padding_mask, masking_probability)
 
         embeddings = embeddings.to(device)
@@ -60,7 +61,7 @@ def train_loop(
 
         decoder_prediction = model(
             embeddings,
-            padding_mask=torch.logical_not(padding_mask),
+            padding_mask=padding_mask,
             reconstruction_mask=reconstruction_mask,
         )
 
@@ -91,7 +92,7 @@ def validation_loop(
         model.eval()
         masking_probability = training_config.masking_probability
 
-        for _batch, (embeddings, padding_mask) in enumerate(data_loader):
+        for _batch, (embeddings, padding_mask, _, _) in enumerate(data_loader):
             reconstruction_mask = get_random_mask(padding_mask, masking_probability)
 
             embeddings = embeddings.to(device)
@@ -100,7 +101,7 @@ def validation_loop(
 
             decoder_prediction = model(
                 embeddings,
-                padding_mask=torch.logical_not(padding_mask),
+                padding_mask=padding_mask,
                 reconstruction_mask=reconstruction_mask,
             )
 
