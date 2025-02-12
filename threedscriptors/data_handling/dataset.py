@@ -11,7 +11,7 @@ from torch import from_numpy
 from tqdm import tqdm
 
 from threedscriptors.data_handling.data_config import DatasetConfig
-from threedscriptors.data_handling.preprocessing import get_ase_atoms, relax_atoms
+from threedscriptors.data_handling.preprocessing import get_relaxed_conformers
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 from threedscriptors.utils.config_utils import from_yaml, to_yaml
 
@@ -262,39 +262,45 @@ class DatasetFactory:
         index_list = []
         molecules = []
 
-        i = 0
+        smiles_counter = 0
+        data_points_counter = 0
 
         with tqdm(total=dataset_config.N_molecules) as pbar:
-            while i < dataset_config.N_molecules:
+            while data_points_counter < dataset_config.N_molecules:
                 try:
                     smiles = next(iterator)
                 except StopIteration:
                     print(
-                        f"Reached StopIteration prematurely. Completed {i} reading molecules."
+                        f"Reached StopIteration prematurely. Completed reading {data_points_counter} molecules."
                     )
                     break
 
                 try:
-                    atoms = get_ase_atoms(smiles)
-                    # Sample conformers?
-                    relax_atoms(
-                        atoms,
-                        mace_caluclator,
-                        dataset_config.BFGS_tol,
-                        dataset_config.BFGS_max_steps,
+                    N_conformers = min(
+                        dataset_config.N_conformers,
+                        dataset_config.N_molecules - data_points_counter,
+                    )  # This ensures that the dataloading does not overshoot the targeted number of molecules
+                    relaxed_molecules = get_relaxed_conformers(
+                        smiles, mace_caluclator, dataset_config, N_conformers
                     )
 
                 except ValueError as ve:
-                    tqdm.write(f"Error with Smiles {smiles}: {ve}")
-                    continue
+                    tqdm.write(
+                        f"Error with Generating Conformers for Smiles {smiles}: {ve}"
+                    )
 
-                else:
-                    smiles_list.append(smiles)
-                    index_list.append(i)
-                    molecules.append(atoms)
-                    i = i + 1
-                    pbar.update(1)
+                N_confs = len(relaxed_molecules)
+                smiles_list.extend([smiles] * N_confs)
+                index_list.extend([smiles_counter] * N_confs)
+                molecules.extend(relaxed_molecules)
+                data_points_counter += N_confs
+                pbar.update(N_confs)
 
+                smiles_counter = smiles_counter + 1
+
+        print(
+            f"Read a total of {data_points_counter} from {smiles_counter} distinct SMILES"
+        )
         # Check whether the dataset actually contains the desired number of molecules
         num_molecules = len(molecules)
         dataset_config.N_molecules = num_molecules

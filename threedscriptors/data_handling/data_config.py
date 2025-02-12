@@ -16,5 +16,6 @@ class DatasetConfig:
     BFGS_tol: int
     BFGS_max_steps: int
     chirality: bool
+    N_conformers: int
     mean: Tensor | None = None
     std: Tensor | None = None

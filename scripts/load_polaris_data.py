@@ -36,13 +36,14 @@ mace_calculator = mace_off("medium", "cuda", enable_cueq=True)
 
 dataset_config = DatasetConfig(
     target_cols,
-    N_molecules=1000,
-    embedding_size=128,
+    N_molecules=35000,
+    embedding_size=256,
     max_atoms=None,
     BFGS_max_steps=500,
-    BFGS_tol=0.1,
+    BFGS_tol=0.5,
     dataset_type="Regression",
     chirality=True,
+    N_conformers=10,
 )
 
 if dataset_config.max_atoms is None:
@@ -63,5 +64,5 @@ dataset = DatasetFactory.from_smiles(
 )
 
 dataset.store_data_to_disk(
-    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/adme-fang-v1"
+    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/test"
 )

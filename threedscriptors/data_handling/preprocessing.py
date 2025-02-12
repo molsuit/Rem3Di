@@ -3,18 +3,20 @@ import math
 import rdkit.Chem as Chem
 import torch
 from ase import Atoms
-from ase.optimize import LBFGSLineSearch
+from ase.optimize import LBFGS
 from mace.calculators import MACECalculator
 from rdkit.Chem import AllChem
+from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 from rdkit2ase import rdkit2ase
 
+from threedscriptors.data_handling.data_config import DatasetConfig
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 from threedscriptors.model.model import TransformerEncoder
 
 
 def relax_atoms(atoms: Atoms, calculator: MACECalculator, BFGS_tol=0.05, max_steps=100):
     atoms.calc = calculator
-    dyn = LBFGSLineSearch(atoms, logfile=None)
+    dyn = LBFGS(atoms, logfile=None)
     converged = dyn.run(fmax=BFGS_tol, steps=max_steps)
     if not converged:
         raise ValueError("LBFGS did not converge")
@@ -28,6 +30,45 @@ def get_ase_atoms(smiles) -> Atoms:
     )
     atoms = rdkit2ase(mol)
     return atoms
+
+
+def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
+    mol = Chem.MolFromSmiles(smiles)
+    mol = Chem.AddHs(mol)
+    EmbedMultipleConfs(mol, numConfs=N_conformers, numThreads=N_conformers)
+    confs = [
+        Atoms(
+            positions=conf.GetPositions(),
+            numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
+        )
+        for conf in mol.GetConformers()
+    ]
+    return confs
+
+
+def get_relaxed_conformers(
+    smiles,
+    mace_calculator: MACECalculator,
+    dataset_config: DatasetConfig,
+    N_conformers: int,
+):
+    confs = get_ase_atoms_with_conformers(smiles, N_conformers)
+
+    molecules = []
+
+    for atoms in confs:
+        try:
+            relax_atoms(
+                atoms,
+                mace_calculator,
+                dataset_config.BFGS_tol,
+                dataset_config.BFGS_max_steps,
+            )
+        except ValueError:
+            continue
+        else:
+            molecules.append(atoms)
+    return molecules
 
 
 def get_max_molecule_size(
