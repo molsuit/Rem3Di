@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 
 
@@ -17,5 +18,6 @@ class ArchitectureConfig:
 
 
 @dataclass
-class RegressionConfig:
-    pass
+class RegressionHeadConfig:
+    activation_fn: Callable
+    hidden_dimensions: list[int]
