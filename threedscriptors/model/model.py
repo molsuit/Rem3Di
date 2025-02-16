@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from torch.nn import MultiheadAttention
 
+from threedscriptors.model.architecture_config import ArchitectureConfig
+
 
 class EncoderBlock(nn.Module):
     def __init__(
@@ -61,10 +63,13 @@ class EncoderBlock(nn.Module):
 
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, num_layers, **block_args):
+    def __init__(self, architecture_config: ArchitectureConfig, **block_args):
         super().__init__()
+
+        self.architecture_config = architecture_config
+
         self.layers = nn.ModuleList(
-            [EncoderBlock(**block_args) for _ in range(num_layers)]
+            [EncoderBlock(**block_args) for _ in range(architecture_config.N_layers)]
         )
 
     def forward(self, x, padding_mask=None):

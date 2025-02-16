@@ -1,5 +1,7 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+
+from e3nn.o3 import Irreps
 
 
 @dataclass
@@ -15,9 +17,19 @@ class AttentionLayerConfig:
 class ArchitectureConfig:
     N_layers: int
     attention_layer: AttentionLayerConfig
+    aggregation_fn: Callable | Iterable[Callable]
 
 
 @dataclass
 class RegressionHeadConfig:
     activation_fn: Callable
     hidden_dimensions: list[int]
+
+
+@dataclass
+class EmbeddingPreprocessConfig:
+    input_irreps: Irreps
+    pseudoscalars: bool
+    output_irreps: Irreps | None = None
+    input_embedding_size: int | None = None
+    output_irreps_dim: int | None = None

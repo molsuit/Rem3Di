@@ -43,7 +43,7 @@ def calculate_fingerprint_uncertainty(
     smiles_class = np.array([smiles_hash[smiles] for smiles in smiles_list])
 
     global_descriptors = np.zeros(
-        shape=(len(smiles_list), dataset.dataset_config.embedding_size)
+        shape=(len(smiles_list), encoder.architecture_config.embedding_size)
     )
 
     encoder.eval()

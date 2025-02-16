@@ -37,7 +37,6 @@ mace_calculator = mace_off("medium", "cuda", enable_cueq=True)
 dataset_config = DatasetConfig(
     target_cols,
     N_molecules=35000,
-    embedding_size=256,
     max_atoms=None,
     BFGS_max_steps=500,
     BFGS_tol=0.5,

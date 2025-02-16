@@ -68,12 +68,12 @@ class AtomEmbeddingDataset(BaseAtomicDataset):
 
         to_yaml(f"{directory}/dataset_config.yaml", self.dataset_config)
 
-    def calculate_embeddings(self, calculator: MACECalculator):
+    def calculate_embeddings(self, calculator: MACECalculator, embedding_size: int):
         embeddings = np.zeros(
             shape=(
                 self.dataset_config.N_molecules,
                 self.dataset_config.max_atoms,
-                self.dataset_config.embedding_size,
+                embedding_size,
             )
         )
         padding_mask = np.ones(
@@ -170,12 +170,12 @@ class RegressionAtomEmbeddingDataset(BaseAtomicDataset):
         self.dataset_config.mean = mean
         self.dataset_config.std = std
 
-    def calculate_embeddings(self, calculator: MACECalculator):
+    def calculate_embeddings(self, calculator: MACECalculator, embedding_size: int):
         embeddings = np.zeros(
             shape=(
                 self.dataset_config.N_molecules,
                 self.dataset_config.max_atoms,
-                self.dataset_config.embedding_size,
+                embedding_size,
             )
         )
         padding_mask = np.ones(
@@ -183,9 +183,7 @@ class RegressionAtomEmbeddingDataset(BaseAtomicDataset):
         )  # Integer 1 = Boolean True = means that this position is padding
 
         for i, atoms in enumerate(self.molecules):
-            descriptors = calculator.get_descriptors(
-                atoms, invariants_only=True, num_layers=1
-            )
+            descriptors = calculator.get_descriptors(atoms, invariants_only=False)
             num_atoms = len(atoms.get_atomic_numbers())
             embeddings[i, :num_atoms, :] = descriptors
             padding_mask[i, :num_atoms] = 0

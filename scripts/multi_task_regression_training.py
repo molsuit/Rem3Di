@@ -1,7 +1,7 @@
 from dataclasses import asdict
 
 import torch
-from mace.calculators import mace_off
+from mace.calculators import MACECalculator
 from torch import nn, optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, random_split
@@ -11,7 +11,12 @@ from threedscriptors.data_handling.dataset import DatasetFactory
 from threedscriptors.model.architecture_config import (
     ArchitectureConfig,
     AttentionLayerConfig,
+    EmbeddingPreprocessConfig,
     RegressionHeadConfig,
+)
+from threedscriptors.model.atomic_descriptor_preprocess import (
+    InvariantsFilter,
+    PseudoscalarGenerator,
 )
 from threedscriptors.model.model import TransformerEncoder
 from threedscriptors.model.regression_heads import (
@@ -20,23 +25,34 @@ from threedscriptors.model.regression_heads import (
 from threedscriptors.training.regression_training import multitask_masked_loss
 from threedscriptors.training.training_config import TrainingConfig
 from threedscriptors.utils.config_utils import get_global_config, to_yaml
+from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature
 
 MODEL_DIR = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/adme-fang-sol"
 
 training_config = TrainingConfig(
-    batch_size=32, epochs=150, learning_rate=1e-4, wandb_active=True
+    batch_size=32,
+    epochs=150,
+    learning_rate=1e-4,
+    wandb_active=True,
+    mace_model_path="/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model",
 )
 
-attention_layer_config = AttentionLayerConfig(
-    input_dim=128, num_heads=8, dim_feedforward=512, embedding_dim=128, dropout=0.3
-)
-
-architecture_config = ArchitectureConfig(
-    N_layers=2, attention_layer=attention_layer_config
-)
 
 regression_head_config = RegressionHeadConfig(
     activation_fn=nn.SiLU(), hidden_dimensions=[512, 256, 128]
+)
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(device)
+mace_calculator = MACECalculator(
+    model_paths=training_config.mace_model_path, device=device, enable_cueq=True
+)
+
+calculator_irreps = get_mace_calculator_irrep_signature(mace_calculator)
+
+
+embedding_preprocessor_config = EmbeddingPreprocessConfig(
+    input_irreps=calculator_irreps, pseudoscalars=True
 )
 
 
@@ -44,25 +60,14 @@ regression_head_config = RegressionHeadConfig(
 # if __name__ == "__main__":
 #     main()
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(device)
-mace_calculator = mace_off("medium", device, enable_cueq=True)
 
 dataset = DatasetFactory.from_disk(
     "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/adme-fang-v1"
 )
-dataset.dataset_config.embedding_size = 128
+
 dataset.normalize_targets()
-dataset.calculate_embeddings(mace_calculator)
+dataset.calculate_embeddings(mace_calculator, embedding_size=calculator_irreps.dim)
 
-config_dict = get_global_config(
-    training_config, dataset.dataset_config, architecture_config, regression_head_config
-)
-
-if training_config.wandb_active:
-    wandb.init(project="threedscriptors", config=config_dict)
-
-del mace_calculator
 
 training_data, validation_data = random_split(dataset, [0.7, 0.3])
 
@@ -79,19 +84,45 @@ validation_loader = DataLoader(
     drop_last=False,
 )
 
-encoder = TransformerEncoder(
-    num_layers=architecture_config.N_layers,
-    **asdict(attention_layer_config),
+if embedding_preprocessor_config.pseudoscalars:
+    preprocessor = PseudoscalarGenerator(embedding_preprocessor_config)
+else:
+    preprocessor = InvariantsFilter(embedding_preprocessor_config)
+
+
+attention_layer_config = AttentionLayerConfig(
+    input_dim=preprocessor.config.output_irreps_dim,
+    num_heads=8,
+    dim_feedforward=512,
+    embedding_dim=preprocessor.config.output_irreps_dim,
+    dropout=0.3,
 )
 
+architecture_config = ArchitectureConfig(
+    N_layers=2, attention_layer=attention_layer_config, aggregation_fn=torch.mean
+)
+
+encoder = TransformerEncoder(
+    architecture_config=architecture_config,
+    **asdict(attention_layer_config),
+)
 
 model = MultiTaskRegressionModel(
     regression_head_config=regression_head_config,
     encoder=encoder,
     task_list=dataset.dataset_config.target_cols,
+    preprocessor=preprocessor,
 )
 
-print(sum(p.numel() for p in model.parameters() if p.requires_grad))
+
+config_dict = get_global_config(
+    training_config, dataset.dataset_config, architecture_config, regression_head_config
+)
+
+if training_config.wandb_active:
+    wandb.init(project="threedscriptors", entity="threedscriptors", config=config_dict)
+
+
 model.to(device)
 
 num_opt_steps = training_config.epochs * len(training_loader)

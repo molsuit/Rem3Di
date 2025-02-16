@@ -11,7 +11,6 @@ metadata = {
     "N_molecules": 2048,
     "BFGS_tol": 0.1,
     "max_atoms": 3 * 13 + 2,
-    "embedding_size": 256,
     "BFGS_max_steps": 200,
     "dataset_type": "Pretraining",
 }

@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 
 from threedscriptors.model.architecture_config import RegressionHeadConfig
+from threedscriptors.model.atomic_descriptor_preprocess import (
+    AtomicDescriptorPreprocess,
+)
 from threedscriptors.model.model import TransformerEncoder
 
 
@@ -30,6 +33,7 @@ class MultiTaskRegressionModel(nn.Module):
         regression_head_config: RegressionHeadConfig,
         encoder: TransformerEncoder,
         task_list: list,
+        preprocessor: AtomicDescriptorPreprocess,
     ):
         super().__init__()
         self.encoder = encoder
@@ -40,6 +44,7 @@ class MultiTaskRegressionModel(nn.Module):
         self.task_heads = nn.ModuleList()
         self.N_tasks = len(task_list)
         regression_head_config.hidden_dimensions.insert(0, input_dim)
+        self.preprocessor = preprocessor
 
         for _ in task_list:
             head = nn.Sequential()
@@ -52,14 +57,14 @@ class MultiTaskRegressionModel(nn.Module):
                 head.add_module("activation", self.activation)
 
             head.add_module(
-                f"linear_{idx+1}",
+                f"linear_{idx + 1}",
                 nn.Linear(regression_head_config.hidden_dimensions[-1], 1),
             )
 
             self.task_heads.append(head)
 
     def forward(self, x, padding_mask=None):
-        # Pass through the encoder and activation modules.
+        x = self.preprocessor(x)
         x = self.encoder(x, padding_mask)
         x = self.norm(x)
         x = self.activation(x)
