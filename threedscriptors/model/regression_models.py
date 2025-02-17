@@ -5,7 +5,8 @@ from threedscriptors.model.architecture_config import RegressionHeadConfig
 from threedscriptors.model.atomic_descriptor_preprocess import (
     AtomicDescriptorPreprocess,
 )
-from threedscriptors.model.model import TransformerEncoder
+from threedscriptors.model.global_aggregator import GlobalAggregator
+from threedscriptors.model.transformer_components import TransformerEncoder
 
 
 class SingleRegressionModel(nn.Module):
@@ -34,10 +35,11 @@ class MultiTaskRegressionModel(nn.Module):
         encoder: TransformerEncoder,
         task_list: list,
         preprocessor: AtomicDescriptorPreprocess,
+        global_aggregator: GlobalAggregator,
     ):
         super().__init__()
         self.encoder = encoder
-        input_dim = encoder.layers[0].embedding_dim
+        input_dim = global_aggregator.config.output_dim
         self.norm = nn.LayerNorm(input_dim)
         self.activation = regression_head_config.activation_fn
 
@@ -45,6 +47,7 @@ class MultiTaskRegressionModel(nn.Module):
         self.N_tasks = len(task_list)
         regression_head_config.hidden_dimensions.insert(0, input_dim)
         self.preprocessor = preprocessor
+        self.global_aggregator = global_aggregator
 
         for _ in task_list:
             head = nn.Sequential()
@@ -66,6 +69,7 @@ class MultiTaskRegressionModel(nn.Module):
     def forward(self, x, padding_mask=None):
         x = self.preprocessor(x)
         x = self.encoder(x, padding_mask)
+        x = self.global_aggregator(x)
         x = self.norm(x)
         x = self.activation(x)
 

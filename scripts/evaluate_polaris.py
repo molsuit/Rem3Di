@@ -5,8 +5,8 @@ import polaris as po
 import torch
 
 from threedscriptors.data_handling.dataset import DatasetFactory
-from threedscriptors.model.model import TransformerEncoder
-from threedscriptors.model.regression_heads import SingleRegressionModel
+from threedscriptors.model.regression_models import SingleRegressionModel
+from threedscriptors.model.transformer_components import TransformerEncoder
 from threedscriptors.utils.analysis import plot_delta_histogram
 
 # Load the benchmark from the Hub

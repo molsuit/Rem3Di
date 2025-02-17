@@ -1,7 +1,7 @@
 import torch
 from torch.optim import Optimizer
 
-from threedscriptors.model.model import Transformer
+from threedscriptors.model.transformer_components import Transformer
 from threedscriptors.training.training_config import TrainingConfig
 
 

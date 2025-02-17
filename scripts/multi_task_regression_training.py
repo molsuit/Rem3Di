@@ -12,16 +12,18 @@ from threedscriptors.model.architecture_config import (
     ArchitectureConfig,
     AttentionLayerConfig,
     EmbeddingPreprocessConfig,
+    GlobalAggregatorConfig,
     RegressionHeadConfig,
 )
 from threedscriptors.model.atomic_descriptor_preprocess import (
     InvariantsFilter,
     PseudoscalarGenerator,
 )
-from threedscriptors.model.model import TransformerEncoder
-from threedscriptors.model.regression_heads import (
+from threedscriptors.model.global_aggregator import GlobalAggregator
+from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
+from threedscriptors.model.transformer_components import TransformerEncoder
 from threedscriptors.training.regression_training import multitask_masked_loss
 from threedscriptors.training.training_config import TrainingConfig
 from threedscriptors.utils.config_utils import get_global_config, to_yaml
@@ -33,14 +35,11 @@ training_config = TrainingConfig(
     batch_size=32,
     epochs=150,
     learning_rate=1e-4,
-    wandb_active=True,
+    wandb_active=False,
     mace_model_path="/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model",
+    dataset_path="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/test",
 )
 
-
-regression_head_config = RegressionHeadConfig(
-    activation_fn=nn.SiLU(), hidden_dimensions=[512, 256, 128]
-)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(device)
@@ -61,9 +60,7 @@ embedding_preprocessor_config = EmbeddingPreprocessConfig(
 #     main()
 
 
-dataset = DatasetFactory.from_disk(
-    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/adme-fang-v1"
-)
+dataset = DatasetFactory.from_disk(directory=training_config.dataset_path)
 
 dataset.normalize_targets()
 dataset.calculate_embeddings(mace_calculator, embedding_size=calculator_irreps.dim)
@@ -84,6 +81,7 @@ validation_loader = DataLoader(
     drop_last=False,
 )
 
+# Refactor all Config into a ModelFactory?
 if embedding_preprocessor_config.pseudoscalars:
     preprocessor = PseudoscalarGenerator(embedding_preprocessor_config)
 else:
@@ -99,8 +97,20 @@ attention_layer_config = AttentionLayerConfig(
 )
 
 architecture_config = ArchitectureConfig(
-    N_layers=2, attention_layer=attention_layer_config, aggregation_fn=torch.mean
+    N_layers=2, attention_layer=attention_layer_config
 )
+
+regression_head_config = RegressionHeadConfig(
+    activation_fn=nn.SiLU(), hidden_dimensions=[512, 256, 128]
+)
+
+global_aggregator_config = GlobalAggregatorConfig(
+    input_dim=attention_layer_config.embedding_dim,
+    aggregation_fn=[torch.mean, torch.amax],
+)
+
+
+global_aggregator = GlobalAggregator(global_aggregator_config)
 
 encoder = TransformerEncoder(
     architecture_config=architecture_config,
@@ -112,6 +122,7 @@ model = MultiTaskRegressionModel(
     encoder=encoder,
     task_list=dataset.dataset_config.target_cols,
     preprocessor=preprocessor,
+    global_aggregator=global_aggregator,
 )
 
 

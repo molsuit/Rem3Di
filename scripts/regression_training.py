@@ -11,8 +11,8 @@ from threedscriptors.model.architecture_config import (
     ArchitectureConfig,
     AttentionLayerConfig,
 )
-from threedscriptors.model.model import TransformerEncoder
-from threedscriptors.model.regression_heads import SingleRegressionModel
+from threedscriptors.model.regression_models import SingleRegressionModel
+from threedscriptors.model.transformer_components import TransformerEncoder
 from threedscriptors.training.training_config import TrainingConfig
 from threedscriptors.utils.config_utils import to_yaml
 

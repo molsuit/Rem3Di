@@ -18,7 +18,6 @@ class AtomicDescriptorPreprocess(nn.Module):
         self.invariant_indices, self.invariant_irreps = get_invariant_indices(
             self.config.input_irreps
         )
-        print(self.invariant_indices)
 
 
 class InvariantsFilter(AtomicDescriptorPreprocess):

@@ -11,7 +11,7 @@ from rdkit2ase import rdkit2ase
 
 from threedscriptors.data_handling.data_config import DatasetConfig
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
-from threedscriptors.model.model import TransformerEncoder
+from threedscriptors.model.transformer_components import TransformerEncoder
 
 
 def relax_atoms(atoms: Atoms, calculator: MACECalculator, BFGS_tol=0.05, max_steps=100):

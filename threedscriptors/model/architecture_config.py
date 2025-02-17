@@ -17,7 +17,6 @@ class AttentionLayerConfig:
 class ArchitectureConfig:
     N_layers: int
     attention_layer: AttentionLayerConfig
-    aggregation_fn: Callable | Iterable[Callable]
 
 
 @dataclass
@@ -33,3 +32,10 @@ class EmbeddingPreprocessConfig:
     output_irreps: Irreps | None = None
     input_embedding_size: int | None = None
     output_irreps_dim: int | None = None
+
+
+@dataclass
+class GlobalAggregatorConfig:
+    aggregation_fn: Callable | Iterable[Callable]
+    input_dim: int
+    output_dim: int | None = None

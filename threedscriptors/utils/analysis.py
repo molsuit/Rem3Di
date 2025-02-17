@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from threedscriptors.data_handling.dataset import RegressionAtomEmbeddingDataset
-from threedscriptors.model.model import TransformerEncoder
+from threedscriptors.model.transformer_components import TransformerEncoder
 
 
 def get_PCA(data_mat, k):

@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.nn import MultiheadAttention
 
 from threedscriptors.model.architecture_config import ArchitectureConfig
+from threedscriptors.model.global_aggregator import GlobalAggregator
 
 
 class EncoderBlock(nn.Module):
@@ -76,10 +77,7 @@ class TransformerEncoder(nn.Module):
         for layer in self.layers:
             x = layer(x, padding_mask=padding_mask)
 
-        # Calculate the global descriptor by averaging the sequence
-        des = torch.mean(x, dim=1)
-
-        return des
+        return x
 
     def get_attention_maps(self, x, padding_mask=None):
         attention_maps = []
@@ -191,13 +189,20 @@ class TransformerDecoder(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, encoder: TransformerEncoder, decoder: TransformerDecoder):
+    def __init__(
+        self,
+        encoder: TransformerEncoder,
+        decoder: TransformerDecoder,
+        global_aggregator: GlobalAggregator,
+    ):
         super().__init__()
         self.encoder: TransformerEncoder = encoder
         self.decoder: TransformerDecoder = decoder
+        self.global_aggregator: GlobalAggregator = global_aggregator
 
     def forward(self, x, padding_mask=None, reconstruction_mask=None):
-        global_descriptor = self.encoder(x, padding_mask=padding_mask)
+        encoder_out = self.encoder(x, padding_mask=padding_mask)
+        global_descriptor = self.global_aggregator(encoder_out)
         x = self.decoder(
             x,
             global_descriptor,

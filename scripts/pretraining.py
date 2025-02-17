@@ -10,7 +10,7 @@ from threedscriptors.model.architecture_config import (
     ArchitectureConfig,
     AttentionLayerConfig,
 )
-from threedscriptors.model.model import (
+from threedscriptors.model.transformer_components import (
     Transformer,
     TransformerDecoder,
     TransformerEncoder,
