@@ -2,6 +2,13 @@ from dataclasses import asdict, fields
 
 import yaml
 
+from threedscriptors.data_handling.data_config import DatasetConfig
+from threedscriptors.model.architecture_config import (
+    ArchitectureConfig,
+    RegressionHeadConfig,
+)
+from threedscriptors.training.training_config import TrainingConfig
+
 
 def dataclass_from_dict(data: dict, cls):
     """Convert a dictionary to a dataclass instance."""
@@ -28,3 +35,18 @@ def to_yaml(yaml_file, data):
     data_in_dict = asdict(data)
     with open(yaml_file, "w") as file:
         yaml.dump(data_in_dict, file)
+
+
+def get_global_config(
+    training_config: TrainingConfig,
+    dataset_config: DatasetConfig,
+    architecture_config: ArchitectureConfig,
+    regression_head_config: RegressionHeadConfig,
+):
+    config_dict = {
+        "training_config": asdict(training_config),
+        "dataset_config": asdict(dataset_config),
+        "architecture_config": asdict(architecture_config),
+        "regression_head_config": asdict(regression_head_config),
+    }
+    return config_dict

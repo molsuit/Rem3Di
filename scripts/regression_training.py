@@ -1,6 +1,7 @@
 from dataclasses import asdict
 
 import torch
+from mace.calculators import mace_off
 from torch import nn, optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, random_split
@@ -10,20 +11,20 @@ from threedscriptors.model.architecture_config import (
     ArchitectureConfig,
     AttentionLayerConfig,
 )
-from threedscriptors.model.model import TransformerEncoder
-from threedscriptors.model.regression_heads import SingleRegressionModel
+from threedscriptors.model.regression_models import SingleRegressionModel
+from threedscriptors.model.transformer_components import TransformerEncoder
 from threedscriptors.training.training_config import TrainingConfig
 from threedscriptors.utils.config_utils import to_yaml
 
 MODEL_DIR = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/adme-fang-sol"
 
-training_config = TrainingConfig(batch_size=16, epochs=100, learning_rate=1e-3)
+training_config = TrainingConfig(batch_size=64, epochs=200, learning_rate=1e-3)
 
 attention_layer_config = AttentionLayerConfig(
-    input_dim=256, num_heads=8, dim_feedforward=64, embedding_dim=256
+    input_dim=128, num_heads=8, dim_feedforward=64, embedding_dim=128, dropout=0.15
 )
 architecture_config = ArchitectureConfig(
-    N_layers=2, attention_layer=attention_layer_config
+    N_layers=1, attention_layer=attention_layer_config
 )
 
 # TODO: recommend to define scripts in a main function, then do the following:
@@ -31,12 +32,16 @@ architecture_config = ArchitectureConfig(
 #     main()
 
 dataset = DatasetFactory.from_disk(
-    "/home/steffen/projects/mol_descriptors/data/adme-fang-v1-solubility"
+    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/adme-fang-v1"
 )
 
-dataset.normalize_targets()
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-training_data, validation_data = random_split(dataset, [0.7, 0.3])
+mace_calculator = mace_off("medium", device, enable_cueq=True)
+dataset.normalize_targets()
+dataset.calculate_embeddings(mace_calculator)
+
+training_data, validation_data = random_split(dataset, [0.8, 0.2])
 
 training_config.total_steps = len(training_data) * training_config.epochs
 
@@ -46,17 +51,20 @@ training_loader = DataLoader(
 validation_loader = DataLoader(
     validation_data,
     batch_size=training_config.batch_size,
-    shuffle=True,
-    drop_last=True,
+    shuffle=False,
+    drop_last=False,
 )
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-encoder = TransformerEncoder(num_layers=2, **asdict(architecture_config))
+encoder = TransformerEncoder(
+    num_layers=architecture_config.N_layers, **asdict(attention_layer_config)
+)
 
 
 model = SingleRegressionModel(hidden_dim=256, output_dim=1, encoder=encoder).to(device)
 
+print(sum(p.numel() for p in model.parameters() if p.requires_grad))
 
 num_opt_steps = training_config.epochs * len(training_loader)
 optimizer = optim.AdamW(model.parameters(), lr=training_config.learning_rate)
@@ -86,7 +94,7 @@ for epoch in range(training_config.epochs):
 
         # TODO: Harmonize the definition of the padding mask. Torch True = padded, prev: True = not padded
 
-        prediction = model(embeddings, padding_mask=torch.logical_not(padding_mask))
+        prediction = model(embeddings, padding_mask=padding_mask)
 
         loss = loss_fn(prediction, regression_targets)
 
@@ -115,7 +123,7 @@ for epoch in range(training_config.epochs):
         regression_targets = regression_targets.to(device)
         regression_masks = regression_masks.to(device)
 
-        prediction = model(embeddings, padding_mask=torch.logical_not(padding_mask))
+        prediction = model(embeddings, padding_mask=padding_mask)
 
         loss = loss_fn(prediction, regression_targets)
 
