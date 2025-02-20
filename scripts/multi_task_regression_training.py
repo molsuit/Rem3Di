@@ -29,15 +29,15 @@ from threedscriptors.training.training_config import TrainingConfig
 from threedscriptors.utils.config_utils import get_global_config, to_yaml
 from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature
 
-MODEL_DIR = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/adme-fang-sol"
+MODEL_DIR = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/antiviral-admet"
 
 training_config = TrainingConfig(
     batch_size=32,
     epochs=150,
     learning_rate=1e-4,
-    wandb_active=False,
+    wandb_active=True,
     mace_model_path="/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model",
-    dataset_path="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/test",
+    dataset_path="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/antiviral-admet",
 )
 
 
@@ -106,7 +106,7 @@ regression_head_config = RegressionHeadConfig(
 
 global_aggregator_config = GlobalAggregatorConfig(
     input_dim=attention_layer_config.embedding_dim,
-    aggregation_fn=[torch.mean, torch.amax],
+    aggregation_fn=[torch.mean],
 )
 
 
@@ -226,7 +226,8 @@ for epoch in range(training_config.epochs):
             val_dict = dict(
                 zip(
                     dataset.dataset_config.target_cols,
-                    weighed_loss_per_task_val.cpu().detach().numpy(),
+                    weighed_loss_per_task_val.cpu().detach().numpy()
+                    * dataset.dataset_config.std.cpu().detach().numpy(),
                     strict=False,
                 )
             )
@@ -234,7 +235,8 @@ for epoch in range(training_config.epochs):
             train_dict = dict(
                 zip(
                     dataset.dataset_config.target_cols,
-                    weighed_loss_per_task_train.cpu().detach().numpy(),
+                    weighed_loss_per_task_train.cpu().detach().numpy()
+                    * dataset.dataset_config.std.cpu().detach().numpy(),
                     strict=False,
                 )
             )
