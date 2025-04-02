@@ -1,6 +1,7 @@
 from dataclasses import asdict
 
 import torch
+import yaml
 from mace.calculators import MACECalculator
 from torch import nn, optim
 from torch.optim.lr_scheduler import OneCycleLR
@@ -26,18 +27,17 @@ from threedscriptors.model.regression_models import (
 from threedscriptors.model.transformer_components import TransformerEncoder
 from threedscriptors.training.regression_training import multitask_masked_loss
 from threedscriptors.training.training_config import TrainingConfig
-from threedscriptors.utils.config_utils import get_global_config, to_yaml
+from threedscriptors.utils.config_utils import get_global_config
 from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature
-
-MODEL_DIR = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/antiviral-admet"
 
 training_config = TrainingConfig(
     batch_size=32,
-    epochs=150,
+    epochs=75,
     learning_rate=1e-4,
     wandb_active=True,
     mace_model_path="/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model",
-    dataset_path="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/antiviral-admet",
+    dataset_path="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/antiviral-potency",
+    model_dir="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/antiviral-potency",
 )
 
 
@@ -63,6 +63,11 @@ embedding_preprocessor_config = EmbeddingPreprocessConfig(
 dataset = DatasetFactory.from_disk(directory=training_config.dataset_path)
 
 dataset.normalize_targets()
+print(dataset.dataset_config.target_cols)
+print(dataset.dataset_config.mean)
+print(dataset.dataset_config.std)
+
+
 dataset.calculate_embeddings(mace_calculator, embedding_size=calculator_irreps.dim)
 
 
@@ -87,6 +92,11 @@ if embedding_preprocessor_config.pseudoscalars:
 else:
     preprocessor = InvariantsFilter(embedding_preprocessor_config)
 
+
+preprocessor_state_dict = torch.load(
+    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/adme-fang-v1/preprocessor.pth"
+)
+preprocessor.load_state_dict(preprocessor_state_dict)
 
 attention_layer_config = AttentionLayerConfig(
     input_dim=preprocessor.config.output_irreps_dim,
@@ -117,6 +127,12 @@ encoder = TransformerEncoder(
     **asdict(attention_layer_config),
 )
 
+encoder_state_dict = torch.load(
+    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/adme-fang-v1/enocder.pth"
+)
+encoder.load_state_dict(encoder_state_dict)
+
+
 model = MultiTaskRegressionModel(
     regression_head_config=regression_head_config,
     encoder=encoder,
@@ -127,8 +143,15 @@ model = MultiTaskRegressionModel(
 
 
 config_dict = get_global_config(
-    training_config, dataset.dataset_config, architecture_config, regression_head_config
+    training_config,
+    dataset.dataset_config,
+    architecture_config,
+    regression_head_config,
+    global_aggregator_config,
+    embedding_preprocessor_config,
 )
+
+yaml.dump(config_dict, open(f"{training_config.model_dir}/config.yaml", "w"))
 
 if training_config.wandb_active:
     wandb.init(project="threedscriptors", entity="threedscriptors", config=config_dict)
@@ -227,7 +250,7 @@ for epoch in range(training_config.epochs):
                 zip(
                     dataset.dataset_config.target_cols,
                     weighed_loss_per_task_val.cpu().detach().numpy()
-                    * dataset.dataset_config.std.cpu().detach().numpy(),
+                    * dataset.dataset_config.std,
                     strict=False,
                 )
             )
@@ -236,7 +259,7 @@ for epoch in range(training_config.epochs):
                 zip(
                     dataset.dataset_config.target_cols,
                     weighed_loss_per_task_train.cpu().detach().numpy()
-                    * dataset.dataset_config.std.cpu().detach().numpy(),
+                    * dataset.dataset_config.std,
                     strict=False,
                 )
             )
@@ -257,6 +280,9 @@ final_loss = avg_vloss
 print(final_loss)
 
 
-torch.save(model.state_dict(), f"{MODEL_DIR}/regression_model.pth")
+torch.save(model.state_dict(), f"{training_config.model_dir}/regression_model.pth")
 
-to_yaml(f"{MODEL_DIR}/architecture_config.yaml", architecture_config)
+
+torch.save(preprocessor.state_dict(), f"{training_config.model_dir}/preprocessor.pth")
+
+torch.save(encoder.state_dict(), f"{training_config.model_dir}/enocder.pth")

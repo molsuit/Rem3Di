@@ -3,7 +3,6 @@ from abc import ABC, abstractmethod
 
 import h5py
 import numpy as np
-import torch
 import torch.utils.data as data
 from ase import Atoms
 from mace.calculators import MACECalculator
@@ -58,9 +57,29 @@ class AtomEmbeddingDataset(BaseAtomicDataset):
         atomic_numbers = [at.get_atomic_numbers() for at in self.molecules]
         padding_dim = np.array([len(an) for an in atomic_numbers])
 
-        np.save(f"{directory}/positions.npy", positions)
+        padded_atomic_numbers = np.array(
+            [
+                np.pad(
+                    an, (0, self.dataset_config.max_atoms - len(an)), mode="constant"
+                )
+                for an in atomic_numbers
+            ]
+        )
+
+        # For positions, assuming each position array has shape (n_atoms, 3)
+        padded_positions = np.array(
+            [
+                np.pad(
+                    pos,
+                    ((0, self.dataset_config.max_atoms - pos.shape[0]), (0, 0)),
+                    mode="constant",
+                )
+                for pos in positions
+            ]
+        )
+        np.save(f"{directory}/padded_positions.npy", padded_positions)
         np.save(f"{directory}/padding_dim.npy", padding_dim)
-        np.save(f"{directory}/atomic_numbers.npy", atomic_numbers)
+        np.save(f"{directory}/padded_atomic_numbers.npy", padded_atomic_numbers)
 
         with open(f"{directory}/smiles_list", "w") as f:
             for i in self.smiles_list:
@@ -81,9 +100,7 @@ class AtomEmbeddingDataset(BaseAtomicDataset):
         )  # Integer 1 = Boolean True = means that this position is padding
 
         for i, atoms in enumerate(self.molecules):
-            descriptors = calculator.get_descriptors(
-                atoms, invariants_only=True, num_layers=1
-            )
+            descriptors = calculator.get_descriptors(atoms, invariants_only=False)
             num_atoms = len(atoms.get_atomic_numbers())
             embeddings[i, :num_atoms, :] = descriptors
             padding_mask[i, :num_atoms] = 0
@@ -161,10 +178,12 @@ class RegressionAtomEmbeddingDataset(BaseAtomicDataset):
 
     def normalize_targets(self, mean=None, std=None):
         # Normalize the regression targets
+
+        regression_targets_cpu = self.regression_targets.detach().cpu().numpy()
         if mean is None:
-            mean = torch.mean(a=self.regression_targets, axis=0)
+            mean = np.mean(regression_targets_cpu, axis=0, where=self.regression_masks)
         if std is None:
-            std = torch.std(self.regression_targets, axis=0)
+            std = np.std(regression_targets_cpu, axis=0, where=self.regression_masks)
 
         self.regression_targets = (self.regression_targets - mean) / std
         self.dataset_config.mean = mean
@@ -200,6 +219,8 @@ class DatasetFactory:
             f"{directory}/dataset_config.yaml", DatasetConfig
         )
 
+        print(dataset_config)
+
         positions = np.load(f"{directory}/padded_positions.npy")
         padding_dim = np.load(f"{directory}/padding_dim.npy")
         atomic_numbers = np.load(f"{directory}/padded_atomic_numbers.npy")
@@ -216,7 +237,10 @@ class DatasetFactory:
             smiles_list = f.readlines()
             smiles_list = [i.strip() for i in smiles_list]
 
-        if dataset_config.dataset_type == "Pretraining":
+        if (
+            dataset_config.dataset_type == "Pretraining"
+            or dataset_config.dataset_type == "Evaluation"
+        ):
             return AtomEmbeddingDataset(molecules, dataset_config, smiles_list)
 
         elif dataset_config.dataset_type == "Regression":
@@ -281,6 +305,8 @@ class DatasetFactory:
                     relaxed_molecules = get_relaxed_conformers(
                         smiles, mace_caluclator, dataset_config, N_conformers
                     )
+                    if len(relaxed_molecules) == 0:
+                        print(smiles_counter)
 
                 except ValueError as ve:
                     tqdm.write(

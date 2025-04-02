@@ -1,5 +1,5 @@
 import polaris as po
-from mace.calculators import mace_off
+from mace.calculators import MACECalculator
 
 from threedscriptors.data_handling.data_config import DatasetConfig
 from threedscriptors.data_handling.dataset import DatasetFactory
@@ -10,12 +10,29 @@ from threedscriptors.data_handling.preprocessing import (
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 
 # Load the benchmark from the Hub
-dataset = po.load_dataset("biogen/adme-fang-v1")
+# dataset = po.load_dataset("biogen/adme-fang-v1")
+# smiles = dataset.table["MOL_smiles"].to_list()
+# target_cols = ["LOG_HLM_CLint", "LOG_RLM_CLint", "LOG_SOLUBILITY", "LOG_MDR1-MDCK_ER"]
+# targets = dataset.table[target_cols].to_numpy()
+competition = po.load_competition("asap-discovery/antiviral-potency-2025")
+dataset_path = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/antiviral-potency"
+# Load the competition from the Hub
+# competition = po.load_competition("asap-discovery/antiviral-admet-2025")
+# Get the train and test data-loaders
+train, test = competition.get_train_test_split()
 
 
-smiles = dataset.table["MOL_smiles"].to_list()
-target_cols = ["LOG_HLM_CLint", "LOG_RLM_CLint", "LOG_SOLUBILITY", "LOG_MDR1-MDCK_ER"]
-targets = dataset.table[target_cols].to_numpy()
+data = train.as_dataframe()
+smiles = data["CXSMILES"]
+target_cols = train.target_cols
+
+
+print(target_cols)
+print(test.target_cols)
+
+
+targets = data[target_cols].to_numpy()
+
 
 # benchmark = po.load_benchmark("biogen/adme-fang-SOLU-reg-v1")
 ## Get the train and test data-loaders
@@ -29,19 +46,20 @@ targets = dataset.table[target_cols].to_numpy()
 
 
 MODEL_DIR = "/data/fast-pc-06/snw30/projects/models"
-MACE_PATH = f"{MODEL_DIR}/MACE-OFF23b_medium.model"
+MACE_PATH = (
+    "/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model"
+)
 
-mace_calculator = mace_off("medium", "cuda", enable_cueq=True)
+mace_calculator = MACECalculator(model_paths=MACE_PATH, device="cuda", enable_cueq=True)
 
 
 dataset_config = DatasetConfig(
-    target_cols,
-    N_molecules=35000,
+    target_cols=target_cols,
+    N_molecules=4340,
     max_atoms=None,
     BFGS_max_steps=500,
-    BFGS_tol=0.5,
+    BFGS_tol=0.2,
     dataset_type="Regression",
-    chirality=True,
     N_conformers=10,
 )
 
@@ -62,6 +80,6 @@ dataset = DatasetFactory.from_smiles(
     regression_masks,
 )
 
-dataset.store_data_to_disk(
-    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/test"
-)
+
+print(dataset.dataset_config)
+dataset.store_data_to_disk(dataset_path)

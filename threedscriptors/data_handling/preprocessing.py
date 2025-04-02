@@ -25,9 +25,17 @@ def relax_atoms(atoms: Atoms, calculator: MACECalculator, BFGS_tol=0.05, max_ste
 def get_ase_atoms(smiles) -> Atoms:
     mol = Chem.MolFromSmiles(smiles)
     mol = Chem.AddHs(mol)
-    AllChem.EmbedMolecule(
+    returncode = AllChem.EmbedMolecule(
         mol, useBasicKnowledge=True, useExpTorsionAnglePrefs=True, randomSeed=-1
     )
+
+    if returncode == -1:
+        AllChem.EmbedMolecule(
+            mol,
+            useRandomCoords=True,
+            randomSeed=-1,
+        )
+
     atoms = rdkit2ase(mol)
     return atoms
 
@@ -35,7 +43,10 @@ def get_ase_atoms(smiles) -> Atoms:
 def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
     mol = Chem.MolFromSmiles(smiles)
     mol = Chem.AddHs(mol)
-    EmbedMultipleConfs(mol, numConfs=N_conformers, numThreads=N_conformers)
+    EmbedMultipleConfs(
+        mol, numConfs=N_conformers, numThreads=N_conformers, maxAttempts=5000
+    )
+
     confs = [
         Atoms(
             positions=conf.GetPositions(),
@@ -43,6 +54,12 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
         )
         for conf in mol.GetConformers()
     ]
+
+    # if mol.GetNumConformers() != N_conformers:
+    #    print("Failed Embedding Multi Confs, trying again with random coords")
+    #
+    #    EmbedMultipleConfs(mol, numConfs=N_conformers, numThreads=N_conformers,maxAttempts=100000, useRandomCoords= True, forceTol=1)
+
     return confs
 
 
@@ -52,7 +69,10 @@ def get_relaxed_conformers(
     dataset_config: DatasetConfig,
     N_conformers: int,
 ):
-    confs = get_ase_atoms_with_conformers(smiles, N_conformers)
+    if N_conformers == 1:
+        confs = [get_ase_atoms(smiles)]
+    else:
+        confs = get_ase_atoms_with_conformers(smiles, N_conformers)
 
     molecules = []
 
@@ -65,6 +85,7 @@ def get_relaxed_conformers(
                 dataset_config.BFGS_max_steps,
             )
         except ValueError:
+            print("Molecule did not relax.")
             continue
         else:
             molecules.append(atoms)

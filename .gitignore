@@ -5,3 +5,4 @@ transformer_model/
 mace_model/
 .ruff_cache
 wandb
+.pytest_cache

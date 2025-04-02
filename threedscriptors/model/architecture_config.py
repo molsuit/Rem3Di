@@ -33,6 +33,15 @@ class EmbeddingPreprocessConfig:
     input_embedding_size: int | None = None
     output_irreps_dim: int | None = None
 
+    def serialize(self):
+        return {
+            "input_irreps": str(self.input_irreps),
+            "pseudoscalars": self.pseudoscalars,
+            "output_irreps": str(self.output_irreps),
+            "input_embedding_size": self.input_embedding_size,
+            "output_irreps_dim": self.output_irreps_dim,
+        }
+
 
 @dataclass
 class GlobalAggregatorConfig:

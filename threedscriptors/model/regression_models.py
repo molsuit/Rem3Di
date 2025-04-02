@@ -48,6 +48,7 @@ class MultiTaskRegressionModel(nn.Module):
         regression_head_config.hidden_dimensions.insert(0, input_dim)
         self.preprocessor = preprocessor
         self.global_aggregator = global_aggregator
+        self.task_list = task_list
 
         for _ in task_list:
             head = nn.Sequential()
