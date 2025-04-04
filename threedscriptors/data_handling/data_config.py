@@ -3,7 +3,7 @@ from typing import Literal
 
 import numpy as np
 
-type DatasetTypes = Literal["Regression", "Evaluation", "Pretraining"]
+type DatasetTypes = Literal["Regression", "Evaluation", "Pretraining"] # This could be an enum if needed
 
 
 @dataclass

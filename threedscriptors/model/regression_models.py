@@ -1,3 +1,4 @@
+from threedscriptors.model.model_builder import build_head
 import torch
 import torch.nn as nn
 
@@ -31,7 +32,7 @@ class SingleRegressionModel(nn.Module):
 class MultiTaskRegressionModel(nn.Module):
     def __init__(
         self,
-        regression_head_config: RegressionHeadConfig,
+        regression_head_config: list[RegressionHeadConfig],
         encoder: TransformerEncoder,
         task_list: list,
         preprocessor: AtomicDescriptorPreprocess,
@@ -43,31 +44,17 @@ class MultiTaskRegressionModel(nn.Module):
         self.norm = nn.LayerNorm(input_dim)
         self.activation = regression_head_config.activation_fn
 
-        self.task_heads = nn.ModuleList()
+        self.task_heads = nn.ModuleDict()
+        for head_config in regression_head_config:
+            self.task_heads[head_config.name] = build_head(head_config, input_dim)
         self.N_tasks = len(task_list)
-        regression_head_config.hidden_dimensions.insert(0, input_dim)
         self.preprocessor = preprocessor
         self.global_aggregator = global_aggregator
         self.task_list = task_list
 
-        for _ in task_list:
-            head = nn.Sequential()
+        
 
-            for idx, dim in enumerate(regression_head_config.hidden_dimensions[:-1]):
-                head.add_module(
-                    f"linear_{idx}",
-                    nn.Linear(dim, regression_head_config.hidden_dimensions[idx + 1]),
-                )
-                head.add_module("activation", self.activation)
-
-            head.add_module(
-                f"linear_{idx + 1}",
-                nn.Linear(regression_head_config.hidden_dimensions[-1], 1),
-            )
-
-            self.task_heads.append(head)
-
-    def forward(self, x, padding_mask=None):
+    def forward(self, x, padding_mask=None, **kwargs):
         x = self.preprocessor(x)
         x = self.encoder(x, padding_mask)
         x = self.global_aggregator(x)
@@ -76,7 +63,12 @@ class MultiTaskRegressionModel(nn.Module):
 
         # Compute outputs from each head.
         # Each head's output is assumed to be of shape (batch_size, output_dim)
-        preds = [head(x) for head in self.task_heads]
+        preds = []
+        for name, head in self.task_heads.items():
+            if name in kwargs:
+                preds.append(head(x, kwargs[name]))
+            else:
+                preds.append(head(x))
 
         # Concatenate outputs along the feature dimension.
         # Final shape: (batch_size, N_tasks * output_dim)

@@ -1,7 +1,23 @@
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from enum import Enum
+import importlib
 
 from e3nn.o3 import Irreps
+
+class Activations(Enum):
+    SILU = "silu"
+    GELU = "gelu"
+
+    @staticmethod
+    def get_activation_fn(activation_name: str) -> Callable:
+        if activation_name in Activations.__members__:
+            module = importlib.import_module("torch.nn")
+            activation_class = getattr(module, activation_name)
+            return activation_class()
+        else:
+            raise ValueError(f"Activation function '{activation_name}' is not supported.")
+        
 
 
 @dataclass
@@ -21,7 +37,8 @@ class ArchitectureConfig:
 
 @dataclass
 class RegressionHeadConfig:
-    activation_fn: Callable
+    name:str
+    activation_fn: Activations = Activations.SILU
     hidden_dimensions: list[int]
 
 
