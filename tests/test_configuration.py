@@ -27,7 +27,9 @@ def test_configuration():
         dropout=0.3,
     )
 
-    encoder_config = EncoderConfig(N_layers=2, attention_layer=attention_layer_config)
+    encoder_config = EncoderConfig(
+        N_layers=2, attention_layer_config=attention_layer_config
+    )
 
     regression_head_config = RegressionHeadConfig(
         activation_fn=torch.nn.SiLU(),

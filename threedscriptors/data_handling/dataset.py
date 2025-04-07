@@ -131,6 +131,9 @@ class RegressionAtomEmbeddingDataset(BaseAtomicDataset):
     def __getitem__(self, index):
         embeddings = self.embeddings[index]
         padding_mask = self.padding_mask[index]
+
+        # auxillary_data =
+
         regression_targets = self.regression_targets[index]
         regression_masks = self.regression_masks[index]
 

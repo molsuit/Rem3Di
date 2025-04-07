@@ -53,6 +53,7 @@ class AttentionLayerConfig(BaseModel):
 class EncoderConfig(BaseModel):
     N_layers: int
     attention_layer_config: AttentionLayerConfig
+    reload_state_dict: str | None = None
 
 
 class RegressionHeadConfig(BaseModel):
@@ -86,6 +87,7 @@ class EmbeddingPreprocessConfig(BaseModel):
     output_irreps: IrrepType | None = None
     input_embedding_size: int | None = None
     output_irreps_dim: int | None = None
+    reload_state_dict: str | None = None
 
 
 class GlobalAggregatorConfig(BaseModel):
@@ -113,3 +115,4 @@ class ArchitectureConfig(BaseModel):
     encoder_config: EncoderConfig
     global_aggregator_config: GlobalAggregatorConfig
     regression_head_config: RegressionHeadConfig | Sequence[RegressionHeadConfig]
+    reload_full_model_weights: str | None = None

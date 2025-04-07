@@ -71,7 +71,7 @@ class TransformerEncoder(nn.Module):
 
         self.layers = nn.ModuleList(
             [
-                EncoderBlock(**encoder_config.attention_layer_config.dict())
+                EncoderBlock(**encoder_config.attention_layer_config.model_dump())
                 for _ in range(encoder_config.N_layers)
             ]
         )

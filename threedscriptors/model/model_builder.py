@@ -1,7 +1,5 @@
 from collections.abc import Sequence
 
-import torch.nn as nn
-
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
 )
@@ -21,7 +19,7 @@ from threedscriptors.model.transformer_components import TransformerEncoder
 class ModelBuilder:
     def __init__(self, architecture_config: ArchitectureConfig):
         self.architecture_config = architecture_config
-        self.model: nn.Module | None = None
+        self.model: MultiTaskRegressionModel | None = None
         self._N_trainable_parameters = None
 
     @property
@@ -31,6 +29,21 @@ class ModelBuilder:
     @N_trainable_parameters.getter
     def N_trainable_parameters(self):
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+
+    def _reload_weights(self):
+        if self.architecture_config.reload_full_model_weights:
+            self.model.load_state_dict(
+                self.architecture_config.reload_full_model_weights
+            )
+        else:
+            if self.architecture_config.embedding_preprocess_config.reload_state_dict:
+                self.model.preprocessor.load_state_dict(
+                    self.architecture_config.embedding_preprocess_config.reload_state_dict
+                )
+            if self.architecture_config.encoder_config.reload_state_dict:
+                self.model.encoder.load_state_dict(
+                    self.architecture_config.encoder_config.reload_state_dict
+                )
 
     def build_model(self):
         preprocessor = self.build_preprocess()
@@ -44,6 +57,14 @@ class ModelBuilder:
             preprocessor=preprocessor,
             global_aggregator=aggregator,
         )
+        self.model = model
+
+        if (
+            self.architecture_config.reload_full_model_weights
+            or self.architecture_config.embedding_preprocess_config.reload_state_dict
+            or self.architecture_config.encoder_config.reload_state_dict
+        ):
+            self._reload_weights()
 
         return model
 
