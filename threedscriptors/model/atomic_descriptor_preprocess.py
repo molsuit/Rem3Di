@@ -3,7 +3,7 @@ from e3nn import o3
 from mace.modules.blocks import tp_out_irreps_with_instructions
 from torch import nn
 
-from threedscriptors.model.architecture_config import EmbeddingPreprocessConfig
+from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
 from threedscriptors.utils.model_utils import get_invariant_indices, remove_equivariants
 
 

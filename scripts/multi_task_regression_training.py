@@ -8,14 +8,16 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, random_split
 
 import wandb
-from threedscriptors.data_handling.dataset import DatasetFactory
-from threedscriptors.model.architecture_config import (
+from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
     AttentionLayerConfig,
     EmbeddingPreprocessConfig,
     GlobalAggregatorConfig,
     RegressionHeadConfig,
 )
+from threedscriptors.configuration.config_utils import get_global_config
+from threedscriptors.configuration.training_config import TrainingConfig
+from threedscriptors.data_handling.dataset import DatasetFactory
 from threedscriptors.model.atomic_descriptor_preprocess import (
     InvariantsFilter,
     PseudoscalarGenerator,
@@ -26,8 +28,6 @@ from threedscriptors.model.regression_models import (
 )
 from threedscriptors.model.transformer_components import TransformerEncoder
 from threedscriptors.training.regression_training import multitask_masked_loss
-from threedscriptors.training.training_config import TrainingConfig
-from threedscriptors.utils.config_utils import get_global_config
 from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature
 
 training_config = TrainingConfig(
@@ -53,7 +53,6 @@ calculator_irreps = get_mace_calculator_irrep_signature(mace_calculator)
 embedding_preprocessor_config = EmbeddingPreprocessConfig(
     input_irreps=calculator_irreps, pseudoscalars=True
 )
-
 
 # TODO: recommend to define scripts in a main function, then do the following:
 # if __name__ == "__main__":

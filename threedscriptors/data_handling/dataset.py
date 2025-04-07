@@ -9,10 +9,10 @@ from mace.calculators import MACECalculator
 from torch import from_numpy
 from tqdm import tqdm
 
-from threedscriptors.data_handling.data_config import DatasetConfig
+from threedscriptors.configuration.config_utils import from_yaml, to_yaml
+from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.data_handling.preprocessing import get_relaxed_conformers
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
-from threedscriptors.utils.config_utils import from_yaml, to_yaml
 
 type Molecules = list[Atoms]
 

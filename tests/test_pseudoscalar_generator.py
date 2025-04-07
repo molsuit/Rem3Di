@@ -3,8 +3,8 @@ import torch
 from e3nn.o3 import Irreps
 from mace.calculators import MACECalculator
 
+from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
 from threedscriptors.data_handling.preprocessing import get_ase_atoms
-from threedscriptors.model.architecture_config import EmbeddingPreprocessConfig
 from threedscriptors.model.atomic_descriptor_preprocess import PseudoscalarGenerator
 from threedscriptors.utils.model_utils import (
     get_invariant_indices,

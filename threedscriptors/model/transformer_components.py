@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import MultiheadAttention
 
-from threedscriptors.model.architecture_config import ArchitectureConfig
+from threedscriptors.configuration.architecture_config import ArchitectureConfig
 from threedscriptors.model.global_aggregator import GlobalAggregator
 
 

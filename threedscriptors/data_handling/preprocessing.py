@@ -9,7 +9,7 @@ from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 from rdkit2ase import rdkit2ase
 
-from threedscriptors.data_handling.data_config import DatasetConfig
+from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 from threedscriptors.model.transformer_components import TransformerEncoder
 

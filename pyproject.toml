@@ -17,7 +17,9 @@ dependencies = [
     "cuequivariance==0.1.0",
     "cuequivariance-torch==0.1.0",
     "cuequivariance-ops-torch-cu12==0.1.0",
-    "wandb"
+    "wandb",
+    "pydantic",
+    "pydantic_yaml"
 ]
 
 

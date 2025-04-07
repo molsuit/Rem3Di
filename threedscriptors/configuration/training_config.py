@@ -1,8 +1,9 @@
-from dataclasses import dataclass
+from datetime import datetime
+
+from pydantic import BaseModel
 
 
-@dataclass
-class TrainingConfig:
+class TrainingConfig(BaseModel):
     batch_size: int
     epochs: int
     learning_rate: float
@@ -12,3 +13,9 @@ class TrainingConfig:
     total_steps: int | None = None
     masking_probability: float | None = None
     wandb_active: bool = False
+
+
+class TrainingMetadata(BaseModel):
+    dataset_dir: str
+    model_dir: str
+    timestamp: datetime

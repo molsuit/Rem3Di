@@ -1,12 +1,12 @@
-from threedscriptors.model.model_builder import build_head
 import torch
 import torch.nn as nn
 
-from threedscriptors.model.architecture_config import RegressionHeadConfig
+from threedscriptors.configuration.architecture_config import RegressionHeadConfig
 from threedscriptors.model.atomic_descriptor_preprocess import (
     AtomicDescriptorPreprocess,
 )
 from threedscriptors.model.global_aggregator import GlobalAggregator
+from threedscriptors.model.model_builder import build_head
 from threedscriptors.model.transformer_components import TransformerEncoder
 
 
@@ -51,8 +51,6 @@ class MultiTaskRegressionModel(nn.Module):
         self.preprocessor = preprocessor
         self.global_aggregator = global_aggregator
         self.task_list = task_list
-
-        
 
     def forward(self, x, padding_mask=None, **kwargs):
         x = self.preprocessor(x)

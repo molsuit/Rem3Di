@@ -8,6 +8,7 @@ from mace.calculators import MACECalculator
 from torch import nn
 from torch.utils.data import DataLoader
 
+from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.data_config import DatasetConfig
 from threedscriptors.data_handling.dataset import DatasetFactory
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
@@ -27,7 +28,6 @@ from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
 from threedscriptors.model.transformer_components import TransformerEncoder
-from threedscriptors.training.training_config import TrainingConfig
 from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature
 
 # Load the competition from the Hub
