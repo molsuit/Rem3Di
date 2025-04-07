@@ -9,9 +9,9 @@ from torch.utils.data import DataLoader, random_split
 
 import wandb
 from threedscriptors.configuration.architecture_config import (
-    ArchitectureConfig,
     AttentionLayerConfig,
     EmbeddingPreprocessConfig,
+    EncoderConfig,
     GlobalAggregatorConfig,
     RegressionHeadConfig,
 )
@@ -105,9 +105,7 @@ attention_layer_config = AttentionLayerConfig(
     dropout=0.3,
 )
 
-architecture_config = ArchitectureConfig(
-    N_layers=2, attention_layer=attention_layer_config
-)
+encoder_config = EncoderConfig(N_layers=2, attention_layer=attention_layer_config)
 
 regression_head_config = RegressionHeadConfig(
     activation_fn=nn.SiLU(), hidden_dimensions=[512, 256, 128]
@@ -122,7 +120,7 @@ global_aggregator_config = GlobalAggregatorConfig(
 global_aggregator = GlobalAggregator(global_aggregator_config)
 
 encoder = TransformerEncoder(
-    architecture_config=architecture_config,
+    encoder_config=encoder_config,
     **asdict(attention_layer_config),
 )
 
@@ -144,7 +142,7 @@ model = MultiTaskRegressionModel(
 config_dict = get_global_config(
     training_config,
     dataset.dataset_config,
-    architecture_config,
+    encoder_config,
     regression_head_config,
     global_aggregator_config,
     embedding_preprocessor_config,

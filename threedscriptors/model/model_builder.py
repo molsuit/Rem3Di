@@ -1,64 +1,83 @@
+from collections.abc import Sequence
+
 import torch.nn as nn
 
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
-    RegressionHeadConfig,
 )
+from threedscriptors.model.atomic_descriptor_preprocess import (
+    AtomicDescriptorPreprocess,
+    InvariantsFilter,
+    PseudoscalarGenerator,
+)
+from threedscriptors.model.global_aggregator import GlobalAggregator
+from threedscriptors.model.regression_models import (
+    MultitaskHeads,
+    MultiTaskRegressionModel,
+)
+from threedscriptors.model.transformer_components import TransformerEncoder
 
 
 class ModelBuilder:
     def __init__(self, architecture_config: ArchitectureConfig):
         self.architecture_config = architecture_config
+        self.model: nn.Module | None = None
+        self._N_trainable_parameters = None
 
-    def count_trainable_parameters(self):
-        pass
+    @property
+    def N_trainable_parameters(self):
+        return self._N_trainable_parameters
+
+    @N_trainable_parameters.getter
+    def N_trainable_parameters(self):
+        return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
     def build_model(self):
-        pass
+        preprocessor = self.build_preprocess()
+        encoder = self.build_encoder()
+        aggregator = self.build_global_aggregator()
+        multitask_heads = self.build_regression_heads()
 
-    def build_preprocess(self):
-        pass
+        model = MultiTaskRegressionModel(
+            regression_heads=multitask_heads,
+            encoder=encoder,
+            preprocessor=preprocessor,
+            global_aggregator=aggregator,
+        )
+
+        return model
+
+    def build_preprocess(self) -> AtomicDescriptorPreprocess:
+        preprocess_config = self.architecture_config.embedding_preprocess_config
+
+        if preprocess_config.pseudoscalars:
+            preprocessor = PseudoscalarGenerator(preprocess_config)
+        else:
+            preprocessor = InvariantsFilter(preprocess_config)
+
+        return preprocessor
 
     def build_encoder(self):
-        pass
+        encoder_config = self.architecture_config.encoder_config
+        encoder = TransformerEncoder(encoder_config)
+        return encoder
 
     def build_global_aggregator(self):
-        pass
+        global_aggregator_config = self.architecture_config.global_aggregator_config
 
-    def build_regression_head(self):
-        pass
+        global_aggregator = GlobalAggregator(global_aggregator_config)
 
-    def build_head(
-        head_config: RegressionHeadConfig,
-        input_dim: int,
-    ) -> nn.Module:
-        """
-        Build a regression head based on the provided configuration.
+        return global_aggregator
 
-        Args:
-            head_config (RegressionHeadConfig): Configuration for the regression head.
-            input_dim (int): Input dimension for the regression head.
+    def build_regression_heads(self):
+        regression_head_config = self.architecture_config.regression_head_config
 
-        Returns:
-            nn.Module: The constructed regression head.
-        """
-        raise NotImplementedError("The build_head function is not implemented yet.")
-        # for _ in task_list:
-        #    head = nn.Sequential()
+        if isinstance(regression_head_config, Sequence):
+            regression_heads = MultitaskHeads(
+                regression_head_configs=regression_head_config
+            )
 
-
-#
-#    for idx, dim in enumerate(regression_head_config.hidden_dimensions[:-1]):
-#        head.add_module(
-#            f"linear_{idx}",
-#            nn.Linear(dim, regression_head_config.hidden_dimensions[idx + 1]),
-#        )
-#        head.add_module("activation", self.activation)
-#
-#    head.add_module(
-#        f"linear_{idx + 1}",
-#        nn.Linear(regression_head_config.hidden_dimensions[-1], 1),
-#    )
-#
-#    self.task_heads.append(head)
-#
+            return regression_heads
+        else:
+            # Build single regression head
+            raise NotImplementedError

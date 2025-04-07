@@ -10,6 +10,8 @@ from threedscriptors.configuration.architecture_config import (
     GlobalAggregatorConfig,
     RegressionHeadConfig,
 )
+from threedscriptors.configuration.config_utils import from_yaml
+from threedscriptors.model.model_builder import ModelBuilder
 
 
 def test_configuration():
@@ -86,5 +88,19 @@ def test_function_reconstruction():
     assert regression_head_config_0.activation_fn(torch.Tensor([0.0])) == 0.0
 
 
+def test_model_reconstruction():
+    test_yaml_path = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/tests/test.yaml"
+    architecture_config = from_yaml(test_yaml_path, ArchitectureConfig)
+
+    print(architecture_config)
+    builder = ModelBuilder(architecture_config)
+
+    try:
+        _ = builder.build_model()
+    except Exception as err:
+        raise AssertionError from err
+
+
+test_model_reconstruction()
 test_configuration()
 test_function_reconstruction()

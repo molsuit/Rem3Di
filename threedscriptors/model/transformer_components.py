@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import MultiheadAttention
 
-from threedscriptors.configuration.architecture_config import ArchitectureConfig
+from threedscriptors.configuration.architecture_config import EncoderConfig
 from threedscriptors.model.global_aggregator import GlobalAggregator
 
 
@@ -64,13 +64,16 @@ class EncoderBlock(nn.Module):
 
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, architecture_config: ArchitectureConfig, **block_args):
+    def __init__(self, encoder_config: EncoderConfig):
         super().__init__()
 
-        self.architecture_config = architecture_config
+        self.encoder_config = encoder_config
 
         self.layers = nn.ModuleList(
-            [EncoderBlock(**block_args) for _ in range(architecture_config.N_layers)]
+            [
+                EncoderBlock(**encoder_config.attention_layer_config.dict())
+                for _ in range(encoder_config.N_layers)
+            ]
         )
 
     def forward(self, x, padding_mask=None):

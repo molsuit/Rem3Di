@@ -32,4 +32,4 @@ def to_yaml(filename, config):
 
 
 def from_yaml(filename, config_class: BaseModel):
-    pyaml.parse_yaml_file_as(config_class, filename)
+    return pyaml.parse_yaml_file_as(config_class, filename)

@@ -1,0 +1,33 @@
+embedding_preprocess_config:
+  input_embedding_size: null
+  input_irreps: 128x0e+128x1o+128x0e
+  output_irreps: 128x0e+128x0e+128x0o
+  output_irreps_dim: 384
+  pseudoscalars: true
+encoder_config:
+  N_layers: 2
+  attention_layer_config:
+    dim_feedforward: 512
+    dropout: 0.3
+    embedding_dim: 384
+    input_dim: 384
+    num_heads: 8
+global_aggregator_config:
+  aggregation_fn: mean
+  input_dim: 384
+  output_dim: 384
+regression_head_config:
+- activation_fn: SiLU
+  hidden_dimensions:
+  - 512
+  - 256
+  - 128
+  input_dimensions: 256
+  task_name: foo
+- activation_fn: SiLU
+  hidden_dimensions:
+  - 512
+  - 256
+  - 128
+  input_dimensions: 256
+  task_name: bar

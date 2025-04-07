@@ -8,9 +8,10 @@ def get_mace_calculator_irrep_signature(mace_calculator: MACECalculator) -> Irre
 
     for products in mace_calculator.models[0].products:
         if signature is None:
-            signature = Irreps(products.linear.__dict__["irreps_out"])
+            print(products.linear.__dict__["irreps_out"])
+            signature = Irreps(str(products.linear.__dict__["irreps_out"]))
         else:
-            signature = signature + Irreps(products.linear.__dict__["irreps_out"])
+            signature = signature + Irreps(str(products.linear.__dict__["irreps_out"]))
 
     return signature
 

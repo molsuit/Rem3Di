@@ -52,7 +52,7 @@ class AttentionLayerConfig(BaseModel):
 
 class EncoderConfig(BaseModel):
     N_layers: int
-    attention_layer: AttentionLayerConfig
+    attention_layer_config: AttentionLayerConfig
 
 
 class RegressionHeadConfig(BaseModel):
