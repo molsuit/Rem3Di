@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import torch
 from mace.calculators import MACECalculator
 
-from threedscriptors.data_handling.preprocessing import get_global_descriptor
+from threedscriptors.data_handling.data_utils import get_global_descriptor
 from threedscriptors.data_handling.smiles_iterator import FileSmilesIterator
 from threedscriptors.model.transformer_components import TransformerEncoder
 from threedscriptors.utils.analysis import get_PCA

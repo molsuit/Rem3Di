@@ -1,8 +1,7 @@
+from collections.abc import Sequence
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict
-
-from threedscriptors.configuration.config_utils import NumpyArrayType
 
 
 class DatasetTypes(Enum):
@@ -11,15 +10,25 @@ class DatasetTypes(Enum):
     PRETRAINING = 3
 
 
+class TaskConfig(BaseModel):
+    task_name: str
+    mean: float | None = None
+    std: float | None = None
+    has_auxillary_data: bool = False
+    auxillary_data_dimension: int | None = None
+    is_normalized: bool = False
+
+
 class DatasetConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
     N_molecules: int
-    max_atoms: int | None
     dataset_type: DatasetTypes
-    BFGS_tol: int
+    BFGS_tol: float
     BFGS_max_steps: int
-    N_conformers: int
-    target_cols: list[str] | None
-    mean: NumpyArrayType | None = None
-    std: NumpyArrayType | None = None
+    N_conformers: int = 1
+    embedding_model: str | None = None
+    max_atoms: int | None = None
+    tasks: TaskConfig | Sequence[TaskConfig] | None = None
+    has_relaxed_positions: bool = False
+    has_atomic_embeddings: bool = False
+    reload_from_directory: str | None = None

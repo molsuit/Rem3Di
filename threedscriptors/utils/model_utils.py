@@ -8,12 +8,17 @@ def get_mace_calculator_irrep_signature(mace_calculator: MACECalculator) -> Irre
 
     for products in mace_calculator.models[0].products:
         if signature is None:
-            print(products.linear.__dict__["irreps_out"])
             signature = Irreps(str(products.linear.__dict__["irreps_out"]))
         else:
             signature = signature + Irreps(str(products.linear.__dict__["irreps_out"]))
 
     return signature
+
+
+def get_mace_calculator_embedding_dimension(mace_calculator: MACECalculator) -> int:
+    irrep_signature = get_mace_calculator_irrep_signature(mace_calculator)
+    embdeding_dimension = Irreps(irrep_signature).dim
+    return embdeding_dimension
 
 
 def remove_equivariants(atomic_embeddings, invariant_indices):
