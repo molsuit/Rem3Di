@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 import numpy as np
+import torch
 from ase import Atoms
 from mace.calculators import MACECalculator
 from torch import from_numpy
@@ -217,7 +218,10 @@ class DatasetBuilder:
         self.dataset.dataset_config.has_atomic_embeddings = True
 
     def reload_atomic_embeddings(self, directory: str):
-        self.dataset.embeddings = np.load(f"{directory}/embeddings.npy")
+        self.dataset.embeddings = torch.Tensor(np.load(f"{directory}/embeddings.npy"))
+        self.dataset.padding_mask = torch.Tensor(
+            np.load(f"{directory}/padding_mask.npy")
+        )
 
     def add_regression_data(
         self,
@@ -331,6 +335,7 @@ class DatasetBuildingDirector:
         regression_targets=None,
         regression_masks=None,
         auxillary_data=None,
+        return_normalized_targets: bool = False,
     ):
         # use the builder to assemble the dataset according to the configuration
 
@@ -369,10 +374,15 @@ class DatasetBuildingDirector:
 
         dataset = builder.get_dataset()
 
+        if return_normalized_targets:
+            assert isinstance(dataset, RegressionAtomEmbeddingDataset)
+
+            dataset.normalize_regression_targets()
+
         return cls(builder=builder), dataset
 
     @classmethod
-    def reload_dataset(cls, directory):
+    def reload_dataset(cls, directory, return_normalized_targets: bool = False):
         builder = DatasetBuilder.load_initial_data_from_disk(directory)
 
         construction_recepie = cls.check_config(builder.dataset.dataset_config)
@@ -385,6 +395,10 @@ class DatasetBuildingDirector:
             builder.reload_auxillary_data(directory=directory)
 
         dataset = builder.get_dataset()
+
+        if return_normalized_targets:
+            assert isinstance(dataset, RegressionAtomEmbeddingDataset)
+            dataset.normalize_regression_targets()
 
         return cls(builder=builder), dataset
 

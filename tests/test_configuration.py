@@ -16,7 +16,7 @@ from threedscriptors.model.model_builder import ModelBuilder
 
 def test_configuration():
     embedding_preprocessor_config = EmbeddingPreprocessConfig(
-        input_irreps="10x0o", pseudoscalars=True
+        input_irreps="10x0o", pseudoscalars=True, pseudoscalar_dimension=10
     )
 
     attention_layer_config = AttentionLayerConfig(
@@ -91,7 +91,7 @@ def test_function_reconstruction():
 
 
 def test_model_reconstruction():
-    test_yaml_path = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/tests/test.yaml"
+    test_yaml_path = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/tests/test_architecture_config.yaml"
     architecture_config = from_yaml(test_yaml_path, ArchitectureConfig)
 
     print(architecture_config)
@@ -103,6 +103,11 @@ def test_model_reconstruction():
         raise AssertionError from err
 
 
-test_model_reconstruction()
-test_configuration()
-test_function_reconstruction()
+def test_model_construction_from_yaml():
+    test_file = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/tests/test_architecture_config.yaml"
+    architecture_config = pyaml.parse_yaml_file_as(ArchitectureConfig, test_file)
+
+    try:
+        _ = ModelBuilder(architecture_config=architecture_config).build_model()
+    except Exception as err:
+        raise AssertionError from err

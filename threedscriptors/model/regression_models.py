@@ -1,3 +1,5 @@
+from itertools import pairwise
+
 import torch
 import torch.nn as nn
 
@@ -63,28 +65,34 @@ class MultitaskHeads(nn.Module):
 
         # TODO: Should there be an initial layer normalization, and activation function immediately after the molecular descriptor?
 
-        for idx, dim in enumerate(head_config.hidden_dimensions[:-1]):
+        dimensions = [head_config.input_dimensions, *head_config.hidden_dimensions]
+
+        for idx, (in_dim, out_dim) in enumerate(pairwise(dimensions)):
             head.add_module(
                 f"linear_{idx}",
-                nn.Linear(dim, head_config.hidden_dimensions[idx + 1]),
+                nn.Linear(in_dim, out_dim),
             )
+
             head.add_module("activation", head_config.activation_fn)
 
         head.add_module(
             f"linear_{idx + 1}",
-            nn.Linear(head_config.hidden_dimensions[-1], 1),
+            nn.Linear(dimensions[-1], 1),
         )
 
         return head
 
     def forward(self, descriptor, auxillary_data: dict | None = None):
         preds = []
+
         for name, head in self.task_heads.items():
             if auxillary_data is not None and name in auxillary_data:
                 input_data = torch.cat((descriptor, auxillary_data["name"]))
                 preds.append(head(input_data))
             else:
                 preds.append(head(descriptor))
+
+        return preds
 
 
 class MultiTaskRegressionModel(nn.Module):

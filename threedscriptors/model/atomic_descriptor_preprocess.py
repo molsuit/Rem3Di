@@ -82,6 +82,7 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             atomic_embedding[:],
             self.lin(self.tp_1(atomic_embedding[:], self.lin0(atomic_embedding[:]))),
         )
+
         # remove the equivariant part
         atomic_embedding = remove_equivariants(atomic_embedding, self.invariant_indices)
 

@@ -42,7 +42,7 @@ def test_pseudoscalar_generator():
     calculator_irreps = get_mace_calculator_irrep_signature(calc)
 
     embedding_preprocessor_config = EmbeddingPreprocessConfig(
-        input_irreps=calculator_irreps, pseudoscalars=True
+        input_irreps=calculator_irreps, pseudoscalars=True, pseudoscalar_dimension=128
     )
     ps_generator = PseudoscalarGenerator(embedding_preprocessor_config)
 

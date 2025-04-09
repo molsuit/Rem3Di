@@ -16,7 +16,6 @@ class TaskConfig(BaseModel):
     std: float | None = None
     has_auxillary_data: bool = False
     auxillary_data_dimension: int | None = None
-    is_normalized: bool = False
 
 
 class DatasetConfig(BaseModel):
@@ -28,7 +27,8 @@ class DatasetConfig(BaseModel):
     N_conformers: int = 1
     embedding_model: str | None = None
     max_atoms: int | None = None
-    tasks: TaskConfig | Sequence[TaskConfig] | None = None
+    is_normalized: bool = False
+    tasks: Sequence[TaskConfig] | None = None
     has_relaxed_positions: bool = False
     has_atomic_embeddings: bool = False
     reload_from_directory: str | None = None

@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+import torch
 import torch.utils.data as data
 from ase import Atoms
 
@@ -63,9 +64,14 @@ class BaseAtomicDataset(data.Dataset):
         # Store Embeddings
         if self.embeddings is not None:
             np.save(f"{directory}/embeddings.npy", self.embeddings)
+            np.save(f"{directory}/padding_mask.npy", self.padding_mask)
 
         # Store Regression Targets
         if self.regression_targets is not None:
+            if self.dataset_config.is_normalized:
+                # undo the normalization
+                raise ValueError
+
             np.save(f"{directory}/regression_targets.npy", self.regression_targets)
             np.save(f"{directory}/regression_masks.npy", self.regression_masks)
 
@@ -108,6 +114,42 @@ class BaseAtomicDataset(data.Dataset):
         )
 
         return padding_dim, padded_positions, padded_atomic_numbers
+
+    def normalize_regression_targets(self):
+        assert self.regression_targets is not None
+
+        if self.dataset_config.is_normalized:
+            print("Dataset was already normalized")
+            return
+
+        regression_targets = self.regression_targets
+        if isinstance(self.regression_targets, torch.Tensor):
+            regression_targets = self.regression_targets.detach().cpu().numpy()
+
+        mean = np.mean(regression_targets, axis=0, where=self.regression_masks)
+
+        print(mean)
+
+        std = np.std(regression_targets, axis=0, where=self.regression_masks)
+        print(std)
+        self.regression_targets = (regression_targets - mean) / std
+
+        for task, task_mean, task_std in zip(
+            self.dataset_config.tasks, mean.tolist(), std.tolist(), strict=False
+        ):
+            task.mean = task_mean
+            task.std = task_std
+
+        self.dataset_config.is_normalized = True
+
+        self.regression_targets = torch.Tensor(self.regression_targets)
+
+    def undo_regression_target_normalization(self):
+        assert self.regression_targets is not None
+        if not self.dataset_config.is_normalized:
+            print("Dataset was already unnormalized")
+
+        raise NotImplementedError
 
 
 class AtomEmbeddingDataset(BaseAtomicDataset):
@@ -156,21 +198,6 @@ class RegressionAtomEmbeddingDataset(BaseAtomicDataset):
         regression_masks = self.regression_masks[index]
 
         return embeddings, padding_mask, regression_targets, regression_masks
-
-    def normalize_targets(self, mean=None, std=None):
-        # Normalize the regression targets
-
-        regression_targets_cpu = self.regression_targets.detach().cpu().numpy()
-        if mean is None:
-            mean = np.mean(regression_targets_cpu, axis=0, where=self.regression_masks)
-        if std is None:
-            std = np.std(regression_targets_cpu, axis=0, where=self.regression_masks)
-
-        self.regression_targets = (self.regression_targets - mean) / std
-
-        # Has to be made task specific
-        self.dataset_config.mean = mean
-        self.dataset_config.std = std
 
 
 class RegressionAtomEmbeddingDatasetWithAuxillaryData(RegressionAtomEmbeddingDataset):

@@ -60,7 +60,7 @@ def get_pseudoscalars_indices(irreps: Irreps):
     out_irrep = []
 
     for idx, irrep_slice in enumerate(irreps):
-        print(irrep_slice.ir)
+        # print(irrep_slice.ir)
         if irrep_slice.ir[0] == 0 and irrep_slice.ir[-1] == -1:
             out_irrep.append(irrep_slice)
             invariant_slices.append(slices[idx])

@@ -8,25 +8,24 @@ from threedscriptors.model.global_aggregator import GlobalAggregator
 
 class EncoderBlock(nn.Module):
     def __init__(
-        self, input_dim, embedding_dim, num_heads, dim_feedforward, dropout=0.0
+        self, embedding_dim, num_heads, dim_feedforward, dropout=0.0
     ):  # TODO: Recommend to write type hints for all arguments
         """
         Inputs:
-            input_dim - Dimensionality of the input
+            embedding_dim - Dimensionality of the input
             num_heads - Number of heads to use in the attention block
             dim_feedforward - Dimensionality of the hidden layer in the MLP
             dropout - Dropout probability to use in the dropout layers
         """
         super().__init__()
 
-        self.input_dim = input_dim
         self.embedding_dim = embedding_dim
         self.num_heads = num_heads
 
         # Attention layer
-        self.q = nn.Linear(input_dim, embedding_dim)
-        self.k = nn.Linear(input_dim, embedding_dim)
-        self.v = nn.Linear(input_dim, embedding_dim)
+        self.q = nn.Linear(embedding_dim, embedding_dim)
+        self.k = nn.Linear(embedding_dim, embedding_dim)
+        self.v = nn.Linear(embedding_dim, embedding_dim)
 
         self.self_attn = MultiheadAttention(
             embedding_dim, num_heads, dropout=dropout, batch_first=True
@@ -34,15 +33,15 @@ class EncoderBlock(nn.Module):
 
         # Two-layer MLP
         self.linear_net = nn.Sequential(
-            nn.Linear(input_dim, dim_feedforward),
+            nn.Linear(embedding_dim, dim_feedforward),
             nn.Dropout(dropout),
             nn.ReLU(inplace=False),
-            nn.Linear(dim_feedforward, input_dim),
+            nn.Linear(dim_feedforward, embedding_dim),
         )
 
         # Layers to apply in between the main layers
-        self.norm1 = nn.LayerNorm(input_dim)
-        self.norm2 = nn.LayerNorm(input_dim)
+        self.norm1 = nn.LayerNorm(embedding_dim)
+        self.norm2 = nn.LayerNorm(embedding_dim)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, padding_mask=None):
@@ -96,7 +95,6 @@ class TransformerEncoder(nn.Module):
 class DecoderBlock(nn.Module):
     def __init__(
         self,
-        input_dim,
         embedding_dim,
         num_heads,
         dim_feedforward,
@@ -105,7 +103,7 @@ class DecoderBlock(nn.Module):
     ):
         """
         Inputs:
-            input_dim - Dimensionality of the input
+            embedding_dim - Dimensionality of the input
             num_heads - Number of heads to use in the attention block
             dim_feedforward - Dimensionality of the hidden layer in the MLP
             dropout - Dropout probability to use in the dropout layers
@@ -114,27 +112,27 @@ class DecoderBlock(nn.Module):
 
         # Attention layer
 
-        self.q = nn.Linear(input_dim, embedding_dim)
-        self.k = nn.Linear(input_dim, embedding_dim)
-        self.v = nn.Linear(input_dim, embedding_dim)
+        self.q = nn.Linear(embedding_dim, embedding_dim)
+        self.k = nn.Linear(embedding_dim, embedding_dim)
+        self.v = nn.Linear(embedding_dim, embedding_dim)
 
         self.self_attn = MultiheadAttention(
             embedding_dim, num_heads, dropout=dropout, batch_first=True
         )
-        self.cross_attn = nn.Linear(descriptor_dim, input_dim)
+        self.cross_attn = nn.Linear(descriptor_dim, embedding_dim)
 
         # Two-layer MLP
         self.linear_net = nn.Sequential(
-            nn.Linear(input_dim, dim_feedforward),
+            nn.Linear(embedding_dim, dim_feedforward),
             nn.Dropout(dropout),
             nn.ReLU(inplace=False),
-            nn.Linear(dim_feedforward, input_dim),
+            nn.Linear(dim_feedforward, embedding_dim),
         )
 
         # Layers to apply in between the main layers
-        self.norm1 = nn.LayerNorm(input_dim)
-        self.norm2 = nn.LayerNorm(input_dim)
-        self.norm3 = nn.LayerNorm(input_dim)
+        self.norm1 = nn.LayerNorm(embedding_dim)
+        self.norm2 = nn.LayerNorm(embedding_dim)
+        self.norm3 = nn.LayerNorm(embedding_dim)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, global_descriptor, padding_mask=None):
@@ -167,7 +165,7 @@ class TransformerDecoder(nn.Module):
             [DecoderBlock(**block_args) for _ in range(num_layers)]
         )
         self.reconstruction_embedding = nn.Parameter(
-            torch.randn(size=(1, block_args["input_dim"]))
+            torch.randn(size=(1, block_args["embedding_dim"]))
         )
 
     def forward(

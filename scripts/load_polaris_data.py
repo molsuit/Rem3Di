@@ -16,11 +16,11 @@ MACE_PATH = (
 # Get the train and test data-loaders
 
 dataset_config = DatasetConfig(
-    N_molecules=20,
+    N_molecules=50,
     dataset_type=DatasetTypes.REGRESSION,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
-    N_conformers=10,
+    N_conformers=1,
     embedding_model=MACE_PATH,
     max_atoms=None,
     tasks=tasks,
@@ -35,6 +35,3 @@ _, dataset = DatasetBuildingDirector.build_dataset(
 )
 
 dataset.store_data_to_disk(dataset_directory)
-
-
-dataset_reloaded = DatasetBuildingDirector.reload_dataset(dataset_directory)

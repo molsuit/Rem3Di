@@ -2,6 +2,7 @@ import importlib
 from collections.abc import Callable, Iterable, Sequence
 from enum import Enum
 
+import torch.nn
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 
 from threedscriptors.configuration.config_utils import IrrepType
@@ -43,11 +44,10 @@ class Aggregations(Enum):
 
 
 class AttentionLayerConfig(BaseModel):
-    input_dim: int
-    embedding_dim: int
     num_heads: int
     dim_feedforward: int
     dropout: float
+    embedding_dim: int | None = None
 
 
 class EncoderConfig(BaseModel):
@@ -60,9 +60,9 @@ class RegressionHeadConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     task_name: str
-    activation_fn: Callable
-    hidden_dimensions: list[int]
-    input_dimensions: int
+    activation_fn: Callable = torch.nn.SiLU()
+    hidden_dimensions: list[int] = [512, 256, 128]
+    input_dimensions: int | None = None
 
     @field_validator("activation_fn", mode="before")
     @classmethod
@@ -82,8 +82,9 @@ class RegressionHeadConfig(BaseModel):
 class EmbeddingPreprocessConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    input_irreps: IrrepType
-    pseudoscalars: bool
+    pseudoscalars: bool = True
+    pseudoscalar_dimension: int  # This does not actually change anything atm, because we have to think more about how to exactly compute the pseudoscalars. Should this be the dimension of the embedding space that gets computed by the linear layers, or should this be the output dimensions of the pseudscalars. It is not clear yet, whether we would actually want to change that, or is only the intermediate spaces should change.
+    input_irreps: IrrepType | None = None
     output_irreps: IrrepType | None = None
     input_embedding_size: int | None = None
     output_irreps_dim: int | None = None
@@ -92,7 +93,7 @@ class EmbeddingPreprocessConfig(BaseModel):
 
 class GlobalAggregatorConfig(BaseModel):
     aggregation_fn: Callable | Iterable[Callable]
-    input_dim: int
+    input_dim: int | None = None
     output_dim: int | None = None
 
     @field_validator("aggregation_fn", mode="before")
