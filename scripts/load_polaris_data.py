@@ -1,5 +1,5 @@
 from threedscriptors.configuration.data_config import DatasetConfig, DatasetTypes
-from threedscriptors.data_handling.dataset_factory import DatasetBuildingDirector
+from threedscriptors.data_handling.dataset_builder import DatasetBuildingDirector
 from threedscriptors.data_handling.polaris_preprocessing import load_polaris_dataset
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 

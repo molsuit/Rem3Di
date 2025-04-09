@@ -100,5 +100,5 @@ class ModelBuilder:
 
             return regression_heads
         else:
-            # Build single regression head
+            # Build single regression head, but should probably get rid of this as the single regression head could also be multihead with tasks  = [task]
             raise NotImplementedError

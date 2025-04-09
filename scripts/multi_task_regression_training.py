@@ -9,7 +9,7 @@ from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
 )
 from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.data_handling.dataset_factory import DatasetBuildingDirector
+from threedscriptors.data_handling.dataset_builder import DatasetBuildingDirector
 from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.training.regression_training import multitask_masked_loss
 
