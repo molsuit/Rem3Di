@@ -15,6 +15,17 @@ from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 from threedscriptors.model.transformer_components import TransformerEncoder
 
 
+def get_mirrored_molecules(molecules: list[Atoms]):
+    mirrored_molecules = []
+
+    for mol in molecules:
+        mirrored_mol = mol.copy()
+        mirrored_mol.set_positions(-mol.get_positions())
+        mirrored_molecules.append(mirrored_mol)
+
+    return mirrored_molecules
+
+
 def relax_atoms(atoms: Atoms, calculator: MACECalculator, BFGS_tol=0.05, max_steps=100):
     atoms.calc = calculator
     dyn = LBFGS(atoms, logfile=None)

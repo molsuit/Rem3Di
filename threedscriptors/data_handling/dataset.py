@@ -128,10 +128,8 @@ class BaseAtomicDataset(data.Dataset):
 
         mean = np.mean(regression_targets, axis=0, where=self.regression_masks)
 
-        print(mean)
-
         std = np.std(regression_targets, axis=0, where=self.regression_masks)
-        print(std)
+
         self.regression_targets = (regression_targets - mean) / std
 
         for task, task_mean, task_std in zip(

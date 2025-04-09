@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from itertools import pairwise
+from math import ceil
 
 import numpy as np
 import torch
@@ -11,6 +13,7 @@ from threedscriptors.configuration.config_utils import from_yaml
 from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.data_handling.data_utils import (
     get_ase_atoms_with_conformers,
+    get_mirrored_molecules,
     has_task_with_auxillary_data,
     relax_atoms,
 )
@@ -146,6 +149,102 @@ class DatasetBuilder:
             index_list=index_list,
         )
 
+    @classmethod
+    def load_pairwise_chiral_structures_from_smiles(
+        cls, iterator: SmilesIterator, dataset_config: DatasetConfig
+    ):
+        smiles_list = []
+        index_list = []  # index list describes to which smiles index a datapoint belongs.
+        molecules = []
+
+        smiles_counter = 0
+
+        data_points_counter = 0
+
+        iterator = pairwise(iterator)
+
+        mace_calculator = MACECalculator(
+            dataset_config.embedding_model, device="cuda", enable_cueq=True
+        )
+
+        ### Returns a dataset with already relaxed (and mirrored!!!) Structures
+
+        # Somewhere there should be an assert that odd features change sign...
+
+        with tqdm(total=dataset_config.N_molecules) as pbar:
+            while data_points_counter < dataset_config.N_molecules:
+                try:
+                    smiles_0, smiles_1 = next(
+                        iterator
+                    )  # pairwise iterator returns enantiomer pairs
+                except StopIteration:
+                    print(
+                        f"Reached StopIteration prematurely. Completed reading {data_points_counter} molecules."
+                    )
+                    break
+
+                try:
+                    total_N_conformers = min(
+                        dataset_config.N_conformers,
+                        dataset_config.N_molecules - data_points_counter,
+                    )  # This ensures that the dataloading does not overshoot the targeted number of molecules
+
+                    N_conformers_per_enantiomer = int(ceil(total_N_conformers / 2))
+                    embeded_molecules_0 = get_ase_atoms_with_conformers(
+                        smiles_0, N_conformers_per_enantiomer
+                    )
+                    if len(embeded_molecules_0) == 0:
+                        print(
+                            f"Error Embedding Smiles {smiles_0}, No. {smiles_counter}"
+                        )
+
+                    # relax embedded_molecules
+                    for mol in embeded_molecules_0:
+                        relax_atoms(
+                            mol,
+                            mace_calculator,
+                            BFGS_tol=dataset_config.BFGS_tol,
+                            max_steps=dataset_config.BFGS_max_steps,
+                        )
+
+                    embeded_molecules_1 = get_mirrored_molecules(embeded_molecules_0)
+
+                except ValueError as ve:
+                    tqdm.write(
+                        f"Error with Generating Conformers for Smiles {smiles_0}: {ve}"
+                    )
+                N_confs_per_enantionmer = len(embeded_molecules_0)
+                N_total_confs = 2 * N_confs_per_enantionmer
+
+                smiles_list.extend(
+                    [smiles_0] * N_confs_per_enantionmer
+                    + [smiles_1] * N_confs_per_enantionmer
+                )
+                index_list.extend(
+                    [smiles_counter] * N_confs_per_enantionmer
+                    + [smiles_counter + 1] * N_conformers_per_enantiomer
+                )
+                molecules.extend(embeded_molecules_0 + embeded_molecules_1)
+                data_points_counter += N_total_confs
+                pbar.update(N_total_confs)
+
+                smiles_counter = smiles_counter + 2
+
+        num_molecules = len(molecules)
+        dataset_config.N_molecules = num_molecules
+
+        print(
+            f"Read a total of {data_points_counter} from {smiles_counter} distinct SMILES"
+        )
+        return cls(
+            dataset=BaseAtomicDataset(
+                molecules=molecules,
+                dataset_config=dataset_config,
+                smiles_list=smiles_list,
+            ),
+            index_list=index_list,
+        )
+
     def relax_structures(self, mace_calculator: MACECalculator):
         # TODO: I recently saw https://github.com/Radical-AI/torch-sim, which could speed up the relaxation, because it batches ase atoms. Speedup they give is 18x for 108 atoms per molecule on a H100, much faster for smaller systems.(up to 100x for batch of 16 atoms systems )
 
@@ -231,8 +330,16 @@ class DatasetBuilder:
         assert self.index_list is not None
 
         # Transform the regression labels from 1 per smiles to 1 per conformer
-        self.dataset.regression_targets = regression_targets[self.index_list, :]
-        self.dataset.regression_masks = regression_masks[self.index_list, :]
+        if regression_targets.ndim == 1:
+            self.dataset.regression_targets = regression_targets[self.index_list]
+            self.dataset.regression_masks = regression_masks[self.index_list]
+        elif regression_targets.ndim == 2:
+            self.dataset.regression_targets = regression_targets[self.index_list, :]
+            self.dataset.regression_masks = regression_masks[self.index_list, :]
+        else:
+            raise ValueError(
+                "Regression Target Array has unexpected numbers of dimensions"
+            )
 
     def reload_regression_data(self, directory):
         regression_targets_arr = np.load(directory + "/regression_targets.npy")
@@ -398,6 +505,56 @@ class DatasetBuildingDirector:
 
         if return_normalized_targets:
             assert isinstance(dataset, RegressionAtomEmbeddingDataset)
+            dataset.normalize_regression_targets()
+
+        return cls(builder=builder), dataset
+
+    @classmethod
+    def build_chiral_dataset(
+        cls,
+        iterator: SmilesIterator,
+        dataset_config: DatasetConfig,
+        regression_targets=None,
+        regression_masks=None,
+        auxillary_data=None,
+        return_normalized_targets: bool = False,
+    ):
+        builder = DatasetBuilder.load_pairwise_chiral_structures_from_smiles(
+            iterator=iterator, dataset_config=dataset_config
+        )
+
+        construction_recepie = cls.check_config(builder.dataset.dataset_config)
+
+        if construction_recepie.build_atomic_embeddings:
+            assert dataset_config.embedding_model is not None
+
+            embedding_model = MACECalculator(
+                model_paths=dataset_config.embedding_model,
+                device="cuda",
+                enable_cueq=True,
+            )
+
+            builder.calculate_atomic_embeddings(
+                calculator=embedding_model,
+                embedding_size=get_mace_calculator_embedding_dimension(embedding_model),
+            )
+
+        if construction_recepie.build_regression_targets:
+            assert regression_masks is not None and regression_targets is not None
+
+            builder.add_regression_data(
+                regression_targets=regression_targets, regression_masks=regression_masks
+            )
+
+        if construction_recepie.build_auxillary_data:
+            assert auxillary_data
+            builder.add_auxillary_data(auxillary_data=auxillary_data)
+
+        dataset = builder.get_dataset()
+
+        if return_normalized_targets:
+            assert isinstance(dataset, RegressionAtomEmbeddingDataset)
+
             dataset.normalize_regression_targets()
 
         return cls(builder=builder), dataset
