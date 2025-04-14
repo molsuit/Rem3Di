@@ -21,15 +21,12 @@ class FileSmilesIterator(SmilesIterator):
         return self
 
     def __next__(self):
-        while True:
-            if self.buffer:
-                return self.buffer.pop(0)
-            try:
-                line = next(self.iterator)
-                self.buffer = line.strip().split()
-            except StopIteration:
-                self.close()
-                raise
+        try:
+            smiles = next(self.iterator)[:-1]
+            return smiles
+        except StopIteration:
+            self.close()
+            raise
 
     def close(self):
         if self.file and not self.file.closed:

@@ -2,7 +2,7 @@ import numpy.testing as npt
 import torch
 from mace.calculators import mace_mp
 
-from threedscriptors.data_handling.preprocessing import get_ase_atoms
+from threedscriptors.data_handling.data_utils import get_ase_atoms
 from threedscriptors.model.atomic_descriptor_preprocess import PseudoscalarGenerator
 from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature
 

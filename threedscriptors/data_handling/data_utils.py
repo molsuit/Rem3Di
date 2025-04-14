@@ -1,4 +1,5 @@
 import math
+from collections.abc import Sequence
 
 import rdkit.Chem as Chem
 import torch
@@ -9,9 +10,20 @@ from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 from rdkit2ase import rdkit2ase
 
-from threedscriptors.data_handling.data_config import DatasetConfig
+from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 from threedscriptors.model.transformer_components import TransformerEncoder
+
+
+def get_mirrored_molecules(molecules: list[Atoms]):
+    mirrored_molecules = []
+
+    for mol in molecules:
+        mirrored_mol = mol.copy()
+        mirrored_mol.set_positions(-mol.get_positions())
+        mirrored_molecules.append(mirrored_mol)
+
+    return mirrored_molecules
 
 
 def relax_atoms(atoms: Atoms, calculator: MACECalculator, BFGS_tol=0.05, max_steps=100):
@@ -127,3 +139,11 @@ def get_global_descriptor(
         global_descriptor = encoder(mace_des)
 
     return global_descriptor
+
+
+def has_task_with_auxillary_data(tasks: Sequence[TaskConfig]) -> bool:
+    for task in tasks:
+        if task.has_auxillary_data:
+            return True
+
+    return False
