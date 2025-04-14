@@ -1,6 +1,6 @@
-from torch import cat, nn
+from torch import nn
 
-from threedscriptors.model.architecture_config import GlobalAggregatorConfig
+from threedscriptors.configuration.architecture_config import GlobalAggregatorConfig
 
 
 class GlobalAggregator(nn.Module):
@@ -8,9 +8,12 @@ class GlobalAggregator(nn.Module):
         super().__init__()
         self.config = global_aggregator_config
         self.aggregation_fns = global_aggregator_config.aggregation_fn
-        self.config.output_dim = len(self.aggregation_fns) * self.config.input_dim
+        self.config.output_dim = (
+            self.config.input_dim
+        )  # len(self.aggregation_fns) * self.config.input_dim
 
     def forward(self, x):
-        intermediates = [f(x, dim=1) for f in self.aggregation_fns]
-        out = cat(intermediates, dim=-1)
+        out = self.aggregation_fns(x, dim=1)
+        # intermediates = [f(x, dim=1) for f in self.aggregation_fns]
+        # out = cat(intermediates, dim=-1)
         return out

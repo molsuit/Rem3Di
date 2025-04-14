@@ -3,7 +3,7 @@ from e3nn import o3
 from mace.modules.blocks import tp_out_irreps_with_instructions
 from torch import nn
 
-from threedscriptors.model.architecture_config import EmbeddingPreprocessConfig
+from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
 from threedscriptors.utils.model_utils import get_invariant_indices, remove_equivariants
 
 
@@ -82,6 +82,7 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             atomic_embedding[:],
             self.lin(self.tp_1(atomic_embedding[:], self.lin0(atomic_embedding[:]))),
         )
+
         # remove the equivariant part
         atomic_embedding = remove_equivariants(atomic_embedding, self.invariant_indices)
 

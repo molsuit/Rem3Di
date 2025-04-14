@@ -1,4 +1,5 @@
 import math
+from collections.abc import Sequence
 
 import rdkit.Chem as Chem
 import torch
@@ -9,9 +10,20 @@ from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 from rdkit2ase import rdkit2ase
 
-from threedscriptors.data_handling.data_config import DatasetConfig
+from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 from threedscriptors.model.transformer_components import TransformerEncoder
+
+
+def get_mirrored_molecules(molecules: list[Atoms]):
+    mirrored_molecules = []
+
+    for mol in molecules:
+        mirrored_mol = mol.copy()
+        mirrored_mol.set_positions(-mol.get_positions())
+        mirrored_molecules.append(mirrored_mol)
+
+    return mirrored_molecules
 
 
 def relax_atoms(atoms: Atoms, calculator: MACECalculator, BFGS_tol=0.05, max_steps=100):
@@ -25,9 +37,17 @@ def relax_atoms(atoms: Atoms, calculator: MACECalculator, BFGS_tol=0.05, max_ste
 def get_ase_atoms(smiles) -> Atoms:
     mol = Chem.MolFromSmiles(smiles)
     mol = Chem.AddHs(mol)
-    AllChem.EmbedMolecule(
+    returncode = AllChem.EmbedMolecule(
         mol, useBasicKnowledge=True, useExpTorsionAnglePrefs=True, randomSeed=-1
     )
+
+    if returncode == -1:
+        AllChem.EmbedMolecule(
+            mol,
+            useRandomCoords=True,
+            randomSeed=-1,
+        )
+
     atoms = rdkit2ase(mol)
     return atoms
 
@@ -35,7 +55,10 @@ def get_ase_atoms(smiles) -> Atoms:
 def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
     mol = Chem.MolFromSmiles(smiles)
     mol = Chem.AddHs(mol)
-    EmbedMultipleConfs(mol, numConfs=N_conformers, numThreads=N_conformers)
+    EmbedMultipleConfs(
+        mol, numConfs=N_conformers, numThreads=N_conformers, maxAttempts=5000
+    )
+
     confs = [
         Atoms(
             positions=conf.GetPositions(),
@@ -43,6 +66,12 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
         )
         for conf in mol.GetConformers()
     ]
+
+    # if mol.GetNumConformers() != N_conformers:
+    #    print("Failed Embedding Multi Confs, trying again with random coords")
+    #
+    #    EmbedMultipleConfs(mol, numConfs=N_conformers, numThreads=N_conformers,maxAttempts=100000, useRandomCoords= True, forceTol=1)
+
     return confs
 
 
@@ -52,7 +81,10 @@ def get_relaxed_conformers(
     dataset_config: DatasetConfig,
     N_conformers: int,
 ):
-    confs = get_ase_atoms_with_conformers(smiles, N_conformers)
+    if N_conformers == 1:
+        confs = [get_ase_atoms(smiles)]
+    else:
+        confs = get_ase_atoms_with_conformers(smiles, N_conformers)
 
     molecules = []
 
@@ -65,6 +97,7 @@ def get_relaxed_conformers(
                 dataset_config.BFGS_max_steps,
             )
         except ValueError:
+            print("Molecule did not relax.")
             continue
         else:
             molecules.append(atoms)
@@ -106,3 +139,11 @@ def get_global_descriptor(
         global_descriptor = encoder(mace_des)
 
     return global_descriptor
+
+
+def has_task_with_auxillary_data(tasks: Sequence[TaskConfig]) -> bool:
+    for task in tasks:
+        if task.has_auxillary_data:
+            return True
+
+    return False

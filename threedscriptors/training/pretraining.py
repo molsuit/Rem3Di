@@ -1,8 +1,8 @@
 import torch
 from torch.optim import Optimizer
 
+from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.model.transformer_components import Transformer
-from threedscriptors.training.training_config import TrainingConfig
 
 
 def get_random_mask(padding_mask, masking_probability=0.15):

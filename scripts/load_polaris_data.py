@@ -1,67 +1,37 @@
-import polaris as po
-from mace.calculators import mace_off
-
-from threedscriptors.data_handling.data_config import DatasetConfig
-from threedscriptors.data_handling.dataset import DatasetFactory
-from threedscriptors.data_handling.polaris_helper import pretreat_polaris_dataset
-from threedscriptors.data_handling.preprocessing import (
-    get_max_molecule_size,
-)
+from threedscriptors.configuration.data_config import DatasetConfig, DatasetTypes
+from threedscriptors.data_handling.dataset_builder import DatasetBuildingDirector
+from threedscriptors.data_handling.polaris_preprocessing import load_polaris_dataset
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 
-# Load the benchmark from the Hub
-dataset = po.load_dataset("biogen/adme-fang-v1")
+# Load the benchmark from polarishub
+dataset, tasks = load_polaris_dataset("asap-discovery/antiviral-admet-2025-unblinded")
 
-
-smiles = dataset.table["MOL_smiles"].to_list()
-target_cols = ["LOG_HLM_CLint", "LOG_RLM_CLint", "LOG_SOLUBILITY", "LOG_MDR1-MDCK_ER"]
-targets = dataset.table[target_cols].to_numpy()
-
-# benchmark = po.load_benchmark("biogen/adme-fang-SOLU-reg-v1")
-## Get the train and test data-loaders
-# train, test = benchmark.get_train_test_split()
-# smiles = train.inputs
-##targets = train.targets
-#
-# print(smiles)
-# print(targets)
-# print(train.target_cols)
-
-
-MODEL_DIR = "/data/fast-pc-06/snw30/projects/models"
-MACE_PATH = f"{MODEL_DIR}/MACE-OFF23b_medium.model"
-
-mace_calculator = mace_off("medium", "cuda", enable_cueq=True)
-
-
-dataset_config = DatasetConfig(
-    target_cols,
-    N_molecules=35000,
-    max_atoms=None,
-    BFGS_max_steps=500,
-    BFGS_tol=0.5,
-    dataset_type="Regression",
-    chirality=True,
-    N_conformers=10,
-)
-
-if dataset_config.max_atoms is None:
-    smiles_iterator = ListSmilesIterator(smiles)
-    dataset_config.max_atoms = get_max_molecule_size(smiles_iterator)
-
-
-smiles, regression_targets, regression_masks = pretreat_polaris_dataset(smiles, targets)
-
-
-smiles_iterator = ListSmilesIterator(smiles)
-dataset = DatasetFactory.from_smiles(
-    smiles_iterator,
-    mace_calculator,
-    dataset_config,
-    regression_targets,
-    regression_masks,
-)
-
-dataset.store_data_to_disk(
+dataset_directory = (
     "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/test"
 )
+
+MACE_PATH = (
+    "/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model"
+)
+# Get the train and test data-loaders
+
+dataset_config = DatasetConfig(
+    N_molecules=50,
+    dataset_type=DatasetTypes.REGRESSION,
+    BFGS_tol=0.2,
+    BFGS_max_steps=500,
+    N_conformers=1,
+    embedding_model=MACE_PATH,
+    max_atoms=None,
+    tasks=tasks,
+)
+
+smiles_iterator = ListSmilesIterator(dataset.smiles)
+_, dataset = DatasetBuildingDirector.build_dataset(
+    iterator=smiles_iterator,
+    dataset_config=dataset_config,
+    regression_targets=dataset.regression_targets,
+    regression_masks=dataset.regression_masks,
+)
+
+dataset.store_data_to_disk(dataset_directory)

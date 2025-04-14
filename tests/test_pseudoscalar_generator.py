@@ -1,10 +1,10 @@
 import numpy.testing as npt
 import torch
 from e3nn.o3 import Irreps
-from mace.calculators import MACECalculator
+from mace.calculators import mace_mp
 
-from threedscriptors.data_handling.preprocessing import get_ase_atoms
-from threedscriptors.model.architecture_config import EmbeddingPreprocessConfig
+from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
+from threedscriptors.data_handling.data_utils import get_ase_atoms
 from threedscriptors.model.atomic_descriptor_preprocess import PseudoscalarGenerator
 from threedscriptors.utils.model_utils import (
     get_invariant_indices,
@@ -25,10 +25,7 @@ def test_pseudoscalar_generator():
     smiles = "CC(N)O"
     atoms = get_ase_atoms(smiles)
 
-    calc = MACECalculator(
-        model_paths="/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model",
-        device="cpu",
-    )
+    calc = mace_mp("medium")
 
     pos = atoms.get_positions()
     atoms2 = atoms.copy()
@@ -42,7 +39,7 @@ def test_pseudoscalar_generator():
     calculator_irreps = get_mace_calculator_irrep_signature(calc)
 
     embedding_preprocessor_config = EmbeddingPreprocessConfig(
-        input_irreps=calculator_irreps, pseudoscalars=True
+        input_irreps=calculator_irreps, pseudoscalars=True, pseudoscalar_dimension=128
     )
     ps_generator = PseudoscalarGenerator(embedding_preprocessor_config)
 
