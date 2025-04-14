@@ -16,7 +16,9 @@ dependencies = [
     "rdkit>=2024.9.4",
     "wandb",
     "pydantic",
-    "pydantic_yaml"
+    "pydantic_yaml",
+    "rdkit2ase",
+    "mace-torch==0.3.10"
 ]
 [project.optional-dependencies]
 cuequivariance = [

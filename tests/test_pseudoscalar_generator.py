@@ -1,7 +1,7 @@
 import numpy.testing as npt
 import torch
 from e3nn.o3 import Irreps
-from mace.calculators import MACECalculator
+from mace.calculators import mace_mp
 
 from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
 from threedscriptors.data_handling.data_utils import get_ase_atoms
@@ -25,10 +25,7 @@ def test_pseudoscalar_generator():
     smiles = "CC(N)O"
     atoms = get_ase_atoms(smiles)
 
-    calc = MACECalculator(
-        model_paths="/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model",
-        device="cpu",
-    )
+    calc = mace_mp("medium")
 
     pos = atoms.get_positions()
     atoms2 = atoms.copy()

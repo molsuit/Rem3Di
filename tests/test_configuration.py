@@ -1,3 +1,5 @@
+from importlib import resources
+
 import pydantic_yaml as pyaml
 import torch
 
@@ -91,8 +93,9 @@ def test_function_reconstruction():
 
 
 def test_model_reconstruction():
-    test_yaml_path = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/tests/test_architecture_config.yaml"
-    architecture_config = from_yaml(test_yaml_path, ArchitectureConfig)
+    yaml_file = resources.files("tests") / "test_architecture_config.yaml"
+
+    architecture_config = from_yaml(yaml_file, ArchitectureConfig)
 
     print(architecture_config)
     builder = ModelBuilder(architecture_config)
@@ -104,8 +107,9 @@ def test_model_reconstruction():
 
 
 def test_model_construction_from_yaml():
-    test_file = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/tests/test_architecture_config.yaml"
-    architecture_config = pyaml.parse_yaml_file_as(ArchitectureConfig, test_file)
+    yaml_file = resources.files("tests") / "test_architecture_config.yaml"
+
+    architecture_config = from_yaml(yaml_file, ArchitectureConfig)
 
     try:
         _ = ModelBuilder(architecture_config=architecture_config).build_model()
