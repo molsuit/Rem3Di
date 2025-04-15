@@ -8,6 +8,11 @@ from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 from threedscriptors.configuration.config_utils import IrrepType
 
 
+class HeadType(Enum):
+    RESDIUAL = "residual"
+    FULLY_CONNECTED = "fully_connected"
+
+
 class Activations(Enum):
     SILU = "SiLU"
     GELU = "gelu"
@@ -59,10 +64,11 @@ class EncoderConfig(BaseModel):
 class RegressionHeadConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    task_name: str
+    task_name: str | None = None
     activation_fn: Callable = torch.nn.SiLU()
     hidden_dimensions: list[int] = [256, 128]
     input_dimensions: int | None = None
+    head_type: HeadType = HeadType.FULLY_CONNECTED
 
     @field_validator("activation_fn", mode="before")
     @classmethod

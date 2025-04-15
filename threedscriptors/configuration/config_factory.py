@@ -79,10 +79,14 @@ class ConfigFactory:
                 self.global_aggregator_config.input_dim
             )
 
-    def process_regression_heads_config(self) -> list[RegressionHeadConfig]:
+    def process_regression_heads_config(
+        self, head_config_template: RegressionHeadConfig
+    ) -> list[RegressionHeadConfig]:
         regression_heads = []
 
         for task in self.dataset_config.tasks:
+            head_config = head_config_template.model_copy(deep=True)
+
             if task.auxillary_data_dimension is not None:
                 input_dim = (
                     self.global_aggregator_config.output_dim
@@ -91,21 +95,21 @@ class ConfigFactory:
             else:
                 input_dim = self.global_aggregator_config.output_dim
 
-            regression_heads.append(
-                RegressionHeadConfig(
-                    task_name=task.task_name, input_dimensions=input_dim
-                )
-            )
+            head_config.task_name = task.task_name
+            head_config.input_dimensions = input_dim
+            regression_heads.append(head_config)
 
         return regression_heads
 
-    def create_architecture_config_template(self, model_directory):
+    def create_architecture_config_template(
+        self, model_directory, head_config_template: RegressionHeadConfig
+    ):
         # Creates the architecture config with default values and the
 
         self.process_preprocessor_config()
         self.process_attention_layer_config()
         self.process_global_aggregator_config()
-        regression_heads = self.process_regression_heads_config()
+        regression_heads = self.process_regression_heads_config(head_config_template)
 
         architecture_config = ArchitectureConfig(
             embedding_preprocess_config=self.embedding_preprocessor_config,

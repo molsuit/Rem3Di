@@ -3,7 +3,10 @@ from itertools import pairwise
 import torch
 import torch.nn as nn
 
-from threedscriptors.configuration.architecture_config import RegressionHeadConfig
+from threedscriptors.configuration.architecture_config import (
+    HeadType,
+    RegressionHeadConfig,
+)
 from threedscriptors.model.atomic_descriptor_preprocess import (
     AtomicDescriptorPreprocess,
 )
@@ -11,28 +14,45 @@ from threedscriptors.model.global_aggregator import GlobalAggregator
 from threedscriptors.model.transformer_components import TransformerEncoder
 
 
-class SingleRegressionModel(nn.Module):
-    def __init__(self, hidden_dim, output_dim, encoder: TransformerEncoder):
-        super().__init__()
+class ResidualBlock(nn.Module):
+    def __init__(self, in_dim: int, out_dim: int, activation_fn: nn.Module):
+        super(self).__init__()
+        # Layer normalization applied to the input.
+        self.norm = nn.LayerNorm(in_dim)
+        self.linear = nn.Linear(in_dim, out_dim)
+        self.activation = activation_fn
 
-        self.encoder = encoder
-        input_dim = encoder.layers[0].embedding_dim
+        if in_dim != out_dim:
+            self.projection = nn.Linear(in_dim, out_dim)
+        else:
+            self.projection = nn.Identity()
 
-        self.norm = nn.LayerNorm(input_dim)
-        self.activation = nn.SiLU()
-        self.linear1 = nn.Linear(input_dim, output_dim)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Pre-norm: normalize the input.
+        x_norm = self.norm(x)
+        # Main branch transformation on normalized input.
+        out = self.linear(x_norm)
+        out = self.activation(out)
+        # Residual shortcut
+        residual = self.projection(x)
+        # Elementwise addition.
+        return out + residual
 
-    def forward(self, x, padding_mask=None):
-        x = self.encoder(x, padding_mask)
-        x = self.norm(x)
-        x = self.activation(x)
-        x = self.linear1(x)
-        return x
 
+class FullyConnectedBlock(nn.Module):
+    def __init__(self, in_dim: int, out_dim: int, activation_fn: nn.Module):
+        super(self).__init__()
 
-class FusedMultiHeadRegression(nn.Module):
-    # A class that implements the fused calulation of regression heads by using the torch.bmm (batched matrix multiply) instead of sequentially calculating each head.
-    pass
+        self.linear = nn.Linear(in_dim, out_dim)
+        self.norm = nn.LayerNorm(out_dim)
+        self.activation = activation_fn
+
+    def forward(self, x: torch.Tensor):
+        out = self.linear(x)
+        out = self.norm(out)
+        out = self.activation(out)
+
+        return out
 
 
 class MultitaskHeads(nn.Module):
@@ -63,17 +83,22 @@ class MultitaskHeads(nn.Module):
         """
         head = nn.Sequential()
 
-        # TODO: Should there be an initial layer normalization, and activation function immediately after the molecular descriptor?
+        head.add_module("initial_norm", nn.LayerNorm(head_config.input_dimensions))
 
         dimensions = [head_config.input_dimensions, *head_config.hidden_dimensions]
 
         for idx, (in_dim, out_dim) in enumerate(pairwise(dimensions)):
-            head.add_module(
-                f"linear_{idx}",
-                nn.Linear(in_dim, out_dim),
-            )
-
-            head.add_module("activation", head_config.activation_fn)
+            if head_config.head_type == HeadType.FULLY_CONNECTED:
+                head.add_module(
+                    f"fully_connected_{idx}",
+                    FullyConnectedBlock(in_dim, out_dim, head_config.activation_fn),
+                )
+            elif head_config.head_type == HeadType.RESDIUAL:
+                head.add_module(
+                    f"residual_{idx}",
+                    ResidualBlock(in_dim, out_dim, head_config.activation_fn),
+                )
+                print("added res block")
 
         head.add_module(
             f"linear_{idx + 1}",
@@ -128,3 +153,8 @@ class MultiTaskRegressionModel(nn.Module):
         descriptor = self.global_aggregator(x)
 
         return descriptor
+
+
+class FusedMultiHeadRegression(nn.Module):
+    # A class that implements the fused calulation of regression heads by using the torch.bmm (batched matrix multiply) instead of sequentially calculating each head.
+    pass
