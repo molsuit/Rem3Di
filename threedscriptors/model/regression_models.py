@@ -16,9 +16,9 @@ from threedscriptors.model.transformer_components import TransformerEncoder
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, activation_fn: nn.Module):
-        super(self).__init__()
+        super().__init__()
         # Layer normalization applied to the input.
-        self.norm = nn.LayerNorm(in_dim)
+        self.norm = nn.LayerNorm(out_dim)
         self.linear = nn.Linear(in_dim, out_dim)
         self.activation = activation_fn
 
@@ -29,19 +29,20 @@ class ResidualBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Pre-norm: normalize the input.
-        x_norm = self.norm(x)
         # Main branch transformation on normalized input.
-        out = self.linear(x_norm)
+        out = self.linear(x)
         out = self.activation(out)
         # Residual shortcut
         residual = self.projection(x)
+        out = out + residual
+        out = self.norm(out)
         # Elementwise addition.
-        return out + residual
+        return out
 
 
 class FullyConnectedBlock(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, activation_fn: nn.Module):
-        super(self).__init__()
+        super().__init__()
 
         self.linear = nn.Linear(in_dim, out_dim)
         self.norm = nn.LayerNorm(out_dim)
