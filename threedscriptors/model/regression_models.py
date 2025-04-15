@@ -87,7 +87,8 @@ class MultitaskHeads(nn.Module):
 
         for name, head in self.task_heads.items():
             if auxillary_data is not None and name in auxillary_data:
-                input_data = torch.cat((descriptor, auxillary_data["name"]))
+                aux = auxillary_data[name].to(descriptor.device)
+                input_data = torch.cat((descriptor, aux), dim=1)
                 preds.append(head(input_data))
             else:
                 preds.append(head(descriptor))
@@ -110,9 +111,7 @@ class MultiTaskRegressionModel(nn.Module):
         self.global_aggregator = global_aggregator
 
     def forward(self, x, padding_mask=None, auxillary_data: dict | None = None):
-        x = self.preprocessor(x)
-        x = self.encoder(x, padding_mask)
-        descriptor = self.global_aggregator(x)
+        descriptor = self.get_molecular_descriptor(x, padding_mask)
 
         preds = self.multitask_heads(descriptor, auxillary_data)
         # Compute outputs from each head.
@@ -122,3 +121,10 @@ class MultiTaskRegressionModel(nn.Module):
         # Final shape: (batch_size, N_tasks * output_dim)
         pred = torch.cat(preds, dim=-1)
         return pred
+
+    def get_molecular_descriptor(self, x, padding_mask=None):
+        x = self.preprocessor(x)
+        x = self.encoder(x, padding_mask)
+        descriptor = self.global_aggregator(x)
+
+        return descriptor

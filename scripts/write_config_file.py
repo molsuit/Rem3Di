@@ -9,20 +9,20 @@ from threedscriptors.configuration.architecture_config import (
 from threedscriptors.configuration.config_factory import ConfigFactory
 from threedscriptors.configuration.data_config import DatasetConfig
 
-config_file = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/test/dataset_config.yaml"
+config_file = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/cmrt/dataset_config.yaml"
 dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, config_file)
 
 
-model_dir = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/test/"
+model_dir = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/cmrt_nops/"
 
 
 embedding_preprocessor_config = EmbeddingPreprocessConfig(
-    pseudoscalars=True, pseudoscalar_dimension=8
+    pseudoscalars=False, pseudoscalar_dimension=0, pseudoscalar_embedding_dim=0
 )
 
 attention_layer_config = AttentionLayerConfig(
     num_heads=8,
-    dim_feedforward=512,
+    dim_feedforward=256,
     dropout=0.3,
 )
 

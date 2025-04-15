@@ -61,7 +61,7 @@ class RegressionHeadConfig(BaseModel):
 
     task_name: str
     activation_fn: Callable = torch.nn.SiLU()
-    hidden_dimensions: list[int] = [512, 256, 128]
+    hidden_dimensions: list[int] = [256, 128]
     input_dimensions: int | None = None
 
     @field_validator("activation_fn", mode="before")
@@ -84,6 +84,7 @@ class EmbeddingPreprocessConfig(BaseModel):
 
     pseudoscalars: bool = True
     pseudoscalar_dimension: int  # This does not actually change anything atm, because we have to think more about how to exactly compute the pseudoscalars. Should this be the dimension of the embedding space that gets computed by the linear layers, or should this be the output dimensions of the pseudscalars. It is not clear yet, whether we would actually want to change that, or is only the intermediate spaces should change.
+    pseudoscalar_embedding_dim: int | None = None
     input_irreps: IrrepType | None = None
     output_irreps: IrrepType | None = None
     input_embedding_size: int | None = None

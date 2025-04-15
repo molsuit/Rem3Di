@@ -38,6 +38,16 @@ class BaseAtomicDataset(data.Dataset):
     def __len__(self):
         return len(self.molecules)
 
+    def to_torch(self):
+        if self.embeddings is not None:
+            self.embeddings = torch.Tensor(self.embeddings)
+        if self.padding_mask is not None:
+            self.padding_mask = torch.Tensor(self.padding_mask)
+        if self.regression_masks is not None:
+            self.regression_masks = torch.Tensor(self.regression_masks)
+        if self.regression_targets is not None:
+            self.regression_targets = torch.Tensor(self.regression_targets)
+
     def get_max_atoms(self):
         if self.dataset_config.max_atoms is None:
             smiles_iterator = ListSmilesIterator(self.smiles_list)
@@ -149,6 +159,14 @@ class BaseAtomicDataset(data.Dataset):
 
         raise NotImplementedError
 
+    def normalize_atomic_embeddings(self):
+        masks = np.where(np.expand_dims(self.padding_mask, axis=-1) == 0.0, True, False)
+
+        mean_per_dim = np.mean(self.embeddings, axis=(0, 1), keepdims=True, where=masks)
+        std_per_dim = np.std(self.embeddings, axis=(0, 1), keepdims=True, where=masks)
+
+        self.embeddings = (self.embeddings - mean_per_dim) / std_per_dim
+
 
 class AtomEmbeddingDataset(BaseAtomicDataset):
     def __init__(
@@ -234,7 +252,6 @@ class RegressionAtomEmbeddingDatasetWithAuxillaryData(RegressionAtomEmbeddingDat
         auxillary_data = {
             k: self.auxillary_data[k][index, :] for k in self.auxillary_data.keys()
         }
-
         return (
             embeddings,
             padding_mask,
@@ -242,7 +259,3 @@ class RegressionAtomEmbeddingDatasetWithAuxillaryData(RegressionAtomEmbeddingDat
             regression_masks,
             auxillary_data,
         )
-
-    @staticmethod
-    def custom_auxillary_data_collate_fn(batch):
-        raise NotImplementedError

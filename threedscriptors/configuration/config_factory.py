@@ -46,11 +46,15 @@ class ConfigFactory:
         self.embedding_preprocessor_config.input_irreps = self.initial_irreps
         self.embedding_preprocessor_config.input_embedding_size = self.initial_irrep_dim
 
-        # WRONG, should drop the 1o components
+        if self.embedding_preprocessor_config.pseudoscalars:
+            _, self.embedding_preprocessor_config.output_irreps = get_invariant_indices(
+                self.embedding_preprocessor_config.input_irreps + Irreps("128x0o")
+            )
+        else:
+            _, self.embedding_preprocessor_config.output_irreps = get_invariant_indices(
+                self.embedding_preprocessor_config.input_irreps
+            )
 
-        _, self.embedding_preprocessor_config.output_irreps = get_invariant_indices(
-            self.embedding_preprocessor_config.input_irreps + Irreps("128x0o")
-        )
         self.embedding_preprocessor_config.output_irreps_dim = (
             self.embedding_preprocessor_config.output_irreps.dim
         )

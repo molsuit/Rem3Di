@@ -1,5 +1,3 @@
-import matplotlib.pyplot as plt
-
 from threedscriptors.configuration.data_config import DatasetConfig, DatasetTypes
 from threedscriptors.data_handling.cmrt_preprocessing import load_cmrt_data
 from threedscriptors.data_handling.dataset_builder import (
@@ -7,12 +5,11 @@ from threedscriptors.data_handling.dataset_builder import (
 )
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 
-smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data()
+smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
+    single_column_type=True
+)
 
 # Distribution of the training targets log(RT*v) retention_time * elution speed
-plt.figure()
-plt.hist(regression_targets, bins=50)
-plt.savefig("hist_rtxv.png")
 
 
 dataset_directory = (
@@ -25,11 +22,11 @@ MACE_PATH = (
 # Get the train and test data-loaders
 
 dataset_config = DatasetConfig(
-    N_molecules=50,
+    N_molecules=1000,
     dataset_type=DatasetTypes.REGRESSION,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
-    N_conformers=1,
+    N_conformers=32,
     embedding_model=MACE_PATH,
     max_atoms=None,
     tasks=tasks,
@@ -42,6 +39,5 @@ _, dataset = DatasetBuildingDirector.build_chiral_dataset(
     regression_targets=regression_targets,
     regression_masks=regression_masks,
     auxillary_data=aux_data,
-    return_normalized_targets=False,
 )
 dataset.store_data_to_disk(dataset_directory)

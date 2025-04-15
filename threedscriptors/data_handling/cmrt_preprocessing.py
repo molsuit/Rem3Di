@@ -21,13 +21,16 @@ def get_one_hot_columns_encodings(columns: list):
 def build_auxillary_data(column_type: list, proh_proportion: np.ndarray):
     column_array, _ = get_one_hot_columns_encodings(column_type)
 
-    aux_data = {"column_type": column_array, "proh_proportion": proh_proportion}
-    print(aux_data)
+    proh_proportion = proh_proportion.reshape(-1, 1)
+
+    # aux_data = {"column_type": column_array, "proh_proportion": proh_proportion}
+
+    arr = np.hstack((column_array, proh_proportion)).astype(np.float32)
+    aux_data = {"cmrt": arr}
     return aux_data
 
 
 def get_task_configs(aux_data: dict) -> TaskConfig:
-    print([v.shape[1] if v.ndim == 2 else 1 for v in aux_data.values()])
     aux_data_dim = sum([v.shape[1] if v.ndim == 2 else 1 for v in aux_data.values()])
 
     task = TaskConfig(
@@ -37,7 +40,7 @@ def get_task_configs(aux_data: dict) -> TaskConfig:
     return [task]
 
 
-def load_cmrt_data():
+def load_cmrt_data(single_column_type=False):
     # Load the CSV data. Replace 'data.csv' with your CSV file path.
     df = pd.read_csv(
         "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/cmrt/raw_data.csv",
@@ -47,6 +50,9 @@ def load_cmrt_data():
     # 1. Drop the "Literature" column.
     df = df.drop(columns=["Literature"])
     df = df[df["RT"] != 0]
+
+    if single_column_type:
+        df = df[df["Column"] == "ADH"]
 
     pair_indices = df["pair_index"].to_numpy()
 
@@ -60,9 +66,6 @@ def load_cmrt_data():
     )
 
     smiles = df["SMILES"]
-
-    print(min(df["RT"]))
-    print(min(df["Speed"]))
 
     regression_targets = np.log(df["RT"].to_numpy() * df["Speed"].to_numpy()).reshape(
         -1, 1

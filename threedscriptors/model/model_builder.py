@@ -1,5 +1,7 @@
 from collections.abc import Sequence
 
+import torch
+
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
 )
@@ -33,16 +35,20 @@ class ModelBuilder:
     def _reload_weights(self):
         if self.architecture_config.reload_full_model_weights:
             self.model.load_state_dict(
-                self.architecture_config.reload_full_model_weights
+                torch.load(self.architecture_config.reload_full_model_weights)
             )
         else:
             if self.architecture_config.embedding_preprocess_config.reload_state_dict:
                 self.model.preprocessor.load_state_dict(
-                    self.architecture_config.embedding_preprocess_config.reload_state_dict
+                    torch.load(
+                        self.architecture_config.embedding_preprocess_config.reload_state_dict
+                    )
                 )
             if self.architecture_config.encoder_config.reload_state_dict:
                 self.model.encoder.load_state_dict(
-                    self.architecture_config.encoder_config.reload_state_dict
+                    torch.load(
+                        self.architecture_config.encoder_config.reload_state_dict
+                    )
                 )
 
     def build_model(self):

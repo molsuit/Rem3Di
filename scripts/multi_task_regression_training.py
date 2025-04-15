@@ -1,3 +1,4 @@
+import numpy as np
 import pydantic_yaml as pyaml
 import torch
 from torch import optim
@@ -13,29 +14,42 @@ from threedscriptors.data_handling.dataset_builder import DatasetBuildingDirecto
 from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.training.regression_training import multitask_masked_loss
 
+torch.manual_seed(0)
+
+np.random.seed(0)
+
+
 training_config = TrainingConfig(
-    batch_size=32,
-    epochs=75,
-    learning_rate=1e-4,
-    wandb_active=False,
+    batch_size=128,
+    epochs=100,
+    learning_rate=2e-5,
+    max_grad_norm=1.0,
+    wandb_active=True,
     mace_model_path="/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model",
-    dataset_path="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/test",
-    model_dir="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/test",
+    dataset_path="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/cmrt",
+    model_dir="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/cmrt_ps",
+    normalized_atomic_descriptors=True,
+    normalized_targets=True,
 )
 
 
 _, dataset = DatasetBuildingDirector.reload_dataset(
-    directory=training_config.dataset_path, return_normalized_targets=True
+    directory=training_config.dataset_path,
+    return_normalized_targets=training_config.normalized_targets,
+    return_normalized_inputs=training_config.normalized_atomic_descriptors,
 )
 
-
-training_data, validation_data = random_split(dataset, [0.7, 0.3])
+training_data, validation_data = random_split(dataset, [0.8, 0.2])
 
 training_config.total_steps = len(training_data) * training_config.epochs
 
 
 training_loader = DataLoader(
-    training_data, batch_size=training_config.batch_size, shuffle=True, drop_last=True
+    training_data,
+    batch_size=training_config.batch_size,
+    shuffle=True,
+    drop_last=True,
+    pin_memory=True,
 )
 validation_loader = DataLoader(
     validation_data,
@@ -76,7 +90,10 @@ scheduler = OneCycleLR(
     optimizer, max_lr=training_config.learning_rate, total_steps=num_opt_steps
 )
 
+task_names = [task.task_name for task in dataset.dataset_config.tasks]
+stds = np.array([task.std for task in dataset.dataset_config.tasks])
 
+print("Starting Training")
 for epoch in range(training_config.epochs):
     running_tloss = 0.0
     weighed_loss_per_task_train = torch.zeros(
@@ -90,6 +107,7 @@ for epoch in range(training_config.epochs):
         padding_mask,
         regression_targets,
         regression_masks,
+        auxillary_data,
     ) in enumerate(training_loader):
         embeddings = embeddings.to(device)
         padding_mask = padding_mask.to(device)
@@ -98,7 +116,9 @@ for epoch in range(training_config.epochs):
 
         # TODO: Harmonize the definition of the padding mask. Torch True = padded, prev: True = not padded
 
-        prediction = model(embeddings, padding_mask=padding_mask)
+        prediction = model(
+            embeddings, padding_mask=padding_mask, auxillary_data=auxillary_data
+        )
 
         loss, batch_weighed_loss_per_task_train = multitask_masked_loss(
             predictions=prediction,
@@ -109,6 +129,11 @@ for epoch in range(training_config.epochs):
         weighed_loss_per_task_train += batch_weighed_loss_per_task_train.detach()
 
         loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(
+            model.parameters(), max_norm=training_config.max_grad_norm
+        )
+
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad()
@@ -132,13 +157,16 @@ for epoch in range(training_config.epochs):
             padding_mask,
             regression_targets,
             regression_masks,
+            auxillary_data,
         ) in enumerate(validation_loader):
             embeddings = embeddings.to(device)
             padding_mask = padding_mask.to(device)
             regression_targets = regression_targets.to(device)
             regression_masks = regression_masks.to(device)
 
-            prediction = model(embeddings, padding_mask=padding_mask)
+            prediction = model(
+                embeddings, padding_mask=padding_mask, auxillary_data=auxillary_data
+            )
 
             loss, batch_weighed_loss_per_task_val = multitask_masked_loss(
                 predictions=prediction,
@@ -159,18 +187,16 @@ for epoch in range(training_config.epochs):
         if training_config.wandb_active:
             val_dict = dict(
                 zip(
-                    dataset.dataset_config.target_cols,
-                    weighed_loss_per_task_val.cpu().detach().numpy()
-                    * dataset.dataset_config.std,
+                    task_names,
+                    weighed_loss_per_task_val.cpu().detach().numpy() * stds,
                     strict=False,
                 )
             )
 
             train_dict = dict(
                 zip(
-                    dataset.dataset_config.target_cols,
-                    weighed_loss_per_task_train.cpu().detach().numpy()
-                    * dataset.dataset_config.std,
+                    task_names,
+                    weighed_loss_per_task_train.cpu().detach().numpy() * stds,
                     strict=False,
                 )
             )
