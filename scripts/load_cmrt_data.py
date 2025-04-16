@@ -1,4 +1,8 @@
-from threedscriptors.configuration.data_config import DatasetConfig, DatasetTypes
+from threedscriptors.configuration.data_config import (
+    DatasetConfig,
+    DatasetTypes,
+    MaceCalculatorConfig,
+)
 from threedscriptors.data_handling.cmrt_preprocessing import load_cmrt_data
 from threedscriptors.data_handling.dataset_builder import (
     DatasetBuildingDirector,
@@ -21,13 +25,18 @@ MACE_PATH = (
 )
 # Get the train and test data-loaders
 
+embedding_model_config = MaceCalculatorConfig(
+    model_path=MACE_PATH, enable_cueq=True, device="cuda"
+)
+
+
 dataset_config = DatasetConfig(
     N_molecules=1000,
     dataset_type=DatasetTypes.REGRESSION,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
     N_conformers=32,
-    embedding_model=MACE_PATH,
+    embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
 )

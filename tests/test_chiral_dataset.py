@@ -1,11 +1,18 @@
-import numpy.testing as npt
-import pydantic_yaml as pyaml
+from importlib import resources
+
+import numpy as np
 import torch
+from mace.calculators import mace_mp
 
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
 )
-from threedscriptors.configuration.data_config import DatasetConfig, DatasetTypes
+from threedscriptors.configuration.config_utils import from_yaml
+from threedscriptors.configuration.data_config import (
+    DatasetConfig,
+    DatasetTypes,
+    MaceCalculatorConfig,
+)
 from threedscriptors.data_handling.cmrt_preprocessing import load_cmrt_data
 from threedscriptors.data_handling.dataset_builder import (
     DatasetBuildingDirector,
@@ -15,19 +22,21 @@ from threedscriptors.model.model_builder import ModelBuilder
 
 smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data()
 
+embedding_model_config = MaceCalculatorConfig(
+    mace_calc=mace_mp("medium", enable_cueq=True, device="cuda"),
+    model_name="MACE-MP0 medium",
+    enable_cueq=True,
+    device="cuda",
+)  # I know, not very elegant...
 
-MACE_PATH = (
-    "/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model"
-)
 # Get the train and test data-loaders
-
 dataset_config = DatasetConfig(
     N_molecules=2,
     dataset_type=DatasetTypes.REGRESSION,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
     N_conformers=2,
-    embedding_model=MACE_PATH,
+    embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
 )
@@ -42,19 +51,21 @@ db_director, dataset = DatasetBuildingDirector.build_chiral_dataset(
     return_normalized_inputs=True,
 )
 
+dataset.auxillary_data["cmrt"] = torch.Tensor(dataset.auxillary_data["cmrt"])
 
 mol_0 = dataset.molecules[0]
 mol_1 = dataset.molecules[1]
-assert (mol_0.get_positions() == -mol_1.get_positions()).all()
 
-dataset.auxillary_data["cmrt"] = torch.Tensor(dataset.auxillary_data["cmrt"])
+
+def test_molecule_creation():
+    assert (mol_1.get_atomic_numbers() == mol_0.get_atomic_numbers()).all()
+    assert (mol_0.get_positions() == -mol_1.get_positions()).all()
 
 
 def test_different_predictions_nops():
-    architecture_config = pyaml.parse_yaml_file_as(
-        ArchitectureConfig,
-        "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/cmrt_nops/architecture_config.yaml",
-    )
+    yaml_file = resources.files("tests") / "architecture_config_nops.yaml"
+
+    architecture_config = from_yaml(yaml_file, ArchitectureConfig)
 
     mb = ModelBuilder(architecture_config=architecture_config)
     model = mb.build_model()
@@ -62,7 +73,9 @@ def test_different_predictions_nops():
 
     invariant_embeddings = model.preprocessor(dataset.embeddings)
 
-    npt.assert_array_almost_equal(invariant_embeddings[0], invariant_embeddings[1])
+    print(torch.sum(invariant_embeddings[0] - invariant_embeddings[1]))
+
+    assert torch.allclose(invariant_embeddings[0], invariant_embeddings[1], rtol=0.001)
 
     pred = model(
         dataset.embeddings,
@@ -70,28 +83,31 @@ def test_different_predictions_nops():
         auxillary_data=dataset.auxillary_data,
     )
 
-    print(pred)
-    print(dataset.regression_targets)
+    assert torch.allclose(pred[0], pred[1], atol=0.01)
 
 
 def test_different_predictions_with_ps():
-    architecture_config = pyaml.parse_yaml_file_as(
-        ArchitectureConfig,
-        "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/cmrt_ps/architecture_config.yaml",
-    )
+    yaml_file = resources.files("tests") / "architecture_config_ps.yaml"
+
+    architecture_config = from_yaml(yaml_file, ArchitectureConfig)
 
     mb = ModelBuilder(architecture_config=architecture_config)
     model = mb.build_model()
     model.eval()
 
     embeddings_w_ps = model.preprocessor(dataset.embeddings)
-    print(embeddings_w_ps[0] - embeddings_w_ps[1])
+    assert not np.allclose(
+        embeddings_w_ps[0].detach().cpu().numpy(),
+        -embeddings_w_ps[1].detach().cpu().numpy(),
+    )
 
     mol_des = model.get_molecular_descriptor(
         dataset.embeddings, padding_mask=dataset.padding_mask
     )
 
-    print(mol_des[0] - mol_des[1])
+    assert not np.allclose(
+        mol_des[0].detach().cpu().numpy(), mol_des[1].detach().cpu().numpy()
+    )
 
     pred = model(
         dataset.embeddings,
@@ -99,10 +115,4 @@ def test_different_predictions_with_ps():
         auxillary_data=dataset.auxillary_data,
     )
 
-    print(pred)
-    print(dataset.regression_targets)
-
-
-# test_different_predictions_nops()
-
-test_different_predictions_with_ps()
+    assert pred[0].detach().cpu().numpy() != pred[1].detach().cpu().numpy()

@@ -1,0 +1,29 @@
+embedding_preprocess_config:
+  input_embedding_size: 640
+  input_irreps: 128x0e+128x1o+128x0e
+  output_irreps: 128x0e+128x0e
+  output_irreps_dim: 256
+  pseudoscalar_dimension: 0
+  pseudoscalar_embedding_dim: 0
+  pseudoscalars: false
+  reload_state_dict: null
+encoder_config:
+  N_layers: 1
+  attention_layer_config:
+    dim_feedforward: 256
+    dropout: 0.3
+    embedding_dim: 256
+    num_heads: 8
+  reload_state_dict: null
+global_aggregator_config:
+  aggregation_fn: mean
+  input_dim: 256
+  output_dim: 256
+regression_head_config:
+- activation_fn: SiLU
+  head_type: fully_connected
+  hidden_dimensions:
+  - 128
+  input_dimensions: 282
+  task_name: cmrt
+reload_full_model_weights: null

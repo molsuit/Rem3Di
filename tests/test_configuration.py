@@ -18,7 +18,10 @@ from threedscriptors.model.model_builder import ModelBuilder
 
 def test_configuration():
     embedding_preprocessor_config = EmbeddingPreprocessConfig(
-        input_irreps="10x0o", pseudoscalars=True, pseudoscalar_dimension=10
+        input_irreps="10x0o",
+        pseudoscalars=True,
+        pseudoscalar_dimension=128,
+        pseudoscalar_embedding_dim=10,
     )
 
     attention_layer_config = AttentionLayerConfig(

@@ -1,17 +1,10 @@
-import numpy as np
 import numpy.testing as npt
 import torch
 from e3nn.o3 import Irreps
-from mace.calculators import MACECalculator, mace_mp
+from mace.calculators import mace_mp
 
 from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
-from threedscriptors.configuration.data_config import DatasetConfig, DatasetTypes
-from threedscriptors.data_handling.cmrt_preprocessing import load_cmrt_data
 from threedscriptors.data_handling.data_utils import get_ase_atoms
-from threedscriptors.data_handling.dataset_builder import (
-    DatasetBuildingDirector,
-)
-from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 from threedscriptors.model.atomic_descriptor_preprocess import PseudoscalarGenerator
 from threedscriptors.utils.model_utils import (
     get_invariant_indices,
@@ -45,8 +38,13 @@ def test_pseudoscalar_generator():
     des2 = torch.Tensor(des2).unsqueeze(0)
     calculator_irreps = get_mace_calculator_irrep_signature(calc)
 
+    print(calculator_irreps)
+
     embedding_preprocessor_config = EmbeddingPreprocessConfig(
-        input_irreps=calculator_irreps, pseudoscalars=True, pseudoscalar_dimension=128
+        input_irreps=calculator_irreps,
+        pseudoscalars=True,
+        pseudoscalar_dimension=128,
+        pseudoscalar_embedding_dim=128,
     )
     ps_generator = PseudoscalarGenerator(embedding_preprocessor_config)
 
@@ -66,81 +64,3 @@ def test_get_invariant_indices():
     _, out_irreps = get_invariant_indices(x)
 
     assert out_irreps == Irreps("10x0e+10x0e")
-
-
-def test_chiral_dataset():
-    smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data()
-
-    MACE_PATH = (
-        "/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model"
-    )
-    # Get the train and test data-loaders
-
-    dataset_config = DatasetConfig(
-        N_molecules=2,
-        dataset_type=DatasetTypes.REGRESSION,
-        BFGS_tol=0.2,
-        BFGS_max_steps=500,
-        N_conformers=1,
-        embedding_model=MACE_PATH,
-        max_atoms=None,
-        tasks=tasks,
-    )
-    iterator = ListSmilesIterator(smiles)
-    db_director, dataset = DatasetBuildingDirector.build_chiral_dataset(
-        iterator=iterator,
-        dataset_config=dataset_config,
-        regression_targets=regression_targets,
-        regression_masks=regression_masks,
-        auxillary_data=aux_data,
-        return_normalized_targets=False,
-    )
-
-    print(db_director.builder.index_list)
-    print(dataset.regression_targets)
-    mol_0 = dataset.molecules[0]
-
-    mol_1 = dataset.molecules[1]
-
-    print(mol_1.get_positions())
-    print(mol_0.get_positions())
-
-    assert (mol_0.get_positions() == -mol_1.get_positions()).all()
-
-    mace_calc = MACECalculator(MACE_PATH, device="cuda", enable_cueq=True)
-
-    input_irreps = get_mace_calculator_irrep_signature(mace_calc)
-
-    mol_0_embedding = torch.Tensor(
-        mace_calc.get_descriptors(mol_0, invariants_only=False)
-    )
-    mol_1_embedding = torch.Tensor(
-        mace_calc.get_descriptors(mol_1, invariants_only=False)
-    )
-
-    print(mol_0_embedding.shape)
-
-    embedding_preprocessor_config = EmbeddingPreprocessConfig(
-        pseudoscalars=True, pseudoscalar_dimension=8, input_irreps=input_irreps
-    )
-
-    ps_generator = PseudoscalarGenerator(embedding_preprocessor_config)
-
-    print(sum(p.numel() for p in ps_generator.parameters() if p.requires_grad))
-
-    pseudoscalars_0 = ps_generator.get_pseudoscalars(mol_0_embedding)
-    pseudoscalars_1 = ps_generator.get_pseudoscalars(mol_1_embedding)
-
-    print(pseudoscalars_0)
-    print(pseudoscalars_1)
-
-    print(pseudoscalars_1 + pseudoscalars_0)
-
-    assert np.allclose(
-        pseudoscalars_0.detach().numpy(),
-        -1 * pseudoscalars_1.detach().numpy(),
-        rtol=0.1,
-    )
-
-
-test_chiral_dataset()

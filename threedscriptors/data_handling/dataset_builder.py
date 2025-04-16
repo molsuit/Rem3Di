@@ -159,9 +159,7 @@ class DatasetBuilder:
 
         data_points_counter = 0
 
-        mace_calculator = MACECalculator(
-            dataset_config.embedding_model, device="cuda", enable_cueq=True
-        )
+        mace_calculator = dataset_config.embedding_model_config.mace_calc
 
         ### Returns a dataset with already relaxed (and mirrored!!!) Structures
 
@@ -452,13 +450,9 @@ class DatasetBuildingDirector:
 
         construction_recepie = cls.check_config(builder.dataset.dataset_config)
         if construction_recepie.build_atomic_embeddings:
-            assert dataset_config.embedding_model is not None
+            assert dataset_config.embedding_model_config is not None
 
-            embedding_model = MACECalculator(
-                model_paths=dataset_config.embedding_model,
-                device="cuda",
-                enable_cueq=True,
-            )
+            embedding_model = dataset_config.embedding_model_config.mace_calc
             # Is there ever a point where we do not want to relax the structures?
             builder.relax_structures(embedding_model)
 
@@ -541,13 +535,9 @@ class DatasetBuildingDirector:
         construction_recepie = cls.check_config(builder.dataset.dataset_config)
 
         if construction_recepie.build_atomic_embeddings:
-            assert dataset_config.embedding_model is not None
+            assert dataset_config.embedding_model_config is not None
 
-            embedding_model = MACECalculator(
-                model_paths=dataset_config.embedding_model,
-                device="cuda",
-                enable_cueq=True,
-            )
+            embedding_model = dataset_config.embedding_model_config.mace_calc
 
             builder.calculate_atomic_embeddings(
                 calculator=embedding_model,
