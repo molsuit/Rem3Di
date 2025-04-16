@@ -26,10 +26,10 @@ smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
 )
 
 embedding_model_config = MaceCalculatorConfig(
-    mace_calc=mace_mp("medium", enable_cueq=True, device="cuda"),
+    mace_calc=mace_mp("medium", enable_cueq=False, device="cpu"),
     model_name="MACE-MP0 medium",
-    enable_cueq=True,
-    device="cuda",
+    enable_cueq=False,
+    device="cpu",
 )  # I know, not very elegant...
 
 # Get the train and test data-loaders
