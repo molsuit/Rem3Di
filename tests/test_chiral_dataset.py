@@ -20,7 +20,10 @@ from threedscriptors.data_handling.dataset_builder import (
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 from threedscriptors.model.model_builder import ModelBuilder
 
-smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data()
+data_file = resources.files("tests") / "cmrt_raw_test_data.csv"
+smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
+    data_file
+)
 
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=mace_mp("medium", enable_cueq=True, device="cuda"),

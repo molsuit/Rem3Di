@@ -9,7 +9,7 @@ from threedscriptors.configuration.config_utils import IrrepType
 
 
 class HeadType(Enum):
-    RESDIUAL = "residual"
+    RESIDUAL = "residual"
     FULLY_CONNECTED = "fully_connected"
 
 

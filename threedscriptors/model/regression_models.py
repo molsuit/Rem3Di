@@ -94,7 +94,7 @@ class MultitaskHeads(nn.Module):
                     f"fully_connected_{idx}",
                     FullyConnectedBlock(in_dim, out_dim, head_config.activation_fn),
                 )
-            elif head_config.head_type == HeadType.RESDIUAL:
+            elif head_config.head_type == HeadType.RESIDUAL:
                 head.add_module(
                     f"residual_{idx}",
                     ResidualBlock(in_dim, out_dim, head_config.activation_fn),

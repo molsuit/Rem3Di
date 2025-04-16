@@ -40,10 +40,10 @@ def get_task_configs(aux_data: dict) -> TaskConfig:
     return [task]
 
 
-def load_cmrt_data(single_column_type=False):
+def load_cmrt_data(dataset_filepath: str, single_column_type=False):
     # Load the CSV data. Replace 'data.csv' with your CSV file path.
     df = pd.read_csv(
-        "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/cmrt/raw_data.csv",
+        dataset_filepath,
         index_col="index",
     )
 

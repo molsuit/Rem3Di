@@ -191,10 +191,9 @@ class DatasetBuilder:
                         smiles_0, N_conformers_per_enantiomer
                     )
                     if len(embeded_molecules_0) == 0:
-                        print(
+                        raise ValueError(
                             f"Error Embedding Smiles {smiles_0}, No. {smiles_counter}"
                         )
-                        raise ValueError()
 
                     # relax embedded_molecules
                     for mol in embeded_molecules_0:

@@ -24,6 +24,6 @@ regression_head_config:
   head_type: fully_connected
   hidden_dimensions:
   - 128
-  input_dimensions: 282
+  input_dimensions: 258
   task_name: cmrt
 reload_full_model_weights: null

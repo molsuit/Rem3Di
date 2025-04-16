@@ -9,15 +9,12 @@ from threedscriptors.data_handling.dataset_builder import (
 )
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 
-smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
-    single_column_type=True
-)
-
-# Distribution of the training targets log(RT*v) retention_time * elution speed
-
-
 dataset_directory = (
     "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/cmrt"
+)
+
+smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
+    f"{dataset_directory}/raw_data.csv", single_column_type=True
 )
 
 MACE_PATH = (
