@@ -38,8 +38,13 @@ def test_pseudoscalar_generator():
     des2 = torch.Tensor(des2).unsqueeze(0)
     calculator_irreps = get_mace_calculator_irrep_signature(calc)
 
+    print(calculator_irreps)
+
     embedding_preprocessor_config = EmbeddingPreprocessConfig(
-        input_irreps=calculator_irreps, pseudoscalars=True, pseudoscalar_dimension=128
+        input_irreps=calculator_irreps,
+        pseudoscalars=True,
+        pseudoscalar_dimension=128,
+        pseudoscalar_embedding_dim=128,
     )
     ps_generator = PseudoscalarGenerator(embedding_preprocessor_config)
 

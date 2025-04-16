@@ -45,8 +45,12 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
         )  # sets the config and indices of invariant reps
 
         i_in1 = o3.Irreps(self.config.input_irreps)
-        embedd_irrep1 = o3.Irreps("10x1o")
-        embedd_irrep2 = o3.Irreps("10x1e")
+        embedd_irrep1 = o3.Irreps(
+            f"{embedding_preprocess_config.pseudoscalar_embedding_dim}x1o"
+        )
+        embedd_irrep2 = o3.Irreps(
+            f"{embedding_preprocess_config.pseudoscalar_embedding_dim}x1e"
+        )
 
         self.lin0 = o3.Linear(i_in1, embedd_irrep1)
         self.tp_1 = o3.TensorProduct(
@@ -78,13 +82,18 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
 
     def forward(self, atomic_embedding):
         # calculate the pseudosaclar from in+ equivariant part
-        pseudoscalar = self.tp_2(
-            atomic_embedding[:],
-            self.lin(self.tp_1(atomic_embedding[:], self.lin0(atomic_embedding[:]))),
-        )
+        pseudoscalar = self.get_pseudoscalars(atomic_embedding)
 
         # remove the equivariant part
         atomic_embedding = remove_equivariants(atomic_embedding, self.invariant_indices)
 
         atomic_embedding = torch.cat((atomic_embedding, pseudoscalar), dim=-1)
         return atomic_embedding
+
+    def get_pseudoscalars(self, atomic_embedding):
+        pseudoscalar = self.tp_2(
+            atomic_embedding[:],
+            self.lin(self.tp_1(atomic_embedding[:], self.lin0(atomic_embedding[:]))),
+        )
+
+        return pseudoscalar

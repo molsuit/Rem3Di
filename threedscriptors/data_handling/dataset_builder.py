@@ -1,9 +1,7 @@
 from dataclasses import dataclass
-from itertools import pairwise
 from math import ceil
 
 import numpy as np
-import torch
 from ase import Atoms
 from mace.calculators import MACECalculator
 from torch import from_numpy
@@ -161,11 +159,7 @@ class DatasetBuilder:
 
         data_points_counter = 0
 
-        iterator = pairwise(iterator)
-
-        mace_calculator = MACECalculator(
-            dataset_config.embedding_model, device="cuda", enable_cueq=True
-        )
+        mace_calculator = dataset_config.embedding_model_config.mace_calc
 
         ### Returns a dataset with already relaxed (and mirrored!!!) Structures
 
@@ -174,9 +168,11 @@ class DatasetBuilder:
         with tqdm(total=dataset_config.N_molecules) as pbar:
             while data_points_counter < dataset_config.N_molecules:
                 try:
-                    smiles_0, smiles_1 = next(
-                        iterator
-                    )  # pairwise iterator returns enantiomer pairs
+                    smiles_0 = next(iterator)
+                    smiles_1 = next(iterator)
+                    # pairwise iterator returns enantiomer pairs
+                    print(smiles_0)
+                    print(smiles_1)
                 except StopIteration:
                     print(
                         f"Reached StopIteration prematurely. Completed reading {data_points_counter} molecules."
@@ -190,11 +186,12 @@ class DatasetBuilder:
                     )  # This ensures that the dataloading does not overshoot the targeted number of molecules
 
                     N_conformers_per_enantiomer = int(ceil(total_N_conformers / 2))
+
                     embeded_molecules_0 = get_ase_atoms_with_conformers(
                         smiles_0, N_conformers_per_enantiomer
                     )
                     if len(embeded_molecules_0) == 0:
-                        print(
+                        raise ValueError(
                             f"Error Embedding Smiles {smiles_0}, No. {smiles_counter}"
                         )
 
@@ -317,10 +314,8 @@ class DatasetBuilder:
         self.dataset.dataset_config.has_atomic_embeddings = True
 
     def reload_atomic_embeddings(self, directory: str):
-        self.dataset.embeddings = torch.Tensor(np.load(f"{directory}/embeddings.npy"))
-        self.dataset.padding_mask = torch.Tensor(
-            np.load(f"{directory}/padding_mask.npy")
-        )
+        self.dataset.embeddings = np.load(f"{directory}/embeddings.npy")
+        self.dataset.padding_mask = np.load(f"{directory}/padding_mask.npy")
 
     def add_regression_data(
         self,
@@ -352,9 +347,9 @@ class DatasetBuilder:
         expanded_aux_dict = {}
         # auxillary data needs to be expanded to have data for every conformer
         for task, aux_data in auxillary_data.items():
-            expanded_aux_dict[task : aux_data[self.index_list, :]]
-
-        self.dataset.auxillary_data = expanded_aux_dict
+            expanded_aux_data = aux_data[self.index_list, :]
+            expanded_aux_dict[task] = expanded_aux_data
+            self.dataset.auxillary_data = expanded_aux_dict
 
     def reload_auxillary_data(self, directory):
         np_auxillary_data = np.load(f"{directory}/auxillary_data.npz")
@@ -429,8 +424,9 @@ class DatasetBuildingDirector:
         elif config.tasks is not None:
             construction_recepie.build_atomic_embeddings = True
             construction_recepie.build_regression_targets = True
-        elif has_task_with_auxillary_data(config.tasks):
-            construction_recepie.build_auxillary_data = True
+
+            if has_task_with_auxillary_data(config.tasks):
+                construction_recepie.build_auxillary_data = True
 
         return construction_recepie
 
@@ -443,6 +439,7 @@ class DatasetBuildingDirector:
         regression_masks=None,
         auxillary_data=None,
         return_normalized_targets: bool = False,
+        return_normalized_inputs: bool = False,
     ):
         # use the builder to assemble the dataset according to the configuration
 
@@ -451,15 +448,10 @@ class DatasetBuildingDirector:
         )
 
         construction_recepie = cls.check_config(builder.dataset.dataset_config)
-
         if construction_recepie.build_atomic_embeddings:
-            assert dataset_config.embedding_model is not None
+            assert dataset_config.embedding_model_config is not None
 
-            embedding_model = MACECalculator(
-                model_paths=dataset_config.embedding_model,
-                device="cuda",
-                enable_cueq=True,
-            )
+            embedding_model = dataset_config.embedding_model_config.mace_calc
             # Is there ever a point where we do not want to relax the structures?
             builder.relax_structures(embedding_model)
 
@@ -486,10 +478,20 @@ class DatasetBuildingDirector:
 
             dataset.normalize_regression_targets()
 
+        if return_normalized_inputs:
+            dataset.normalize_atomic_embeddings()
+
+        dataset.to_torch()
+
         return cls(builder=builder), dataset
 
     @classmethod
-    def reload_dataset(cls, directory, return_normalized_targets: bool = False):
+    def reload_dataset(
+        cls,
+        directory,
+        return_normalized_targets: bool = False,
+        return_normalized_inputs: bool = False,
+    ):
         builder = DatasetBuilder.load_initial_data_from_disk(directory)
 
         construction_recepie = cls.check_config(builder.dataset.dataset_config)
@@ -507,6 +509,11 @@ class DatasetBuildingDirector:
             assert isinstance(dataset, RegressionAtomEmbeddingDataset)
             dataset.normalize_regression_targets()
 
+        if return_normalized_inputs:
+            dataset.normalize_atomic_embeddings()
+
+        dataset.to_torch()
+
         return cls(builder=builder), dataset
 
     @classmethod
@@ -518,6 +525,7 @@ class DatasetBuildingDirector:
         regression_masks=None,
         auxillary_data=None,
         return_normalized_targets: bool = False,
+        return_normalized_inputs: bool = False,
     ):
         builder = DatasetBuilder.load_pairwise_chiral_structures_from_smiles(
             iterator=iterator, dataset_config=dataset_config
@@ -526,13 +534,9 @@ class DatasetBuildingDirector:
         construction_recepie = cls.check_config(builder.dataset.dataset_config)
 
         if construction_recepie.build_atomic_embeddings:
-            assert dataset_config.embedding_model is not None
+            assert dataset_config.embedding_model_config is not None
 
-            embedding_model = MACECalculator(
-                model_paths=dataset_config.embedding_model,
-                device="cuda",
-                enable_cueq=True,
-            )
+            embedding_model = dataset_config.embedding_model_config.mace_calc
 
             builder.calculate_atomic_embeddings(
                 calculator=embedding_model,
@@ -556,6 +560,11 @@ class DatasetBuildingDirector:
             assert isinstance(dataset, RegressionAtomEmbeddingDataset)
 
             dataset.normalize_regression_targets()
+
+        if return_normalized_inputs:
+            dataset.normalize_atomic_embeddings()
+
+        dataset.to_torch()
 
         return cls(builder=builder), dataset
 

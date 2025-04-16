@@ -8,6 +8,11 @@ from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 from threedscriptors.configuration.config_utils import IrrepType
 
 
+class HeadType(Enum):
+    RESIDUAL = "residual"
+    FULLY_CONNECTED = "fully_connected"
+
+
 class Activations(Enum):
     SILU = "SiLU"
     GELU = "gelu"
@@ -59,10 +64,11 @@ class EncoderConfig(BaseModel):
 class RegressionHeadConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    task_name: str
+    task_name: str | None = None
     activation_fn: Callable = torch.nn.SiLU()
-    hidden_dimensions: list[int] = [512, 256, 128]
+    hidden_dimensions: list[int] = [256, 128]
     input_dimensions: int | None = None
+    head_type: HeadType = HeadType.FULLY_CONNECTED
 
     @field_validator("activation_fn", mode="before")
     @classmethod
@@ -84,6 +90,7 @@ class EmbeddingPreprocessConfig(BaseModel):
 
     pseudoscalars: bool = True
     pseudoscalar_dimension: int  # This does not actually change anything atm, because we have to think more about how to exactly compute the pseudoscalars. Should this be the dimension of the embedding space that gets computed by the linear layers, or should this be the output dimensions of the pseudscalars. It is not clear yet, whether we would actually want to change that, or is only the intermediate spaces should change.
+    pseudoscalar_embedding_dim: int | None = None
     input_irreps: IrrepType | None = None
     output_irreps: IrrepType | None = None
     input_embedding_size: int | None = None
