@@ -1,42 +1,19 @@
-from collections.abc import Callable
-
 import numpy as np
 
 from threedscriptors.data_handling.dataset import SimilarityScreeningDataset
-from threedscriptors.evaluation.descriptor_similarity_metrics import (
-    calculate_similiarities,
-)
-from threedscriptors.model.regression_models import MultiTaskRegressionModel
-from threedscriptors.utils.descriptor_calculation import calculate_molfeat_fingerprint
-
-
-def fingerprint_closure(fingerprint_algorithm):
-    def calculate_fingerprint(dataset: SimilarityScreeningDataset):
-        fingerprints = calculate_molfeat_fingerprint(
-            dataset.smiles_list, fingerprint_name=fingerprint_algorithm
-        )
-        return fingerprints
-
-    return calculate_fingerprint
-
-
-def threedscriptor_calculator_closure(model: MultiTaskRegressionModel):
-    def calculate_threedscriptors(dataset: SimilarityScreeningDataset):
-        return model.get_molecular_descriptor(dataset.embeddings, dataset.padding_mask)
-
-    return calculate_threedscriptors
+from threedscriptors.evaluation.descriptor_calculators import DescriptorCalculator
 
 
 class SimilarityScreeningTask:
     def __init__(
         self,
-        descriptor_fn: Callable,
+        descriptor_calculator: DescriptorCalculator,
         similarity_screening_dataset: SimilarityScreeningDataset,
-        descriptor_similarity_fn: Callable,
     ):
-        self.calculate_molecular_descriptors = descriptor_fn
+        self.descriptor_calculator = descriptor_calculator
         self.dataset = similarity_screening_dataset
-        self.descriptor_similarity_fn = descriptor_similarity_fn
+
+        self.random_generator = np.random.default_rng(seed=42)
 
     def get_target_class_data(self, target_class_id: int):
         target_class_indices = np.argwhere(
@@ -45,19 +22,36 @@ class SimilarityScreeningTask:
 
         return self.dataset[target_class_indices]
 
+    def draw_random_active_from_class(self, class_label, num):
+        active_indices = np.argwhere(
+            (self.dataset.activity_decoy_labels == 1)
+            & (self.dataset.target_class_labels == class_label)
+        )
+        indices = self.random_generator.choice(active_indices, size=num, replace=False)
+
+        return indices
+
+    def get_class_indices(self, class_label):
+        return np.argwhere(self.dataset.target_class_labels == class_label)
+
     def evaluate(self, actives_resampling_frequency):
         # Calculate all molecular_descriptors
-        molecular_descriptors = self.calculate_molecular_descriptors(self.dataset)
+        molecular_descriptors = self.descriptor_calculator.calculate_descriptors(
+            self.dataset
+        )
 
-        for class_label in self.dataset.target_classes:
+        print(molecular_descriptors[:10, :10])
+        target_classes = np.unique(self.dataset.target_class_labels)
+
+        for class_label in target_classes:
             # Randomly drawn actives
-            ref_indices = self.dataset.draw_random_active_from_class(
+            ref_indices = self.draw_random_active_from_class(
                 class_label, num=actives_resampling_frequency
             )
-            class_indices = self.dataset.get_class_indices(class_label)
+            class_indices = self.get_class_indices(class_label)
 
             for ref_idx in ref_indices:
-                reference_descriptor = molecular_descriptors[ref_idx]
+                reference_descriptor = molecular_descriptors[ref_idx].squeeze()
 
                 # calculate the similarity of the entire class dataset with
 
@@ -65,10 +59,9 @@ class SimilarityScreeningTask:
                     np.where(class_indices != ref_idx)
                 ]  # Drops the reference molecule, because it shouldnt be included in the similarity search.
 
-                similarties = calculate_similiarities(
+                similarties = self.descriptor_calculator.get_all_similiarities(
                     reference_descriptor,
                     molecular_descriptors[class_indices_wo_reference],
-                    self.descriptor_similarity_fn,
                 )
 
                 activity_labels = self.dataset.activity_decoy_labels[
@@ -77,7 +70,7 @@ class SimilarityScreeningTask:
 
                 # rank the similarities
                 sorting_indices = np.flip(
-                    np.argsort(similarties, order="")
+                    np.argsort(similarties)
                 )  # finds the indices that sort the similarities from highest to lowest
 
                 ranked_similarities = similarties[sorting_indices]

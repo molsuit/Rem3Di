@@ -6,8 +6,8 @@ from mace.calculators import MACECalculator
 
 from threedscriptors.data_handling.data_utils import get_global_descriptor
 from threedscriptors.data_handling.smiles_iterator import FileSmilesIterator
+from threedscriptors.evaluation.analysis import get_PCA
 from threedscriptors.model.transformer_components import TransformerEncoder
-from threedscriptors.utils.analysis import get_PCA
 
 encoder_params = torch.load(
     "/home/steffen/projects/mol_descriptors/transformer_model/transformer_encoder.pth"

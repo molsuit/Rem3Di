@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from itertools import pairwise
 
 import torch
@@ -35,6 +36,7 @@ class ResidualBlock(nn.Module):
         # Residual shortcut
         residual = self.projection(x)
         out = out + residual
+        # This activation
         out = self.norm(out)
         # Elementwise addition.
         return out
@@ -44,15 +46,18 @@ class FullyConnectedBlock(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, activation_fn: nn.Module):
         super().__init__()
 
-        self.linear = nn.Linear(in_dim, out_dim)
-        self.norm = nn.LayerNorm(out_dim)
-        self.activation = activation_fn
+        self.block = nn.Sequential(
+            OrderedDict(
+                [
+                    ("linear_layer", nn.Linear(in_dim, out_dim)),
+                    ("layer_norm", nn.LayerNorm(out_dim)),
+                    ("activation", activation_fn),
+                ]
+            )
+        )
 
     def forward(self, x: torch.Tensor):
-        out = self.linear(x)
-        out = self.norm(out)
-        out = self.activation(out)
-
+        out = self.block(x)
         return out
 
 
@@ -152,6 +157,17 @@ class MultiTaskRegressionModel(nn.Module):
         descriptor = self.global_aggregator(x)
 
         return descriptor
+
+    def register_embedding_normalization(
+        self, mean_atomic_embedding, std_atomic_embedding
+    ):
+        # Should add a buffer that contains the mean and std deviation of the descriptor, which can be enable before loading.
+        self.register_buffer(
+            name="mean_atomic_embedding", tensor=mean_atomic_embedding, persistent=True
+        )
+        self.register_buffer(
+            name="std_atomic_embedding", tensor=std_atomic_embedding, persistent=True
+        )
 
 
 class FusedMultiHeadRegression(nn.Module):

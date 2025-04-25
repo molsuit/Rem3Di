@@ -1,6 +1,6 @@
 import numpy as np
 
-from threedscriptors.utils.analysis import compute_class_std
+from threedscriptors.evaluation.analysis import compute_class_std
 
 
 def test_class_std():
