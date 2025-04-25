@@ -1,0 +1,127 @@
+import os
+from pathlib import Path
+
+import numpy as np
+from ase import Atoms
+from torch import from_numpy
+
+from threedscriptors.configuration.config_utils import from_yaml, to_yaml
+from threedscriptors.configuration.data_config import DatasetConfig
+from threedscriptors.data_handling.data_utils import (
+    get_unique_smiles_id_from_smiles_list,
+)
+from threedscriptors.data_handling.dataset import BaseDataset
+
+
+def store_data_to_disk(dataset: BaseDataset, directory: str):
+    os.makedirs(directory, exist_ok=True)
+
+    # Store Positions
+    padding_dim, padded_positions, padded_atomic_numbers = (
+        dataset.get_padded_positions()
+    )
+
+    np.save(f"{directory}/padded_positions.npy", padded_positions)
+    np.save(f"{directory}/padding_dim.npy", padding_dim)
+    np.save(f"{directory}/padded_atomic_numbers.npy", padded_atomic_numbers)
+
+    # Store Embeddings
+    if dataset.embeddings is not None:
+        np.save(f"{directory}/embeddings.npy", dataset.embeddings)
+        np.save(f"{directory}/padding_mask.npy", dataset.padding_mask)
+
+    # Store Regression Targets
+    if dataset.regression_targets is not None:
+        if dataset.dataset_config.is_normalized:
+            # undo the normalization
+            raise ValueError
+
+        np.save(f"{directory}/regression_targets.npy", dataset.regression_targets)
+        np.save(f"{directory}/regression_masks.npy", dataset.regression_masks)
+
+    # Store Auxillary Data
+    if dataset.auxillary_data is not None:
+        np.savez(f"{directory}/auxillary_data.npz", **dataset.auxillary_data)
+
+    if dataset.activity_decoy_labels is not None:
+        np.save(f"{directory}/activity_labels.npy", dataset.activity_decoy_labels)
+
+    if dataset.target_class_labels is not None:
+        np.save(f"{directory}/target_class_labels.npy", dataset.target_class_labels)
+
+    # Store Smiles
+    if dataset.smiles_list is not None:
+        with open(f"{directory}/smiles_list", "w") as f:
+            for i in dataset.smiles_list:
+                f.write(i + "\n")
+
+    # Store Config
+    to_yaml(f"{directory}/dataset_config.yaml", dataset.dataset_config)
+
+
+def load_data_from_disk(
+    directory: str | Path, dataset_cls: type[BaseDataset] = BaseDataset
+):
+    directory = str(directory)
+    # Load dataset_config first
+    dataset_config = from_yaml(f"{directory}/dataset_config.yaml", DatasetConfig)
+
+    dataset = dataset_cls(dataset_config=dataset_config)
+
+    files = [
+        f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))
+    ]
+
+    if "padded_positions.npy" in files:
+        # This could be used to directly load the data from e.g. GEOM Drugwithout relaxation or simply reload the data from the disk.
+
+        positions = np.load(f"{directory}/padded_positions.npy")
+        padding_dim = np.load(f"{directory}/padding_dim.npy")
+        atomic_numbers = np.load(f"{directory}/padded_atomic_numbers.npy")
+        molecules = []
+
+        for i, padding in enumerate(padding_dim):
+            atom = Atoms(
+                numbers=atomic_numbers[i, :padding],
+                positions=positions[i, :padding, :].squeeze(),
+            )
+            molecules.append(atom)
+        dataset.molecules = molecules
+
+    if "smiles_list" in files:
+        with open(directory + "/smiles_list") as f:
+            smiles_list = f.readlines()
+            smiles_list = [i.strip() for i in smiles_list]
+
+        dataset.smiles_list = smiles_list
+        dataset.mol_ids = get_unique_smiles_id_from_smiles_list(smiles_list)
+
+    if "regression_targets.npy" in files:
+        assert "regression_masks.npy" in files
+        regression_targets_arr = np.load(directory + "/regression_targets.npy")
+        regression_masks_arr = np.load(directory + "/regression_masks.npy")
+
+        dataset.regression_targets = from_numpy(regression_targets_arr).float()
+        dataset.regression_masks = from_numpy(regression_masks_arr).float()
+
+    if "embeddings.npy" in files:
+        dataset.embeddings = from_numpy(np.load(f"{directory}/embeddings.npy")).float()
+        dataset.padding_mask = from_numpy(
+            np.load(f"{directory}/padding_mask.npy")
+        ).float()
+
+    if "activity_labels.npy" in files:
+        assert "target_class_labels.npy" in files
+        dataset.activity_decoy_labels = np.load(f"{directory}/activity_labels.npy")
+        dataset.target_class_labels = np.load(f"{directory}/target_class_labels.npy")
+
+    if "auxillary_data.npz" in files:
+        np_auxillary_data = np.load(f"{directory}/auxillary_data.npz")
+
+        aux_keys = np_auxillary_data.files
+
+        dataset.auxillary_data = {
+            key: from_numpy(np_auxillary_data[key]) for key in aux_keys
+        }
+
+    return dataset

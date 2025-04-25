@@ -1,10 +1,14 @@
 from threedscriptors.configuration.data_config import DatasetConfig, DatasetTypes
-from threedscriptors.data_handling.dataset_builder import DatasetBuildingDirector
-from threedscriptors.data_handling.polaris_preprocessing import load_polaris_dataset
-from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
+from threedscriptors.data_handling.dataset_io import store_data_to_disk
+from threedscriptors.data_handling.pipelines import regression_training_pipeline
+from threedscriptors.data_handling.source_preprocessing.polaris_preprocessing import (
+    load_polaris_dataset,
+)
 
 # Load the benchmark from polarishub
-dataset, tasks = load_polaris_dataset("asap-discovery/antiviral-admet-2025-unblinded")
+smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
+    "asap-discovery/antiviral-admet-2025-unblinded"
+)
 
 dataset_directory = (
     "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/test"
@@ -26,12 +30,9 @@ dataset_config = DatasetConfig(
     tasks=tasks,
 )
 
-smiles_iterator = ListSmilesIterator(dataset.smiles)
-_, dataset = DatasetBuildingDirector.build_dataset(
-    iterator=smiles_iterator,
-    dataset_config=dataset_config,
-    regression_targets=dataset.regression_targets,
-    regression_masks=dataset.regression_masks,
-)
 
-dataset.store_data_to_disk(dataset_directory)
+dataset = regression_training_pipeline(
+    dataset_config, smiles, regression_targets, regression_masks
+).build()
+
+store_data_to_disk(dataset, dataset_directory)

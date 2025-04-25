@@ -104,7 +104,7 @@ def get_relaxed_conformers(
     return molecules
 
 
-def get_max_molecule_size(
+def get_max_molecule_size_from_smiles(
     smiles_iterator: SmilesIterator, max_num_molecules=math.inf
 ) -> int:
     max_atoms = 0
@@ -116,6 +116,14 @@ def get_max_molecule_size(
             max_atoms = num_atoms
         if i >= max_num_molecules:
             break
+    return max_atoms
+
+
+def get_max_molecule_size_from_atoms(atoms: list[Atoms]):
+    max_atoms = 0
+    for mol in atoms:
+        number_of_atoms = len(mol)
+        max_atoms = max(max_atoms, number_of_atoms)
     return max_atoms
 
 
@@ -147,3 +155,20 @@ def has_task_with_auxillary_data(tasks: Sequence[TaskConfig]) -> bool:
             return True
 
     return False
+
+
+def get_unique_smiles_id_from_smiles_list(smiles_list: list[str]):
+    string_to_id = {}
+    result_ids = []
+    current_id = 0
+
+    # Process each string in the list
+    for s in smiles_list:
+        if s not in string_to_id:
+            # Assign a new integer if the string has not been seen before
+            string_to_id[s] = current_id
+            current_id += 1
+        # Append the mapped integer
+        result_ids.append(string_to_id[s])
+
+    return result_ids

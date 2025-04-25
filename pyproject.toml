@@ -18,7 +18,8 @@ dependencies = [
     "pydantic",
     "pydantic_yaml",
     "rdkit2ase",
-    "mace-torch==0.3.10"
+    "mace-torch==0.3.10",
+    "molfeat",
 ]
 [project.optional-dependencies]
 cuequivariance = [

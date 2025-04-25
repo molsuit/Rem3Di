@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 
+import pydantic_yaml as pyaml
 import torch
 
 from threedscriptors.configuration.architecture_config import (
@@ -23,6 +24,14 @@ class ModelBuilder:
         self.architecture_config = architecture_config
         self.model: MultiTaskRegressionModel | None = None
         self._N_trainable_parameters = None
+
+    @classmethod
+    def from_directory(cls, directory: str):
+        architecture_config = pyaml.parse_yaml_file_as(
+            ArchitectureConfig,
+            f"{directory}/architecture_config.yaml",
+        )
+        return cls(architecture_config)
 
     @property
     def N_trainable_parameters(self):
@@ -63,7 +72,7 @@ class ModelBuilder:
             preprocessor=preprocessor,
             global_aggregator=aggregator,
         )
-        self.model = model
+        self.model = model.float()
 
         if (
             self.architecture_config.reload_full_model_weights

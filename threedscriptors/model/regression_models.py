@@ -99,8 +99,6 @@ class MultitaskHeads(nn.Module):
                     f"residual_{idx}",
                     ResidualBlock(in_dim, out_dim, head_config.activation_fn),
                 )
-                print("added res block")
-
         head.add_module(
             f"linear_{idx + 1}",
             nn.Linear(dimensions[-1], 1),
@@ -148,7 +146,7 @@ class MultiTaskRegressionModel(nn.Module):
         pred = torch.cat(preds, dim=-1)
         return pred
 
-    def get_molecular_descriptor(self, x, padding_mask=None):
+    def get_molecular_descriptor(self, x, padding_mask=None) -> torch.Tensor:
         x = self.preprocessor(x)
         x = self.encoder(x, padding_mask)
         descriptor = self.global_aggregator(x)

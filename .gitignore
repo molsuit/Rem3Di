@@ -7,3 +7,4 @@ mace_model/
 wandb
 .pytest_cache
 .vscode/
+eval_runs/

@@ -12,11 +12,11 @@ from threedscriptors.configuration.architecture_config import (
 from threedscriptors.configuration.config_factory import ConfigFactory
 from threedscriptors.configuration.data_config import DatasetConfig
 
-config_file = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/cmrt/dataset_config.yaml"
+config_file = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/tmqm/dataset_config.yaml"
 dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, config_file)
 
 
-model_dir = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/cmrt_ps/"
+model_dir = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/tmqm/"
 
 
 embedding_preprocessor_config = EmbeddingPreprocessConfig(
@@ -48,7 +48,7 @@ cf = ConfigFactory(
 head_config_template = RegressionHeadConfig(
     activation_fn=torch.nn.SiLU(),
     hidden_dimensions=[256, 128],
-    head_type=HeadType.RESDIUAL,
+    head_type=HeadType.RESIDUAL,
 )
 
 

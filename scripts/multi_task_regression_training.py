@@ -10,7 +10,11 @@ from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
 )
 from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.data_handling.dataset_builder import DatasetBuildingDirector
+from threedscriptors.data_handling.dataset import (
+    RegressionWithAuxDataset,
+)
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from threedscriptors.data_handling.sample import sample_collate_fn
 from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.training.regression_training import multitask_masked_loss
 
@@ -33,11 +37,15 @@ training_config = TrainingConfig(
 )
 
 
-_, dataset = DatasetBuildingDirector.reload_dataset(
-    directory=training_config.dataset_path,
-    return_normalized_targets=training_config.normalized_targets,
-    return_normalized_inputs=training_config.normalized_atomic_descriptors,
-)
+dataset = reload_dataset_pipeline(
+    training_config.dataset_path,
+    normalize_inputs=training_config.normalized_atomic_descriptors,
+    normalize_targets=training_config.normalized_targets,
+    dataset_cls=RegressionWithAuxDataset,
+).build()
+
+# dataset = reload_dataset_pipeline(training_config.dataset_path, normalize_inputs= training_config.normalized_atomic_descriptors, normalize_targets= training_config.normalized_targets, dataset_cls= RegressionDataset).build()
+
 
 training_data, validation_data = random_split(dataset, [0.8, 0.2])
 
@@ -50,12 +58,14 @@ training_loader = DataLoader(
     shuffle=True,
     drop_last=True,
     pin_memory=True,
+    collate_fn=sample_collate_fn,
 )
 validation_loader = DataLoader(
     validation_data,
     batch_size=training_config.batch_size,
     shuffle=False,
     drop_last=False,
+    collate_fn=sample_collate_fn,
 )
 
 architecture_config = pyaml.parse_yaml_file_as(
@@ -65,6 +75,7 @@ architecture_config = pyaml.parse_yaml_file_as(
 
 mb = ModelBuilder(architecture_config=architecture_config)
 model = mb.build_model()
+
 
 print(f"Trainable Parameters: {mb.N_trainable_parameters}")
 
@@ -102,18 +113,13 @@ for epoch in range(training_config.epochs):
     model.train()
     optimizer.zero_grad()
 
-    for _batch, (
-        embeddings,
-        padding_mask,
-        regression_targets,
-        regression_masks,
-        auxillary_data,
-    ) in enumerate(training_loader):
-        embeddings = embeddings.to(device)
-        padding_mask = padding_mask.to(device)
-        regression_targets = regression_targets.to(device)
-        regression_masks = regression_masks.to(device)
+    for _batch, samples in enumerate(training_loader):
+        embeddings = samples.embeddings.to(device)
+        padding_mask = samples.padding_mask.to(device)
+        regression_targets = samples.regression_targets.to(device)
+        regression_masks = samples.regression_masks.to(device)
 
+        auxillary_data = samples.auxillary_data
         # TODO: Harmonize the definition of the padding mask. Torch True = padded, prev: True = not padded
 
         prediction = model(
@@ -152,17 +158,12 @@ for epoch in range(training_config.epochs):
 
     model.eval()
     with torch.no_grad():
-        for _batch, (
-            embeddings,
-            padding_mask,
-            regression_targets,
-            regression_masks,
-            auxillary_data,
-        ) in enumerate(validation_loader):
-            embeddings = embeddings.to(device)
-            padding_mask = padding_mask.to(device)
-            regression_targets = regression_targets.to(device)
-            regression_masks = regression_masks.to(device)
+        for _batch, samples in enumerate(validation_loader):
+            embeddings = samples.embeddings.to(device)
+            padding_mask = samples.padding_mask.to(device)
+            regression_targets = samples.regression_targets.to(device)
+            regression_masks = samples.regression_masks.to(device)
+            auxillary_data = samples.auxillary_data
 
             prediction = model(
                 embeddings, padding_mask=padding_mask, auxillary_data=auxillary_data
@@ -222,3 +223,5 @@ torch.save(
     model.preprocessor.state_dict(), f"{training_config.model_dir}/preprocessor.pth"
 )
 torch.save(model.encoder.state_dict(), f"{training_config.model_dir}/encoder.pth")
+
+pyaml.to_yaml_file(f"{training_config.model_dir}/training_config.yaml", training_config)

@@ -68,14 +68,7 @@ def load_polaris_benchmark(benchmark_name: str):
 
     tasks = create_task_configs(target_cols)
 
-    training_data = RegressionData(
-        task_names=target_cols,
-        smiles=smiles,
-        regression_targest=regression_targets,
-        regression_mask=regression_masks,
-    )
-
-    return training_data, tasks
+    return smiles, regression_targets, regression_masks, tasks
 
 
 def load_polaris_dataset(dataset_name: str):
@@ -92,13 +85,6 @@ def load_polaris_dataset(dataset_name: str):
         smiles, regression_targets
     )
 
-    data = RegressionData(
-        task_names=target_cols,
-        smiles=smiles,
-        regression_targets=regression_targets,
-        regression_masks=regression_masks,
-    )
-
     tasks = create_task_configs(target_cols)
 
-    return data, tasks
+    return smiles, regression_targets, regression_masks, tasks
