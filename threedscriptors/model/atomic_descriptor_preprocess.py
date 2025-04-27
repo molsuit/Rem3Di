@@ -1,7 +1,8 @@
+import numpy as np
 import torch
 from e3nn import o3
 from mace.modules.blocks import tp_out_irreps_with_instructions
-from torch import nn
+from torch import from_numpy, nn
 
 from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
 from threedscriptors.utils.model_utils import get_invariant_indices, remove_equivariants
@@ -18,6 +19,38 @@ class AtomicDescriptorPreprocess(nn.Module):
         self.invariant_indices, self.invariant_irreps = get_invariant_indices(
             self.config.input_irreps
         )
+        print(self.config.input_embedding_size)
+        self.register_buffer(
+            "mean_atomic_embedding",
+            torch.zeros((self.config.input_embedding_size,)),
+            persistent=True,
+        )
+        self.register_buffer(
+            "std_atomic_embedding",
+            torch.ones((self.config.input_embedding_size,)),
+            persistent=True,
+        )
+
+    def register_embedding_normalization(
+        self, mean_atomic_embedding, std_atomic_embedding
+    ):
+        # Should add a buffer that contains the mean and std deviation of the descriptor, which can be enable before loading.
+        assert torch.all(
+            self.mean_atomic_embedding == torch.zeros_like(self.mean_atomic_embedding)
+        ), "Mean atomic embedding buffer has already been set, and can not be overwritten"
+
+        assert torch.all(
+            self.std_atomic_embedding == torch.ones_like(self.std_atomic_embedding)
+        ), "Std atomic embedding buffer has already been set, and can not be overwritten"
+
+        if isinstance(mean_atomic_embedding, np.ndarray):
+            mean_atomic_embedding = from_numpy(mean_atomic_embedding)
+        if isinstance(std_atomic_embedding, np.ndarray):
+            std_atomic_embedding = from_numpy(std_atomic_embedding)
+
+        self.mean_atomic_embedding = mean_atomic_embedding
+
+        self.std_atomic_embedding = std_atomic_embedding
 
 
 class InvariantsFilter(AtomicDescriptorPreprocess):
@@ -31,8 +64,12 @@ class InvariantsFilter(AtomicDescriptorPreprocess):
         )  # The Irrep string of the invariant concentrators output
         self.config.output_irreps_dim = self.config.output_irreps.dim
 
-    def forward(self, atomic_embedings):
-        return remove_equivariants(atomic_embedings, self.invariant_indices)
+    def forward(self, atomic_embedding):
+        atomic_embedding = (
+            atomic_embedding - self.mean_atomic_embedding
+        ) / self.std_atomic_embedding
+
+        return remove_equivariants(atomic_embedding, self.invariant_indices)
 
 
 class PseudoscalarGenerator(AtomicDescriptorPreprocess):
@@ -81,6 +118,11 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
         self.config.output_irreps_dim = self.config.output_irreps.dim
 
     def forward(self, atomic_embedding):
+        # apply the atomic embedding normalization
+        atomic_embedding = (
+            atomic_embedding - self.mean_atomic_embedding
+        ) / self.std_atomic_embedding
+
         # calculate the pseudosaclar from in+ equivariant part
         pseudoscalar = self.get_pseudoscalars(atomic_embedding)
 

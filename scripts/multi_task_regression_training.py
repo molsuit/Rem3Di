@@ -37,12 +37,16 @@ training_config = TrainingConfig(
 )
 
 
-dataset = reload_dataset_pipeline(
+pipeline_orchestrator = reload_dataset_pipeline(
     training_config.dataset_path,
     normalize_inputs=training_config.normalized_atomic_descriptors,
     normalize_targets=training_config.normalized_targets,
     dataset_cls=RegressionWithAuxDataset,
-).build()
+)
+dataset = pipeline_orchestrator.build()
+mean_embeddings, std_embeddings = (
+    pipeline_orchestrator.builder.get_mean_and_std_embeddings()
+)
 
 # dataset = reload_dataset_pipeline(training_config.dataset_path, normalize_inputs= training_config.normalized_atomic_descriptors, normalize_targets= training_config.normalized_targets, dataset_cls= RegressionDataset).build()
 
@@ -74,7 +78,9 @@ architecture_config = pyaml.parse_yaml_file_as(
 )
 
 mb = ModelBuilder(architecture_config=architecture_config)
-model = mb.build_model()
+model = mb.build_model(
+    mean_atomic_embedding=mean_embeddings, std_atomic_embedding=std_embeddings
+)
 
 
 print(f"Trainable Parameters: {mb.N_trainable_parameters}")

@@ -60,7 +60,7 @@ class ModelBuilder:
                     )
                 )
 
-    def build_model(self):
+    def build_model(self, mean_atomic_embedding=None, std_atomic_embedding=None):
         preprocessor = self.build_preprocess()
         encoder = self.build_encoder()
         aggregator = self.build_global_aggregator()
@@ -80,6 +80,21 @@ class ModelBuilder:
             or self.architecture_config.encoder_config.reload_state_dict
         ):
             self._reload_weights()
+
+        if (mean_atomic_embedding is not None) and (std_atomic_embedding is not None):
+            print(mean_atomic_embedding.shape)
+            print(
+                self.architecture_config.embedding_preprocess_config.input_embedding_size
+            )
+            assert (
+                mean_atomic_embedding.shape[-1]
+                == self.architecture_config.embedding_preprocess_config.input_embedding_size
+            )
+            preprocessor.register_embedding_normalization(
+                mean_atomic_embedding, std_atomic_embedding
+            )
+        else:
+            raise ValueError
 
         return model
 

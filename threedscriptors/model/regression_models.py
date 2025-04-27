@@ -158,17 +158,6 @@ class MultiTaskRegressionModel(nn.Module):
 
         return descriptor
 
-    def register_embedding_normalization(
-        self, mean_atomic_embedding, std_atomic_embedding
-    ):
-        # Should add a buffer that contains the mean and std deviation of the descriptor, which can be enable before loading.
-        self.register_buffer(
-            name="mean_atomic_embedding", tensor=mean_atomic_embedding, persistent=True
-        )
-        self.register_buffer(
-            name="std_atomic_embedding", tensor=std_atomic_embedding, persistent=True
-        )
-
 
 class FusedMultiHeadRegression(nn.Module):
     # A class that implements the fused calulation of regression heads by using the torch.bmm (batched matrix multiply) instead of sequentially calculating each head.
