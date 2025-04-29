@@ -66,8 +66,6 @@ class BaseDataset(data.Dataset):
                     smiles_iterator
                 )
 
-        print(self.dataset_config.max_atoms)
-
         return self.dataset_config.max_atoms
 
     def expand_embedding_num_atoms(self, new_max_num_atoms):

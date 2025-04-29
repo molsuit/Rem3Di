@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import polaris as po
+from polaris.dataset import DatasetV1, DatasetV2
 
 from threedscriptors.configuration.data_config import TaskConfig
 
@@ -71,14 +72,21 @@ def load_polaris_benchmark(benchmark_name: str):
     return smiles, regression_targets, regression_masks, tasks
 
 
-def load_polaris_dataset(dataset_name: str):
+def load_polaris_dataset(dataset_name: str, smiles_column, non_task_columns):
     dataset = po.load_dataset(dataset_name)
     columns = dataset.columns
-    non_task_columns = ["Molecule Name", "CXSMILES", "Set"]
+
     target_cols = [c for c in columns if c not in non_task_columns]
 
-    data_dict = dataset[:]
-    smiles = data_dict["CXSMILES"]
+    print(dataset.columns)
+
+    if isinstance(dataset, DatasetV1):
+        data_dict = dataset.table[:]
+
+    elif isinstance(dataset, DatasetV2):
+        data_dict = dataset[:]
+
+    smiles = data_dict[smiles_column]
     regression_targets = np.array([data_dict[task] for task in target_cols]).T
 
     smiles, regression_targets, regression_masks = pretreat_polaris_dataset(
