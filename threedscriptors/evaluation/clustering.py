@@ -1,67 +1,115 @@
+from abc import ABC, abstractmethod
+
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
-from matplotlib.lines import Line2D
+import umap
 
-from threedscriptors.data_handling.dataset import BaseDataset
-
-
-def get_PCA(data_mat, k=2):
-    (U, S, V) = torch.pca_lowrank(data_mat)
-    principle_components = torch.matmul(data_mat, V[:, :k]).numpy()
-
-    return principle_components
+from threedscriptors.data_handling.data_utils import get_functional_group_label
 
 
-def plot_PCAs(principle_components, dataset: BaseDataset):
+class ClusteringCalculator(ABC):
+    @staticmethod
+    @abstractmethod
+    def get_dimensionality_reduction(data_matrix: torch.Tensor, k=2):
+        pass
+
+
+class PCACalculator(ClusteringCalculator):
+    @staticmethod
+    def get_dimensionality_reduction(data_tensor: torch.Tensor, k=2):
+        data_tensor = data_tensor.detach()
+        (U, S, V) = torch.pca_lowrank(data_tensor)
+        principal_components = torch.matmul(data_tensor, V[:, :k]).numpy()
+
+        return principal_components
+
+
+class UMAPCalculator(ClusteringCalculator):
+    @staticmethod
+    def get_dimensionality_reduction(data_matrix: torch.Tensor):
+        fit = umap.UMAP()
+        data_matrix = data_matrix.detach().cpu().numpy()
+        umap_projection = fit.fit_transform(data_matrix)
+        return umap_projection
+
+
+def plot_reduced_dimension(principle_components):
     # Plot a scatter plot of the principle components. Color each point according to it molecules type in dataset.mol_ids
     pc1 = principle_components[:, 0]
     pc2 = principle_components[:, 1]
 
-    # Get unique molecule types and assign them colors
-    types = np.array(dataset.mol_ids[:])
-    print(dataset.mol_ids)
-    unique_types = np.unique(types)
-    print(unique_types.shape)
-    cmap = plt.get_cmap(
-        "tab20"
-    )  # up to 10 distinct colors; switch to 'tab20' if you have more
-
-    # Build a mapping from type → color
-    color_map = {t: cmap(i % cmap.N) for i, t in enumerate(unique_types)}
+    ## Get unique molecule types and assign them colors
+    # types = np.array(mol_ids)
+    # unique_types = np.unique(types)
+    # cmap = plt.get_cmap(
+    #    "tab20"
+    # )  # up to 10 distinct colors; switch to 'tab20' if you have more
+    #
+    ## Build a mapping from type → color
+    # color_map = {t: cmap(i % cmap.N) for i, t in enumerate(unique_types)}
 
     # Map each samples type to its color
-    colors = [color_map[t] for t in types]
+    # colors = [color_map[t] for t in types]
 
     # Create the scatter plot
     fig = plt.figure(figsize=(8, 6))
-    plt.scatter(pc1, pc2, c=colors, s=50, edgecolor="k", alpha=0.7)
+    plt.scatter(pc1, pc2, edgecolor="k", alpha=0.7)
 
-    # Manually build a legend
-    legend_handles = [
-        Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            label=moltype,
-            markerfacecolor=color_map[moltype],
-            markersize=8,
-            markeredgecolor="k",
-        )
-        for moltype in unique_types
-    ]
-    plt.legend(
-        handles=legend_handles,
-        title="Molecule Type",
-        bbox_to_anchor=(1.05, 1),
-        loc="upper left",
-    )
+    ## Manually build a legend
+    # legend_handles = [
+    #    Line2D(
+    #        [0],
+    #        [0],
+    #        marker="o",
+    #        color="w",
+    #        label=moltype,
+    #        markerfacecolor=color_map[moltype],
+    #        markersize=8,
+    #        markeredgecolor="k",
+    #    )
+    #    for moltype in unique_types
+    # ]
+    # plt.legend(
+    #    handles=legend_handles,
+    #    title="Molecule Type",
+    #    bbox_to_anchor=(1.05, 1),
+    #    loc="upper left",
+    # )
 
     # Labeling
     plt.xlabel("PC1")
     plt.ylabel("PC2")
     plt.title("PCA Scatter Plot of Molecule Descriptors")
     plt.tight_layout()
+
+    return fig
+
+
+def plot_reduced_dimension_chiral_molecules():
+    pass
+
+
+def plot_reduced_dimension_with_with_regression_labels():
+    pass
+
+
+def plot_reduced_dimension_functional_group_comparison(reduced_dimensions, smiles):
+    functional_group_indices = get_functional_group_label(smiles)
+    fig = plt.figure()
+
+    for functional_group_label, mol_indices in functional_group_indices.items():
+        plt.scatter(
+            x=reduced_dimensions[mol_indices, 0],
+            y=reduced_dimensions[mol_indices, 1],
+            label=functional_group_label,
+        )
+
+    for idx, smile_string in enumerate(smiles):
+        plt.annotate(smile_string, xy=reduced_dimensions[idx, 0:2])
+
+    plt.legend()
+    plt.tight_layout()
+    plt.xlabel("Reduced Dim 1")
+    plt.ylabel("Reduced Dim 2")
 
     return fig

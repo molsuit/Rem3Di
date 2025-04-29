@@ -93,8 +93,6 @@ class ModelBuilder:
             preprocessor.register_embedding_normalization(
                 mean_atomic_embedding, std_atomic_embedding
             )
-        else:
-            raise ValueError
 
         return model
 

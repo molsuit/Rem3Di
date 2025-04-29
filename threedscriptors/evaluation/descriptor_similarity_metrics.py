@@ -4,8 +4,6 @@ from scipy.spatial.distance import cosine, euclidean, jaccard
 
 
 def tanimoto_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    print(a.shape)
-    print(b.shape)
     return 1 - jaccard(a, b)
 
 

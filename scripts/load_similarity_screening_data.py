@@ -38,7 +38,7 @@ print(len(smiles))
 dataset_config = DatasetConfig(
     N_molecules=None,
     dataset_type=DatasetTypes.REGRESSION,
-    BFGS_tol=0.1,
+    BFGS_tol=0.5,
     BFGS_max_steps=100,
     N_conformers=1,
     embedding_model_config=embedding_model_config,

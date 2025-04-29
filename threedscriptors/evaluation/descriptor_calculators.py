@@ -9,6 +9,9 @@ from threedscriptors.evaluation.descriptor_similarity_metrics import (
     cosine_similarity,
     tanimoto_similarity,
 )
+from threedscriptors.evaluation.eval_utils import (
+    evaluate_molecular_descriptor_on_dataset,
+)
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
 
 
@@ -55,22 +58,25 @@ class ThreedescriptorCalculator(DescriptorCalculator):
 
         self.model = threedescriptor_model.eval()
         self.similarity_fn = similarity_fn
-
-        # TODO: assert that input normalization of model and dataset as equivalent!!!!
+        self.descriptor_name = "threedscriptor"
 
     def calculate_descriptors(self, dataset: BaseDataset):
         dataset.embeddings = dataset.embeddings.float()
         dataset.padding_mask = dataset.padding_mask.float()
-        descriptors = self.model.get_molecular_descriptor(
-            dataset.embeddings, dataset.padding_mask
-        )
 
-        descriptors = descriptors.detach().cpu().numpy()
+        descriptors = evaluate_molecular_descriptor_on_dataset(self.model, dataset)
+
+        descriptors = descriptors.numpy()
+        assert np.all(np.isfinite(descriptors))
 
         mean_descriptor = np.mean(descriptors, axis=0)
-        std_descriptor = np.std(descriptors, axis=0)
+        std_descriptor = np.std(descriptors, axis=0) + 1e-7
+
+        assert np.all(np.isfinite(std_descriptor))
 
         descriptors = (descriptors - mean_descriptor) / std_descriptor
+
+        assert np.all(np.isfinite(descriptors))
 
         return descriptors
 

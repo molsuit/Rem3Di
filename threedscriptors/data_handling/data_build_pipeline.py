@@ -33,9 +33,8 @@ class BuildStage(ABC):
             elapsed = time.time() - t0
             logger.info(f"✅ Finished in {elapsed:.2f}s")
             return result
-        except Exception as err:
+        except Exception:
             logger.exception("💥 Failed")
-            raise Exception from err
 
     @abstractmethod
     def _run(self, builder: DatasetBuilder): ...
@@ -194,11 +193,11 @@ class PipelineOrchestrator:
 
     def build(self):
         self.logger.info("🔨 Building pipeline")
-        builder = self.stages[0].run(None)
+        self.builder = self.stages[0].run(None)
         for stage in self.stages[1:]:
-            builder = stage.run(builder)
+            self.builder = stage.run(self.builder)
 
         # Finalize: extract, normalize, torchify
-        dataset = builder.dataset
+        dataset = self.builder.dataset
         self.logger.info("🎉 Pipeline complete")
         return dataset

@@ -1,68 +1,23 @@
-import json
+from matplotlib.pyplot import Figure
 
-import matplotlib.pyplot as plt
-import torch
-from mace.calculators import MACECalculator
+from threedscriptors.data_handling.dataset import AtomicEmbeddingDataset
+from threedscriptors.data_handling.dataset_io import load_data_from_disk
+from threedscriptors.evaluation.clustering import UMAPCalculator
+from threedscriptors.evaluation.evaluation_pipeline import EnolThiolEvalTask
+from threedscriptors.model.model_builder import ModelBuilder
 
-from threedscriptors.data_handling.data_utils import get_global_descriptor
-from threedscriptors.data_handling.smiles_iterator import FileSmilesIterator
-from threedscriptors.evaluation.analysis import get_PCA
-from threedscriptors.model.transformer_components import TransformerEncoder
+model_directory = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/cmrt_ps"
+model = ModelBuilder.from_directory(model_directory).build_model()
 
-encoder_params = torch.load(
-    "/home/steffen/projects/mol_descriptors/transformer_model/transformer_encoder.pth"
-)
+dataset_directory = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/functional_group_dataset"
+dataset = load_data_from_disk(dataset_directory, dataset_cls=AtomicEmbeddingDataset)
 
-architecture_parameter = json.load(
-    open(
-        "/home/steffen/projects/mol_descriptors/transformer_model/architecture_parameters.json"
-    )
-)
-
-encoder = TransformerEncoder(num_layers=3, **architecture_parameter)
-encoder.load_state_dict(encoder_params)
-
-MACE_PATH = "/home/steffen/projects/mol_descriptors/mace_model/2023-12-10-mace-128-L0_energy_epoch-249.model"
-
-mace_calculator = MACECalculator(model_path=MACE_PATH, device="cuda")
-
-smiles_list = []
-data_mat = None
+task = EnolThiolEvalTask(dataset=dataset, clustering_calculator=UMAPCalculator())
 
 
-smiles_iter = FileSmilesIterator("./data/enols_thiols.smi")
+task.run(model)
+plotting_output = task.plot()
 
-for smiles in smiles_iter:
-    smiles_list.append(smiles)
-    global_descriptor = get_global_descriptor(
-        smiles, encoder, calculator=mace_calculator
-    )
-    global_descriptor = global_descriptor.squeeze(0)
+fig: Figure = plotting_output["FunctionalGroupComparisonTask"]
 
-    if data_mat is None:
-        data_mat = global_descriptor
-    else:
-        data_mat = torch.vstack((data_mat, global_descriptor))
-
-
-principle_components = get_PCA(data_mat, k=2)
-
-
-hydroxyl_index = [i for i, smiles in enumerate(smiles_list) if "O" in smiles]
-thiol_index = [i for i, smiles in enumerate(smiles_list) if "S" in smiles]
-
-
-plt.scatter(
-    x=principle_components[hydroxyl_index, 0], y=principle_components[hydroxyl_index, 1]
-)
-plt.scatter(
-    x=principle_components[thiol_index, 0], y=principle_components[thiol_index, 1]
-)
-
-for idx, smiles in enumerate(smiles_list):
-    plt.annotate(smiles, xy=principle_components[idx, :])
-
-plt.title("Hydroxyl vs Thiol comparison")
-plt.xlabel("PC 0")
-plt.ylabel("PC 1")
-plt.savefig("figures/hydroxyl_vs_thiol.png")
+fig.savefig("Functional_group_dim_reduction.pdf")

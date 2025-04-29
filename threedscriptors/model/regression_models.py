@@ -121,6 +121,7 @@ class MultitaskHeads(nn.Module):
                 preds.append(head(input_data))
             else:
                 preds.append(head(descriptor))
+        # TODO: Make this return a dict of all tasks instead of a stacked tensor to ensure that the task predictions are returned in the correct order. This would require us to also change the way that the dataset yields the regression targets, would also be a dict then. Maybe it should be possible to just assert that the dataset task ordering and the model task ordering are identical.
 
         return preds
 

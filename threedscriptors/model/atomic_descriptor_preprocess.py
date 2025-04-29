@@ -22,12 +22,12 @@ class AtomicDescriptorPreprocess(nn.Module):
         print(self.config.input_embedding_size)
         self.register_buffer(
             "mean_atomic_embedding",
-            torch.zeros((self.config.input_embedding_size,)),
+            torch.zeros((1, 1, self.config.input_embedding_size)),
             persistent=True,
         )
         self.register_buffer(
             "std_atomic_embedding",
-            torch.ones((self.config.input_embedding_size,)),
+            torch.ones((1, 1, self.config.input_embedding_size)),
             persistent=True,
         )
 

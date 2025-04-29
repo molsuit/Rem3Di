@@ -1,10 +1,40 @@
+from dataclasses import dataclass
+from enum import Enum
+from math import floor
+
+import matplotlib.pyplot as plt
 import numpy as np
+import torch
+from torchmetrics.classification import AUROC, BinaryROC
+from tqdm import tqdm
 
 from threedscriptors.data_handling.dataset import SimilarityScreeningDataset
 from threedscriptors.evaluation.descriptor_calculators import DescriptorCalculator
 
 
-class SimilarityScreeningTask:
+class SimilarityMetrics(Enum):
+    AUROC = "auroc"
+    BEDROC = "bedroc"
+    ENRICHMENT_FACTOR = "enrichment_factor"
+    ROC = "roc"
+
+
+@dataclass
+class SimilarityScreeningClassificationMetric:
+    class_index: int
+    sampled_metrics: list[float] | dict[str, list[float]]
+    metric: SimilarityMetrics
+    avg_metric: float | None
+
+
+@dataclass
+class SimilarityScreeningRankedResults:
+    ranked_similarities: np.ndarray
+    ranked_activity_labels: np.ndarray
+    ranked_mol_indices: np.ndarray
+
+
+class SimilarityScreening:
     def __init__(
         self,
         descriptor_calculator: DescriptorCalculator,
@@ -14,6 +44,8 @@ class SimilarityScreeningTask:
         self.dataset = similarity_screening_dataset
 
         self.random_generator = np.random.default_rng(seed=42)
+
+        self.results: list[SimilarityScreeningClassificationMetric] = []
 
     def get_target_class_data(self, target_class_id: int):
         target_class_indices = np.argwhere(
@@ -27,6 +59,8 @@ class SimilarityScreeningTask:
             (self.dataset.activity_decoy_labels == 1)
             & (self.dataset.target_class_labels == class_label)
         )
+        assert active_indices.shape[0] >= num
+
         indices = self.random_generator.choice(active_indices, size=num, replace=False)
 
         return indices
@@ -40,17 +74,39 @@ class SimilarityScreeningTask:
             self.dataset
         )
 
-        print(molecular_descriptors[:10, :10])
         target_classes = np.unique(self.dataset.target_class_labels)
 
-        for class_label in target_classes:
-            # Randomly drawn actives
-            ref_indices = self.draw_random_active_from_class(
-                class_label, num=actives_resampling_frequency
-            )
+        self.result_dict = {}
+
+        for class_label in tqdm(target_classes, desc="Activity Classes", position=0):
+            # Randomly drawn
+            try:
+                ref_indices = self.draw_random_active_from_class(
+                    class_label, num=actives_resampling_frequency
+                )
+            except AssertionError:
+                print(f"No active for class {class_label}")
+                continue
+
             class_indices = self.get_class_indices(class_label)
 
-            for ref_idx in ref_indices:
+            ranked_activity_labels = np.zeros(
+                shape=(actives_resampling_frequency, class_indices.shape[0] - 1)
+            )  # Subtract one due to the reference molecule being removed - we dont want the highest ranked molecule to be the reference molecule with itself.
+
+            ranked_similarities = np.zeros(
+                shape=(actives_resampling_frequency, class_indices.shape[0] - 1)
+            )
+            ranked_indices = np.zeros(
+                shape=(actives_resampling_frequency, class_indices.shape[0] - 1)
+            )
+
+            for resampling_index, ref_idx in tqdm(
+                enumerate(ref_indices),
+                desc="Reference Resampling",
+                position=1,
+                leave=True,
+            ):
                 reference_descriptor = molecular_descriptors[ref_idx].squeeze()
 
                 # calculate the similarity of the entire class dataset with
@@ -59,7 +115,7 @@ class SimilarityScreeningTask:
                     np.where(class_indices != ref_idx)
                 ]  # Drops the reference molecule, because it shouldnt be included in the similarity search.
 
-                similarties = self.descriptor_calculator.get_all_similiarities(
+                similarities = self.descriptor_calculator.get_all_similiarities(
                     reference_descriptor,
                     molecular_descriptors[class_indices_wo_reference],
                 )
@@ -70,20 +126,180 @@ class SimilarityScreeningTask:
 
                 # rank the similarities
                 sorting_indices = np.flip(
-                    np.argsort(similarties)
+                    np.argsort(similarities)
                 )  # finds the indices that sort the similarities from highest to lowest
 
-                ranked_similarities = similarties[sorting_indices]
-                ranked_activitiy_labels = activity_labels[sorting_indices]
-                ranked_indices = class_indices[sorting_indices]
+                ranked_similarities[resampling_index, :] = similarities[sorting_indices]
+                ranked_activity_labels[resampling_index, :] = activity_labels[
+                    sorting_indices
+                ]
+                ranked_indices[resampling_index, :] = class_indices_wo_reference[
+                    sorting_indices
+                ]  # These are the mol ids, ranked, that correspond to the activity class under investigation
 
-        return ranked_similarities, ranked_activitiy_labels, ranked_indices
+            self.result_dict[class_label] = SimilarityScreeningRankedResults(
+                ranked_similarities=ranked_similarities,
+                ranked_activity_labels=ranked_activity_labels,
+                ranked_mol_indices=ranked_indices,
+            )
 
-        # Threshhold metrics
+        return self.result_dict
 
-        # Ranking Metrics
-        # Calculate AUC, ER metrics
-        # Early Enrichment
-        # BEDROC
+    def compute_metrics(self, enrichment_factor_percentage=0.01):
+        self.compute_AUC_ROC()
+        self.compute_enrichment_factor(subset_percentage=enrichment_factor_percentage)
 
-        # calculate the
+    def compute_AUC_ROC(self):
+        auroc_fn = AUROC("binary")
+
+        results = []
+        for class_label in self.result_dict.keys():
+            class_results: SimilarityScreeningRankedResults = self.result_dict[
+                class_label
+            ]
+            number_of_resamples = class_results.ranked_similarities.shape[0]
+            auroc_values = []
+            for resampling_index in range(number_of_resamples):
+                predictions = class_results.ranked_similarities[resampling_index, :]
+
+                targets = class_results.ranked_activity_labels[resampling_index, :]
+                auroc_values.append(
+                    auroc_fn(torch.Tensor(predictions), torch.Tensor(targets))
+                    .cpu()
+                    .numpy()
+                    .item()
+                )
+
+            results.append(
+                SimilarityScreeningClassificationMetric(
+                    class_index=class_label,
+                    sampled_metrics=auroc_values,
+                    metric=SimilarityMetrics.AUROC,
+                    avg_metric=np.mean(np.array(auroc_values)).item(),
+                )
+            )
+
+        self.results.extend(results)
+
+    def compute_enrichment_factor(self, subset_percentage: float):
+        # Subset percentage given as 0.01 (=top 1% of the dataset)
+        ef_results = []
+
+        for class_label in self.result_dict.keys():
+            class_results: SimilarityScreeningRankedResults = self.result_dict[
+                class_label
+            ]
+
+            total_number_of_compounds = class_results.ranked_similarities.shape[-1]
+            subset_size = int(floor(subset_percentage * total_number_of_compounds))
+
+            total_number_of_actives = np.count_nonzero(
+                class_results.ranked_activity_labels[0, :]
+            )
+
+            number_of_resamples = class_results.ranked_similarities.shape[0]
+            enrichment_factor_values = []
+            for resampling_index in range(number_of_resamples):
+                actives_in_subset = np.count_nonzero(
+                    np.array(class_results.ranked_activity_labels)[
+                        resampling_index, :subset_size
+                    ]
+                )
+
+                ef = (actives_in_subset / subset_size) / (
+                    total_number_of_actives / total_number_of_compounds
+                )
+
+                enrichment_factor_values.append(ef)
+
+            ef_results.append(
+                SimilarityScreeningClassificationMetric(
+                    metric=SimilarityMetrics.ENRICHMENT_FACTOR,
+                    sampled_metrics=enrichment_factor_values,
+                    class_index=class_label,
+                    avg_metric=np.mean(np.array(enrichment_factor_values)).item(),
+                )
+            )
+
+        self.results.extend(ef_results)
+
+    def compute_roc_curve(self):
+        roc = BinaryROC()
+        results = []
+        for class_label in self.result_dict.keys():
+            class_results: SimilarityScreeningRankedResults = self.result_dict[
+                class_label
+            ]
+            number_of_resamples = class_results.ranked_similarities.shape[0]
+
+            for resampling_index in range(number_of_resamples):
+                predictions = class_results.ranked_similarities[resampling_index, :]
+
+                targets = class_results.ranked_activity_labels[resampling_index, :]
+
+                false_positive_rate, true_positive_rate, thresholds = roc(
+                    predictions, targets
+                )
+
+                results.append(
+                    SimilarityScreeningClassificationMetric(
+                        class_index=class_label,
+                        sampled_metrics={
+                            "true_positive_rate": true_positive_rate.detach()
+                            .cpu()
+                            .numpy(),
+                            "false_positive_rate": false_positive_rate.detach()
+                            .cpu()
+                            .numpy(),
+                        },
+                        metric=SimilarityMetrics.ROC,
+                        avg_metric=None,
+                    )
+                )
+
+        return results
+
+    def compute_BEDROC(self):
+        pass
+
+    def get_similarity_metric_results(self, metric: SimilarityMetrics):
+        class_labels = []
+        avg_metric_values = []
+        print(self.results)
+        for result in self.results:
+            if result.metric == metric:
+                class_labels.append(result.class_index)
+                avg_metric_values.append(result.avg_metric)
+
+        return np.array(class_labels), np.array(avg_metric_values)
+
+
+def plot_reference_vs_model_classification_metric(
+    threedscriptor_screening: SimilarityScreening,
+    reference_screening: SimilarityScreening,
+    metric: SimilarityMetrics,
+):
+    reference_data_labels, reference_data_values = (
+        reference_screening.get_similarity_metric_results(metric)
+    )
+
+    model_data_labels, model_data_values = (
+        threedscriptor_screening.get_similarity_metric_results(metric)
+    )
+
+    fig = plt.figure()
+
+    plt.plot(
+        reference_data_labels,
+        reference_data_values,
+        label=reference_screening.descriptor_calculator.descriptor_name,
+    )
+
+    plt.plot(model_data_labels, model_data_values, label="threedscriptor")
+
+    plt.ylabel(str(metric))
+    plt.xlabel("Activity Class Index")
+    plt.xticks(reference_data_labels)
+    # plt.xlim(left = 0, right = reference_data_labels[-1])
+
+    return fig

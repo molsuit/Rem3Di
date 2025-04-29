@@ -83,6 +83,7 @@ class DatasetBuilder:
                     tqdm.write(
                         f"Error with Generating Conformers for Smiles {smiles}: {ve}"
                     )
+                    continue
 
                 N_confs = len(embeded_molecules)
                 smiles_list.extend([smiles] * N_confs)
@@ -385,7 +386,23 @@ class DatasetBuilder:
         else:
             assert std_per_dim.shape == embeddings.shape
 
-        embeddings = (embeddings - mean_per_dim) / std_per_dim
+        self.mean_atomic_embeddings = mean_per_dim
+        self.std_atomic_embeddings = std_per_dim
+
+        # embeddings = (embeddings - mean_per_dim) / std_per_dim
 
         self.dataset.embeddings = torch.Tensor(embeddings)
         self.dataset.padding_mask = torch.Tensor(padding_mask)
+
+    def get_mean_and_std_embeddings(self):
+        if hasattr(self, "mean_atomic_embeddings"):
+            mean_embeddings = self.mean_atomic_embeddings
+        else:
+            mean_embeddings = None
+
+        if hasattr(self, "std_atomic_embeddings"):
+            std_embeddings = self.std_atomic_embeddings
+        else:
+            std_embeddings = None
+
+        return mean_embeddings, std_embeddings

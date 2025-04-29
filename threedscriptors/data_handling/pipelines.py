@@ -15,6 +15,7 @@ from threedscriptors.data_handling.data_build_pipeline import (
     SimilarityLabelingStage,
 )
 from threedscriptors.data_handling.dataset import (
+    AtomicEmbeddingDataset,
     RegressionDataset,
     SimilarityScreeningDataset,
 )
@@ -58,8 +59,16 @@ def chiral_regression_training_pipeline(
     return PipelineOrchestrator(stages)
 
 
-def pretraining_pipeline():
-    pass
+def pretraining_pipeline(dataset_config: DatasetConfig, smiles):
+    stages = [
+        InitializeBuildPipeline(dataset_config, AtomicEmbeddingDataset),
+        InsertSmilesStage(smiles=smiles),
+        ConformalEmbeddingStage(),
+        RelaxStage(dataset_config.embedding_model_config.mace_calc),
+        AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
+    ]
+
+    return PipelineOrchestrator(stages)
 
 
 def similarity_screening_pipeline(

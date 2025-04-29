@@ -20,6 +20,7 @@ dependencies = [
     "rdkit2ase",
     "mace-torch==0.3.10",
     "molfeat",
+    "umap-learn"
 ]
 [project.optional-dependencies]
 cuequivariance = [

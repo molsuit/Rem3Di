@@ -1,0 +1,75 @@
+from collections.abc import Iterable
+
+import torch
+from torch.utils.data import DataLoader
+
+from threedscriptors.data_handling.dataset import (
+    AtomicEmbeddingDataset,
+    RegressionDataset,
+    RegressionWithAuxDataset,
+)
+from threedscriptors.data_handling.sample import Sample, sample_collate_fn
+from threedscriptors.model.regression_models import (
+    MultiTaskRegressionModel,
+)
+
+
+def evaluate_regression_model_on_dataset(
+    model: MultiTaskRegressionModel,
+    dataset: RegressionWithAuxDataset | RegressionDataset,
+    device="cuda",
+):
+    assert set([tc.task_name for tc in dataset.dataset_config.tasks]).issubset(
+        set(model.multitask_heads.task_list)
+    )
+
+    batch_size = 128
+    dataloader: Iterable[Sample] = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=False,
+        collate_fn=sample_collate_fn,
+    )
+
+    regression_predictions = torch.zeros_like(dataset.regression_targets)
+
+    for batch_idx, samples in enumerate(dataloader):
+        embeddings = samples.embeddings.to(device)
+        padding_mask = samples.padding_mask.to(device)
+        auxillary_data = samples.auxillary_data
+
+        regression_predictions[
+            batch_idx * batch_size : (batch_idx + 1) * batch_size, :
+        ] = model(embeddings, padding_mask, auxillary_data)
+
+    return regression_predictions
+
+
+def evaluate_molecular_descriptor_on_dataset(
+    model: MultiTaskRegressionModel, dataset: AtomicEmbeddingDataset, device="cuda"
+):
+    batch_size = min(128, len(dataset))
+    dataloader: Iterable[Sample] = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=False,
+        collate_fn=sample_collate_fn,
+    )
+
+    model.to(device)
+
+    descriptors = torch.zeros(
+        size=(len(dataset), model.global_aggregator.config.output_dim)
+    )
+
+    for batch_idx, samples in enumerate(dataloader):
+        embeddings = samples.embeddings.to(device)
+        padding_mask = samples.padding_mask.to(device)
+
+        descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
+            model.get_molecular_descriptor(embeddings, padding_mask).detach().cpu()
+        )
+
+    return descriptors
