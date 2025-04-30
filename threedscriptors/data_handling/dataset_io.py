@@ -32,7 +32,7 @@ def store_data_to_disk(dataset: BaseDataset, directory: str):
 
     # Store Regression Targets
     if dataset.regression_targets is not None:
-        if dataset.dataset_config.is_normalized:
+        if dataset.dataset_config.regression_is_normalized:
             # undo the normalization
             raise ValueError
 
@@ -60,7 +60,9 @@ def store_data_to_disk(dataset: BaseDataset, directory: str):
 
 
 def load_data_from_disk(
-    directory: str | Path, dataset_cls: type[BaseDataset] = BaseDataset
+    directory: str | Path,
+    dataset_cls: type[BaseDataset] = BaseDataset,
+    load_molecules: bool = True,
 ):
     directory = str(directory)
     # Load dataset_config first
@@ -72,7 +74,7 @@ def load_data_from_disk(
         f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))
     ]
 
-    if "padded_positions.npy" in files:
+    if "padded_positions.npy" in files and load_molecules:
         # This could be used to directly load the data from e.g. GEOM Drugwithout relaxation or simply reload the data from the disk.
 
         positions = np.load(f"{directory}/padded_positions.npy")

@@ -1,3 +1,5 @@
+import argparse
+
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
@@ -11,12 +13,33 @@ from threedscriptors.configuration.architecture_config import (
 )
 from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.dataset import (
-    RegressionWithAuxDataset,
+    RegressionDataset,
 )
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.data_handling.sample import sample_collate_fn
 from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.training.regression_training import multitask_masked_loss
+
+
+def parse_args():
+    """
+    Parse command-line arguments and return the run_name.
+    """
+    parser = argparse.ArgumentParser(
+        description="Parse the --run_name argument for naming runs"
+    )
+    parser.add_argument(
+        "--run_name",
+        type=str,
+        required=True,
+        help="Name of the run (e.g., experiment identifier)",
+    )
+    args = parser.parse_args()
+    return args.run_name
+
+
+run_name = parse_args()
+
 
 torch.manual_seed(0)
 
@@ -30,8 +53,8 @@ training_config = TrainingConfig(
     max_grad_norm=1.0,
     wandb_active=True,
     mace_model_path="/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model",
-    dataset_path="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/cmrt",
-    model_dir="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/cmrt_ps",
+    dataset_path="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/antiviral_admet",
+    model_dir="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/antiviral_admet",
     normalized_atomic_descriptors=True,
     normalized_targets=True,
 )
@@ -41,7 +64,7 @@ pipeline_orchestrator = reload_dataset_pipeline(
     training_config.dataset_path,
     normalize_inputs=training_config.normalized_atomic_descriptors,
     normalize_targets=training_config.normalized_targets,
-    dataset_cls=RegressionWithAuxDataset,
+    dataset_cls=RegressionDataset,
 )
 dataset = pipeline_orchestrator.build()
 mean_embeddings, std_embeddings = (
@@ -90,6 +113,7 @@ if training_config.wandb_active:
     wandb.init(
         project="threedscriptors",
         entity="threedscriptors",
+        name=run_name,
         config={
             "architecture_config": architecture_config.model_dump(),
             "training_config": training_config.model_dump(),

@@ -176,6 +176,10 @@ class DatasetBuilder:
                     tqdm.write(
                         f"Error with Generating Conformers for Smiles {smiles_0}: {ve}"
                     )
+                    continue
+
+                print(smiles_0)
+                print(smiles_1)
                 N_confs_per_enantionmer = len(embeded_molecules_0)
                 N_total_confs = 2 * N_confs_per_enantionmer
 
@@ -260,8 +264,6 @@ class DatasetBuilder:
 
         print(f"{len(self.dataset.molecules)} Molecules")
 
-        self.dataset.dataset_config.has_relaxed_positions = True
-
     def calculate_atomic_embeddings(
         self, calculator: MACECalculator, embedding_size: int
     ):
@@ -293,8 +295,6 @@ class DatasetBuilder:
 
         self.dataset.embeddings = torch.Tensor(embeddings)
         self.dataset.padding_mask = torch.Tensor(padding_mask)
-
-        self.dataset.dataset_config.has_atomic_embeddings = True
 
     def add_regression_data(
         self,
@@ -332,14 +332,14 @@ class DatasetBuilder:
         # auxillary data needs to be expanded to have data for every conformer
         for task, aux_data in auxillary_data.items():
             expanded_aux_data = aux_data[self.dataset.mol_ids, :]
-            expanded_aux_dict[task] = torch.Tensor(expanded_aux_data)
+            expanded_aux_dict[task] = torch.Tensor(expanded_aux_data).float()
 
         self.dataset.auxillary_data = expanded_aux_dict
 
     def normalize_regression_targets(self):
         assert self.dataset.regression_targets is not None
 
-        if self.dataset.dataset_config.is_normalized:
+        if self.dataset.dataset_config.regression_is_normalized:
             print("Dataset was already normalized")
             return
 
@@ -359,7 +359,7 @@ class DatasetBuilder:
             task.mean = task_mean
             task.std = task_std
 
-        self.dataset.dataset_config.is_normalized = True
+        self.dataset.dataset_config.regression_is_normalized = True
 
         self.dataset.regression_targets = torch.Tensor(regression_targets)
 

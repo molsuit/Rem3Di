@@ -27,7 +27,7 @@ non_task_columns = {
 }
 
 
-load_dataset = "adme_fang"
+load_dataset = "antiviral_admet"
 
 # Load the benchmark from polarishub
 smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
@@ -53,11 +53,11 @@ print(embedding_model_config)
 # Get the train and test data-loaders
 
 dataset_config = DatasetConfig(
-    N_molecules=50,
+    N_molecules=2000,
     dataset_type=DatasetTypes.REGRESSION,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
-    N_conformers=5,
+    N_conformers=16,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,

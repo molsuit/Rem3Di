@@ -93,8 +93,5 @@ class DatasetConfig(BaseModel):
     N_conformers: int = 1
     embedding_model_config: MaceCalculatorConfig | None = None
     max_atoms: int | None = None
-    is_normalized: bool = False
+    regression_is_normalized: bool = False
     tasks: Sequence[TaskConfig] | None = None
-    has_relaxed_positions: bool = False
-    has_atomic_embeddings: bool = False
-    reload_from_directory: str | None = None

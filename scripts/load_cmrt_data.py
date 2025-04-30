@@ -1,3 +1,5 @@
+from mace.calculators import MACECalculator
+
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     DatasetTypes,
@@ -22,19 +24,18 @@ MACE_PATH = (
 )
 
 embedding_model_config = MaceCalculatorConfig(
-    mace_calc=None,
-    model_name="medium",
+    mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
+    model_name="mace_mp_medium",
     model_path=MACE_PATH,
     enable_cueq=True,
     device="cuda",
 )
-
 dataset_config = DatasetConfig(
-    N_molecules=1000,
+    N_molecules=2000,
     dataset_type=DatasetTypes.REGRESSION,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
-    N_conformers=32,
+    N_conformers=16,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,

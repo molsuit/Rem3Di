@@ -68,10 +68,6 @@ class BaseDataset(data.Dataset):
 
         return self.dataset_config.max_atoms
 
-    def expand_embedding_num_atoms(self, new_max_num_atoms):
-        # Method can be used to increase the "Sequence length" i.e the number of atoms in a molecule. So that the embeddings do not have to be recalculated.
-        raise NotImplementedError
-
     def get_padded_positions(self):
         positions = [at.get_positions() for at in self.molecules]
         atomic_numbers = [at.get_atomic_numbers() for at in self.molecules]
