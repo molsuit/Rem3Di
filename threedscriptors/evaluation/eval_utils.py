@@ -18,12 +18,17 @@ def evaluate_regression_model_on_dataset(
     model: MultiTaskRegressionModel,
     dataset: RegressionWithAuxDataset | RegressionDataset,
     device="cuda",
-):
+):  
+    
+    # returns the predictions of the model on dataset in standardized units
+
     assert set([tc.task_name for tc in dataset.dataset_config.tasks]).issubset(
         set(model.multitask_heads.task_list)
     )
+    model.to(device)
+    model.eval()
 
-    batch_size = 128
+    batch_size = 256
     dataloader: Iterable[Sample] = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -34,14 +39,15 @@ def evaluate_regression_model_on_dataset(
 
     regression_predictions = torch.zeros_like(dataset.regression_targets)
 
-    for batch_idx, samples in enumerate(dataloader):
-        embeddings = samples.embeddings.to(device)
-        padding_mask = samples.padding_mask.to(device)
-        auxillary_data = samples.auxillary_data
-
-        regression_predictions[
-            batch_idx * batch_size : (batch_idx + 1) * batch_size, :
-        ] = model(embeddings, padding_mask, auxillary_data)
+    with torch.no_grad():
+        for batch_idx, samples in enumerate(dataloader):
+            embeddings = samples.embeddings.to(device)
+            padding_mask = samples.padding_mask.to(device)
+            auxillary_data = samples.auxillary_data
+    
+            regression_predictions[
+                batch_idx * batch_size : (batch_idx + 1) * batch_size, :
+            ] = model(embeddings, padding_mask, auxillary_data)
 
     return regression_predictions
 
@@ -49,7 +55,7 @@ def evaluate_regression_model_on_dataset(
 def evaluate_molecular_descriptor_on_dataset(
     model: MultiTaskRegressionModel, dataset: AtomicEmbeddingDataset, device="cuda"
 ):
-    batch_size = min(128, len(dataset))
+    batch_size = min(64, len(dataset))
     dataloader: Iterable[Sample] = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -59,17 +65,19 @@ def evaluate_molecular_descriptor_on_dataset(
     )
 
     model.to(device)
+    model.eval()
 
     descriptors = torch.zeros(
         size=(len(dataset), model.global_aggregator.config.output_dim)
     )
 
-    for batch_idx, samples in enumerate(dataloader):
-        embeddings = samples.embeddings.to(device)
-        padding_mask = samples.padding_mask.to(device)
+    with torch.no_grad():
+        for batch_idx, samples in enumerate(dataloader):
+            embeddings = samples.embeddings.to(device)
+            padding_mask = samples.padding_mask.to(device)
 
-        descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
-            model.get_molecular_descriptor(embeddings, padding_mask).detach().cpu()
-        )
+            descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
+                model.get_molecular_descriptor(embeddings, padding_mask).detach().cpu()
+            )
 
     return descriptors

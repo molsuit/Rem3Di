@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from enum import Enum
 from math import floor
-
+from typing import Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torchmetrics.classification import AUROC, BinaryROC
+from torchmetrics.classification import AUROC, BinaryROC, ROC
 from tqdm import tqdm
 
 from threedscriptors.data_handling.dataset import SimilarityScreeningDataset
@@ -22,7 +22,7 @@ class SimilarityMetrics(Enum):
 @dataclass
 class SimilarityScreeningClassificationMetric:
     class_index: int
-    sampled_metrics: list[float] | dict[str, list[float]]
+    sampled_metrics: list[float] | list[dict[str, list[float]]]
     metric: SimilarityMetrics
     avg_metric: float | None
 
@@ -61,7 +61,8 @@ class SimilarityScreening:
         )
         assert active_indices.shape[0] >= num
 
-        indices = self.random_generator.choice(active_indices, size=num, replace=False)
+        indices = self.random_generator.choice(
+            active_indices, size=num, replace=False)
 
         return indices
 
@@ -91,14 +92,18 @@ class SimilarityScreening:
             class_indices = self.get_class_indices(class_label)
 
             ranked_activity_labels = np.zeros(
-                shape=(actives_resampling_frequency, class_indices.shape[0] - 1)
-            )  # Subtract one due to the reference molecule being removed - we dont want the highest ranked molecule to be the reference molecule with itself.
+                shape=(actives_resampling_frequency,
+                       class_indices.shape[0] - 1)
+                # Subtract one due to the reference molecule being removed - we dont want the highest ranked molecule to be the reference molecule with itself.
+            )
 
             ranked_similarities = np.zeros(
-                shape=(actives_resampling_frequency, class_indices.shape[0] - 1)
+                shape=(actives_resampling_frequency,
+                       class_indices.shape[0] - 1)
             )
             ranked_indices = np.zeros(
-                shape=(actives_resampling_frequency, class_indices.shape[0] - 1)
+                shape=(actives_resampling_frequency,
+                       class_indices.shape[0] - 1)
             )
 
             for resampling_index, ref_idx in tqdm(
@@ -113,7 +118,8 @@ class SimilarityScreening:
 
                 class_indices_wo_reference = class_indices[
                     np.where(class_indices != ref_idx)
-                ]  # Drops the reference molecule, because it shouldnt be included in the similarity search.
+                    # Drops the reference molecule, because it shouldnt be included in the similarity search.
+                ]
 
                 similarities = self.descriptor_calculator.get_all_similiarities(
                     reference_descriptor,
@@ -129,7 +135,8 @@ class SimilarityScreening:
                     np.argsort(similarities)
                 )  # finds the indices that sort the similarities from highest to lowest
 
-                ranked_similarities[resampling_index, :] = similarities[sorting_indices]
+                ranked_similarities[resampling_index,
+                                    :] = similarities[sorting_indices]
                 ranked_activity_labels[resampling_index, :] = activity_labels[
                     sorting_indices
                 ]
@@ -147,7 +154,10 @@ class SimilarityScreening:
 
     def compute_metrics(self, enrichment_factor_percentage=0.01):
         self.compute_AUC_ROC()
-        self.compute_enrichment_factor(subset_percentage=enrichment_factor_percentage)
+        self.compute_enrichment_factor(
+            subset_percentage=enrichment_factor_percentage)
+        #self.compute_BEDROC()
+        self.compute_roc_curve()
 
     def compute_AUC_ROC(self):
         auroc_fn = AUROC("binary")
@@ -179,6 +189,8 @@ class SimilarityScreening:
                 )
             )
 
+
+
         self.results.extend(results)
 
     def compute_enrichment_factor(self, subset_percentage: float):
@@ -191,7 +203,8 @@ class SimilarityScreening:
             ]
 
             total_number_of_compounds = class_results.ranked_similarities.shape[-1]
-            subset_size = int(floor(subset_percentage * total_number_of_compounds))
+            subset_size = int(
+                floor(subset_percentage * total_number_of_compounds))
 
             total_number_of_actives = np.count_nonzero(
                 class_results.ranked_activity_labels[0, :]
@@ -217,47 +230,62 @@ class SimilarityScreening:
                     metric=SimilarityMetrics.ENRICHMENT_FACTOR,
                     sampled_metrics=enrichment_factor_values,
                     class_index=class_label,
-                    avg_metric=np.mean(np.array(enrichment_factor_values)).item(),
+                    avg_metric=np.mean(
+                        np.array(enrichment_factor_values)).item(),
                 )
             )
 
         self.results.extend(ef_results)
 
-    def compute_roc_curve(self):
-        roc = BinaryROC()
+    def compute_roc_curve(self, N_thresholds: int = 50 ):
+        roc = BinaryROC(thresholds=N_thresholds)
         results = []
+
         for class_label in self.result_dict.keys():
             class_results: SimilarityScreeningRankedResults = self.result_dict[
                 class_label
             ]
             number_of_resamples = class_results.ranked_similarities.shape[0]
 
+            curves = []
             for resampling_index in range(number_of_resamples):
-                predictions = class_results.ranked_similarities[resampling_index, :]
+                predictions = torch.Tensor(class_results.ranked_similarities[resampling_index, :])
 
-                targets = class_results.ranked_activity_labels[resampling_index, :]
+                targets = torch.Tensor(class_results.ranked_activity_labels[resampling_index, :]).int()
 
                 false_positive_rate, true_positive_rate, thresholds = roc(
                     predictions, targets
                 )
 
-                results.append(
-                    SimilarityScreeningClassificationMetric(
-                        class_index=class_label,
-                        sampled_metrics={
-                            "true_positive_rate": true_positive_rate.detach()
-                            .cpu()
-                            .numpy(),
-                            "false_positive_rate": false_positive_rate.detach()
-                            .cpu()
-                            .numpy(),
-                        },
-                        metric=SimilarityMetrics.ROC,
-                        avg_metric=None,
-                    )
-                )
+                curves.append({
+                    "true_positive_rate": true_positive_rate.detach()
+                    .cpu()
+                    .numpy(),
+                    "false_positive_rate": false_positive_rate.detach()
+                    .cpu()
+                    .numpy(),
+                    "thresholds": thresholds.detach().cpu().numpy()
+                })
 
-        return results
+            tprs = [curve["true_positive_rate"] for curve in curves]
+            tpr_mean = np.mean(np.array(tprs), axis=0)
+
+            fprs = [curve["false_positive_rate"] for curve in curves]
+            fpr_mean = np.mean(np.array(fprs), axis=0)
+
+            assert tpr_mean.shape == (N_thresholds,)
+
+            results.append(
+                SimilarityScreeningClassificationMetric(
+                    class_index=class_label,
+                    sampled_metrics=curves,
+                    metric=SimilarityMetrics.ROC,
+                    avg_metric={"true_positive_rate": tpr_mean,
+                                "false_positive_rate": fpr_mean, "thresholds": thresholds},
+                )
+            )
+
+        self.results.extend(results)
 
     def compute_BEDROC(self):
         pass
@@ -265,7 +293,6 @@ class SimilarityScreening:
     def get_similarity_metric_results(self, metric: SimilarityMetrics):
         class_labels = []
         avg_metric_values = []
-        print(self.results)
         for result in self.results:
             if result.metric == metric:
                 class_labels.append(result.class_index)
@@ -301,5 +328,30 @@ def plot_reference_vs_model_classification_metric(
     plt.xlabel("Activity Class Index")
     plt.xticks(reference_data_labels)
     # plt.xlim(left = 0, right = reference_data_labels[-1])
+
+    return fig
+
+
+def plot_roc(threedscriptor_screening: SimilarityScreening, reference_screening: SimilarityScreening):
+
+    threedes_rocs : list[SimilarityScreeningClassificationMetric] = [results for results in threedscriptor_screening.results if 
+                     results.metric == SimilarityMetrics.ROC]
+
+
+    reference_rocs : list[SimilarityScreeningClassificationMetric] = [results for results in reference_screening.results if results.metric == SimilarityMetrics.ROC]
+
+    fig, axes = plt.subplots(1, len(reference_rocs))
+    
+    if not isinstance(axes, Sequence):
+        axes = [axes]
+    
+    for fig_index, (model_roc, reference_roc) in enumerate(zip(threedes_rocs, reference_rocs)):
+        axes[fig_index].plot(model_roc.avg_metric["false_positive_rate"], model_roc.avg_metric["true_positive_rate"], label = "3Des Model ROC")
+
+        axes[fig_index].plot(reference_roc.avg_metric["false_positive_rate"], reference_roc.avg_metric["true_positive_rate"], label = "Reference Des. ROC")
+
+        axes[fig_index].plot(np.linspace(0,1,10), np.linspace(0,1,10), color = "k")
+
+    plt.legend()
 
     return fig

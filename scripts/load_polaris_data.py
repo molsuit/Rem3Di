@@ -22,7 +22,7 @@ smiles_column = {
 }
 
 non_task_columns = {
-    "antiviral_admet": ["Molecule Name", "Set", "CXSMILES"],
+    "antiviral_admet": ["Molecule Name","Set", "CXSMILES"],
     "adme_fang": ["UNIQUE_ID", "MOL_smiles", "SMILES"],
 }
 
@@ -33,13 +33,15 @@ load_dataset = "antiviral_admet"
 smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
     dataset_registry[load_dataset],
     smiles_column=smiles_column[load_dataset],
-    non_task_columns=non_task_columns[load_dataset],
+    non_task_columns=non_task_columns[load_dataset],datasplit="train"
 )
 
-dataset_directory = f"/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/{load_dataset}"
+print(len(smiles))
+breakpoint()
+dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}"
 
 MACE_PATH = (
-    "/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model"
+    "/share/snw30/projects/mace_model/mace_agnesi_medium.model"
 )
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
@@ -53,19 +55,20 @@ print(embedding_model_config)
 # Get the train and test data-loaders
 
 dataset_config = DatasetConfig(
-    N_molecules=2000,
+    N_molecules=100,
     dataset_type=DatasetTypes.REGRESSION,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
-    N_conformers=16,
+    N_conformers=1,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
 )
 
-
 dataset = regression_training_pipeline(
     dataset_config, smiles, regression_targets, regression_masks
 ).build()
+print(dataset.regression_masks)
+print(dataset.regression_targets)
 
-store_data_to_disk(dataset, dataset_directory)
+#store_data_to_disk(dataset, dataset_directory)

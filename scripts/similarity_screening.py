@@ -6,7 +6,8 @@ from threedscriptors.evaluation.evaluation_pipeline import (
 )
 from threedscriptors.model.model_builder import ModelBuilder
 
-directory = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/virtual_screening"
+directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/virtual_screening"
+
 
 dataset = load_data_from_disk(directory, AtomicEmbeddingDataset)
 print("loaded dataset")

@@ -47,7 +47,7 @@ class ConfigFactory:
 
         if self.embedding_preprocessor_config.pseudoscalars:
             _, self.embedding_preprocessor_config.output_irreps = get_invariant_indices(
-                self.embedding_preprocessor_config.input_irreps + Irreps("128x0o")
+                self.embedding_preprocessor_config.input_irreps + Irreps(f"{self.embedding_preprocessor_config.pseudoscalar_dimension}x0o")
             )
         else:
             _, self.embedding_preprocessor_config.output_irreps = get_invariant_indices(

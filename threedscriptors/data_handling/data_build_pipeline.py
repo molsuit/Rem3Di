@@ -58,6 +58,9 @@ class ReloadFromDiskStage(BuildStage):
 
     def _run(self, _: DatasetBuilder):
         dataset = load_data_from_disk(self.directory, self.dataset_cls)
+        print(dataset.regression_masks)
+        print(dataset.regression_targets)
+
         builder = DatasetBuilder(dataset=dataset)
         return builder
 
@@ -157,6 +160,7 @@ class RegressionLabelingStage(BuildStage):
         self.regression_masks = regression_masks
 
     def _run(self, builder: DatasetBuilder):
+        
         builder.add_regression_data(
             regression_targets=self.regression_targets,
             regression_masks=self.regression_masks,

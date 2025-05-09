@@ -12,7 +12,7 @@ from threedscriptors.data_handling.source_preprocessing.cmrt_preprocessing impor
 )
 
 dataset_directory = (
-    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/cmrt"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt"
 )
 
 smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
@@ -20,9 +20,9 @@ smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
 )
 
 MACE_PATH = (
-    "/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model"
+    "/share/snw30/projects/mace_model/mace_agnesi_medium.model"
 )
-
+print(len(smiles))
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
     model_name="mace_mp_medium",
@@ -31,11 +31,11 @@ embedding_model_config = MaceCalculatorConfig(
     device="cuda",
 )
 dataset_config = DatasetConfig(
-    N_molecules=2000,
+    N_molecules=20,
     dataset_type=DatasetTypes.REGRESSION,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
-    N_conformers=16,
+    N_conformers=2,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
@@ -49,4 +49,7 @@ dataset = chiral_regression_training_pipeline(
     auxillary_data=aux_data,
 ).build()
 
-store_data_to_disk(dataset, dataset_directory)
+
+print(dataset.regression_masks)
+print(dataset.regression_targets)
+#store_data_to_disk(dataset, dataset_directory)

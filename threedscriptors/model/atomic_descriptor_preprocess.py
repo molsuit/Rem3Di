@@ -89,6 +89,10 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             f"{embedding_preprocess_config.pseudoscalar_embedding_dim}x1e"
         )
 
+        out_irrep = o3.Irreps(
+            f"{embedding_preprocess_config.pseudoscalar_dimension}x0o"
+        )
+
         self.lin0 = o3.Linear(i_in1, embedd_irrep1)
         self.tp_1 = o3.TensorProduct(
             i_in1,
@@ -105,6 +109,10 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             self.lin.irreps_out,
             o3.Irreps("1x0o"),
         )
+        print(self.lin.irreps_out)
+        print(irreps_mid)
+        print(instructions)
+
         self.tp_2 = o3.TensorProduct(
             i_in1,
             self.lin.irreps_out,
@@ -113,8 +121,14 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             shared_weights=True,
             internal_weights=True,
         )
+        self.out_lin = o3.Linear(self.tp_2.irreps_out, out_irrep)
+        print(self.out_lin.irreps_out)
+        print(self.tp_2.irreps_out)
 
-        self.config.output_irreps = self.invariant_irreps + self.tp_2.irreps_out
+        self.norm = torch.nn.LayerNorm(embedding_preprocess_config.pseudoscalar_dimension)
+
+        self.config.output_irreps = self.invariant_irreps + self.out_lin.irreps_out
+
         self.config.output_irreps_dim = self.config.output_irreps.dim
 
     def forward(self, atomic_embedding):
@@ -133,9 +147,12 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
         return atomic_embedding
 
     def get_pseudoscalars(self, atomic_embedding):
-        pseudoscalar = self.tp_2(
+        pseudoscalar = self.out_lin(self.tp_2(
             atomic_embedding[:],
             self.lin(self.tp_1(atomic_embedding[:], self.lin0(atomic_embedding[:]))),
-        )
+        ))
+    
+        pseudoscalar = self.norm(pseudoscalar)
+
 
         return pseudoscalar

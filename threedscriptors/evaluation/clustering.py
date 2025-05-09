@@ -26,8 +26,8 @@ class PCACalculator(ClusteringCalculator):
 
 class UMAPCalculator(ClusteringCalculator):
     @staticmethod
-    def get_dimensionality_reduction(data_matrix: torch.Tensor):
-        fit = umap.UMAP()
+    def get_dimensionality_reduction(data_matrix: torch.Tensor, k=2):
+        fit = umap.UMAP(n_components=k)
         data_matrix = data_matrix.detach().cpu().numpy()
         umap_projection = fit.fit_transform(data_matrix)
         return umap_projection
@@ -53,7 +53,7 @@ def plot_reduced_dimension(principle_components):
 
     # Create the scatter plot
     fig = plt.figure(figsize=(8, 6))
-    plt.scatter(pc1, pc2, edgecolor="k", alpha=0.7)
+    plt.scatter(pc1, pc2, edgecolor="k", alpha=0.7, s= 1)
 
     ## Manually build a legend
     # legend_handles = [

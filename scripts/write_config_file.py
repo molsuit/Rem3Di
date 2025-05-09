@@ -12,17 +12,17 @@ from threedscriptors.configuration.architecture_config import (
 from threedscriptors.configuration.config_factory import ConfigFactory
 from threedscriptors.configuration.data_config import DatasetConfig
 
-run = "antiviral_admet"
+run = "cmrt"
 
-config_file = f"/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/{run}/dataset_config.yaml"
+config_file = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{run}/dataset_config.yaml"
 dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, config_file)
 
 
-model_dir = f"/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/{run}/"
+model_dir = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/{run}/"
 
 
 embedding_preprocessor_config = EmbeddingPreprocessConfig(
-    pseudoscalars=True, pseudoscalar_dimension=128, pseudoscalar_embedding_dim=128
+    pseudoscalars=True, pseudoscalar_dimension=16, pseudoscalar_embedding_dim=128
 )
 
 attention_layer_config = AttentionLayerConfig(
@@ -49,7 +49,7 @@ cf = ConfigFactory(
 
 head_config_template = RegressionHeadConfig(
     activation_fn=torch.nn.SiLU(),
-    hidden_dimensions=[128],
+    hidden_dimensions=[512,256,128],
     head_type=HeadType.FULLY_CONNECTED,
 )
 

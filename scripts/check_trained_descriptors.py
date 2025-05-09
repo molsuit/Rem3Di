@@ -51,6 +51,4 @@ fig = plot_similarity_matrix(sim_matrix, cmap="inferno")
 fig.savefig(f"sim_mat_{eval_name}.png")
 
 
-print(descriptors.shape)
-
 plt.savefig(f"PCA_{eval_name}.png")

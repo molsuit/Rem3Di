@@ -13,7 +13,7 @@ from threedscriptors.configuration.architecture_config import (
 )
 from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.dataset import (
-    RegressionDataset,
+    RegressionDataset, RegressionWithAuxDataset
 )
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.data_handling.sample import sample_collate_fn
@@ -49,12 +49,12 @@ np.random.seed(0)
 training_config = TrainingConfig(
     batch_size=128,
     epochs=100,
-    learning_rate=2e-5,
+    learning_rate=1e-4,
     max_grad_norm=1.0,
     wandb_active=True,
-    mace_model_path="/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model",
-    dataset_path="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/antiviral_admet",
-    model_dir="/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/transformer_model/antiviral_admet",
+    mace_model_path="/share/snw30/projects/mace_model/mace_agnesi_medium.model",
+    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/cmrt",
     normalized_atomic_descriptors=True,
     normalized_targets=True,
 )
@@ -64,8 +64,11 @@ pipeline_orchestrator = reload_dataset_pipeline(
     training_config.dataset_path,
     normalize_inputs=training_config.normalized_atomic_descriptors,
     normalize_targets=training_config.normalized_targets,
-    dataset_cls=RegressionDataset,
+    dataset_cls=RegressionWithAuxDataset,
 )
+
+
+
 dataset = pipeline_orchestrator.build()
 mean_embeddings, std_embeddings = (
     pipeline_orchestrator.builder.get_mean_and_std_embeddings()
@@ -155,6 +158,10 @@ for epoch in range(training_config.epochs):
         prediction = model(
             embeddings, padding_mask=padding_mask, auxillary_data=auxillary_data
         )
+
+        #print(regression_targets)
+        #print(prediction)
+
 
         loss, batch_weighed_loss_per_task_train = multitask_masked_loss(
             predictions=prediction,

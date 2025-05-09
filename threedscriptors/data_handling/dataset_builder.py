@@ -42,7 +42,7 @@ class DatasetBuilder:
         initial_smiles_list = self.dataset.smiles_list
 
         if dataset_config.N_molecules is None:
-            limit = len(initial_smiles_list) + 1
+            limit = len(initial_smiles_list)*dataset_config.N_conformers
 
         else:
             limit = dataset_config.N_molecules
@@ -257,10 +257,11 @@ class DatasetBuilder:
                 self.dataset.mol_ids[i] for i in correct_molecule_indices
             ]
 
-        self.dataset.mol_ids = [self.dataset.mol_ids[i] for i in sucessfull_relaxations]
-        self.dataset.molecules = [
-            self.dataset.molecules[i] for i in sucessfull_relaxations
-        ]
+        else:
+            self.dataset.mol_ids = [self.dataset.mol_ids[i] for i in sucessfull_relaxations]
+            self.dataset.molecules = [
+                self.dataset.molecules[i] for i in sucessfull_relaxations
+            ]
 
         print(f"{len(self.dataset.molecules)} Molecules")
 
@@ -315,6 +316,7 @@ class DatasetBuilder:
                 "Regression Target Array has unexpected numbers of dimensions"
             )
 
+        assert np.all(np.any(regression_targets, axis=0)), "There are some empty tasks "
         self.dataset.regression_targets = torch.Tensor(regression_targets)
         self.dataset.regression_masks = torch.Tensor(regression_masks)
 
@@ -356,12 +358,14 @@ class DatasetBuilder:
         for task, task_mean, task_std in zip(
             self.dataset.dataset_config.tasks, mean.tolist(), std.tolist(), strict=False
         ):
+
             task.mean = task_mean
             task.std = task_std
 
+
         self.dataset.dataset_config.regression_is_normalized = True
 
-        self.dataset.regression_targets = torch.Tensor(regression_targets)
+        self.dataset.regression_targets = torch.Tensor(self.dataset.regression_targets)
 
     def normalize_atomic_embeddings(self, mean_per_dim=None, std_per_dim=None):
         if isinstance(self.dataset.padding_mask, torch.Tensor):

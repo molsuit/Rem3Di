@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from collections import defaultdict
 
 import matplotlib.pyplot as plt
 import torch
@@ -27,13 +28,13 @@ def plot_delta_histogram(reference, prediction):
 def add_regression_head_activations_hooks(
     model: MultiTaskRegressionModel,
 ) -> tuple[dict, Callable]:
-    activations = {}  # keys will be names of layers
+    activations : dict[str, list[torch.Tensor]] = defaultdict(list) # keys will be names of layers
 
     def get_activation(name):
         """Creates a hook function that saves the output of a layer."""
 
         def hook(model, inp, output):
-            activations[name] = output.detach()
+            activations[name].append(output.detach().cpu())
 
         return hook
 

@@ -12,7 +12,7 @@ from threedscriptors.data_handling.source_preprocessing.similarity_screening_pre
     load_similarity_screening_data,
 )
 
-directory = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/similarity_screening_datasets"
+directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/virtual_screening/raw"
 
 N_classes = 1
 
@@ -22,9 +22,11 @@ smiles, class_labels, activity_labels, target_class_dict = (
 
 iterator = ListSmilesIterator(smiles)
 
+
 MACE_PATH = (
-    "/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model"
+    "/share/snw30/projects/mace_model/mace_agnesi_medium.model"
 )
+
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
     model_name="mace_mp_medium",
@@ -55,5 +57,5 @@ dataset = similarity_screening_pipeline(
 
 store_data_to_disk(
     dataset,
-    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/virtual_screening",
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/virtual_screening",
 )
