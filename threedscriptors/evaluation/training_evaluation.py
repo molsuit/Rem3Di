@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from threedscriptors.evaluation.evaluation_pipeline import DescriptorPCATask, RegressionTestTask, EvalPipelineRunner, SimilarityScreeningTask, DescriptorSimilarityAnalysisTask, RegressionHeadPCATask
+from threedscriptors.evaluation.evaluation_pipeline import DescriptorPCATask, RegressionTestTask, EvalPipelineRunner, SimilarityScreeningTask, DescriptorSimilarityAnalysisTask, RegressionHeadPCATask, ChiralPredictionTask, PreprocessorVisualizationTask
 
 import matplotlib.pyplot as plt
 
@@ -34,13 +34,23 @@ SIMILARITY_SCREENING_DATASET = reload_dataset_pipeline(SIMILARITY_SCREENING_DATA
 
 def regression_pipeline(dataset):
 
-    tasks = [
+    tasks = [DescriptorPCATask(dataset, UMAPCalculator()),
             RegressionHeadPCATask(dataset, UMAPCalculator()), 
             #RegressionTestTask(dataset),
             #SimilarityScreeningTask(SIMILARITY_SCREENING_DATASET), 
-            #DescriptorPCATask(dataset, UMAPCalculator()),
+            
             #DescriptorPCATask(dataset, PCACalculator()),
             #DescriptorSimilarityAnalysisTask(dataset)
         ]
     
+    return EvalPipelineRunner(tasks = tasks)
+
+
+def chiral_regression_pipeline(dataset):
+
+    tasks = [
+        ChiralPredictionTask(dataset),
+        PreprocessorVisualizationTask(dataset)
+    ]
+
     return EvalPipelineRunner(tasks = tasks)

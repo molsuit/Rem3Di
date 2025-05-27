@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-
+from threedscriptors.evaluation.regression_analysis import get_colors_for_predictions
 import matplotlib.pyplot as plt
 import torch
 import umap
@@ -89,8 +89,19 @@ def plot_reduced_dimension_chiral_molecules():
     pass
 
 
-def plot_reduced_dimension_with_with_regression_labels():
-    pass
+def plot_reduced_dimension_with_with_regression_labels(principle_components, predictions):
+
+    fig = plt.figure()
+
+    colors = get_colors_for_predictions(predictions)
+
+    plt.scatter(principle_components[:,0], principle_components[:,1], color = colors)
+
+    plt.xlabel("Reduced Dimension 1")
+    plt.ylabel("Reduced Dimension 2")
+    
+
+    return fig
 
 
 def plot_reduced_dimension_functional_group_comparison(reduced_dimensions, smiles):

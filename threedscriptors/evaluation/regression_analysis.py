@@ -11,6 +11,8 @@ from threedscriptors.model.regression_models import (
     ResidualBlock,
 )
 
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable, get_cmap
 
 def plot_delta_histogram(reference, prediction):
     """
@@ -69,3 +71,19 @@ def add_regression_head_activations_hooks(
                 )
 
     return activations
+
+
+
+
+
+def get_colors_for_predictions(predictions):
+
+    norm = Normalize(vmin=predictions.min(), vmax=predictions.max())
+    # 2. Pick a colormap (you can swap 'viridis' for any Matplotlib cmap)
+    cmap = get_cmap('viridis')
+    # 3. Turn it into a ScalarMappable, so you can map values → RGBA
+    mappable = ScalarMappable(norm=norm, cmap=cmap)
+    # 4. Get colors for each prediction
+    colors = mappable.to_rgba(predictions)
+
+    return colors

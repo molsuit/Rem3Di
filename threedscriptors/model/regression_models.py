@@ -51,7 +51,7 @@ class FullyConnectedBlock(nn.Module):
                 [
                     ("linear_layer", nn.Linear(in_dim, out_dim)),
                     ("layer_norm", nn.LayerNorm(out_dim)),
-                    ("activation", activation_fn),
+                    ("activation", nn.SiLU()),
                 ]
             )
         )

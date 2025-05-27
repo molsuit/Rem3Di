@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from e3nn import o3
+from e3nn.nn import BatchNorm
 from mace.modules.blocks import tp_out_irreps_with_instructions
 from torch import from_numpy, nn
 
@@ -100,7 +101,9 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             o3.Irreps("128x1e"),
             instructions=[(1, 0, 0, "uvu", True)],
             shared_weights=True,
-            internal_weights=True,
+            internal_weights=True,    
+            normalization="component",          # <- per‑component σ≈1
+            path_normalization="element", 
         )
 
         self.lin = o3.Linear(self.tp_1.irreps_out, embedd_irrep2)
@@ -120,8 +123,10 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             instructions=instructions,
             shared_weights=True,
             internal_weights=True,
+ #           normalization="component",          # <- per‑component std 1
+ #           path_normalization="element", 
         )
-        self.out_lin = o3.Linear(self.tp_2.irreps_out, out_irrep)
+        self.out_lin = o3.Linear(self.tp_2.irreps_out, out_irrep,)
         print(self.out_lin.irreps_out)
         print(self.tp_2.irreps_out)
 
@@ -152,7 +157,5 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             self.lin(self.tp_1(atomic_embedding[:], self.lin0(atomic_embedding[:]))),
         ))
     
-        pseudoscalar = self.norm(pseudoscalar)
-
 
         return pseudoscalar

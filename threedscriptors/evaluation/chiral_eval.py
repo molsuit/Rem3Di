@@ -13,7 +13,8 @@ rc_params = {
     "font.family": "serif",  # Use serif fonts
     "font.serif": ["Computer Modern Roman"],  # Specify the default LaTeX font
     "axes.unicode_minus": False,  # Avoid Unicode minus problems
-    "text.latex.preamble": r"\usepackage{amsmath}",  # Include LaTeX packages as needed
+    # Include LaTeX packages as needed
+    "text.latex.preamble": r"\usepackage{amsmath}",
 }
 
 mpl.rcParams.update(rc_params)
@@ -66,14 +67,15 @@ def plot_molecule_pseudoscalar_comparison(
             .squeeze()
         )
 
-    fig = plt.figure()
-
     regression_targets = (
-        dataset.regression_targets.reshape(-1, dataset.dataset_config.N_conformers)
+        dataset.regression_targets.reshape(-1,
+                                           dataset.dataset_config.N_conformers)
         .detach()
         .cpu()
         .numpy()
     )
+
+    fig = plt.figure()
 
     y_min = min(
         [
@@ -127,7 +129,8 @@ def plot_molecule_pseudoscalar_comparison(
             label="E1PS",
         )
 
-        plt.scatter(class_pos + 4, gt_label[0] - center, c="tab:blue", label="GT_E0")
+        plt.scatter(class_pos + 4, gt_label[0] -
+                    center, c="tab:blue", label="GT_E0")
         plt.scatter(
             class_pos + 4,
             gt_label[n_confs_per_enantionmer] - center,
@@ -159,11 +162,14 @@ def plot_molecule_pseudoscalar_comparison(
         Line2D(
             [0], [0], marker="o", color="black", linestyle="None", label="Reference"
         ),
-        Line2D([0], [0], marker="*", color="black", linestyle="None", label="With PS"),
-        Line2D([0], [0], marker="x", color="black", linestyle="None", label="No PS"),
+        Line2D([0], [0], marker="*", color="black",
+               linestyle="None", label="With PS"),
+        Line2D([0], [0], marker="x", color="black",
+               linestyle="None", label="No PS"),
     ]
 
-    plt.xticks(ticks=np.linspace(4, 76, 10), labels=[str(i) for i in range(10)])
+    plt.xticks(ticks=np.linspace(4, 76, 10),
+               labels=[str(i) for i in range(10)])
     plt.yticks([])
     plt.ylabel("Retention Time [a.u]")
     plt.xlabel("Molecule")
