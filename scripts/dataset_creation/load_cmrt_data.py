@@ -19,6 +19,10 @@ smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
     f"{dataset_directory}/raw_data.csv", single_column_type=True
 )
 
+print(aux_data)
+breakpoint()
+
+
 MACE_PATH = (
     "/share/snw30/projects/mace_model/mace_agnesi_medium.model"
 )
@@ -31,11 +35,11 @@ embedding_model_config = MaceCalculatorConfig(
     device="cuda",
 )
 dataset_config = DatasetConfig(
-    N_molecules=20,
+    N_molecules=320,
     dataset_type=DatasetTypes.REGRESSION,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
-    N_conformers=2,
+    N_conformers=16,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
@@ -52,4 +56,4 @@ dataset = chiral_regression_training_pipeline(
 
 print(dataset.regression_masks)
 print(dataset.regression_targets)
-#store_data_to_disk(dataset, dataset_directory)
+store_data_to_disk(dataset, dataset_directory)

@@ -72,7 +72,7 @@ def pretraining_pipeline(dataset_config: DatasetConfig, smiles):
 
 
 def similarity_screening_pipeline(
-    dataset_config: DatasetConfig, smiles, target_class_labels, activity_decoy_labels
+    dataset_config: DatasetConfig, smiles, target_class_labels, active_decoy_labels
 ):
     stages = [
         InitializeBuildPipeline(dataset_config, SimilarityScreeningDataset),
@@ -80,23 +80,23 @@ def similarity_screening_pipeline(
         ConformalEmbeddingStage(),
         RelaxStage(dataset_config.embedding_model_config.mace_calc),
         AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
-        SimilarityLabelingStage(target_class_labels, activity_decoy_labels),
+        SimilarityLabelingStage(target_class_labels, active_decoy_labels),
     ]
 
     return PipelineOrchestrator(stages)
 
 
 def reload_dataset_pipeline(
-    directory, normalize_inputs, normalize_targets, dataset_cls
-):
+    directory, mean_targets = None, std_targets = None
+) -> PipelineOrchestrator :
+
+
     stages = [
-        ReloadFromDiskStage(directory, dataset_cls),
+        ReloadFromDiskStage(directory),
         NormalizationStage(
-            normalize_input=normalize_inputs,
-            normalize_regression_targets=normalize_targets,
+            mean_targets, std_targets,
         ),
     ]
-
     return PipelineOrchestrator(stages)
 
 

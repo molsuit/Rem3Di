@@ -13,7 +13,7 @@ class Sample:
     auxillary_data: dict | None = None
     target_class_labels: torch.Tensor | None = None
     active_decoy_labels: torch.Tensor | None = None
-    molecular_descriptor: torch.Tensor | None = None
+    molecular_descriptors: torch.Tensor | None = None
 
 
 def sample_collate_fn(batch: list[Sample]) -> Sample:

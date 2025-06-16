@@ -26,7 +26,7 @@ def test_collate_fn_regression(
     assert batch.regression_masks.shape[0] == 2
 
     assert batch.auxillary_data is None
-    assert batch.molecular_descriptor is None
+    assert batch.molecular_descriptors is None
     assert batch.target_class_labels is None
     assert batch.active_decoy_labels is None
 
@@ -60,6 +60,6 @@ def test_collate_fn_aux_data(
     for values in batch.auxillary_data.values():
         assert values.shape[0] == 2
 
-    assert batch.molecular_descriptor is None
+    assert batch.molecular_descriptors is None
     assert batch.target_class_labels is None
     assert batch.active_decoy_labels is None

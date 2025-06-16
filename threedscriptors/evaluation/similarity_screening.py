@@ -56,7 +56,7 @@ class SimilarityScreening:
 
     def draw_random_active_from_class(self, class_label, num):
         active_indices = np.argwhere(
-            (self.dataset.activity_decoy_labels == 1)
+            (self.dataset.active_decoy_labels == 1)
             & (self.dataset.target_class_labels == class_label)
         )
         assert active_indices.shape[0] >= num
@@ -126,7 +126,7 @@ class SimilarityScreening:
                     molecular_descriptors[class_indices_wo_reference],
                 )
 
-                activity_labels = self.dataset.activity_decoy_labels[
+                activity_labels = self.dataset.active_decoy_labels[
                     class_indices_wo_reference
                 ]
 

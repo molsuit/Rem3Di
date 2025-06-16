@@ -73,9 +73,6 @@ def add_regression_head_activations_hooks(
     return activations
 
 
-
-
-
 def get_colors_for_predictions(predictions):
 
     norm = Normalize(vmin=predictions.min(), vmax=predictions.max())

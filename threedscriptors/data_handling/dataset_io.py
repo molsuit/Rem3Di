@@ -43,8 +43,8 @@ def store_data_to_disk(dataset: BaseDataset, directory: str):
     if dataset.auxillary_data is not None:
         np.savez(f"{directory}/auxillary_data.npz", **dataset.auxillary_data)
 
-    if dataset.activity_decoy_labels is not None:
-        np.save(f"{directory}/activity_labels.npy", dataset.activity_decoy_labels)
+    if dataset.active_decoy_labels is not None:
+        np.save(f"{directory}/activity_labels.npy", dataset.active_decoy_labels)
 
     if dataset.target_class_labels is not None:
         np.save(f"{directory}/target_class_labels.npy", dataset.target_class_labels)
@@ -61,13 +61,13 @@ def store_data_to_disk(dataset: BaseDataset, directory: str):
 
 def load_data_from_disk(
     directory: str | Path,
-    dataset_cls: type[BaseDataset] = BaseDataset,
     load_molecules: bool = True,
 ):
     directory = str(directory)
     # Load dataset_config first
     dataset_config = from_yaml(f"{directory}/dataset_config.yaml", DatasetConfig)
 
+    dataset_cls = dataset_config.dataset_type.value
     dataset = dataset_cls(dataset_config=dataset_config)
 
     files = [
@@ -114,7 +114,7 @@ def load_data_from_disk(
 
     if "activity_labels.npy" in files:
         assert "target_class_labels.npy" in files
-        dataset.activity_decoy_labels = np.load(f"{directory}/activity_labels.npy")
+        dataset.active_decoy_labels = np.load(f"{directory}/activity_labels.npy")
         dataset.target_class_labels = np.load(f"{directory}/target_class_labels.npy")
 
     if "auxillary_data.npz" in files:

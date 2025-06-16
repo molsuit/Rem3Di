@@ -1,4 +1,3 @@
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
@@ -8,16 +7,9 @@ from threedscriptors.data_handling.dataset import RegressionWithAuxDataset
 from threedscriptors.data_handling.sample import sample_collate_fn
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
 
-rc_params = {
-    "text.usetex": True,  # Enable LaTeX rendering
-    "font.family": "serif",  # Use serif fonts
-    "font.serif": ["Computer Modern Roman"],  # Specify the default LaTeX font
-    "axes.unicode_minus": False,  # Avoid Unicode minus problems
-    # Include LaTeX packages as needed
-    "text.latex.preamble": r"\usepackage{amsmath}",
-}
 
-mpl.rcParams.update(rc_params)
+
+
 
 
 def plot_molecule_pseudoscalar_comparison(
@@ -30,9 +22,12 @@ def plot_molecule_pseudoscalar_comparison(
         batch_size=dataset.dataset_config.N_conformers,
         shuffle=False,
         collate_fn=sample_collate_fn,
+        drop_last=True
     )
 
     device = "cuda"
+
+    N_full_conformal_ensembles = dataset.dataset_config.N_molecules // dataset.dataset_config.N_conformers
 
     enantiomer_pred_ps = np.zeros(
         (len(dataloader), dataset.dataset_config.N_conformers)
@@ -67,8 +62,12 @@ def plot_molecule_pseudoscalar_comparison(
             .squeeze()
         )
 
+
+    
+    targets = dataset.regression_targets[:(N_full_conformal_ensembles*dataset.dataset_config.N_conformers)]
+
     regression_targets = (
-        dataset.regression_targets.reshape(-1,
+        targets.reshape(-1,
                                            dataset.dataset_config.N_conformers)
         .detach()
         .cpu()
@@ -77,19 +76,21 @@ def plot_molecule_pseudoscalar_comparison(
 
     fig = plt.figure()
 
+    N_mol_infig = dataset.dataset_config.N_conformers*10
+
     y_min = min(
         [
-            np.min(a=regression_targets),
-            np.min(enantiomer_pred_ps),
-            np.min(enantiomer_pred_nops),
+            np.min(regression_targets[:N_mol_infig]),
+            np.min(enantiomer_pred_ps[:N_mol_infig]),
+            np.min(enantiomer_pred_nops[:N_mol_infig]),
         ]
     )
 
     y_max = max(
         [
-            np.max(regression_targets),
-            np.max(enantiomer_pred_ps),
-            np.max(enantiomer_pred_nops),
+            np.max(regression_targets[:N_mol_infig]),
+            np.max(enantiomer_pred_ps[:N_mol_infig]),
+            np.max(enantiomer_pred_nops[:N_mol_infig]),
         ]
     )
 
@@ -119,34 +120,33 @@ def plot_molecule_pseudoscalar_comparison(
 
         plt.vlines(x=class_pos, ymin=-5, ymax=5, colors="k")
         plt.scatter(
-            (class_pos + 2) * x, e0_ps - center, c="tab:blue", marker="*", label="E0PS"
+            (class_pos + 2) * x, e0_ps -center, c="tab:blue", marker="*", label="E0PS"
         )
         plt.scatter(
             (class_pos + 3) * x,
-            e1_ps - center,
+            e1_ps-center,
             c="tab:orange",
             marker="*",
             label="E1PS",
         )
 
-        plt.scatter(class_pos + 4, gt_label[0] -
-                    center, c="tab:blue", label="GT_E0")
+        plt.scatter(class_pos + 4, gt_label[0], c="tab:blue", label="GT_E0")
         plt.scatter(
             class_pos + 4,
-            gt_label[n_confs_per_enantionmer] - center,
+            gt_label[n_confs_per_enantionmer]-center,
             c="tab:orange",
             label="GT_E1",
         )
         plt.scatter(
             (class_pos + 5) * x,
-            e0_nps - center,
+            e0_nps-center,
             c="tab:blue",
             marker="x",
             label="E0NPS",
         )
         plt.scatter(
             (class_pos + 6) * x,
-            e1_nps - center,
+            e1_nps-center,
             c="tab:orange",
             marker="x",
             label="E1NPS",

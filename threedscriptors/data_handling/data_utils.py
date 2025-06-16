@@ -1,6 +1,7 @@
+import numpy as np
 import math
 from collections.abc import Sequence
-
+from typing import List
 import rdkit.Chem as Chem
 import torch
 from ase import Atoms
@@ -10,7 +11,11 @@ from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 from rdkit2ase import rdkit2ase
 
-from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 from threedscriptors.model.transformer_components import TransformerEncoder
 
@@ -87,7 +92,7 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
 def get_relaxed_conformers(
     smiles,
     mace_calculator: MACECalculator,
-    dataset_config: DatasetConfig,
+    dataset_config: "DatasetConfig",
     N_conformers: int,
 ):
     if N_conformers == 1:
@@ -158,7 +163,7 @@ def get_global_descriptor(
     return global_descriptor
 
 
-def has_task_with_auxillary_data(tasks: Sequence[TaskConfig]) -> bool:
+def has_task_with_auxillary_data(tasks: Sequence["TaskConfig"]) -> bool:
     for task in tasks:
         if task.has_auxillary_data:
             return True
@@ -200,3 +205,35 @@ def get_functional_group_label(smiles: list[str]):
                 raise ValueError("Non matching smiles in functional group dataset")
 
     return functional_group_indices
+
+
+def validate_ratios(ratios: Sequence[float]) -> None:
+    """Ensure the ratios add up to 1 (within 1 e-6) and are all positive."""
+    if not math.isclose(sum(ratios), 1.0, abs_tol=1e-6):
+        raise ValueError(f"`ratios` must sum to 1 (got {ratios!r})")
+    if any(r <= 0 for r in ratios):
+        raise ValueError("All ratios must be strictly positive")
+
+
+
+
+def compute_splits(size: int, ratios: Sequence[float], split_interval) -> List[slice]:
+    """Return slice objects for each split boundary."""
+    raw_counts = (np.asarray(ratios) * size).astype(int)
+
+    print(raw_counts)
+
+    base = (raw_counts // split_interval).astype(int) * split_interval
+
+    leftover = (size - base.sum()) // split_interval
+
+    base[0] += leftover* split_interval
+
+    print(base)
+    # Fix any rounding drift so the slices cover the full length
+    
+    offsets = np.cumsum(np.insert(base, 0, 0))
+    print(offsets)
+    return [slice(offsets[i], offsets[i + 1]) for i in range(len(ratios))]
+
+

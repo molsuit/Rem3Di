@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from threedscriptors.evaluation.evaluation_pipeline import DescriptorPCATask, RegressionTestTask, EvalPipelineRunner, SimilarityScreeningTask, DescriptorSimilarityAnalysisTask, RegressionHeadPCATask, ChiralPredictionTask, PreprocessorVisualizationTask
+from threedscriptors.evaluation.evaluation_pipeline import DescriptorPCATask, RegressionTestTask, EvalPipelineRunner, SimilarityScreeningTask, DescriptorSimilarityAnalysisTask, RegressionHeadPCATask, ChiralPredictionTask, PreprocessorVisualizationTask, DescriptorElementAnalysis
 
 import matplotlib.pyplot as plt
 
@@ -28,19 +28,22 @@ from threedscriptors.evaluation.similarity_screening import (
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
 
 
-SIMILARITY_SCREENING_DATASET_PATH = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/virtual_screening"
+#SIMILARITY_SCREENING_DATASET_PATH = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/virtual_screening"
+#SIMILARITY_SCREENING_DATASET = reload_dataset_pipeline(SIMILARITY_SCREENING_DATASET_PATH, normalize_targets= False, dataset_cls=AtomicEmbeddingDataset).build()
 
-SIMILARITY_SCREENING_DATASET = reload_dataset_pipeline(SIMILARITY_SCREENING_DATASET_PATH, normalize_inputs= False, normalize_targets= False, dataset_cls=AtomicEmbeddingDataset).build()
 
-def regression_pipeline(dataset):
+def regression_pipeline(train_dataset, valid_dataset):
 
-    tasks = [DescriptorPCATask(dataset, UMAPCalculator()),
-            RegressionHeadPCATask(dataset, UMAPCalculator()), 
-            #RegressionTestTask(dataset),
+    tasks = [RegressionTestTask(valid_dataset),
+            DescriptorPCATask(train_dataset, UMAPCalculator()), 
+            DescriptorPCATask(train_dataset, PCACalculator()),
+            DescriptorElementAnalysis(train_dataset),
+            DescriptorElementAnalysis(valid_dataset),
+            #RegressionHeadPCATask(dataset, UMAPCalculator()), 
             #SimilarityScreeningTask(SIMILARITY_SCREENING_DATASET), 
-            
-            #DescriptorPCATask(dataset, PCACalculator()),
-            #DescriptorSimilarityAnalysisTask(dataset)
+            #DescriptorSimilarityAnalysisTask(train_dataset),
+
+
         ]
     
     return EvalPipelineRunner(tasks = tasks)

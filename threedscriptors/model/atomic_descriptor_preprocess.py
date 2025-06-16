@@ -94,19 +94,17 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             f"{embedding_preprocess_config.pseudoscalar_dimension}x0o"
         )
 
-        self.lin0 = o3.Linear(i_in1, embedd_irrep1)
+        self.lin0 = o3.Linear(i_in1, embedd_irrep1, internal_weights = True)
         self.tp_1 = o3.TensorProduct(
             i_in1,
             embedd_irrep1,
             o3.Irreps("128x1e"),
             instructions=[(1, 0, 0, "uvu", True)],
             shared_weights=True,
-            internal_weights=True,    
-            normalization="component",          # <- per‑component σ≈1
-            path_normalization="element", 
+            internal_weights=True,
         )
 
-        self.lin = o3.Linear(self.tp_1.irreps_out, embedd_irrep2)
+        self.lin = o3.Linear(self.tp_1.irreps_out, embedd_irrep2, internal_weights = True)
         irreps_mid, instructions = tp_out_irreps_with_instructions(
             i_in1,
             self.lin.irreps_out,
@@ -115,6 +113,8 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
         print(self.lin.irreps_out)
         print(irreps_mid)
         print(instructions)
+        
+        
 
         self.tp_2 = o3.TensorProduct(
             i_in1,
@@ -126,7 +126,7 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
  #           normalization="component",          # <- per‑component std 1
  #           path_normalization="element", 
         )
-        self.out_lin = o3.Linear(self.tp_2.irreps_out, out_irrep,)
+        self.out_lin = o3.Linear(self.tp_2.irreps_out, out_irrep)
         print(self.out_lin.irreps_out)
         print(self.tp_2.irreps_out)
 
@@ -156,6 +156,8 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             atomic_embedding[:],
             self.lin(self.tp_1(atomic_embedding[:], self.lin0(atomic_embedding[:]))),
         ))
+
+        pseudoscalar = self.norm(pseudoscalar)
     
 
         return pseudoscalar

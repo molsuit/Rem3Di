@@ -8,3 +8,4 @@ wandb
 .pytest_cache
 .vscode/
 eval_runs/
+training_runs/

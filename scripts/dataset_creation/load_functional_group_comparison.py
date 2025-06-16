@@ -7,14 +7,15 @@ from threedscriptors.data_handling.dataset_io import store_data_to_disk
 from threedscriptors.data_handling.pipelines import pretraining_pipeline
 from threedscriptors.data_handling.smiles_iterator import FileSmilesIterator
 
-directory = "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/functional_group_dataset"
+directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/functional_group_dataset"
 smiles_file = f"{directory}/smiles_list"
 
 smiles_list = list(FileSmilesIterator(smiles_file))
 
 
+
 MACE_PATH = (
-    "/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model"
+    "/share/snw30/projects/mace_model/mace_agnesi_medium.model"
 )
 
 embedding_model_config = MaceCalculatorConfig(
@@ -29,7 +30,7 @@ embedding_model_config = MaceCalculatorConfig(
 dataset_config = DatasetConfig(
     N_molecules=None,
     dataset_type=DatasetTypes.PRETRAINING,
-    BFGS_tol=0.05,
+    BFGS_tol=0.001,
     BFGS_max_steps=500,
     N_conformers=1,
     embedding_model_config=embedding_model_config,

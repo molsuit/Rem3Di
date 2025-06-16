@@ -1,17 +1,28 @@
 from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
+from typing import Type
+from threedscriptors.data_handling.dataset import BaseDataset, AtomicEmbeddingDataset, RegressionDataset, SimilarityScreeningDataset, RegressionWithAuxDataset
 
 import torch
 from mace.calculators import MACECalculator
-from pydantic import BaseModel, ConfigDict, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, model_serializer, model_validator, field_validator, field_serializer
 
 
 class DatasetTypes(Enum):
-    REGRESSION = 1
-    EVALUATION = 2
-    PRETRAINING = 3
-    SIMILARITY_SCREENING = 4
+    ATOMICEMBEDDING_DATASET = AtomicEmbeddingDataset
+    REGRESSION_DATASET = RegressionDataset
+    REGRESSION_WITH_AUX_DATASET = RegressionWithAuxDataset
+    SIMILARITY_SCREENING_DATASET = SimilarityScreeningDataset
+
+    @classmethod
+    def _missing_(cls, value: object) -> "DatasetTypes":
+        if isinstance(value, str):
+            for member in cls:
+                if member.name.lower() == value.lower():
+                    return member
+        raise ValueError(f"{value!r} is not a valid {cls.__name__}")
+
 
 
 class TaskConfig(BaseModel):
@@ -95,3 +106,37 @@ class DatasetConfig(BaseModel):
     max_atoms: int | None = None
     regression_is_normalized: bool = False
     tasks: Sequence[TaskConfig] | None = None
+
+
+    def get_task_name_set(self):
+        return [tc.task_name for tc in self.tasks]
+    
+    def get_mean_std_per_task(self):
+        
+        mean = {tc.task_name : tc.mean for tc in self.tasks}
+        std =  {tc.task_name : tc.std for tc in self.tasks}
+
+        assert None not in set(mean.values())
+        assert None not in set(std.values())
+
+
+        return mean, std
+
+    @field_validator("dataset_type", mode="before")
+    @classmethod
+    def _coerce_dataset_type(cls, v):
+
+        if isinstance(v, DatasetTypes):
+            return v
+
+        if isinstance(v, type) and issubclass(v, BaseDataset):
+            return DatasetTypes(v)
+        # string → enum by name (or via _missing_)
+        if isinstance(v, str):
+            return DatasetTypes(v)
+        raise TypeError("`dataset_type` must be a DatasetTypes, a BaseDataset subclass, or a registered name")
+
+    @field_serializer("dataset_type")
+    def _serialize_dataset_type(self, v: DatasetTypes, info):
+        # turn DatasetTypes.atomic → "atomic"
+        return v.name

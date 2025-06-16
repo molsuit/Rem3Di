@@ -12,7 +12,7 @@ from threedscriptors.configuration.data_config import (
     TaskConfig,
 )
 from threedscriptors.data_handling.pipelines import regression_training_pipeline
-from threedscriptors.evaluation.eval_utils import (
+from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
     evaluate_regression_model_on_dataset,
 )

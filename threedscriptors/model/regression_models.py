@@ -150,7 +150,7 @@ class MultiTaskRegressionModel(nn.Module):
         # Concatenate outputs along the feature dimension.
         # Final shape: (batch_size, N_tasks * output_dim)
         pred = torch.cat(preds, dim=-1)
-        return pred
+        return pred, descriptor
 
     def get_molecular_descriptor(self, x, padding_mask=None) -> torch.Tensor:
         x = self.preprocessor(x)

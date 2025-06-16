@@ -9,7 +9,7 @@ from threedscriptors.evaluation.descriptor_similarity_metrics import (
     cosine_similarity,
     tanimoto_similarity,
 )
-from threedscriptors.evaluation.eval_utils import (
+from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
 )
 from threedscriptors.model.regression_models import MultiTaskRegressionModel

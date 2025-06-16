@@ -2,11 +2,16 @@ import numpy as np
 import torch
 import torch.utils.data as data
 from ase import Atoms
+from dataclasses import asdict
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    # only for mypy / IDE – never executed at runtime
+    from threedscriptors.configuration.data_config import DatasetConfig
 
-from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.data_handling.data_utils import (
     get_max_molecule_size_from_atoms,
     get_max_molecule_size_from_smiles,
+    validate_ratios, compute_splits
 )
 from threedscriptors.data_handling.sample import Sample
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
@@ -17,7 +22,18 @@ type Molecules = list[Atoms]
 class BaseDataset(data.Dataset):
     def __init__(
         self,
-        dataset_config: DatasetConfig,
+        dataset_config : "DatasetConfig",
+        smiles_list = None,
+        mol_ids = None,
+        molecules: list[Atoms] | None = None,
+        embeddings = None,
+        padding_mask = None,
+        regression_targets = None,
+        regression_masks = None,
+        auxillary_data = None,
+        target_class_labels = None,
+        active_decoy_labels = None,
+        molecular_descriptors = None,
     ):
         super().__init__()
 
@@ -25,24 +41,24 @@ class BaseDataset(data.Dataset):
 
         # Create all the fields for the child classes, which allows us to unify the store data to disk classes
 
-        self.smiles_list = None
-        self.mol_ids = None
-        self.molecules: list[Atoms] | None = None
-        self.embeddings = None
-        self.padding_mask = None
-        self.regression_targets = None
-        self.regression_masks = None
-        self.auxillary_data = None
-        self.target_class_labels = None
-        self.activity_decoy_labels = None
-        self.molecular_descriptors = None
+        self.smiles_list = smiles_list
+        self.mol_ids = mol_ids
+        self.molecules: list[Atoms] | None = molecules
+        self.embeddings = embeddings
+        self.padding_mask = padding_mask
+        self.regression_targets = regression_targets
+        self.regression_masks = regression_masks
+        self.auxillary_data = auxillary_data
+        self.target_class_labels = target_class_labels
+        self.active_decoy_labels = active_decoy_labels
+        self.molecular_descriptors = molecular_descriptors
 
     def __len__(self):
         return len(self.molecules)
 
     def __getitem__(self, _):
         return Sample()
-
+    
     def to_torch(self):
         if self.embeddings is not None:
             self.embeddings = torch.Tensor(self.embeddings)
@@ -95,6 +111,51 @@ class BaseDataset(data.Dataset):
         )
 
         return padding_dim, padded_positions, padded_atomic_numbers
+    
+
+    def get_atomic_embedding_normalization_constants(self):
+
+        if isinstance(self.padding_mask, torch.Tensor):
+            padding_mask = self.padding_mask.cpu().numpy()
+        else:
+            padding_mask = self.padding_mask
+
+        if isinstance(self.embeddings, torch.Tensor):
+            embeddings = self.embeddings.cpu().numpy()
+
+        masks = np.where(np.expand_dims(padding_mask, axis=-1) == 0.0, True, False)
+
+        mean_per_dim = np.mean(embeddings, axis=(0, 1), keepdims=True, where=masks)
+
+        std_per_dim = np.std(embeddings, axis=(0, 1), keepdims=True, where=masks)
+
+
+        return torch.from_numpy(mean_per_dim), torch.from_numpy(std_per_dim)
+    
+    def split_dataset(self, splitting_ratios):
+
+        splitting_indices = compute_splits(self.dataset_config.N_molecules, splitting_ratios, self.dataset_config.N_conformers)
+
+
+        returned_splits = []
+
+        for slice_indices in splitting_indices:
+
+            dataset_split = self[slice_indices.start: slice_indices.stop]
+
+            #Update the dataset config with new number of molecules
+            new_dataset_config = self.dataset_config.model_copy(update={"N_molecules" : slice_indices.stop-slice_indices.start})
+
+            new_dataset = self.dataset_config.dataset_type.value(dataset_config = new_dataset_config, **asdict(dataset_split))
+
+            new_dataset.molecules = self.molecules[slice_indices.start: slice_indices.stop]
+
+            new_dataset.mol_ids = self.mol_ids[slice_indices.start: slice_indices.stop]
+
+            new_dataset.smiles_list = self.smiles_list[slice_indices.start: slice_indices.stop]
+            returned_splits.append(new_dataset)
+
+        return returned_splits
 
 
 class AtomicEmbeddingMixin:
@@ -148,7 +209,7 @@ class MolecularDescriptorMixin:
     def __getitem__(self: BaseDataset, idx):
         sample: Sample = super().__getitem__(idx)
 
-        sample.molecular_descriptor = self.molecular_descriptor[idx]
+        sample.molecular_descriptors = self.molecular_descriptors[idx]
 
         return sample
 

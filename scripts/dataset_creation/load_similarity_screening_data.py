@@ -52,7 +52,7 @@ dataset = similarity_screening_pipeline(
     dataset_config=dataset_config,
     smiles=smiles,
     target_class_labels=class_labels,
-    activity_decoy_labels=activity_labels,
+    active_decoy_labels=activity_labels,
 ).build()
 
 store_data_to_disk(

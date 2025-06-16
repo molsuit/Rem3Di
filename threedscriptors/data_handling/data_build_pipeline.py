@@ -1,7 +1,7 @@
 import logging
 import time
 from abc import ABC, abstractmethod
-
+import math
 from mace.calculators import MACECalculator
 
 from threedscriptors.data_handling.dataset import BaseDataset
@@ -52,14 +52,11 @@ class InitializeBuildPipeline(BuildStage):
 
 
 class ReloadFromDiskStage(BuildStage):
-    def __init__(self, directory, dataset_cls: type[BaseDataset]):
+    def __init__(self, directory):
         self.directory = directory
-        self.dataset_cls = dataset_cls
 
     def _run(self, _: DatasetBuilder):
-        dataset = load_data_from_disk(self.directory, self.dataset_cls)
-        print(dataset.regression_masks)
-        print(dataset.regression_targets)
+        dataset = load_data_from_disk(self.directory)
 
         builder = DatasetBuilder(dataset=dataset)
         return builder
@@ -72,7 +69,7 @@ class InsertSmilesStage(BuildStage):
     def _run(self, builder: DatasetBuilder):
         builder.add_smiles_data(self.smiles)
         return builder
-
+    
 
 class InsertMoleculeStage(BuildStage):
     def __init__(self, molecules, mol_ids):
@@ -119,15 +116,13 @@ class ChiralConformalEmbeddingStage(BuildStage):
 
 
 class NormalizationStage(BuildStage):
-    def __init__(self, normalize_input, normalize_regression_targets):
-        self.normalize_input = normalize_input
-        self.normalize_regression_targets = normalize_regression_targets
+    def __init__(self, mean_targets, std_targets):
+        self.mean_targets = mean_targets
+        self.std_targets = std_targets
 
     def _run(self, builder):
-        if self.normalize_input:
-            builder.normalize_atomic_embeddings()
-        if self.normalize_regression_targets:
-            builder.normalize_regression_targets()
+        
+        builder.normalize_regression_targets(self.mean_targets, self.std_targets)
         return builder
 
 
@@ -178,30 +173,28 @@ class AuxillaryDataStage(BuildStage):
 
 
 class SimilarityLabelingStage(BuildStage):
-    def __init__(self, target_class_labels, activity_decoy_labels):
+    def __init__(self, target_class_labels, active_decoy_labels):
         self.target_class_labels = target_class_labels
-        self.activity_decoy_labels = activity_decoy_labels
+        self.active_decoy_labels = active_decoy_labels
 
     def _run(self, builder):
         builder.add_similarity_screening_data(
-            self.target_class_labels, self.activity_decoy_labels
+            self.target_class_labels, self.active_decoy_labels
         )
 
         return builder
-
 
 class PipelineOrchestrator:
     def __init__(self, stages: list[BuildStage]):
         self.stages = stages
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def build(self):
+    def build(self) -> BaseDataset:
         self.logger.info("🔨 Building pipeline")
         self.builder = self.stages[0].run(None)
         for stage in self.stages[1:]:
             self.builder = stage.run(self.builder)
 
-        # Finalize: extract, normalize, torchify
         dataset = self.builder.dataset
         self.logger.info("🎉 Pipeline complete")
         return dataset

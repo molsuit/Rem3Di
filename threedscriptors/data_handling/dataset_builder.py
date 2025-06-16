@@ -326,7 +326,7 @@ class DatasetBuilder:
 
     def add_similarity_screening_data(self, class_label_data, activity_data):
         assert self.dataset.mol_ids is not None
-        self.dataset.activity_decoy_labels = activity_data[self.dataset.mol_ids]
+        self.dataset.active_decoy_labels = activity_data[self.dataset.mol_ids]
         self.dataset.target_class_labels = class_label_data[self.dataset.mol_ids]
 
     def add_auxillary_data(self, auxillary_data: dict[str : np.ndarray]):
@@ -338,25 +338,42 @@ class DatasetBuilder:
 
         self.dataset.auxillary_data = expanded_aux_dict
 
-    def normalize_regression_targets(self):
+    def normalize_regression_targets(self, mean_targets, std_targets):
         assert self.dataset.regression_targets is not None
+
+        dataset_tasks = self.dataset.dataset_config.get_task_name_set()
+
+        print(mean_targets)
+        
+        if isinstance(self.dataset.regression_targets, torch.Tensor):
+            regression_targets = self.dataset.regression_targets.detach().cpu().numpy()
+
 
         if self.dataset.dataset_config.regression_is_normalized:
             print("Dataset was already normalized")
             return
 
-        regression_targets = self.dataset.regression_targets
-        if isinstance(regression_targets, torch.Tensor):
-            regression_targets = regression_targets.detach().cpu().numpy()
 
-        mean = np.mean(regression_targets, axis=0, where=self.dataset.regression_masks)
+        if mean_targets is None:
+            mean_targets = np.mean(regression_targets, axis=0, where=self.dataset.regression_masks)
 
-        std = np.std(regression_targets, axis=0, where=self.dataset.regression_masks)
+        else:
+            assert list(mean_targets.keys()) == dataset_tasks
+            mean_targets = np.array(list(mean_targets.values()))
+            print(mean_targets)
 
-        self.dataset.regression_targets = (regression_targets - mean) / std
+        if std_targets is None:
+            std_targets = np.std(regression_targets, axis=0, where=self.dataset.regression_masks)
+            print(std_targets.shape)
+        else:
+            assert list(std_targets.keys()) == dataset_tasks
+            std_targets = np.array(list(std_targets.values()))
+            print(std_targets.shape)
+
+        self.dataset.regression_targets = (regression_targets - mean_targets) / std_targets
 
         for task, task_mean, task_std in zip(
-            self.dataset.dataset_config.tasks, mean.tolist(), std.tolist(), strict=False
+            self.dataset.dataset_config.tasks, mean_targets.tolist(), std_targets.tolist(), strict=False
         ):
 
             task.mean = task_mean
@@ -367,46 +384,8 @@ class DatasetBuilder:
 
         self.dataset.regression_targets = torch.Tensor(self.dataset.regression_targets)
 
-    def normalize_atomic_embeddings(self, mean_per_dim=None, std_per_dim=None):
-        if isinstance(self.dataset.padding_mask, torch.Tensor):
-            padding_mask = self.dataset.padding_mask.detach().cpu().numpy()
-        else:
-            padding_mask = self.dataset.padding_mask
 
-        if isinstance(self.dataset.embeddings, torch.Tensor):
-            embeddings = self.dataset.embeddings.detach().cpu().numpy()
-        else:
-            embeddings = self.dataset.embeddings
 
-        masks = np.where(np.expand_dims(padding_mask, axis=-1) == 0.0, True, False)
 
-        if mean_per_dim is None:
-            mean_per_dim = np.mean(embeddings, axis=(0, 1), keepdims=True, where=masks)
-        else:
-            assert mean_per_dim.shape == embeddings.shape
+    
 
-        if std_per_dim is None:
-            std_per_dim = np.std(embeddings, axis=(0, 1), keepdims=True, where=masks)
-        else:
-            assert std_per_dim.shape == embeddings.shape
-
-        self.mean_atomic_embeddings = mean_per_dim
-        self.std_atomic_embeddings = std_per_dim
-
-        # embeddings = (embeddings - mean_per_dim) / std_per_dim
-
-        self.dataset.embeddings = torch.Tensor(embeddings)
-        self.dataset.padding_mask = torch.Tensor(padding_mask)
-
-    def get_mean_and_std_embeddings(self):
-        if hasattr(self, "mean_atomic_embeddings"):
-            mean_embeddings = self.mean_atomic_embeddings
-        else:
-            mean_embeddings = None
-
-        if hasattr(self, "std_atomic_embeddings"):
-            std_embeddings = self.std_atomic_embeddings
-        else:
-            std_embeddings = None
-
-        return mean_embeddings, std_embeddings
