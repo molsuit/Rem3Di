@@ -1,6 +1,5 @@
 import pydantic_yaml as pyaml
 from e3nn.o3 import Irreps
-from mace.calculators import MACECalculator
 
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
@@ -33,7 +32,7 @@ class ConfigFactory:
         self.encoder_config = encoder_config
         self.global_aggregator_config = global_aggregator_config
 
-        mace_calculator = MACECalculator(self.dataset_config.embedding_model)
+        mace_calculator = self.dataset_config.embedding_model_config.mace_calc
         self.initial_irreps = get_mace_calculator_irrep_signature(mace_calculator)
         self.initial_irrep_dim = get_mace_calculator_embedding_dimension(
             mace_calculator
@@ -48,7 +47,7 @@ class ConfigFactory:
 
         if self.embedding_preprocessor_config.pseudoscalars:
             _, self.embedding_preprocessor_config.output_irreps = get_invariant_indices(
-                self.embedding_preprocessor_config.input_irreps + Irreps("128x0o")
+                self.embedding_preprocessor_config.input_irreps + Irreps(f"{self.embedding_preprocessor_config.pseudoscalar_dimension}x0o")
             )
         else:
             _, self.embedding_preprocessor_config.output_irreps = get_invariant_indices(

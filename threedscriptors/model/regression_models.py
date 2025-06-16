@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from itertools import pairwise
 
 import torch
@@ -35,6 +36,7 @@ class ResidualBlock(nn.Module):
         # Residual shortcut
         residual = self.projection(x)
         out = out + residual
+        # This activation
         out = self.norm(out)
         # Elementwise addition.
         return out
@@ -44,15 +46,18 @@ class FullyConnectedBlock(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, activation_fn: nn.Module):
         super().__init__()
 
-        self.linear = nn.Linear(in_dim, out_dim)
-        self.norm = nn.LayerNorm(out_dim)
-        self.activation = activation_fn
+        self.block = nn.Sequential(
+            OrderedDict(
+                [
+                    ("linear_layer", nn.Linear(in_dim, out_dim)),
+                    ("layer_norm", nn.LayerNorm(out_dim)),
+                    ("activation", nn.SiLU()),
+                ]
+            )
+        )
 
     def forward(self, x: torch.Tensor):
-        out = self.linear(x)
-        out = self.norm(out)
-        out = self.activation(out)
-
+        out = self.block(x)
         return out
 
 
@@ -99,8 +104,6 @@ class MultitaskHeads(nn.Module):
                     f"residual_{idx}",
                     ResidualBlock(in_dim, out_dim, head_config.activation_fn),
                 )
-                print("added res block")
-
         head.add_module(
             f"linear_{idx + 1}",
             nn.Linear(dimensions[-1], 1),
@@ -118,6 +121,7 @@ class MultitaskHeads(nn.Module):
                 preds.append(head(input_data))
             else:
                 preds.append(head(descriptor))
+        # TODO: Make this return a dict of all tasks instead of a stacked tensor to ensure that the task predictions are returned in the correct order. This would require us to also change the way that the dataset yields the regression targets, would also be a dict then. Maybe it should be possible to just assert that the dataset task ordering and the model task ordering are identical.
 
         return preds
 
@@ -146,9 +150,9 @@ class MultiTaskRegressionModel(nn.Module):
         # Concatenate outputs along the feature dimension.
         # Final shape: (batch_size, N_tasks * output_dim)
         pred = torch.cat(preds, dim=-1)
-        return pred
+        return pred, descriptor
 
-    def get_molecular_descriptor(self, x, padding_mask=None):
+    def get_molecular_descriptor(self, x, padding_mask=None) -> torch.Tensor:
         x = self.preprocessor(x)
         x = self.encoder(x, padding_mask)
         descriptor = self.global_aggregator(x)

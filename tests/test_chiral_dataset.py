@@ -13,17 +13,19 @@ from threedscriptors.configuration.data_config import (
     DatasetTypes,
     MaceCalculatorConfig,
 )
-from threedscriptors.data_handling.cmrt_preprocessing import load_cmrt_data
-from threedscriptors.data_handling.dataset_builder import (
-    DatasetBuildingDirector,
+from threedscriptors.data_handling.pipelines import chiral_regression_training_pipeline
+from threedscriptors.data_handling.source_preprocessing.cmrt_preprocessing import (
+    load_cmrt_data,
 )
-from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 from threedscriptors.model.model_builder import ModelBuilder
 
 data_file = resources.files("tests") / "cmrt_raw_test_data.csv"
 smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
     data_file
 )
+
+print(regression_masks)
+print(regression_targets)
 
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=mace_mp("medium", enable_cueq=False, device="cpu"),
@@ -35,7 +37,7 @@ embedding_model_config = MaceCalculatorConfig(
 # Get the train and test data-loaders
 dataset_config = DatasetConfig(
     N_molecules=2,
-    dataset_type=DatasetTypes.REGRESSION,
+    dataset_type=DatasetTypes.REGRESSION_WITH_AUX_DATASET,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
     N_conformers=2,
@@ -43,16 +45,17 @@ dataset_config = DatasetConfig(
     max_atoms=None,
     tasks=tasks,
 )
-iterator = ListSmilesIterator(smiles)
-db_director, dataset = DatasetBuildingDirector.build_chiral_dataset(
-    iterator=iterator,
+
+dataset = chiral_regression_training_pipeline(
     dataset_config=dataset_config,
+    smiles=smiles,
     regression_targets=regression_targets,
     regression_masks=regression_masks,
     auxillary_data=aux_data,
-    return_normalized_targets=True,
-    return_normalized_inputs=True,
-)
+).build()
+
+print(type(dataset.auxillary_data["cmrt"]))
+
 
 dataset.auxillary_data["cmrt"] = torch.Tensor(dataset.auxillary_data["cmrt"])
 

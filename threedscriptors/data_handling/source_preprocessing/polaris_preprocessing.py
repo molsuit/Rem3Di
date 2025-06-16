@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-
+import zarr
 import numpy as np
 import polaris as po
+from polaris.dataset import DatasetV1, DatasetV2
 
 from threedscriptors.configuration.data_config import TaskConfig
 
@@ -18,7 +19,8 @@ def remove_molecules_with_no_data(regression_targets, regression_masks, smiles):
     datapoints_per_smile = np.sum(regression_masks, axis=1)
     no_data_smiles = np.where(datapoints_per_smile == 0)[0].tolist()
 
-    idx_with_data = [idx for idx, smi in enumerate(smiles) if idx not in no_data_smiles]
+    idx_with_data = [idx for idx, smi in enumerate(
+        smiles) if idx not in no_data_smiles]
 
     smiles = [smiles[idx] for idx in idx_with_data]
     regression_targets = regression_targets[idx_with_data, :]
@@ -41,7 +43,8 @@ def pretreat_polaris_dataset(smiles: list[str], regression_targets):
         regression_targets, regression_masks, smiles
     )
 
-    regression_targets = np.where(np.isnan(regression_targets), 0, regression_targets)
+    regression_targets = np.where(
+        np.isnan(regression_targets), 0, regression_targets)
 
     return smiles, regression_targets, regression_masks
 
@@ -68,37 +71,41 @@ def load_polaris_benchmark(benchmark_name: str):
 
     tasks = create_task_configs(target_cols)
 
-    training_data = RegressionData(
-        task_names=target_cols,
-        smiles=smiles,
-        regression_targest=regression_targets,
-        regression_mask=regression_masks,
-    )
-
-    return training_data, tasks
+    return smiles, regression_targets, regression_masks, tasks
 
 
-def load_polaris_dataset(dataset_name: str):
+def load_polaris_dataset(dataset_name: str, smiles_column, non_task_columns, datasplit=None):
+
     dataset = po.load_dataset(dataset_name)
+
     columns = dataset.columns
-    non_task_columns = ["Molecule Name", "CXSMILES", "Set"]
+
     target_cols = [c for c in columns if c not in non_task_columns]
 
-    data_dict = dataset[:]
-    smiles = data_dict["CXSMILES"]
+    if isinstance(dataset, DatasetV1):
+        data_dict = dataset.table[:]
+
+    elif isinstance(dataset, DatasetV2):
+        # if "Set" in non_task_columns and datasplit is not None:
+        #    data_dict = dataset[dataset["Set"] == datasplit]
+        # else:
+        print(type(dataset))
+ 
+        set_col = dataset.zarr_data["Set"][:]
+        row_mask = (set_col ==  datasplit)     
+        mask2d = row_mask[:, np.newaxis]  
+        
+        data_dict = dataset[:]
+
+    smiles = data_dict[smiles_column]
     regression_targets = np.array([data_dict[task] for task in target_cols]).T
 
     smiles, regression_targets, regression_masks = pretreat_polaris_dataset(
         smiles, regression_targets
     )
 
-    data = RegressionData(
-        task_names=target_cols,
-        smiles=smiles,
-        regression_targets=regression_targets,
-        regression_masks=regression_masks,
-    )
+    assert np.all(np.any(regression_targets, axis=0))
 
     tasks = create_task_configs(target_cols)
 
-    return data, tasks
+    return smiles, regression_targets, regression_masks, tasks

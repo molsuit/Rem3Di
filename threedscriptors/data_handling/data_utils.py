@@ -1,6 +1,7 @@
+import numpy as np
 import math
 from collections.abc import Sequence
-
+from typing import List
 import rdkit.Chem as Chem
 import torch
 from ase import Atoms
@@ -10,7 +11,11 @@ from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 from rdkit2ase import rdkit2ase
 
-from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 from threedscriptors.model.transformer_components import TransformerEncoder
 
@@ -53,8 +58,17 @@ def get_ase_atoms(smiles) -> Atoms:
 
 
 def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
+    # print(smiles)
     mol = Chem.MolFromSmiles(smiles)
+
+    if mol is None:
+        raise ValueError
+
     mol = Chem.AddHs(mol)
+    charge = Chem.GetFormalCharge(mol)
+    if charge != 0:
+        raise ValueError("Charged molecule")
+
     EmbedMultipleConfs(
         mol, numConfs=N_conformers, numThreads=N_conformers, maxAttempts=5000
     )
@@ -78,7 +92,7 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
 def get_relaxed_conformers(
     smiles,
     mace_calculator: MACECalculator,
-    dataset_config: DatasetConfig,
+    dataset_config: "DatasetConfig",
     N_conformers: int,
 ):
     if N_conformers == 1:
@@ -104,7 +118,7 @@ def get_relaxed_conformers(
     return molecules
 
 
-def get_max_molecule_size(
+def get_max_molecule_size_from_smiles(
     smiles_iterator: SmilesIterator, max_num_molecules=math.inf
 ) -> int:
     max_atoms = 0
@@ -116,6 +130,14 @@ def get_max_molecule_size(
             max_atoms = num_atoms
         if i >= max_num_molecules:
             break
+    return max_atoms
+
+
+def get_max_molecule_size_from_atoms(atoms: list[Atoms]):
+    max_atoms = 0
+    for mol in atoms:
+        number_of_atoms = len(mol)
+        max_atoms = max(max_atoms, number_of_atoms)
     return max_atoms
 
 
@@ -141,9 +163,77 @@ def get_global_descriptor(
     return global_descriptor
 
 
-def has_task_with_auxillary_data(tasks: Sequence[TaskConfig]) -> bool:
+def has_task_with_auxillary_data(tasks: Sequence["TaskConfig"]) -> bool:
     for task in tasks:
         if task.has_auxillary_data:
             return True
 
     return False
+
+
+def get_unique_smiles_id_from_smiles_list(smiles_list: list[str]):
+    string_to_id = {}
+    result_ids = []
+    current_id = 0
+
+    # Process each string in the list
+    for s in smiles_list:
+        if s not in string_to_id:
+            # Assign a new integer if the string has not been seen before
+            string_to_id[s] = current_id
+            current_id += 1
+        # Append the mapped integer
+        result_ids.append(string_to_id[s])
+
+    return result_ids
+
+
+def get_functional_group_label(smiles: list[str]):
+    # This function is specific to the test functional group dataset, and is not meaningful in any other context.
+
+    functional_group_indices = {"OH": [], "NH2": [], "SH": []}
+    # Conformers???
+    for smiles_index, smiles_string in enumerate(smiles):
+        match smiles_string[0]:
+            case "O":
+                functional_group_indices["OH"].append(smiles_index)
+            case "S":
+                functional_group_indices["SH"].append(smiles_index)
+            case "N":
+                functional_group_indices["NH2"].append(smiles_index)
+            case _:
+                raise ValueError("Non matching smiles in functional group dataset")
+
+    return functional_group_indices
+
+
+def validate_ratios(ratios: Sequence[float]) -> None:
+    """Ensure the ratios add up to 1 (within 1 e-6) and are all positive."""
+    if not math.isclose(sum(ratios), 1.0, abs_tol=1e-6):
+        raise ValueError(f"`ratios` must sum to 1 (got {ratios!r})")
+    if any(r <= 0 for r in ratios):
+        raise ValueError("All ratios must be strictly positive")
+
+
+
+
+def compute_splits(size: int, ratios: Sequence[float], split_interval) -> List[slice]:
+    """Return slice objects for each split boundary."""
+    raw_counts = (np.asarray(ratios) * size).astype(int)
+
+    print(raw_counts)
+
+    base = (raw_counts // split_interval).astype(int) * split_interval
+
+    leftover = (size - base.sum()) // split_interval
+
+    base[0] += leftover* split_interval
+
+    print(base)
+    # Fix any rounding drift so the slices cover the full length
+    
+    offsets = np.cumsum(np.insert(base, 0, 0))
+    print(offsets)
+    return [slice(offsets[i], offsets[i + 1]) for i in range(len(ratios))]
+
+

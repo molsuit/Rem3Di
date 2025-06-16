@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 
+import pydantic_yaml as pyaml
 import torch
 
 from threedscriptors.configuration.architecture_config import (
@@ -23,6 +24,14 @@ class ModelBuilder:
         self.architecture_config = architecture_config
         self.model: MultiTaskRegressionModel | None = None
         self._N_trainable_parameters = None
+
+    @classmethod
+    def from_directory(cls, directory: str):
+        architecture_config = pyaml.parse_yaml_file_as(
+            ArchitectureConfig,
+            f"{directory}/architecture_config.yaml",
+        )
+        return cls(architecture_config)
 
     @property
     def N_trainable_parameters(self):
@@ -51,7 +60,7 @@ class ModelBuilder:
                     )
                 )
 
-    def build_model(self):
+    def build_model(self, mean_atomic_embedding=None, std_atomic_embedding=None):
         preprocessor = self.build_preprocess()
         encoder = self.build_encoder()
         aggregator = self.build_global_aggregator()
@@ -63,7 +72,7 @@ class ModelBuilder:
             preprocessor=preprocessor,
             global_aggregator=aggregator,
         )
-        self.model = model
+        self.model = model.float()
 
         if (
             self.architecture_config.reload_full_model_weights
@@ -71,6 +80,19 @@ class ModelBuilder:
             or self.architecture_config.encoder_config.reload_state_dict
         ):
             self._reload_weights()
+
+        if (mean_atomic_embedding is not None) and (std_atomic_embedding is not None):
+            print(mean_atomic_embedding.shape)
+            print(
+                self.architecture_config.embedding_preprocess_config.input_embedding_size
+            )
+            assert (
+                mean_atomic_embedding.shape[-1]
+                == self.architecture_config.embedding_preprocess_config.input_embedding_size
+            )
+            preprocessor.register_embedding_normalization(
+                mean_atomic_embedding, std_atomic_embedding
+            )
 
         return model
 

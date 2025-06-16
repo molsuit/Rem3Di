@@ -45,7 +45,9 @@ def test_pseudoscalar_generator():
         pseudoscalars=True,
         pseudoscalar_dimension=128,
         pseudoscalar_embedding_dim=128,
+        input_embedding_size=640,
     )
+
     ps_generator = PseudoscalarGenerator(embedding_preprocessor_config)
 
     ps_indices, _ = get_pseudoscalars_indices(ps_generator.config.output_irreps)

@@ -18,7 +18,9 @@ dependencies = [
     "pydantic",
     "pydantic_yaml",
     "rdkit2ase",
-    "mace-torch==0.3.10"
+    "mace-torch==0.3.10",
+    "molfeat",
+    "umap-learn"
 ]
 [project.optional-dependencies]
 cuequivariance = [
