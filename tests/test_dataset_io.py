@@ -21,7 +21,7 @@ def test_dataset_io(
     subdir.mkdir()
 
     store_data_to_disk(dataset=dataset, directory=subdir)
-    new_dataset = load_data_from_disk(subdir, RegressionDataset)
+    new_dataset = load_data_from_disk(subdir)
 
     assert new_dataset.molecules == dataset.molecules
     assert torch.all(new_dataset.regression_targets == dataset.regression_targets)

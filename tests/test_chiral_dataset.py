@@ -24,6 +24,9 @@ smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
     data_file
 )
 
+print(regression_masks)
+print(regression_targets)
+
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=mace_mp("medium", enable_cueq=False, device="cpu"),
     model_name="MACE-MP0 medium",
@@ -34,7 +37,7 @@ embedding_model_config = MaceCalculatorConfig(
 # Get the train and test data-loaders
 dataset_config = DatasetConfig(
     N_molecules=2,
-    dataset_type=DatasetTypes.REGRESSION,
+    dataset_type=DatasetTypes.REGRESSION_WITH_AUX_DATASET,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
     N_conformers=2,

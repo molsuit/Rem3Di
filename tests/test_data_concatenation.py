@@ -12,18 +12,15 @@ from threedscriptors.data_handling.dataset_io import (
 def test_dataset_concatenation():
     adme_fang_dataset = load_data_from_disk(
         "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/adme_fang",
-        RegressionDataset,
         load_molecules=True,
     )
     admet_antiviral = load_data_from_disk(
         "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/antiviral_admet",
-        RegressionDataset,
         load_molecules=True,
     )
 
     cmrt = load_data_from_disk(
         "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/cmrt",
-        RegressionWithAuxDataset,
         load_molecules=True,
     )
 

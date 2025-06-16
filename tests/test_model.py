@@ -37,8 +37,8 @@ def test_reload_embedding_normalization(tmp_path):
 
     preprocessor = AtomicDescriptorPreprocess(config)
 
-    mean = 2 * torch.ones(size=(384,))
-    std = 2 * torch.ones(size=(384,))
+    mean = 2 * torch.ones(size=(1,1,384))
+    std = 2 * torch.ones(size=(1,1,384))
 
     preprocessor.register_embedding_normalization(mean, std)
 

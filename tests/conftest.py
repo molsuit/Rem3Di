@@ -32,7 +32,7 @@ def regression_targets():
 
 @pytest.fixture(scope="session")
 def regression_masks():
-    return torch.zeros((5, 5))
+    return torch.ones((5, 5))
 
 
 @pytest.fixture(scope="session")
@@ -57,7 +57,7 @@ def sample_smiles():
 def sample_dataset_config():
     return DatasetConfig(
         N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION,
+        dataset_type=DatasetTypes.REGRESSION_DATASET,
         BFGS_tol=0.2,
         BFGS_max_steps=500,
         N_conformers=1,
@@ -71,7 +71,7 @@ def sample_dataset_config():
 def sample_chiral_dataset_config():
     return DatasetConfig(
         N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION,
+        dataset_type=DatasetTypes.REGRESSION_DATASET,
         BFGS_tol=0.2,
         BFGS_max_steps=500,
         N_conformers=1,
@@ -86,7 +86,7 @@ def sample_chiral_dataset_config():
 def sample_regression_dataset_config():
     return DatasetConfig(
         N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION,
+        dataset_type=DatasetTypes.REGRESSION_DATASET,
         BFGS_tol=0.2,
         BFGS_max_steps=500,
         N_conformers=1,

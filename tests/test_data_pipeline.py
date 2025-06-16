@@ -33,7 +33,7 @@ def test_regression_training_pipeline(
 def test_chiral_pipeline():
     dataset_config = DatasetConfig(
         N_molecules=2,
-        dataset_type=DatasetTypes.REGRESSION,
+        dataset_type=RegressionDataset,
         BFGS_tol=0.2,
         BFGS_max_steps=500,
         N_conformers=1,

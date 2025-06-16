@@ -18,12 +18,12 @@ from threedscriptors.evaluation.evaluation_utils import (
 )
 from threedscriptors.evaluation.evaluation_pipeline import RegressionHeadPCATask
 from threedscriptors.model.model_builder import ModelBuilder
-
+from threedscriptors.evaluation.clustering import UMAPCalculator
 
 def test_regression_evaluation(sample_smiles, regression_targets, regression_masks):
     dataset_config = DatasetConfig(
         N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION,
+        dataset_type=DatasetTypes.REGRESSION_DATASET,
         BFGS_tol=0.2,
         BFGS_max_steps=500,
         N_conformers=1,
@@ -55,7 +55,7 @@ def test_regression_evaluation_negative(
 ):
     dataset_config = DatasetConfig(
         N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION,
+        dataset_type=DatasetTypes.REGRESSION_DATASET,
         BFGS_tol=0.2,
         BFGS_max_steps=500,
         N_conformers=1,
@@ -82,7 +82,7 @@ def test_regression_evaluation_negative(
 def test_descriptor_evaluation(sample_smiles, regression_targets, regression_masks):
     dataset_config = DatasetConfig(
         N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION,
+        dataset_type=DatasetTypes.REGRESSION_DATASET,
         BFGS_tol=0.2,
         BFGS_max_steps=500,
         N_conformers=1,
@@ -114,7 +114,7 @@ def test_activation_clustering_in_fully_connected_regression_heads(
 ):
     dataset_config = DatasetConfig(
         N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION,
+        dataset_type=DatasetTypes.REGRESSION_DATASET,
         BFGS_tol=0.2,
         BFGS_max_steps=500,
         N_conformers=1,
@@ -135,7 +135,10 @@ def test_activation_clustering_in_fully_connected_regression_heads(
         dataset_config, sample_smiles, regression_targets, regression_masks
     ).build()
 
-    task = RegressionHeadPCATask(dataset=dataset)
+
+    umap_calc = UMAPCalculator()
+
+    task = RegressionHeadPCATask(dataset=dataset, clustering_calculator= umap_calc)
     activations = task.run(model)
     print(activations)
 
@@ -145,7 +148,7 @@ def test_activation_clustering_in_residual_regression_heads(
 ):
     dataset_config = DatasetConfig(
         N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION,
+        dataset_type=DatasetTypes.REGRESSION_DATASET,
         BFGS_tol=0.2,
         BFGS_max_steps=500,
         N_conformers=1,
@@ -167,10 +170,14 @@ def test_activation_clustering_in_residual_regression_heads(
     ].input_dimensions = 384  # To allow us not passing any auxillary data.
 
     model = ModelBuilder(architecture_config).build_model().eval().cuda()
+
+    print(regression_masks)
     dataset = regression_training_pipeline(
         dataset_config, sample_smiles, regression_targets, regression_masks
     ).build()
 
-    task = RegressionHeadPCATask(dataset=dataset)
+
+    umap_calc = UMAPCalculator()
+    task = RegressionHeadPCATask(dataset=dataset, clustering_calculator= umap_calc)
     activations = task.run(model)
     print(activations)
