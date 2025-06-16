@@ -299,9 +299,11 @@ class DatasetBuilder:
 
     def add_regression_data(
         self,
-        regression_targets: np.ndarray | None = None,
-        regression_masks: np.ndarray | None = None,
+        regression_targets: torch.Tensor | None = None,
+        regression_masks: torch.Tensor | None = None,
     ):
+        
+        print(self.dataset.mol_ids)
         assert self.dataset.mol_ids is not None
 
         # Transform the regression labels from 1 per smiles to 1 per conformer
@@ -316,9 +318,18 @@ class DatasetBuilder:
                 "Regression Target Array has unexpected numbers of dimensions"
             )
 
-        assert np.all(np.any(regression_targets, axis=0)), "There are some empty tasks "
-        self.dataset.regression_targets = torch.Tensor(regression_targets)
-        self.dataset.regression_masks = torch.Tensor(regression_masks)
+        
+        regression_targets = torch.Tensor(regression_targets)
+        regression_masks = torch.Tensor(regression_masks)
+
+        print(type(regression_targets))
+        print(type(regression_masks))
+        assert torch.all(torch.any(regression_targets, dim=0)), "There are some empty tasks "
+
+
+        self.dataset.regression_targets = regression_targets
+        self.dataset.regression_masks = regression_masks
+        
 
     def add_molecular_descriptor(self, descriptor_calculator):
         # This should be discussed, if this goes to the evaluation or already in the dataset.
@@ -337,6 +348,15 @@ class DatasetBuilder:
             expanded_aux_dict[task] = torch.Tensor(expanded_aux_data).float()
 
         self.dataset.auxillary_data = expanded_aux_dict
+    
+    def add_atomic_positions(self):
+
+        assert self.dataset.molecules is not None
+        _, padded_pos, _ = self.dataset.get_padded_positions()
+
+        self.dataset.atomic_positions = padded_pos
+
+
 
     def normalize_regression_targets(self, mean_targets, std_targets):
         assert self.dataset.regression_targets is not None

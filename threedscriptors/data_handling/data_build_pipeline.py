@@ -160,6 +160,14 @@ class RegressionLabelingStage(BuildStage):
             regression_targets=self.regression_targets,
             regression_masks=self.regression_masks,
         )
+        
+        return builder
+
+
+class AtomicPositionsStage(BuildStage):
+
+    def _run(self, builder : DatasetBuilder):
+        builder.add_atomic_positions()
         return builder
 
 
@@ -194,6 +202,7 @@ class PipelineOrchestrator:
         self.builder = self.stages[0].run(None)
         for stage in self.stages[1:]:
             self.builder = stage.run(self.builder)
+            print(self.builder)
 
         dataset = self.builder.dataset
         self.logger.info("🎉 Pipeline complete")

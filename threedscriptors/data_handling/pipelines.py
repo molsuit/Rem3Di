@@ -13,11 +13,13 @@ from threedscriptors.data_handling.data_build_pipeline import (
     RelaxStage,
     ReloadFromDiskStage,
     SimilarityLabelingStage,
+    AtomicPositionsStage
 )
 from threedscriptors.data_handling.dataset import (
     AtomicEmbeddingDataset,
     RegressionDataset,
     SimilarityScreeningDataset,
+    RegressionWithAuxDataset
 )
 
 
@@ -33,6 +35,7 @@ def regression_training_pipeline(
         RegressionLabelingStage(
             regression_targets=regression_targets, regression_masks=regression_masks
         ),
+        AtomicPositionsStage()
     ]
 
     return PipelineOrchestrator(stages)
@@ -46,7 +49,7 @@ def chiral_regression_training_pipeline(
     auxillary_data,
 ):
     stages = [
-        InitializeBuildPipeline(dataset_config, RegressionDataset),
+        InitializeBuildPipeline(dataset_config, RegressionWithAuxDataset),
         InsertSmilesStage(smiles=smiles),
         ChiralConformalEmbeddingStage(),
         AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
@@ -93,6 +96,7 @@ def reload_dataset_pipeline(
 
     stages = [
         ReloadFromDiskStage(directory),
+        AtomicPositionsStage(), 
         NormalizationStage(
             mean_targets, std_targets,
         ),
