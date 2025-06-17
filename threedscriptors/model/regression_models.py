@@ -1,9 +1,11 @@
 from collections import OrderedDict
 from itertools import pairwise
 
+from threedscriptors.model.model_output import ModelOutput
 import torch
 import torch.nn as nn
 
+from threedscriptors.data_handling.sample import Sample
 from threedscriptors.configuration.architecture_config import (
     HeadType,
     RegressionHeadConfig,
@@ -13,7 +15,9 @@ from threedscriptors.model.atomic_descriptor_preprocess import (
 )
 from threedscriptors.model.global_aggregator import GlobalAggregator
 from threedscriptors.model.transformer_components import TransformerEncoder
+from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
 
+from threedscriptors.model.pair_block import TransformerPairEncoder
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, activation_fn: nn.Module):
@@ -123,6 +127,9 @@ class MultitaskHeads(nn.Module):
                 preds.append(head(descriptor))
         # TODO: Make this return a dict of all tasks instead of a stacked tensor to ensure that the task predictions are returned in the correct order. This would require us to also change the way that the dataset yields the regression targets, would also be a dict then. Maybe it should be possible to just assert that the dataset task ordering and the model task ordering are identical.
 
+        preds = torch.cat(preds, dim=-1)
+
+
         return preds
 
 
@@ -163,3 +170,38 @@ class MultiTaskRegressionModel(nn.Module):
 class FusedMultiHeadRegression(nn.Module):
     # A class that implements the fused calulation of regression heads by using the torch.bmm (batched matrix multiply) instead of sequentially calculating each head.
     pass
+
+
+class StructureBasedMultitaskRegressionModel(nn.Module):
+
+
+    def __init__(self, structure_encoding_block: PairDistanceMatrixEncodingBlock, pair_encoder : TransformerPairEncoder,
+        preprocessor: AtomicDescriptorPreprocess,
+        global_aggregator: GlobalAggregator, multitask_heads: MultitaskHeads):
+
+        super().__init__()
+        
+        self.structure_encoding_block = structure_encoding_block
+        self.pair_encoder = pair_encoder
+        self.preprocessor = preprocessor
+        self.global_aggregator = global_aggregator
+        self.multitask_heads = multitask_heads
+
+
+    def forward(self, sample : Sample) -> ModelOutput:
+
+        # S are the updated atomic descriptors, P are the positional encodings
+        S = self.preprocessor(sample.embeddings)
+
+
+        P0, distance_metric, pair_masks = self.structure_encoding_block(sample.atomic_positions, sample.padding_mask)
+
+        S, P = self.pair_encoder(S, sample.padding_mask, P0, pair_masks)
+
+        molecular_descriptor = self.global_aggregator(S)
+
+        preds = self.multitask_heads(molecular_descriptor, sample.auxillary_data)
+
+        out = ModelOutput(molecular_descriptor= molecular_descriptor, regression_predictions= preds, updated_pair_encoding= P)
+
+        return out

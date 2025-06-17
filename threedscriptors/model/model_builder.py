@@ -15,6 +15,7 @@ from threedscriptors.model.global_aggregator import GlobalAggregator
 from threedscriptors.model.regression_models import (
     MultitaskHeads,
     MultiTaskRegressionModel,
+    StructureBasedMultitaskRegressionModel
 )
 from threedscriptors.model.transformer_components import TransformerEncoder
 
@@ -22,6 +23,7 @@ from threedscriptors.model.transformer_components import TransformerEncoder
 class ModelBuilder:
     def __init__(self, architecture_config: ArchitectureConfig):
         self.architecture_config = architecture_config
+
         self.model: MultiTaskRegressionModel | None = None
         self._N_trainable_parameters = None
 
@@ -61,17 +63,24 @@ class ModelBuilder:
                 )
 
     def build_model(self, mean_atomic_embedding=None, std_atomic_embedding=None):
-        preprocessor = self.build_preprocess()
+        preprocessor = self.build_preprocess(
+            mean_atomic_embedding, std_atomic_embedding
+        )
         encoder = self.build_encoder()
         aggregator = self.build_global_aggregator()
         multitask_heads = self.build_regression_heads()
 
-        model = MultiTaskRegressionModel(
-            regression_heads=multitask_heads,
-            encoder=encoder,
-            preprocessor=preprocessor,
-            global_aggregator=aggregator,
-        )
+        if self.architecture_config.positional_encoding_config is None:
+            model = MultiTaskRegressionModel(
+                regression_heads=multitask_heads,
+                encoder=encoder,
+                preprocessor=preprocessor,
+                global_aggregator=aggregator,
+            )
+
+        else:
+            model = 
+
         self.model = model.float()
 
         if (
@@ -81,11 +90,19 @@ class ModelBuilder:
         ):
             self._reload_weights()
 
+        return model
+
+    def build_preprocess(
+        self, mean_atomic_embedding, std_atomic_embedding
+    ) -> AtomicDescriptorPreprocess:
+        preprocess_config = self.architecture_config.embedding_preprocess_config
+
+        if preprocess_config.pseudoscalars:
+            preprocessor = PseudoscalarGenerator(preprocess_config)
+        else:
+            preprocessor = InvariantsFilter(preprocess_config)
+
         if (mean_atomic_embedding is not None) and (std_atomic_embedding is not None):
-            print(mean_atomic_embedding.shape)
-            print(
-                self.architecture_config.embedding_preprocess_config.input_embedding_size
-            )
             assert (
                 mean_atomic_embedding.shape[-1]
                 == self.architecture_config.embedding_preprocess_config.input_embedding_size
@@ -93,16 +110,6 @@ class ModelBuilder:
             preprocessor.register_embedding_normalization(
                 mean_atomic_embedding, std_atomic_embedding
             )
-
-        return model
-
-    def build_preprocess(self) -> AtomicDescriptorPreprocess:
-        preprocess_config = self.architecture_config.embedding_preprocess_config
-
-        if preprocess_config.pseudoscalars:
-            preprocessor = PseudoscalarGenerator(preprocess_config)
-        else:
-            preprocessor = InvariantsFilter(preprocess_config)
 
         return preprocessor
 

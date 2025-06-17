@@ -1,6 +1,7 @@
 import pytest
 import torch
 from mace.calculators import mace_mp
+from ase import Atoms
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
@@ -9,7 +10,9 @@ from threedscriptors.configuration.data_config import (
     TaskConfig,
 )
 
+from threedscriptors.configuration.architecture_config import PositionalEncodingConfig
 
+from threedscriptors.data_handling.data_utils import get_ase_atoms
 @pytest.fixture(scope="session")
 def embeddings():
     return torch.rand((5, 5))
@@ -38,6 +41,15 @@ def regression_masks():
 @pytest.fixture(scope="session")
 def regression_mask():
     return torch.tensor([1])
+
+
+@pytest.fixture(scope = "session")
+def molecule():
+
+    smiles = "C"
+    atoms : Atoms =  get_ase_atoms(smiles)
+    return atoms
+
 
 
 @pytest.fixture(scope="session")
@@ -99,3 +111,9 @@ def sample_regression_dataset_config():
             TaskConfig(task_name="KSOL"),
         ],
     )
+
+
+@pytest.fixture(scope="session")
+def positional_encoding_config():
+
+    return PositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=20.0, d_projection=64)

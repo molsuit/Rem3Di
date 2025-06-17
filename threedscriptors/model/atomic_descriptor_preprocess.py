@@ -138,6 +138,9 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
 
     def forward(self, atomic_embedding):
         # apply the atomic embedding normalization
+        # Not allowed!!!!!!! Cannot normalize equivariant features like this
+
+        raise ValueError()
         atomic_embedding = (
             atomic_embedding - self.mean_atomic_embedding
         ) / self.std_atomic_embedding
