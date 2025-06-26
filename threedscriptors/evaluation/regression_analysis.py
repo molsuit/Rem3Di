@@ -1,8 +1,10 @@
-from collections.abc import Callable
 from collections import defaultdict
+from collections.abc import Callable
 
 import matplotlib.pyplot as plt
 import torch
+from matplotlib.cm import ScalarMappable, get_cmap
+from matplotlib.colors import Normalize
 
 from threedscriptors.configuration.architecture_config import HeadType
 from threedscriptors.model.regression_models import (
@@ -11,8 +13,6 @@ from threedscriptors.model.regression_models import (
     ResidualBlock,
 )
 
-from matplotlib.colors import Normalize
-from matplotlib.cm import ScalarMappable, get_cmap
 
 def plot_delta_histogram(reference, prediction):
     """

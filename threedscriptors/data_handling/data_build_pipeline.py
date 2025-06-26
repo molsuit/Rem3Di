@@ -4,15 +4,12 @@ from abc import ABC, abstractmethod
 
 from mace.calculators import MACECalculator
 
+from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.data_handling.dataset import BaseDataset
 from threedscriptors.data_handling.dataset_builder import DatasetBuilder
 from threedscriptors.data_handling.dataset_io import (
     load_data_from_disk,
 )
-from threedscriptors.utils.model_utils import get_mace_calculator_embedding_dimension
-
-from threedscriptors.configuration.data_config import DatasetConfig
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -134,7 +131,7 @@ class AtomicEmbeddingStage(BuildStage):
         self.mace_calculator = mace_calculator
 
     def _run(self, builder: DatasetBuilder):
-        
+
         builder.calculate_atomic_embeddings(
             calculator=self.mace_calculator
         )

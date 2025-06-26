@@ -12,13 +12,14 @@ from threedscriptors.configuration.data_config import (
     TaskConfig,
 )
 from threedscriptors.data_handling.pipelines import regression_training_pipeline
+from threedscriptors.evaluation.clustering import UMAPCalculator
+from threedscriptors.evaluation.evaluation_pipeline import RegressionHeadPCATask
 from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
     evaluate_regression_model_on_dataset,
 )
-from threedscriptors.evaluation.evaluation_pipeline import RegressionHeadPCATask
 from threedscriptors.model.model_builder import ModelBuilder
-from threedscriptors.evaluation.clustering import UMAPCalculator
+
 
 def test_regression_evaluation(sample_smiles, regression_targets, regression_masks):
     dataset_config = DatasetConfig(

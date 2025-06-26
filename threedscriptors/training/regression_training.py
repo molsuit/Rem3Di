@@ -19,7 +19,7 @@ def multitask_masked_loss(predictions, labels, regression_mask):
         active_labels_count == 0,
         torch.ones_like(active_labels_count),
         active_labels_count,
-    ) 
+    )
     #print(active_labels_count)
     # Avoid division by zero. For tasks with no label in the batch, the masked squared error in that column will be zero anyways.
     weighted_loss = masked_squared_error.sum(dim=0) / active_labels_count

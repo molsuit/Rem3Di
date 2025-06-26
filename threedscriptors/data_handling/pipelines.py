@@ -16,6 +16,7 @@ from threedscriptors.data_handling.data_build_pipeline import (
     SimilarityLabelingStage,
 )
 
+
 def regression_training_pipeline(
     dataset_config: DatasetConfig, smiles, regression_targets, regression_masks
 ):

@@ -1,18 +1,12 @@
 
-from matplotlib.pyplot import Figure
 
 import pydantic_yaml as pyaml
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-from threedscriptors.data_handling.dataset import AtomicEmbeddingDataset, RegressionDataset, RegressionWithAuxDataset
-from threedscriptors.data_handling.dataset_io import load_data_from_disk
-from threedscriptors.evaluation.clustering import UMAPCalculator
-from threedscriptors.evaluation.evaluation_pipeline import EnolThiolEvalTask
-from threedscriptors.model.model_builder import ModelBuilder
 
 from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.evaluation.training_evaluation import regression_pipeline, chiral_regression_pipeline
-
-from threedscriptors.evaluation.chiral_eval import plot_molecule_pseudoscalar_comparison
+from threedscriptors.data_handling.dataset import RegressionWithAuxDataset
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from threedscriptors.evaluation.training_evaluation import chiral_regression_pipeline
+from threedscriptors.model.model_builder import ModelBuilder
 
 model_run = "cmrt"
 dataset = "cmrt"

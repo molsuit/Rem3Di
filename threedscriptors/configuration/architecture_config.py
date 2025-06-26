@@ -1,12 +1,22 @@
 import importlib
 from collections.abc import Callable, Iterable, Sequence
 from enum import Enum
-from typing import Optional
+
 import torch.nn
-from pydantic import BaseModel, ConfigDict, field_serializer, field_validator, computed_field
 from e3nn.o3 import Irreps
-from threedscriptors.utils.model_utils import  get_equivariant_irreps, get_invariant_indices
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    computed_field,
+    field_serializer,
+    field_validator,
+)
+
 from threedscriptors.configuration.config_utils import IrrepType
+from threedscriptors.utils.model_utils import (
+    get_equivariant_irreps,
+    get_invariant_indices,
+)
 
 
 class HeadType(Enum):
@@ -92,8 +102,8 @@ class EmbeddingPreprocessConfig(BaseModel):
 
     input_irreps: IrrepType | None = None
     pseudoscalars: bool = True
-    pseudoscalar_dimension: int  
-    
+    pseudoscalar_dimension: int
+
     reload_state_dict: str | None = None
 
     pseudoscalar_embedding_dim: int | None = None
@@ -111,22 +121,22 @@ class EmbeddingPreprocessConfig(BaseModel):
 
     @computed_field(return_type=int, repr=True)
     @property
-    def input_equivariant_dimension(self) -> int | None: 
+    def input_equivariant_dimension(self) -> int | None:
         equivariant_irreps = get_equivariant_irreps(self.input_irreps)
         return sum([e_irrep.dim for e_irrep in equivariant_irreps])
-    
+
     @computed_field(return_type=int, repr=True)
     @property
     def input_dimension(self):
         return self.input_irreps.dim
-    
+
     @computed_field(return_type=int, repr=True)
     @property
     def input_invariant_dimension(self):
         invariant_irreps = [Irreps([(m, (i.l, i.p))])  for m, i in self.input_irreps if i.l == 0]
 
         return sum([i_irrep.dim for i_irrep in invariant_irreps])
-    
+
 
     @computed_field(return_type= IrrepType, repr= True)
     @property
@@ -177,7 +187,7 @@ class ArchitectureConfig(BaseModel):
     encoder_config: EncoderConfig
     global_aggregator_config: GlobalAggregatorConfig
     regression_head_config: RegressionHeadConfig | Sequence[RegressionHeadConfig]
-    positional_encoding_config: Optional[PositionalEncodingConfig] = None
+    positional_encoding_config: PositionalEncodingConfig | None = None
     reload_full_model_weights: str | None = None
 
 

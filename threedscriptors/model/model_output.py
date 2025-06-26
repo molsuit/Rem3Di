@@ -1,9 +1,10 @@
 from dataclasses import dataclass
-from typing import Optional
+
 from torch import Tensor
 
+
 @dataclass
-class ModelOutput():
+class ModelOutput:
     molecular_descriptor: Tensor
-    regression_predictions: Optional[Tensor] = None
-    updated_pair_encoding: Optional[Tensor] = None
+    regression_predictions: Tensor | None = None
+    updated_pair_encoding: Tensor | None = None

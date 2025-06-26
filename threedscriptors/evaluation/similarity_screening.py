@@ -1,11 +1,12 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from math import floor
-from typing import Sequence
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torchmetrics.classification import AUROC, BinaryROC, ROC
+from torchmetrics.classification import AUROC, BinaryROC
 from tqdm import tqdm
 
 from threedscriptors.data_handling.dataset import SimilarityScreeningDataset
@@ -203,8 +204,7 @@ class SimilarityScreening:
             ]
 
             total_number_of_compounds = class_results.ranked_similarities.shape[-1]
-            subset_size = int(
-                floor(subset_percentage * total_number_of_compounds))
+            subset_size = floor(subset_percentage * total_number_of_compounds)
 
             total_number_of_actives = np.count_nonzero(
                 class_results.ranked_activity_labels[0, :]
@@ -334,18 +334,18 @@ def plot_reference_vs_model_classification_metric(
 
 def plot_roc(threedscriptor_screening: SimilarityScreening, reference_screening: SimilarityScreening):
 
-    threedes_rocs : list[SimilarityScreeningClassificationMetric] = [results for results in threedscriptor_screening.results if 
+    threedes_rocs : list[SimilarityScreeningClassificationMetric] = [results for results in threedscriptor_screening.results if
                      results.metric == SimilarityMetrics.ROC]
 
 
     reference_rocs : list[SimilarityScreeningClassificationMetric] = [results for results in reference_screening.results if results.metric == SimilarityMetrics.ROC]
 
     fig, axes = plt.subplots(1, len(reference_rocs))
-    
+
     if not isinstance(axes, Sequence):
         axes = [axes]
-    
-    for fig_index, (model_roc, reference_roc) in enumerate(zip(threedes_rocs, reference_rocs)):
+
+    for fig_index, (model_roc, reference_roc) in enumerate(zip(threedes_rocs, reference_rocs, strict=False)):
         axes[fig_index].plot(model_roc.avg_metric["false_positive_rate"], model_roc.avg_metric["true_positive_rate"], label = "3Des Model ROC")
 
         axes[fig_index].plot(reference_roc.avg_metric["false_positive_rate"], reference_roc.avg_metric["true_positive_rate"], label = "Reference Des. ROC")

@@ -1,20 +1,22 @@
+
 from mace.calculators import MACECalculator
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
-    DatasetTypes,
     MaceCalculatorConfig,
 )
-from threedscriptors.data_handling.dataset import RegressionDataset, AtomicEmbeddingWithPositionsDataset
-from threedscriptors.data_handling.dataset_io import store_data_to_disk, load_data_from_disk
-from threedscriptors.data_handling.pipelines import regression_training_pipeline, pretraining_pipeline_with_positions
-
+from threedscriptors.data_handling.dataset import (
+    AtomicEmbeddingWithPositionsDataset,
+)
+from threedscriptors.data_handling.dataset_io import (
+    store_data_to_disk,
+)
+from threedscriptors.data_handling.pipelines import (
+    pretraining_pipeline_with_positions,
+)
 from threedscriptors.data_handling.source_preprocessing.polaris_preprocessing import (
     load_polaris_dataset,
 )
-
-from dataclasses import asdict
-
 
 dataset_registry = {
     "antiviral_admet": "asap-discovery/antiviral-admet-2025-unblinded",
@@ -69,4 +71,4 @@ dataset_config = DatasetConfig(
 
 dataset = pretraining_pipeline_with_positions(dataset_config, smiles).build()
 
-store_data_to_disk(dataset, directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/embedding_w_pos_test")
+store_data_to_disk(dataset, directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/embedding_w_pos_test")

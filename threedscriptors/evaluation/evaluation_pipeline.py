@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
-import numpy as np
+
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
-from threedscriptors.training.regression_training import multitask_masked_loss
 from matplotlib.lines import Line2D
+from torchmetrics.functional import mean_squared_error, r2_score
 
 from threedscriptors.data_handling.dataset import (
     BaseDataset,
@@ -15,7 +16,7 @@ from threedscriptors.evaluation.clustering import (
     ClusteringCalculator,
     plot_reduced_dimension,
     plot_reduced_dimension_functional_group_comparison,
-    plot_reduced_dimension_with_with_regression_labels
+    plot_reduced_dimension_with_with_regression_labels,
 )
 from threedscriptors.evaluation.descriptor_calculators import (
     MolfeatDescriptorCalculator,
@@ -27,25 +28,26 @@ from threedscriptors.evaluation.descriptor_similarity_metrics import (
     plot_similarity_matrix,
 )
 from threedscriptors.evaluation.evaluation_utils import (
+    capacity_diagnostics,
+    compute_class_std,
+    evaluate_atomic_descriptors,
     evaluate_molecular_descriptor_on_dataset,
     evaluate_regression_model_on_dataset,
-    evaluate_atomic_descriptors,
-    capacity_diagnostics,
-    compute_class_std
 )
 from threedscriptors.evaluation.regression_analysis import (
-    add_regression_head_activations_hooks, get_colors_for_predictions
+    add_regression_head_activations_hooks,
+    get_colors_for_predictions,
 )
 from threedscriptors.evaluation.similarity_screening import (
     SimilarityMetrics,
     SimilarityScreening,
     plot_reference_vs_model_classification_metric,
-    plot_roc
+    plot_roc,
 )
-from threedscriptors.model.regression_models import MultiTaskRegressionModel
 from threedscriptors.model.atomic_descriptor_preprocess import PseudoscalarGenerator
+from threedscriptors.model.regression_models import MultiTaskRegressionModel
+from threedscriptors.training.regression_training import multitask_masked_loss
 
-from torchmetrics.functional import r2_score, mean_squared_error
 
 class BaseEvalTask(ABC):
     @abstractmethod
@@ -76,7 +78,7 @@ class DescriptorPCATask(BaseEvalTask):
 
         descriptors = evaluate_molecular_descriptor_on_dataset(
             model, self.dataset)
-        
+
 
         if self.dataset.regression_targets is not None:
             self.predictions = evaluate_regression_model_on_dataset(model, self.dataset)
@@ -91,7 +93,7 @@ class DescriptorPCATask(BaseEvalTask):
         figs = {}
         figs[f"Descriptor_{type(self.clustering_calculator).__name__}"] = plot_reduced_dimension(
             self.reduced_dimensions)
-        
+
 
         if self.dataset.regression_targets is not None:
 
@@ -107,7 +109,7 @@ class DescriptorPCATask(BaseEvalTask):
 class DescriptorElementAnalysis(BaseEvalTask):
 
     def __init__(self, dataset):
-        
+
         self.dataset = dataset
 
     def run(self, model: MultiTaskRegressionModel):
@@ -130,7 +132,7 @@ class DescriptorElementAnalysis(BaseEvalTask):
 
 
 
-    
+
     def plot(self):
         fig_hist = plt.figure()
         plt.hist(self.descriptors.reshape(-1), bins = np.linspace(torch.min(self.descriptors),torch.max(self.descriptors), 50))
@@ -176,7 +178,7 @@ class RegressionHeadPCATask(BaseEvalTask):
             )
 
     def plot(self):
-        
+
         figs = {}
 
         colors = get_colors_for_predictions(self.predictions)
@@ -224,7 +226,7 @@ class RegressionTestTask(BaseEvalTask):
         labeled_std_devs = []
         unlabeld_std_devs = []
 
-        for task_idx, task in enumerate(self.dataset.dataset_config.tasks):
+        for task_idx, _ in enumerate(self.dataset.dataset_config.tasks):
 
             mol_ids_with_labels, predictions_with_labels, labels = self.get_labeled_task_data(
                 task_idx)
@@ -246,7 +248,7 @@ class RegressionTestTask(BaseEvalTask):
         self.results = {"labeld_std_devs_conf_predictions": labeled_std_devs,
                         "unlabeled_std_devs_conf_predictions": unlabeld_std_devs}
 
-    
+
 
     def get_unlabeled_task_data(self, task_idx):
 
@@ -258,7 +260,7 @@ class RegressionTestTask(BaseEvalTask):
         predictions_without_lables = task_predictions[unlabeld_task_mask]
         mol_ids_without_labels = [
             mol_id
-            for mol_id, keep in zip(self.dataset.mol_ids, unlabeld_task_mask)
+            for mol_id, keep in zip(self.dataset.mol_ids, unlabeld_task_mask, strict=False)
             if keep
         ]
 
@@ -280,7 +282,7 @@ class RegressionTestTask(BaseEvalTask):
 
         mol_ids_with_labels = [
             mol_id
-            for mol_id, keep in zip(self.dataset.mol_ids, task_mask)
+            for mol_id, keep in zip(self.dataset.mol_ids, task_mask, strict=False)
             if keep
         ]
 
@@ -458,8 +460,8 @@ class ChiralPredictionTask(BaseEvalTask):
         unscaled_mean_pred_loss, _ = multitask_masked_loss(
             mean_predictions, enantiomer_targets, mask)
 
-        cmrt_std = [
-            task.std for task in self.dataset.dataset_config.tasks if task.task_name == "cmrt"][0]
+        cmrt_std = next([
+            task.std for task in self.dataset.dataset_config.tasks if task.task_name == "cmrt"])
 
         print(type(unscaled_mean_pred_loss))
         print(unscaled_mean_pred_loss)
@@ -477,11 +479,9 @@ class ChiralPredictionTask(BaseEvalTask):
         print(f"Original scale model loss {model_loss_destandardized}")
 
     def calculate_unstandardized_predictions(self):
-        # Remove the log normalization and compare to the 
+        # Remove the log normalization and compare to the
 
         prediction_by_enantiomer_batch, regression_targets_by_enantiomer_batch = self.reshape_by_enantiomers()
-
-        print(prediction_by_enantiomer_batch.shape)
 
         # get the mean prediction and std per batch
 
@@ -490,12 +490,10 @@ class ChiralPredictionTask(BaseEvalTask):
         regression_target_per_enantiomer = torch.mean(regression_targets_by_enantiomer_batch, dim = 1)
 
 
+        cmrt_task = next(t for t in self.dataset.dataset_config.tasks if t.task_name == "cmrt")
 
-        cmrt_std = [
-            task.std for task in self.dataset.dataset_config.tasks if task.task_name == "cmrt"][0]
-
-        cmrt_mean  = [
-            task.mean for task in self.dataset.dataset_config.tasks if task.task_name == "cmrt"][0]
+        cmrt_std = cmrt_task.std
+        cmrt_mean  = cmrt_task.mean
 
         destandardized_prediction = torch.exp(mean_prediction_per_enantiomer * cmrt_std + cmrt_mean)
 
@@ -510,7 +508,7 @@ class ChiralPredictionTask(BaseEvalTask):
 
         print(f"Root mean square error  {rmse}")
         print(f"R2 coeffeicient{r2}")
-        
+
 
 
     def plot(self):
@@ -553,7 +551,7 @@ class ChiralPredictionTask(BaseEvalTask):
 
 
 
-        for idx, predictions, targets in zip(range(plot_N_molecules), prediction_by_enantiomer_batch, regression_targets_by_enantiomer_batch):
+        for idx, predictions, targets in zip(range(plot_N_molecules), prediction_by_enantiomer_batch, regression_targets_by_enantiomer_batch, strict=False):
 
             class_pos = idx * 6
 
@@ -604,7 +602,7 @@ class ChiralPredictionTask(BaseEvalTask):
 
         plt.xticks(ticks=np.linspace(3, 57, 10),
                labels=[str(i) for i in range(10)])
-        
+
         plt.yticks([])
         plt.ylabel("Retention Time [a.u]")
         plt.xlabel("Molecule")
@@ -639,17 +637,17 @@ class PreprocessorVisualizationTask(BaseEvalTask):
         self.dataset = dataset
 
     def run(self, model: MultiTaskRegressionModel):
-        
+
         self.atomic_descriptors = evaluate_atomic_descriptors(model, self.dataset)
 
-        
+
         assert isinstance(model.preprocessor, PseudoscalarGenerator)
-        
+
         self.pseudoscalars = model.preprocessor.slice_pseudoscalars(self.atomic_descriptors)
 
 
     def _plot_ps_heatmap(self):
-        
+
         fig = plt.figure()
         # pick out the 20 molecule indices (0, 16, 32, …, 16*19)
         mol_indices = [i * 16 for i in range(20)]
@@ -665,19 +663,19 @@ class PreprocessorVisualizationTask(BaseEvalTask):
 
         # extract the last 16 descriptor dims for each of those molecules
         # shape of each entry: (n_atoms, 16)
-        
+
 
         # compute global min & max for the color scale
         vmin = min(torch.min(d) for d in self.pseudoscalars)
         vmax = max(torch.max(d) for d in self.pseudoscalars)
 
-        # set up a 4×5 grid
-        fig, axes = plt.subplots(nrows=4, ncols=5, figsize=(20, 16), 
+        # set up a 4x5 grid
+        fig, axes = plt.subplots(nrows=4, ncols=5, figsize=(20, 16),
                                 sharex=False, sharey=False)
 
-        for i, (ax, desc) in enumerate(zip(axes.flat, self.pseudoscalars)):
+        for i, (ax, desc) in enumerate(zip(axes.flat, self.pseudoscalars, strict=False)):
             # transpose so rows = descriptor dims, cols = atom index
-            mat = desc.squeeze().T  
+            mat = desc.squeeze().T
             im = ax.imshow(mat, cmap="RdBu", vmin=vmin, vmax=vmax, aspect='auto')
             ax.set_title(f"Molecule {mol_indices[i]}")
             ax.set_xlabel("Atom Number")
@@ -685,7 +683,7 @@ class PreprocessorVisualizationTask(BaseEvalTask):
 
         # tighten up and add one colorbar for all
         fig.tight_layout()
-        cbar = fig.colorbar(im, ax=axes.ravel().tolist(), shrink=0.6, 
+        fig.colorbar(im, ax=axes.ravel().tolist(), shrink=0.6,
                             label="Descriptor Value")
 
         return fig

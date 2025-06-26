@@ -1,7 +1,8 @@
 import numpy as np
-from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
-from ase import Atoms
 import torch
+from ase import Atoms
+
+from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
 
 
 def test_distance_loading(molecule: Atoms, positional_encoding_config):

@@ -1,23 +1,23 @@
 from collections import OrderedDict
 from itertools import pairwise
 
-from threedscriptors.model.model_output import ModelOutput
 import torch
 import torch.nn as nn
 
-from threedscriptors.data_handling.sample import Sample
 from threedscriptors.configuration.architecture_config import (
     HeadType,
     RegressionHeadConfig,
 )
+from threedscriptors.data_handling.sample import Sample
 from threedscriptors.model.atomic_descriptor_preprocess import (
     AtomicDescriptorPreprocess,
 )
 from threedscriptors.model.global_aggregator import GlobalAggregator
-from threedscriptors.model.transformer_components import TransformerEncoder
-from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
-
+from threedscriptors.model.model_output import ModelOutput
 from threedscriptors.model.pair_block import TransformerPairEncoder
+from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
+from threedscriptors.model.transformer_components import TransformerEncoder
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, activation_fn: nn.Module):
@@ -180,7 +180,7 @@ class StructureBasedMultitaskRegressionModel(nn.Module):
         global_aggregator: GlobalAggregator, multitask_heads: MultitaskHeads):
 
         super().__init__()
-        
+
         self.structure_encoding_block = structure_encoding_block
         self.pair_encoder = pair_encoder
         self.preprocessor = preprocessor
@@ -197,7 +197,7 @@ class StructureBasedMultitaskRegressionModel(nn.Module):
         out.regression_predictions = self.multitask_heads(out.molecular_descriptor, sample.auxillary_data)
 
         return out
-    
+
 
     def get_molecular_descriptor(self, sample: Sample):
 
@@ -207,6 +207,6 @@ class StructureBasedMultitaskRegressionModel(nn.Module):
 
         S, P = self.pair_encoder(S, sample.padding_mask, P0, pair_masks)
 
-        molecular_descriptor = self.global_aggregator(S)    
+        molecular_descriptor = self.global_aggregator(S)
 
         return ModelOutput(molecular_descriptor=molecular_descriptor,updated_pair_encoding=P)

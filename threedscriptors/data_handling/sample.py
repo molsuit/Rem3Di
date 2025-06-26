@@ -11,7 +11,7 @@ def _move_to(x: Any, device: torch.device, non_blocking: bool) -> Any:
         return x.to(device, non_blocking=non_blocking)
     elif isinstance(x, Mapping):
         return {k: _move_to(v, device, non_blocking) for k, v in x.items()}
-    elif isinstance(x, Sequence) and not isinstance(x, (str, bytes)):
+    elif isinstance(x, Sequence) and not isinstance(x, str | bytes):
         return type(x)(_move_to(v, device, non_blocking) for v in x)
     else:
         return x  # includes None, scalars, objects

@@ -2,7 +2,7 @@ from importlib import resources
 
 import pydantic_yaml as pyaml
 import torch
-import pytest
+
 from threedscriptors.configuration.architecture_config import (
     Activations,
     ArchitectureConfig,
@@ -14,7 +14,7 @@ from threedscriptors.configuration.architecture_config import (
 )
 from threedscriptors.configuration.config_utils import from_yaml
 from threedscriptors.model.model_builder import ModelBuilder
-from e3nn.o3 import Irreps
+
 
 def test_configuration():
     embedding_preprocessor_config = EmbeddingPreprocessConfig(

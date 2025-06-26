@@ -1,31 +1,26 @@
 import argparse
+import os
+from datetime import datetime
 from pathlib import Path
+
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
+import yaml
 from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
 
-
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-import yaml
-
-from datetime import datetime
 import wandb
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
 )
 from threedscriptors.configuration.training_config import TrainingConfig
-
-import os
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.data_handling.sample import sample_collate_fn
-from threedscriptors.model.model_builder import ModelBuilder
-
-from threedscriptors.training.regression_training import multitask_masked_loss
-
 from threedscriptors.evaluation.training_evaluation import regression_pipeline
+from threedscriptors.model.model_builder import ModelBuilder
+from threedscriptors.training.regression_training import multitask_masked_loss
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -131,7 +126,7 @@ config={
         }
 
 
- 
+
 if training_config.wandb_active:
     wandb.init(
         project="threedscriptors",
@@ -159,7 +154,7 @@ assert model.multitask_heads.task_heads.keys() == stds_per_task.keys()
 stds = np.array(list(std_target_per_task.values()))
 
 print("Starting Training")
-     
+
 loss_data = []
 
 for epoch in range(training_config.epochs):
@@ -214,7 +209,7 @@ for epoch in range(training_config.epochs):
     model.eval()
     with torch.no_grad():
         for _batch, val_samples in enumerate(validation_loader):
-            
+
             val_samples.to_(device)
             val_samples.padding_mask = val_samples.padding_mask.bool()
 
@@ -265,7 +260,7 @@ for epoch in range(training_config.epochs):
                     "task_train_loss": train_dict,
                     "learning_rate": current_lr[0],
                 }
-        
+
         loss_data.append(epoch_loss_dict)
 
         if training_config.wandb_active:

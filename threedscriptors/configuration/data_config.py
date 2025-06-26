@@ -1,12 +1,28 @@
 from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
-from typing import Type
-from threedscriptors.data_handling.dataset import BaseDataset, AtomicEmbeddingDataset, RegressionDataset, SimilarityScreeningDataset, RegressionWithAuxDataset, AtomicEmbeddingWithPositionsDataset, RegressionDatasetwithPositions, RegressionWithAuxAndPositionsDataset
 
 import torch
 from mace.calculators import MACECalculator
-from pydantic import BaseModel, ConfigDict, model_serializer, model_validator, field_validator, field_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    field_serializer,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
+
+from threedscriptors.data_handling.dataset import (
+    AtomicEmbeddingDataset,
+    AtomicEmbeddingWithPositionsDataset,
+    BaseDataset,
+    RegressionDataset,
+    RegressionDatasetwithPositions,
+    RegressionWithAuxAndPositionsDataset,
+    RegressionWithAuxDataset,
+    SimilarityScreeningDataset,
+)
 
 
 class DatasetTypes(Enum):
@@ -109,13 +125,14 @@ class DatasetConfig(BaseModel):
     max_atoms: int | None = None
     regression_is_normalized: bool = False
     tasks: Sequence[TaskConfig] | None = None
+    only_heavy_atoms: bool = False
 
 
     def get_task_name_set(self):
         return [tc.task_name for tc in self.tasks]
-    
+
     def get_mean_std_per_task(self):
-        
+
         mean = {tc.task_name : tc.mean for tc in self.tasks}
         std =  {tc.task_name : tc.std for tc in self.tasks}
 

@@ -1,14 +1,16 @@
+import os
+
 import pydantic_yaml as pyaml
 import torch
-import os
+
 from threedscriptors.configuration.architecture_config import (
     AttentionLayerConfig,
     EmbeddingPreprocessConfig,
     EncoderConfig,
     GlobalAggregatorConfig,
     HeadType,
+    PositionalEncodingConfig,
     RegressionHeadConfig,
-    PositionalEncodingConfig
 )
 from threedscriptors.configuration.config_factory import ConfigFactory
 from threedscriptors.configuration.data_config import DatasetConfig

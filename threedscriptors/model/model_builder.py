@@ -12,17 +12,16 @@ from threedscriptors.model.atomic_descriptor_preprocess import (
     PseudoscalarGenerator,
 )
 from threedscriptors.model.global_aggregator import GlobalAggregator
+from threedscriptors.model.pair_block import TransformerPairEncoder
 from threedscriptors.model.regression_models import (
     MultitaskHeads,
     MultiTaskRegressionModel,
     StructureBasedMultitaskRegressionModel,
 )
-from threedscriptors.model.transformer_components import TransformerEncoder
-from threedscriptors.model.pair_block import TransformerPairEncoder
 from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
-
-
+from threedscriptors.model.transformer_components import TransformerEncoder
 from threedscriptors.utils.model_utils import get_invariant_indices
+
 
 class ModelBuilder:
     def __init__(self, architecture_config: ArchitectureConfig):

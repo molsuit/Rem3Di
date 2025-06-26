@@ -15,9 +15,8 @@ from threedscriptors.data_handling.data_utils import (
 from threedscriptors.data_handling.dataset import (
     BaseDataset,
 )
-from threedscriptors.utils.model_utils import get_mace_calculator_embedding_dimension
-
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
+from threedscriptors.utils.model_utils import get_mace_calculator_embedding_dimension
 
 
 class DatasetBuilder:
@@ -151,7 +150,7 @@ class DatasetBuilder:
                         limit - data_points_counter,
                     )  # This ensures that the dataloading does not overshoot the targeted number of molecules
 
-                    N_conformers_per_enantiomer = int(ceil(total_N_conformers / 2))
+                    N_conformers_per_enantiomer = ceil(total_N_conformers / 2)
 
                     embeded_molecules_0 = get_ase_atoms_with_conformers(
                         smiles_0, N_conformers_per_enantiomer
@@ -266,7 +265,7 @@ class DatasetBuilder:
     def calculate_atomic_embeddings(
         self, calculator: MACECalculator
     ):
-        
+
         embedding_size = get_mace_calculator_embedding_dimension(
             calculator
         )

@@ -1,18 +1,31 @@
-from torch import nn
 import torch
+from torch import nn
 
 
 class BesselBasisFunctions(nn.Module):
 
     # DimeNet Style Bessel Basis functions
+    def __init__(self, N_radial_basis_functions: int, distance_cutoff: float):
+
+        super().__init__()
+
+        self.N_radial_basis_functions = N_radial_basis_functions
+        self.distance_cutoff = distance_cutoff
+
+
+    def forward(distances):
+        pass
 
 
 
 class GaussianBasisFunctions(nn.Module):
 
-    def __init__(self, N_radial_basis_functions: int, distance_cutoff: float, d_projection: int):
+    def __init__(self, N_radial_basis_functions: int, distance_cutoff: float):
 
         super().__init__()
+
+        self.N_radial_basis_functions = N_radial_basis_functions
+        self.distance_cutoff = distance_cutoff
 
 
         centers = torch.linspace(0., self.d_cutoff, self.N_radial_basis_functions)
@@ -42,8 +55,8 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
         self.d_cutoff = distance_cutoff
         self.d_projection = d_projection
 
+        self.radial_basis = GaussianBasisFunctions(N_radial_basis_functions, distance_cutoff)
 
-        
         self.proj = nn.Linear(N_radial_basis_functions, d_projection, bias=False)
 
 
@@ -51,13 +64,15 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
     def forward(self, positions, atom_mask):
 
         # positions (B, N, 3)
-        # Calculate the pairwise distance matrix 
-
+        # Calculate the pairwise distance matrix
         distances = torch.cdist(positions, positions)
 
         # TODO: Bessel functions???
 
-        P0  = self.proj(rbf)   
+
+        rbf = self.radial_basis(distances)
+
+        P0  = self.proj(rbf)
 
         mask_pair = (atom_mask[:, :, None] | atom_mask[:, None, :])
 

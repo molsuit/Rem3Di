@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
-from threedscriptors.evaluation.regression_analysis import get_colors_for_predictions
+
 import matplotlib.pyplot as plt
 import torch
 import umap
 
 from threedscriptors.data_handling.data_utils import get_functional_group_label
+from threedscriptors.evaluation.regression_analysis import get_colors_for_predictions
 
 
 class ClusteringCalculator(ABC):
@@ -99,7 +100,7 @@ def plot_reduced_dimension_with_with_regression_labels(principle_components, pre
 
     plt.xlabel("Reduced Dimension 1")
     plt.ylabel("Reduced Dimension 2")
-    
+
 
     return fig
 

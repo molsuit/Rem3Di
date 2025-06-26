@@ -1,15 +1,20 @@
-from threedscriptors.configuration.architecture_config import EncoderConfig
-from torch import nn, Tensor
 import torch
 import torch.nn.functional as F
-from threedscriptors.model.pair_biased_attention import PairBiasedSelfAttention, PairOuterProdUpdate
+from torch import Tensor, nn
+
+from threedscriptors.configuration.architecture_config import EncoderConfig
+from threedscriptors.model.pair_biased_attention import (
+    PairBiasedSelfAttention,
+    PairOuterProdUpdate,
+)
+
 
 class FeedForward(nn.Module):
     """GeGLU-style FFN (a bit better than ReLU/GELU + Linear)."""
     def __init__(self, d_model: int, d_hidden: int | None = None, p_drop=0.1):
         super().__init__()
         d_hidden = d_hidden or 4 * d_model          # usual width factor
-        self.proj_in  = nn.Linear(d_model, d_hidden * 2)  # 2× for GEGLU
+        self.proj_in  = nn.Linear(d_model, d_hidden * 2)  # 2x for GEGLU
         self.proj_out = nn.Linear(d_hidden, d_model)
         self.dropout  = nn.Dropout(p_drop)
 
@@ -53,8 +58,8 @@ class PairBlock(nn.Module):
         # optional mini-FFN over the pair tensor
         self.pair_ffn = PairFFN(d_pair) if pair_ffn else nn.Identity()
 
-    
-    
+
+
     def forward(self, S, mask, P, mask_pair):
         # --- atom stream ------------------------------------------------------
         S = S + self.attn(self.ln_s1(S), P, mask)   # residual 1
@@ -62,10 +67,10 @@ class PairBlock(nn.Module):
 
         # --- pair stream ------------------------------------------------------
         P = self.pair_up(S, P, mask_pair)
-        P = self.pair_ffn(P)                       
+        P = self.pair_ffn(P)
 
         return S, P
-    
+
 
 
 class TransformerPairEncoder(nn.Module):

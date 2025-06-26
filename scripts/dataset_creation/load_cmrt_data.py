@@ -2,23 +2,25 @@ from mace.calculators import MACECalculator
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
-    DatasetTypes,
     MaceCalculatorConfig,
 )
-from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
-from threedscriptors.data_handling.dataset import RegressionWithAuxDataset, RegressionWithAuxAndPositionsDataset
+from threedscriptors.data_handling.data_utils import get_atom_species_in_smiles
+from threedscriptors.data_handling.dataset import (
+    RegressionWithAuxAndPositionsDataset,
+)
 from threedscriptors.data_handling.dataset_io import store_data_to_disk
 from threedscriptors.data_handling.pipelines import chiral_regression_training_pipeline
+from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 from threedscriptors.data_handling.source_preprocessing.cmrt_preprocessing import (
     load_cmrt_data,
 )
 
 dataset_directory = (
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt_only_heavy_atoms"
 )
 
 smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
-    f"{dataset_directory}/raw_data.csv", single_column_type=True
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/cmrt_raw_data.csv", single_column_type=True
 )
 
 print(aux_data)
@@ -45,6 +47,7 @@ dataset_config = DatasetConfig(
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
+    only_heavy_atoms=True
 )
 
 dataset = chiral_regression_training_pipeline(
@@ -63,7 +66,7 @@ print(dataset.regression_targets)
 
 store_data_to_disk(dataset, f"{dataset_directory}_full")
 
-from threedscriptors.data_handling.data_utils import get_atom_species_in_smiles
+
 atom_type_set = get_atom_species_in_smiles(ListSmilesIterator(dataset.smiles_list))
 print(atom_type_set)
 

@@ -1,24 +1,23 @@
 import pytest
+from e3nn.o3 import Irreps
+
 from threedscriptors.configuration.architecture_config import (
     EmbeddingPreprocessConfig,
 )
-
-from e3nn.o3 import Irreps
 from threedscriptors.utils.model_utils import get_pseudoscalar_indices
-
 
 
 @pytest.mark.parametrize(
     "irreps_str, expected_idx",
     [
         # one pseudoscalar block (l = 0, p = -1)
-        ("2x0o + 1x0e + 3x1o", [0]),          
+        ("2x0o + 1x0e + 3x1o", [0]),
 
         # no pseudoscalars at all
-        ("1x0e + 2x1o", []),                  
+        ("1x0e + 2x1o", []),
 
         # two separate pseudoscalar blocks
-        ("1x0o + 1x1o + 1x0o", [0, 2]),       
+        ("1x0o + 1x1o + 1x0o", [0, 2]),
     ],
 )
 def test_get_pseudoscalar_indices(irreps_str, expected_idx):
@@ -63,7 +62,7 @@ def test_equivariant_dimension_mixed_l():
     dimension carried by all blocks with l > 0.
     """
     irreps = Irreps("3x0e + 2x1o + 1x2e")      # 3 scalars, 2 vectors, 1 quadrupole
-    expected = Irreps("2x1o + 1x2e").dim       # 2×3  + 1×5 = 11
+    expected = Irreps("2x1o + 1x2e").dim       # 2x3  + 1x5 = 11
 
     cfg = EmbeddingPreprocessConfig(
         input_irreps=irreps,
@@ -76,7 +75,7 @@ def test_equivariant_dimension_mixed_l():
 
 def make_cfg(irreps: str | Irreps) -> EmbeddingPreprocessConfig:
     """
-    Minimal config factory so we don’t repeat boiler-plate.
+    Minimal config factory so we don't repeat boiler-plate.
     Only the two mandatory arguments are set; everything
     else falls back to the Pydantic defaults.
     """

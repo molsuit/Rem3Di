@@ -1,19 +1,22 @@
+
 from mace.calculators import MACECalculator
-from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
+
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
-    DatasetTypes,
     MaceCalculatorConfig,
 )
-from threedscriptors.data_handling.dataset import RegressionDataset, RegressionDatasetwithPositions
-from threedscriptors.data_handling.dataset_io import store_data_to_disk, load_data_from_disk
-from threedscriptors.data_handling.pipelines import regression_training_with_pos_pipeline
+from threedscriptors.data_handling.dataset import (
+    RegressionDatasetwithPositions,
+)
+from threedscriptors.data_handling.dataset_io import (
+    store_data_to_disk,
+)
+from threedscriptors.data_handling.pipelines import (
+    regression_training_with_pos_pipeline,
+)
 from threedscriptors.data_handling.source_preprocessing.polaris_preprocessing import (
     load_polaris_dataset,
 )
-
-from dataclasses import asdict
-
 
 dataset_registry = {
     "antiviral_admet": "asap-discovery/antiviral-admet-2025-unblinded",

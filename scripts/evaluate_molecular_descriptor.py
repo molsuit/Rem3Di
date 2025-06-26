@@ -2,7 +2,7 @@ from matplotlib.pyplot import Figure
 
 from threedscriptors.data_handling.dataset import AtomicEmbeddingDataset
 from threedscriptors.data_handling.dataset_io import load_data_from_disk
-from threedscriptors.evaluation.clustering import UMAPCalculator, PCACalculator
+from threedscriptors.evaluation.clustering import PCACalculator
 from threedscriptors.evaluation.evaluation_pipeline import EnolThiolEvalTask
 from threedscriptors.model.model_builder import ModelBuilder
 

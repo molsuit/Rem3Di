@@ -1,17 +1,16 @@
 import numpy as np
 import torch
 from e3nn import o3
-from e3nn.nn import BatchNorm
-from mace.modules.blocks import tp_out_irreps_with_instructions
 from torch import from_numpy, nn
-from threedscriptors.model.variance_normalization import VarianceNormalization
+
 from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
+from threedscriptors.model.variance_normalization import VarianceNormalization
 from threedscriptors.utils.model_utils import (
+    get_equivariant_irreps,
     get_invariant_indices,
+    get_pseudoscalar_indices,
     remove_equivariants,
     split_invariants_equivariants,
-    get_equivariant_irreps,
-    get_pseudoscalar_indices
 )
 
 
@@ -76,7 +75,7 @@ class InvariantsFilter(AtomicDescriptorPreprocess):
             embedding_preprocess_config
         )  # sets the config and indices of invariant reps
 
-        
+
 
     def forward(self, atomic_embedding):
 
@@ -106,7 +105,7 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             irrep_normalization = "component",
         )
 
-        self.out_irreps = o3.Irreps(f"128x0o")
+        self.out_irreps = o3.Irreps("128x0o")
         # 2) dot: (1e ⊗ 1o) → 0o
         self.tp_dot = o3.TensorProduct(
             self.tp_cross.irreps_out,
@@ -132,9 +131,9 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
 
 
     def register_equivariant_scale(self, equivariant_scale_factor):
-        
+
         assert torch.all(self.equivariant_scale_factor == torch.ones((1, 1, self.config.input_equivariant_dimension))), "Equivariant scale buffer has already been set, and can not be overwritten"
-        
+
         self.equivariant_scale_factor = equivariant_scale_factor
 
 
@@ -145,14 +144,14 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
 
         invariant_features, equivariant_features = split_invariants_equivariants(atomic_embeddings, self.invariant_indices)
 
-        invariant_features = self.rescale_invariant(invariant_features)    
-        
+        invariant_features = self.rescale_invariant(invariant_features)
+
         equivariant_features = equivariant_features * self.equivariant_scale_factor
 
-        cross = self.tp_cross(equivariant_features, equivariant_features)  # v₂ × v₃
+        cross = self.tp_cross(equivariant_features, equivariant_features)  # v₂ x v₃
 
-        chi = self.tp_dot(equivariant_features, cross)  # v₁ · (v₂ × v₃)
-        
+        chi = self.tp_dot(equivariant_features, cross)  # v₁ · (v₂ x v₃)
+
         #chi = self.var_norm(chi)
         chi = chi.float()
 
@@ -166,12 +165,12 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
 
 
     def slice_pseudoscalars(self, processed_atomic_descriptors):
-        
+
         pseudo_slices = get_pseudoscalar_indices(self.config.output_irreps)
         blocks = [processed_atomic_descriptors[..., slc] for slc in pseudo_slices]
 
-        return torch.cat(blocks, dim=-1) 
-    
-    
+        return torch.cat(blocks, dim=-1)
+
+
 
 

@@ -62,9 +62,9 @@ def get_invariant_indices(irreps: Irreps):
 def get_equivariant_irreps(irreps: Irreps):
 
     irreps = Irreps(irreps)                          # normalise input
-    filtered = [(mul, ir) for mul, ir in irreps       # keep ℓ>0
+    filtered = [(mul, ir) for mul, ir in irreps       # keep l>0
                 if ir.l > 0]
-    return Irreps(filtered) 
+    return Irreps(filtered)
 
 
 def get_pseudoscalar_indices(irreps: Irreps):
@@ -74,7 +74,7 @@ def get_pseudoscalar_indices(irreps: Irreps):
     # Zip together blocks and their slices so we can filter in one pass
     pseudoscalar_slices = [
         sl
-        for (mul, ir), sl in zip(irreps, all_slices)
+        for (mul, ir), sl in zip(irreps, all_slices, strict=False)
         if ir.l == 0 and ir.p == -1        # l == 0  ➜ scalar,  p == -1 ➜ odd
     ]
 

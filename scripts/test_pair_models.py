@@ -1,30 +1,27 @@
-from threedscriptors.model.regression_models import (
-    StructureBasedMultitaskRegressionModel,
-)
-import torch 
-from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
-from threedscriptors.data_handling.data_build_pipeline import (
-    PipelineOrchestrator,
-    ReloadFromDiskStage,
-    AtomicPositionsStage,
-)
-from threedscriptors.model.atomic_descriptor_preprocess import InvariantsFilter
+import torch
+
 from threedscriptors.configuration.architecture_config import (
-    PositionalEncodingConfig,
-    EncoderConfig,
     AttentionLayerConfig,
+    EmbeddingPreprocessConfig,
+    EncoderConfig,
     GlobalAggregatorConfig,
-    EmbeddingPreprocessConfig,    HeadType,
+    HeadType,
+    PositionalEncodingConfig,
     RegressionHeadConfig,
 )
-from threedscriptors.data_handling.dataset_io import (
-    store_data_to_disk,
-    load_data_from_disk,
+from threedscriptors.data_handling.data_build_pipeline import (
+    AtomicPositionsStage,
+    PipelineOrchestrator,
+    ReloadFromDiskStage,
 )
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from threedscriptors.model.atomic_descriptor_preprocess import InvariantsFilter
 from threedscriptors.model.global_aggregator import GlobalAggregator
-from threedscriptors.model.regression_models import TransformerPairEncoder
-
+from threedscriptors.model.regression_models import (
+    MultitaskHeads,
+    StructureBasedMultitaskRegressionModel,
+    TransformerPairEncoder,
+)
+from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
 
 pos_encoding_config = PositionalEncodingConfig(
     N_radial_basis_functions=16, distance_cutoff=20.0, d_projection=64
@@ -45,7 +42,7 @@ head_config_template = [RegressionHeadConfig(
     task_name="test",
     input_dimensions=256
 )]
-from threedscriptors.model.regression_models import MultitaskHeads
+
 multitask_heads = MultitaskHeads(head_config_template)
 
 encoder_config = EncoderConfig(N_layers=5, attention_layer_config=attn_layer_config)

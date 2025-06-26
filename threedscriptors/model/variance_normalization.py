@@ -1,12 +1,11 @@
 import torch
-from torch.nn import Parameter, Module
-
+from torch.nn import Module, Parameter
 
 
 class VarianceNormalization(Module):
     def __init__(self, num_features, eps=1e-3):
 
-        super(VarianceNormalization, self).__init__()
+        super().__init__()
         self.num_features = num_features
         self.running_var = Parameter(torch.ones(num_features), requires_grad=False)
         self.num_batches_tracked = 0

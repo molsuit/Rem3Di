@@ -1,18 +1,18 @@
 import pytest
 import torch
-from mace.calculators import mace_mp
 from ase import Atoms
+from mace.calculators import mace_mp
 
+from threedscriptors.configuration.architecture_config import PositionalEncodingConfig
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     DatasetTypes,
     MaceCalculatorConfig,
     TaskConfig,
 )
-
-from threedscriptors.configuration.architecture_config import PositionalEncodingConfig
-
 from threedscriptors.data_handling.data_utils import get_ase_atoms
+
+
 @pytest.fixture(scope="session")
 def embeddings():
     return torch.rand((5, 5))

@@ -1,9 +1,10 @@
-from threedscriptors.evaluation.training_metadata import TrainingMetadata
+import matplotlib as mpl
+import matplotlib.cm as cmx
 import matplotlib.pyplot as plt
 import numpy as np
-import matplotlib as mpl
-from matplotlib.colors import LogNorm 
-import matplotlib.cm as cmx
+from matplotlib.colors import LogNorm
+
+from threedscriptors.evaluation.training_metadata import TrainingMetadata
 
 dirs = ["/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/3-2025_05_27_09_08_21-adme_fang_1_conf","/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/5-2025_05_27_09_16_30-adme_fang_5_conf", "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/6-2025_05_27_09_33_07-adme_fang_10_conf","/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/8-2025_05_27_10_57_03-adme_fang_32_confs","/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/9-2025_05_27_13_38_01-adme_fang_64_confs","/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/10-2025_05_27_17_07_36-adme_fang_128_confs"]
 
@@ -35,15 +36,15 @@ fig = plt.figure(figsize= (5.5, 2.75))
 
 max_epoch = 0
 for run in runs:
-    
+
     epochs, val_loss = run.get_validation_loss()
     epochs = np.array(epochs) + 1
     max_epoch = max(max_epoch, max(epochs))
     N_confs = run.dataset_config.N_conformers
-    
+
 
     min_val_loss[N_confs] = min(val_loss)
- 
+
     plt.plot(epochs,val_loss,c = scalarMap.to_rgba(N_confs), label = f"{N_confs}")
 
 
@@ -63,7 +64,7 @@ legend = ax.legend(
     handles,
     labels,
     title=r"Number of \\ conformers",
-    title_fontsize="medium",             # legend‐title styling (optional)
+    title_fontsize="medium",             # legend-title styling (optional)
     frameon=False,                       # turn off legend box if preferred
     loc="center left",                   # move as needed
     bbox_to_anchor=(1.02, 0.5), borderaxespad=0
@@ -87,7 +88,7 @@ min_val_losses = np.array(list(min_val_loss.values()))
 
 
 
-# Linear regression:  log (y) ≈ (−ν) * log(x) + const
+# Linear regression:  log (y) ≈ (-nu) * log(x) + const
 slope, _ = - np.polyfit(np.log(n_confs), np.log(min_val_losses), deg=1)
 print(slope)
 plt.plot(n_confs, min_val_losses)

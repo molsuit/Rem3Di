@@ -7,14 +7,14 @@ import torch.utils.data as data
 from ase import Atoms
 
 if TYPE_CHECKING:
-    # only for mypy / IDE – never executed at runtime
+    # only for mypy / IDE - never executed at runtime
     from threedscriptors.configuration.data_config import DatasetConfig
 
 from threedscriptors.data_handling.data_utils import (
     compute_splits,
     get_max_molecule_size_from_atoms,
     get_max_molecule_size_from_smiles,
-    get_max_num_of_heavy_atom_from_atoms
+    get_max_num_of_heavy_atom_from_atoms,
 )
 from threedscriptors.data_handling.sample import Sample
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
@@ -82,7 +82,7 @@ class BaseDataset(data.Dataset):
 
     def get_max_atoms(self):
         if self.dataset_config.max_atoms is None:
-            
+
             if self.dataset_config.only_heavy_atoms:
                 assert self.molecules is not None
                 self.dataset_config.max_atoms = get_max_num_of_heavy_atom_from_atoms(self.molecules)
@@ -98,11 +98,11 @@ class BaseDataset(data.Dataset):
                     smiles_iterator
                 )
 
-            
+
 
         return self.dataset_config.max_atoms
-    
-        
+
+
 
     def get_padded_positions(self):
 
@@ -112,17 +112,17 @@ class BaseDataset(data.Dataset):
 
         if self.dataset_config.only_heavy_atoms:
 
-            
+
             heavy_indices = [np.nonzero(nums != 1)[0].tolist() for nums in atomic_numbers]
 
             atomic_numbers = [
                 nums[hi]                 # pick only the heavy Zs
-                for nums, hi in zip(atomic_numbers, heavy_indices)
+                for nums, hi in zip(atomic_numbers, heavy_indices, strict=False)
             ]
 
             positions = [
                 pos[hi]                  # pick only the heavy-atom rows (x,y,z)
-                for pos, hi in zip(positions, heavy_indices)
+                for pos, hi in zip(positions, heavy_indices, strict=False)
             ]
 
             # 4. new “padding dim” = number of heavies per mol

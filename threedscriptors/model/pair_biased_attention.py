@@ -1,4 +1,5 @@
 import math
+
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -74,7 +75,7 @@ class PairBiasedSelfAttention(nn.Module):
         if mask is not None:
             logits = logits.masked_fill(
                 mask[:, None, None, :],           # (B,1,1,N) broadcast
-                -1e9                                  # large negative = −∞
+                -1e9                                  # large negative = -∞
             )
 
 
@@ -90,7 +91,7 @@ class PairBiasedSelfAttention(nn.Module):
         # 7) output projection
         S_out = self.W_o(S_head)                       # (B, N, d_model)
         return S_out
-    
+
 
 
 class PairOuterProdUpdate(nn.Module):
@@ -129,4 +130,4 @@ class PairOuterProdUpdate(nn.Module):
         ΔP = ΔP_atoms + ΔP_pair
         P = P + 0.5 * (ΔP + ΔP.transpose(1, 2))
         return P
-    
+

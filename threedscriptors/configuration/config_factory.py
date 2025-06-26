@@ -1,5 +1,5 @@
+
 import pydantic_yaml as pyaml
-from e3nn.o3 import Irreps
 
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
@@ -7,17 +7,14 @@ from threedscriptors.configuration.architecture_config import (
     EmbeddingPreprocessConfig,
     EncoderConfig,
     GlobalAggregatorConfig,
+    PositionalEncodingConfig,
     RegressionHeadConfig,
-    PositionalEncodingConfig
 )
 from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.utils.model_utils import (
-    get_invariant_indices,
-    get_mace_calculator_embedding_dimension,
     get_mace_calculator_irrep_signature,
 )
 
-from typing import Optional
 
 class ConfigFactory:
     def __init__(
@@ -27,7 +24,7 @@ class ConfigFactory:
         attention_layer_config: AttentionLayerConfig,
         encoder_config: EncoderConfig,
         global_aggregator_config: GlobalAggregatorConfig,
-        positional_encoding_config: Optional[PositionalEncodingConfig] = None
+        positional_encoding_config: PositionalEncodingConfig | None = None
     ):
         self.dataset_config = dataset_config
         self.embedding_preprocessor_config = embedding_preprocessor_config

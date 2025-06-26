@@ -8,10 +8,6 @@ from threedscriptors.data_handling.sample import sample_collate_fn
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
 
 
-
-
-
-
 def plot_molecule_pseudoscalar_comparison(
     dataset: RegressionWithAuxDataset,
     ps_model: MultiTaskRegressionModel,
@@ -63,7 +59,7 @@ def plot_molecule_pseudoscalar_comparison(
         )
 
 
-    
+
     targets = dataset.regression_targets[:(N_full_conformal_ensembles*dataset.dataset_config.N_conformers)]
 
     regression_targets = (

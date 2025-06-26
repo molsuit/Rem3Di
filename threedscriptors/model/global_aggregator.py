@@ -1,11 +1,9 @@
+import torch
+import torch.nn.functional as F
 from torch import nn
 
 from threedscriptors.configuration.architecture_config import GlobalAggregatorConfig
 
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 class AttnPool(nn.Module):
     def __init__(self, d_in, n_heads=4, d_hidden=None, dropout=0.0):
@@ -46,7 +44,7 @@ class AttnPool(nn.Module):
 
             # ---- weighted sum in original feature space -----------------------
             pooled = torch.einsum('bhn,bnd->bhd', attn, x)    # (B, H, d_in)
-            return pooled.mean(dim=1)    
+            return pooled.mean(dim=1)
 
 
 
@@ -54,7 +52,7 @@ class GlobalAggregator(nn.Module):
     def __init__(self, global_aggregator_config: GlobalAggregatorConfig):
         super().__init__()
         self.config = global_aggregator_config
-        
+
         self.pool = AttnPool(self.config.input_dim, d_hidden=self.config.input_dim, n_heads=4, dropout= 0.2)
 
 
@@ -67,7 +65,7 @@ class GlobalAggregator(nn.Module):
 
     def forward(self, x):
         out = self.pool(x)
-        
+
         #out = torch.mean(x, dim = 1)
         # intermediates = [f(x, dim=1) for f in self.aggregation_fns]
         # out = cat(intermediates, dim=-1)

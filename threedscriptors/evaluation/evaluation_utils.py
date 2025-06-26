@@ -1,32 +1,28 @@
-import numpy as np
-import torch
-
-from threedscriptors.data_handling.dataset import RegressionDataset
-from threedscriptors.model.transformer_components import TransformerEncoder
-
 from collections.abc import Iterable
 
-
-
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
+
 from threedscriptors.data_handling.dataset import (
     AtomicEmbeddingDataset,
     RegressionDataset,
     RegressionWithAuxDataset,
 )
 from threedscriptors.data_handling.sample import Sample, sample_collate_fn
+from threedscriptors.model.model_output import ModelOutput
 from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
-from threedscriptors.model.model_output import ModelOutput
+from threedscriptors.model.transformer_components import TransformerEncoder
+
 
 def evaluate_regression_model_on_dataset(
     model: MultiTaskRegressionModel,
     dataset: RegressionWithAuxDataset | RegressionDataset,
     device="cuda",
-):  
-    
+):
+
     # returns the predictions of the model on dataset in standardized units
 
     assert set([tc.task_name for tc in dataset.dataset_config.tasks]).issubset(
@@ -84,12 +80,12 @@ def evaluate_molecular_descriptor_on_dataset(
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
             samples.to_(device)
-            
+
             samples.padding_mask = samples.padding_mask.bool()
             output: ModelOutput = model.get_molecular_descriptor(samples)
 
             descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = output.molecular_descriptor
-            
+
 
     return descriptors
 
@@ -99,7 +95,7 @@ def evaluate_atomic_descriptors(
     model: MultiTaskRegressionModel,
     dataset: RegressionWithAuxDataset | RegressionDataset,
     device="cuda",
-):  
+):
 
     model.to(device)
     model.eval()
@@ -120,7 +116,7 @@ def evaluate_atomic_descriptors(
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
             embeddings = samples.embeddings.to(device)
- 
+
             regression_predictions[
                 batch_idx * batch_size : (batch_idx + 1) * batch_size, :
             ] = model.preprocessor(embeddings)
@@ -203,11 +199,11 @@ def capacity_diagnostics(Z, bins=128, dead_thr=0.2, eps=1e-12):
         Count of low-entropy ('dead') coordinates.
     """
 
-    
+
 
     Z = np.asarray(Z, dtype=np.float64)
     Z = Z - np.mean(Z, axis = 0)
-    
+
     N, d = Z.shape
 
     # --- marginal entropies -------------------------------------------------
@@ -234,7 +230,7 @@ def capacity_diagnostics(Z, bins=128, dead_thr=0.2, eps=1e-12):
     dead_dims = int((H_i < dead_thr * max_bits_per_dim).sum())
 
     eig = np.sort(eigvals)[::-1]           # descending
-    
+
 
 
     return H_tot, utilisation, dead_dims, eig
