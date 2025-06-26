@@ -1,12 +1,9 @@
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
+from typing import Any
 
 import torch
 from torch.utils.data._utils.collate import default_collate
-from typing import Any, Optional, Dict, Mapping, Sequence
-
-
-
-
 
 
 def _move_to(x: Any, device: torch.device, non_blocking: bool) -> Any:
@@ -22,15 +19,15 @@ def _move_to(x: Any, device: torch.device, non_blocking: bool) -> Any:
 
 @dataclass
 class Sample:
-    embeddings:            Optional[torch.Tensor] = None
-    padding_mask:          Optional[torch.Tensor] = None
-    regression_targets:    Optional[torch.Tensor] = None
-    regression_masks:      Optional[torch.Tensor] = None
-    auxillary_data:        Optional[Dict[str, Any]] = None
-    target_class_labels:   Optional[torch.Tensor] = None
-    active_decoy_labels:   Optional[torch.Tensor] = None
-    molecular_descriptors: Optional[torch.Tensor] = None
-    atomic_positions:      Optional[torch.Tensor] = None
+    embeddings:            torch.Tensor | None = None
+    padding_mask:          torch.Tensor | None = None
+    regression_targets:    torch.Tensor | None = None
+    regression_masks:      torch.Tensor | None = None
+    auxillary_data:        dict[str, Any] | None = None
+    target_class_labels:   torch.Tensor | None = None
+    active_decoy_labels:   torch.Tensor | None = None
+    molecular_descriptors: torch.Tensor | None = None
+    atomic_positions:      torch.Tensor | None = None
 
 
     def to(self, device: torch.device, non_blocking: bool = True) -> "Sample":

@@ -1,7 +1,7 @@
 import logging
 import time
 from abc import ABC, abstractmethod
-import math
+
 from mace.calculators import MACECalculator
 
 from threedscriptors.data_handling.dataset import BaseDataset
@@ -10,6 +10,9 @@ from threedscriptors.data_handling.dataset_io import (
     load_data_from_disk,
 )
 from threedscriptors.utils.model_utils import get_mace_calculator_embedding_dimension
+
+from threedscriptors.configuration.data_config import DatasetConfig
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,12 +44,12 @@ class BuildStage(ABC):
 
 
 class InitializeBuildPipeline(BuildStage):
-    def __init__(self, dataset_config, dataset_cls: type[BaseDataset]):
+    def __init__(self, dataset_config: DatasetConfig):
         self.dataset_config = dataset_config
-        self.dataset_cls = dataset_cls
+        self.dataset_type = dataset_config.dataset_type.value
 
     def _run(self, _):
-        dataset = self.dataset_cls(dataset_config=self.dataset_config)
+        dataset = self.dataset_type(dataset_config=self.dataset_config)
         builder = DatasetBuilder(dataset=dataset)
         return builder
 
@@ -69,7 +72,7 @@ class InsertSmilesStage(BuildStage):
     def _run(self, builder: DatasetBuilder):
         builder.add_smiles_data(self.smiles)
         return builder
-    
+
 
 class InsertMoleculeStage(BuildStage):
     def __init__(self, molecules, mol_ids):
@@ -121,7 +124,7 @@ class NormalizationStage(BuildStage):
         self.std_targets = std_targets
 
     def _run(self, builder):
-        
+
         builder.normalize_regression_targets(self.mean_targets, self.std_targets)
         return builder
 
@@ -131,11 +134,9 @@ class AtomicEmbeddingStage(BuildStage):
         self.mace_calculator = mace_calculator
 
     def _run(self, builder: DatasetBuilder):
-        embedding_dimension = get_mace_calculator_embedding_dimension(
-            self.mace_calculator
-        )
+        
         builder.calculate_atomic_embeddings(
-            calculator=self.mace_calculator, embedding_size=embedding_dimension
+            calculator=self.mace_calculator
         )
         return builder
 
@@ -155,12 +156,12 @@ class RegressionLabelingStage(BuildStage):
         self.regression_masks = regression_masks
 
     def _run(self, builder: DatasetBuilder):
-        
+
         builder.add_regression_data(
             regression_targets=self.regression_targets,
             regression_masks=self.regression_masks,
         )
-        
+
         return builder
 
 
@@ -189,13 +190,6 @@ class SimilarityLabelingStage(BuildStage):
         builder.add_similarity_screening_data(
             self.target_class_labels, self.active_decoy_labels
         )
-
-        return builder
-
-class HydrogenRemovalStage(BuildStage):
-    
-    def _run(self, builder):
-        builder.remove_hydrogen_descriptors()
 
         return builder
 

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-import zarr
+
 import numpy as np
 import polaris as po
 from polaris.dataset import DatasetV1, DatasetV2
@@ -90,17 +90,17 @@ def load_polaris_dataset(dataset_name: str, smiles_column, non_task_columns, dat
         #    data_dict = dataset[dataset["Set"] == datasplit]
         # else:
         print(type(dataset))
- 
+
         set_col = dataset.zarr_data["Set"][:]
 
-        row_indices = np.argwhere(set_col ==  datasplit)     
+        row_indices = np.argwhere(set_col ==  datasplit)
 
         data_dict = {name : arr[row_indices] for name, arr in dataset.zarr_data.items()}
 
     smiles = data_dict[smiles_column].squeeze().tolist()
 
     regression_targets = np.array([data_dict[task] for task in target_cols]).T.squeeze()
-    
+
     smiles, regression_targets, regression_masks = pretreat_polaris_dataset(
         smiles, regression_targets
     )

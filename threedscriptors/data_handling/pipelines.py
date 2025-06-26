@@ -1,6 +1,7 @@
 from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.data_handling.data_build_pipeline import (
     AtomicEmbeddingStage,
+    AtomicPositionsStage,
     AuxillaryDataStage,
     ChiralConformalEmbeddingStage,
     ConformalEmbeddingStage,
@@ -13,24 +14,13 @@ from threedscriptors.data_handling.data_build_pipeline import (
     RelaxStage,
     ReloadFromDiskStage,
     SimilarityLabelingStage,
-    AtomicPositionsStage
 )
-from threedscriptors.data_handling.dataset import (
-    AtomicEmbeddingDataset,
-    RegressionDataset,
-    SimilarityScreeningDataset,
-    RegressionWithAuxDataset,
-    RegressionDatasetwithPositions,
-    AtomicEmbeddingWithPositionsDataset,
-    RegressionWithAuxAndPositionsDataset
-)
-
 
 def regression_training_pipeline(
     dataset_config: DatasetConfig, smiles, regression_targets, regression_masks
 ):
     stages = [
-        InitializeBuildPipeline(dataset_config, RegressionDataset),
+        InitializeBuildPipeline(dataset_config),
         InsertSmilesStage(smiles=smiles),
         ConformalEmbeddingStage(),
         RelaxStage(dataset_config.embedding_model_config.mace_calc),
@@ -48,7 +38,7 @@ def regression_training_with_pos_pipeline(
     dataset_config: DatasetConfig, smiles, regression_targets, regression_masks
 ):
     stages = [
-        InitializeBuildPipeline(dataset_config, RegressionDatasetwithPositions),
+        InitializeBuildPipeline(dataset_config),
         InsertSmilesStage(smiles=smiles),
         ConformalEmbeddingStage(),
         RelaxStage(dataset_config.embedding_model_config.mace_calc),
@@ -71,7 +61,7 @@ def chiral_regression_training_pipeline(
     auxillary_data,
 ):
     stages = [
-        InitializeBuildPipeline(dataset_config, RegressionWithAuxAndPositionsDataset),
+        InitializeBuildPipeline(dataset_config),
         InsertSmilesStage(smiles=smiles),
         ChiralConformalEmbeddingStage(),
         AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
@@ -87,7 +77,7 @@ def chiral_regression_training_pipeline(
 
 def pretraining_pipeline(dataset_config: DatasetConfig, smiles):
     stages = [
-        InitializeBuildPipeline(dataset_config, AtomicEmbeddingDataset),
+        InitializeBuildPipeline(dataset_config),
         InsertSmilesStage(smiles=smiles),
         ConformalEmbeddingStage(),
         RelaxStage(dataset_config.embedding_model_config.mace_calc),
@@ -99,7 +89,7 @@ def pretraining_pipeline(dataset_config: DatasetConfig, smiles):
 
 def pretraining_pipeline_with_positions(dataset_config: DatasetConfig, smiles):
     stages = [
-        InitializeBuildPipeline(dataset_config, AtomicEmbeddingWithPositionsDataset),
+        InitializeBuildPipeline(dataset_config),
         InsertSmilesStage(smiles=smiles),
         ConformalEmbeddingStage(),
         RelaxStage(dataset_config.embedding_model_config.mace_calc),
@@ -114,7 +104,7 @@ def similarity_screening_pipeline(
     dataset_config: DatasetConfig, smiles, target_class_labels, active_decoy_labels
 ):
     stages = [
-        InitializeBuildPipeline(dataset_config, SimilarityScreeningDataset),
+        InitializeBuildPipeline(dataset_config),
         InsertSmilesStage(smiles=smiles),
         ConformalEmbeddingStage(),
         RelaxStage(dataset_config.embedding_model_config.mace_calc),
@@ -132,7 +122,7 @@ def reload_dataset_pipeline(
 
     stages = [
         ReloadFromDiskStage(directory),
-        AtomicPositionsStage(), 
+        AtomicPositionsStage(),
         NormalizationStage(
             mean_targets, std_targets,
         ),
@@ -148,7 +138,7 @@ def regression_training_from_structures_pipeline(
     regression_masks,
 ):
     stages = [
-        InitializeBuildPipeline(dataset_config, RegressionDataset),
+        InitializeBuildPipeline(dataset_config),
         InsertMoleculeStage(molecules=molecules, mol_ids=mol_ids),
         RelaxStage(dataset_config.embedding_model_config.mace_calc),
         AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),

@@ -1,7 +1,8 @@
-import numpy as np
 import math
 from collections.abc import Sequence
-from typing import List
+from typing import TYPE_CHECKING
+
+import numpy as np
 import rdkit.Chem as Chem
 import torch
 from ase import Atoms
@@ -10,9 +11,6 @@ from mace.calculators import MACECalculator
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 from rdkit2ase import rdkit2ase
-
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
@@ -140,6 +138,12 @@ def get_max_molecule_size_from_atoms(atoms: list[Atoms]):
         max_atoms = max(max_atoms, number_of_atoms)
     return max_atoms
 
+def get_max_num_of_heavy_atom_from_atoms(atoms : list[Atoms]):
+
+    heavy_counts = ((mol.get_atomic_numbers() != 1).sum() for mol in atoms)
+    return max(heavy_counts, default=0)
+
+
 
 def get_atom_species_in_smiles(smiles_iterator: SmilesIterator):
     atom_species_set = set("H")
@@ -217,7 +221,7 @@ def validate_ratios(ratios: Sequence[float]) -> None:
 
 
 
-def compute_splits(size: int, ratios: Sequence[float], split_interval) -> List[slice]:
+def compute_splits(size: int, ratios: Sequence[float], split_interval) -> list[slice]:
     """Return slice objects for each split boundary."""
     raw_counts = (np.asarray(ratios) * size).astype(int)
 
@@ -231,7 +235,7 @@ def compute_splits(size: int, ratios: Sequence[float], split_interval) -> List[s
 
     print(base)
     # Fix any rounding drift so the slices cover the full length
-    
+
     offsets = np.cumsum(np.insert(base, 0, 0))
     print(offsets)
     return [slice(offsets[i], offsets[i + 1]) for i in range(len(ratios))]

@@ -15,6 +15,8 @@ from threedscriptors.data_handling.data_utils import (
 from threedscriptors.data_handling.dataset import (
     BaseDataset,
 )
+from threedscriptors.utils.model_utils import get_mace_calculator_embedding_dimension
+
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 
 
@@ -262,11 +264,17 @@ class DatasetBuilder:
         print(f"{len(self.dataset.molecules)} Molecules")
 
     def calculate_atomic_embeddings(
-        self, calculator: MACECalculator, embedding_size: int
+        self, calculator: MACECalculator
     ):
+        
+        embedding_size = get_mace_calculator_embedding_dimension(
+            calculator
+        )
+
+        only_heavy_atoms = self.dataset.dataset_config.only_heavy_atoms
         # Assert that the mace caluclator of the embeddings and the relaxation are the same?
         # Check the maximum number of atoms in loaded smiles
-        _ = self.dataset.get_max_atoms()
+        self.dataset.get_max_atoms(only_heavy_atoms)
 
         embeddings = np.zeros(
             shape=(
@@ -286,7 +294,17 @@ class DatasetBuilder:
             enumerate(self.dataset.molecules), total=len(self.dataset.molecules)
         ):
             descriptors = calculator.get_descriptors(atoms, invariants_only=False)
-            num_atoms = len(atoms.get_atomic_numbers())
+
+            atomic_numbers = atoms.get_atomic_numbers()
+            if only_heavy_atoms:
+                # Slices out only the atoms with atomic number != 1
+                heavy_atoms_indices = np.argwhere(atomic_numbers > 1)
+                descriptors = descriptors[heavy_atoms_indices,:]
+                num_atoms = len(heavy_atoms_indices)
+
+            else:
+                num_atoms = len(atomic_numbers)
+
             embeddings[i, :num_atoms, :] = descriptors
             padding_mask[i, :num_atoms] = 0
 
@@ -298,8 +316,7 @@ class DatasetBuilder:
         regression_targets: torch.Tensor | None = None,
         regression_masks: torch.Tensor | None = None,
     ):
-        
-        print(self.dataset.mol_ids)
+
         assert self.dataset.mol_ids is not None
 
         # Transform the regression labels from 1 per smiles to 1 per conformer
@@ -314,7 +331,7 @@ class DatasetBuilder:
                 "Regression Target Array has unexpected numbers of dimensions"
             )
 
-        
+
         regression_targets = torch.Tensor(regression_targets)
         regression_masks = torch.Tensor(regression_masks)
 
@@ -323,7 +340,7 @@ class DatasetBuilder:
 
         self.dataset.regression_targets = regression_targets
         self.dataset.regression_masks = regression_masks
-        
+
 
     def add_molecular_descriptor(self, descriptor_calculator):
         # This should be discussed, if this goes to the evaluation or already in the dataset.
@@ -342,13 +359,12 @@ class DatasetBuilder:
             expanded_aux_dict[task] = torch.Tensor(expanded_aux_data).float()
 
         self.dataset.auxillary_data = expanded_aux_dict
-    
+
     def add_atomic_positions(self):
 
         assert self.dataset.molecules is not None
         _, padded_pos, _ = self.dataset.get_padded_positions()
 
-        print(padded_pos.dtype)
         self.dataset.atomic_positions = padded_pos
 
 
@@ -358,8 +374,6 @@ class DatasetBuilder:
 
         dataset_tasks = self.dataset.dataset_config.get_task_name_set()
 
-        print(mean_targets)
-        
         if isinstance(self.dataset.regression_targets, torch.Tensor):
             regression_targets = self.dataset.regression_targets.detach().cpu().numpy()
 
@@ -400,9 +414,4 @@ class DatasetBuilder:
         self.dataset.regression_targets = torch.Tensor(self.dataset.regression_targets)
 
 
-    def remove_hydrogen_descriptors(self):
-        pass
-        #for molecule
-
-    
 

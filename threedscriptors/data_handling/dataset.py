@@ -1,25 +1,27 @@
+from dataclasses import asdict
+from typing import TYPE_CHECKING
+
 import numpy as np
 import torch
 import torch.utils.data as data
 from ase import Atoms
-from dataclasses import asdict
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     # only for mypy / IDE – never executed at runtime
     from threedscriptors.configuration.data_config import DatasetConfig
 
 from threedscriptors.data_handling.data_utils import (
+    compute_splits,
     get_max_molecule_size_from_atoms,
     get_max_molecule_size_from_smiles,
-    validate_ratios,
-    compute_splits,
-
+    get_max_num_of_heavy_atom_from_atoms
 )
-
-from threedscriptors.utils.model_utils import split_invariants_equivariants, get_invariant_indices
 from threedscriptors.data_handling.sample import Sample
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
+from threedscriptors.utils.model_utils import (
+    get_invariant_indices,
+    split_invariants_equivariants,
+)
 
 type Molecules = list[Atoms]
 
@@ -75,12 +77,17 @@ class BaseDataset(data.Dataset):
             self.regression_masks = torch.Tensor(self.regression_masks)
         if self.regression_targets is not None:
             self.regression_targets = torch.Tensor(self.regression_targets)
-        if self.atomic_positions is not None: 
+        if self.atomic_positions is not None:
             self.atomic_positions = torch.Tensor(self.atomic_positions)
 
     def get_max_atoms(self):
         if self.dataset_config.max_atoms is None:
-            if self.molecules is not None:
+            
+            if self.dataset_config.only_heavy_atoms:
+                assert self.molecules is not None
+                self.dataset_config.max_atoms = get_max_num_of_heavy_atom_from_atoms(self.molecules)
+
+            elif self.molecules is not None:
                 self.dataset_config.max_atoms = get_max_molecule_size_from_atoms(
                     self.molecules
                 )
@@ -91,12 +98,36 @@ class BaseDataset(data.Dataset):
                     smiles_iterator
                 )
 
+            
+
         return self.dataset_config.max_atoms
+    
+        
 
     def get_padded_positions(self):
+
         positions = [at.get_positions() for at in self.molecules]
         atomic_numbers = [at.get_atomic_numbers() for at in self.molecules]
-        padding_dim = np.array([len(an) for an in atomic_numbers])
+        padding_dim = np.array([len(an) for an in atomic_numbers]) # The dimension of the real atoms, required to reconstruct whcich element are padding and which ones are not.
+
+        if self.dataset_config.only_heavy_atoms:
+
+            
+            heavy_indices = [np.nonzero(nums != 1)[0].tolist() for nums in atomic_numbers]
+
+            atomic_numbers = [
+                nums[hi]                 # pick only the heavy Zs
+                for nums, hi in zip(atomic_numbers, heavy_indices)
+            ]
+
+            positions = [
+                pos[hi]                  # pick only the heavy-atom rows (x,y,z)
+                for pos, hi in zip(positions, heavy_indices)
+            ]
+
+            # 4. new “padding dim” = number of heavies per mol
+            padding_dim = np.array([len(hi) for hi in heavy_indices])
+
 
         padded_atomic_numbers = np.array(
             [
@@ -118,7 +149,7 @@ class BaseDataset(data.Dataset):
                 for pos in positions
             ], dtype = np.float32
         )
-    
+
         return padding_dim, padded_positions, padded_atomic_numbers
 
     def get_atomic_embedding_normalization_constants(self,input_irreps):
@@ -144,11 +175,11 @@ class BaseDataset(data.Dataset):
         equivariant_scale_factor = self.calculate_equivariant_scale_factor(equivariant_embeddings, masks)
 
         return inv_mean_per_dim, inv_std_per_dim, equivariant_scale_factor
-    
+
 
     @staticmethod
     def calculate_invariant_normalization_constants(invariant_embeddings, masks):
-        
+
         mean_per_dim = np.mean(invariant_embeddings, axis=(0, 1), keepdims=True, where=masks)
 
         std_per_dim = np.std(invariant_embeddings, axis=(0, 1), keepdims=True, where=masks)
@@ -157,12 +188,12 @@ class BaseDataset(data.Dataset):
 
     @staticmethod
     def calculate_equivariant_scale_factor(equivariant_embeddings, masks):
-        
+
         masks = masks.squeeze(-1)
         real_atom_equivariant_emebddings = equivariant_embeddings[masks]
 
         vecs = real_atom_equivariant_emebddings.reshape(-1,3)
-        
+
         eps = 1e-12
         mean_sq = torch.mean(vecs ** 2)          # E[x²] over all x, y, z
         scale   = 1.0 / torch.sqrt(mean_sq + eps)
