@@ -95,7 +95,7 @@ def plot_reduced_dimension_with_with_regression_labels(principle_components, pre
 
     colors = get_colors_for_predictions(predictions)
 
-    plt.scatter(principle_components[:,0], principle_components[:,1], color = colors)
+    plt.scatter(principle_components[:,0], principle_components[:,1], c = colors)
 
     plt.xlabel("Reduced Dimension 1")
     plt.ylabel("Reduced Dimension 2")

@@ -192,6 +192,15 @@ class SimilarityLabelingStage(BuildStage):
 
         return builder
 
+class HydrogenRemovalStage(BuildStage):
+    
+    def _run(self, builder):
+        builder.remove_hydrogen_descriptors()
+
+        return builder
+
+
+
 class PipelineOrchestrator:
     def __init__(self, stages: list[BuildStage]):
         self.stages = stages
@@ -202,7 +211,6 @@ class PipelineOrchestrator:
         self.builder = self.stages[0].run(None)
         for stage in self.stages[1:]:
             self.builder = stage.run(self.builder)
-            print(self.builder)
 
         dataset = self.builder.dataset
         self.logger.info("🎉 Pipeline complete")

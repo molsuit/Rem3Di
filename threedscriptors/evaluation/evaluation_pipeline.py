@@ -43,6 +43,7 @@ from threedscriptors.evaluation.similarity_screening import (
     plot_roc
 )
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
+from threedscriptors.model.atomic_descriptor_preprocess import PseudoscalarGenerator
 
 from torchmetrics.functional import r2_score, mean_squared_error
 
@@ -75,8 +76,10 @@ class DescriptorPCATask(BaseEvalTask):
 
         descriptors = evaluate_molecular_descriptor_on_dataset(
             model, self.dataset)
+        
 
-        #self.predictions = evaluate_regression_model_on_dataset(model, self.dataset)
+        if self.dataset.regression_targets is not None:
+            self.predictions = evaluate_regression_model_on_dataset(model, self.dataset)
 
         self.reduced_dimensions = (
             self.clustering_calculator.get_dimensionality_reduction(
@@ -89,9 +92,14 @@ class DescriptorPCATask(BaseEvalTask):
         figs[f"Descriptor_{type(self.clustering_calculator).__name__}"] = plot_reduced_dimension(
             self.reduced_dimensions)
         
-        #fig_with_regression_coloring = #plot_reduced_dimension_with_with_regression_labels(self.reduced_dimensions, self.predictions)
-        #fig_with_regression_coloring.suptitle("Molecular Descriptor")
-        #figs[f"Descriptor_{type(self.clustering_calculator)}_with_regression_labels"] = fig_with_regression_coloring
+
+        if self.dataset.regression_targets is not None:
+
+            for i in range(self.predictions.shape[1]):
+                task_name = self.dataset.dataset_config.tasks[i].task_name
+                fig_with_regression_coloring = plot_reduced_dimension_with_with_regression_labels(self.reduced_dimensions, self.predictions[:,i])
+                fig_with_regression_coloring.suptitle(f"Molecular Descriptor Clustering with {task_name} color values")
+                figs[f"Descriptor_{type(self.clustering_calculator)}_with_regression_labels_task_{task_name}"] = fig_with_regression_coloring
 
         return figs
 
@@ -105,16 +113,25 @@ class DescriptorElementAnalysis(BaseEvalTask):
     def run(self, model: MultiTaskRegressionModel):
         self.descriptors = evaluate_molecular_descriptor_on_dataset(model, self.dataset)
 
+
+
+        self.descriptor_norms = torch.norm(self.descriptors, dim = 1)
+        print(self.descriptor_norms.shape)
+
+
+
         H_tot, utilisation, dead_dims, eig = capacity_diagnostics(self.descriptors)
 
         self.eig = eig
         print(f"Total entropy {H_tot}")
         print(f"Utilisation {utilisation}")
         print(f"Dead dims {dead_dims} out of {self.descriptors.shape[1]} total dim")
+
+
+
+
     
     def plot(self):
-
-
         fig_hist = plt.figure()
         plt.hist(self.descriptors.reshape(-1), bins = np.linspace(torch.min(self.descriptors),torch.max(self.descriptors), 50))
 
@@ -124,8 +141,13 @@ class DescriptorElementAnalysis(BaseEvalTask):
         plt.ylabel('eigenvalue')
 
 
+        fig_discriptor_norm = plt.figure()
+        plt.hist(self.descriptor_norms,bins = np.linspace(torch.min(self.descriptor_norms),torch.max(self.descriptor_norms), 50))
+        plt.title("Distribution of Descriptor L2 Norms")
+
         return {"DescriptorElementDistribution" : fig_hist,
-                "EigenvalueHistogram": fig_eigval}
+                "EigenvalueHistogram": fig_eigval,
+                "DescriptorNorm": fig_discriptor_norm}
 
 
 
@@ -193,7 +215,8 @@ class RegressionTestTask(BaseEvalTask):
         self.predictions = evaluate_regression_model_on_dataset(
             model, self.dataset)
 
-        self._check_uncertainty()
+        if self.dataset.dataset_config.N_conformers > 1:
+            self._check_uncertainty()
 
     def _check_uncertainty(self):
         "Plots the uncertainty of the regression predictions within the conformers of a single molecule"
@@ -261,18 +284,19 @@ class RegressionTestTask(BaseEvalTask):
             if keep
         ]
 
-
-
         return mol_ids_with_labels, predictions_with_labels, labels
 
     def plot(self):
         figs = {}
 
         figs.update(self._plot_prediction_vs_reference())
-        #figs.update(self._plot_conformer_uncertainty_histogram())
+        #if self.dataset.dataset_config.N_conformers > 1:
+            #figs.update(self._plot_conformer_uncertainty_histogram())
+
         return figs
 
     def _plot_conformer_uncertainty_histogram(self):
+
         unlabeled_std_dev = np.squeeze(np.concatenate(self.results
                                                       ["unlabeled_std_devs_conf_predictions"]))
 
@@ -617,8 +641,11 @@ class PreprocessorVisualizationTask(BaseEvalTask):
     def run(self, model: MultiTaskRegressionModel):
         
         self.atomic_descriptors = evaluate_atomic_descriptors(model, self.dataset)
-    
-        self.pseudoscalars = self.atomic_descriptors[:, :, -16:]
+
+        
+        assert isinstance(model.preprocessor, PseudoscalarGenerator)
+        
+        self.pseudoscalars = model.preprocessor.slice_pseudoscalars(self.atomic_descriptors)
 
 
     def _plot_ps_heatmap(self):
@@ -638,17 +665,17 @@ class PreprocessorVisualizationTask(BaseEvalTask):
 
         # extract the last 16 descriptor dims for each of those molecules
         # shape of each entry: (n_atoms, 16)
-        descs = [self.atomic_descriptors[idx, :, -16:] for idx in mol_indices]
+        
 
         # compute global min & max for the color scale
-        vmin = min(torch.min(d) for d in descs)
-        vmax = max(torch.max(d) for d in descs)
+        vmin = min(torch.min(d) for d in self.pseudoscalars)
+        vmax = max(torch.max(d) for d in self.pseudoscalars)
 
         # set up a 4×5 grid
         fig, axes = plt.subplots(nrows=4, ncols=5, figsize=(20, 16), 
                                 sharex=False, sharey=False)
 
-        for i, (ax, desc) in enumerate(zip(axes.flat, descs)):
+        for i, (ax, desc) in enumerate(zip(axes.flat, self.pseudoscalars)):
             # transpose so rows = descriptor dims, cols = atom index
             mat = desc.squeeze().T  
             im = ax.imshow(mat, cmap="RdBu", vmin=vmin, vmax=vmax, aspect='auto')
@@ -671,7 +698,7 @@ class PreprocessorVisualizationTask(BaseEvalTask):
         ps = self.pseudoscalars.reshape(-1,)
         plt.hist(ps, bins = 100)
 
-        plt.yscale("log")
+        #plt.yscale("log")
 
         return fig
 
@@ -681,7 +708,7 @@ class PreprocessorVisualizationTask(BaseEvalTask):
 
 
 
-        figs["AtomicDesc"] = self._plot_ps_heatmap()
+        #figs["AtomicDesc"] = self._plot_ps_heatmap()
         figs["ps_histogram"] = self.plot_ps_histogram()
 
 
@@ -737,3 +764,5 @@ class EvalPipelineRunner:
 
         for fig_name, fig in figs.items():
             fig.savefig(f"{output_directory}/{fig_name}_{model_name}.pdf")
+
+        return figs

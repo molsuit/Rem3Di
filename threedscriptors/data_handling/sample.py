@@ -2,19 +2,50 @@ from dataclasses import dataclass, fields
 
 import torch
 from torch.utils.data._utils.collate import default_collate
+from typing import Any, Optional, Dict, Mapping, Sequence
+
+
+
+
+
+
+def _move_to(x: Any, device: torch.device, non_blocking: bool) -> Any:
+    if torch.is_tensor(x):
+        return x.to(device, non_blocking=non_blocking)
+    elif isinstance(x, Mapping):
+        return {k: _move_to(v, device, non_blocking) for k, v in x.items()}
+    elif isinstance(x, Sequence) and not isinstance(x, (str, bytes)):
+        return type(x)(_move_to(v, device, non_blocking) for v in x)
+    else:
+        return x  # includes None, scalars, objects
 
 
 @dataclass
 class Sample:
-    embeddings: torch.Tensor | None = None
-    padding_mask: torch.Tensor | None = None
-    regression_targets: torch.Tensor | None = None
-    regression_masks: torch.Tensor | None = None
-    auxillary_data: dict | None = None
-    target_class_labels: torch.Tensor | None = None
-    active_decoy_labels: torch.Tensor | None = None
-    molecular_descriptors: torch.Tensor | None = None
-    positions: torch.Tensor | None = None
+    embeddings:            Optional[torch.Tensor] = None
+    padding_mask:          Optional[torch.Tensor] = None
+    regression_targets:    Optional[torch.Tensor] = None
+    regression_masks:      Optional[torch.Tensor] = None
+    auxillary_data:        Optional[Dict[str, Any]] = None
+    target_class_labels:   Optional[torch.Tensor] = None
+    active_decoy_labels:   Optional[torch.Tensor] = None
+    molecular_descriptors: Optional[torch.Tensor] = None
+    atomic_positions:      Optional[torch.Tensor] = None
+
+
+    def to(self, device: torch.device, non_blocking: bool = True) -> "Sample":
+        moved_fields = {
+            name: _move_to(value, device, non_blocking)
+            for name, value in self.__dict__.items()
+        }
+        return Sample(**moved_fields)
+
+    def to_(self, device: torch.device, non_blocking: bool = True) -> "Sample":
+        # The inplace version of moving a Sample to a device
+
+        for name, value in list(self.__dict__.items()):
+            self.__dict__[name] = _move_to(value, device, non_blocking)
+        return self
 
 
 def sample_collate_fn(batch: list[Sample]) -> Sample:

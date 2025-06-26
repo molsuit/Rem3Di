@@ -8,31 +8,37 @@ from threedscriptors.configuration.architecture_config import (
     GlobalAggregatorConfig,
     HeadType,
     RegressionHeadConfig,
+    PositionalEncodingConfig
 )
 from threedscriptors.configuration.config_factory import ConfigFactory
 from threedscriptors.configuration.data_config import DatasetConfig
 
-run = "antiviral_admet_test_full"
+run = "cmrt"
 
-config_file = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{run}/dataset_config.yaml"
+config_file = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{run}_full/dataset_config.yaml"
 dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, config_file)
 
 
 model_dir = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/{run}/"
 
+#pos_encoding_config = None
+
+pos_encoding_config = PositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=32, d_projection=64)
+
+
 
 embedding_preprocessor_config = EmbeddingPreprocessConfig(
-    pseudoscalars=False, pseudoscalar_dimension=0, pseudoscalar_embedding_dim=0,
+    pseudoscalars=True, pseudoscalar_dimension=128, pseudoscalar_embedding_dim=10,
 )
 
 attention_layer_config = AttentionLayerConfig(
     num_heads=8,
-    dim_feedforward=256,
+    dim_feedforward=1024,
     dropout=0.3,
 )
 
 encoder_config = EncoderConfig(
-    N_layers=1, attention_layer_config=attention_layer_config
+    N_layers=2, attention_layer_config=attention_layer_config
 )
 
 global_aggregator_config = GlobalAggregatorConfig(
@@ -45,6 +51,7 @@ cf = ConfigFactory(
     attention_layer_config,
     encoder_config,
     global_aggregator_config,
+    positional_encoding_config=pos_encoding_config
 )
 
 head_config_template = RegressionHeadConfig(

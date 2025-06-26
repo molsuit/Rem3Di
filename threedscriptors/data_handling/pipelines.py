@@ -19,7 +19,10 @@ from threedscriptors.data_handling.dataset import (
     AtomicEmbeddingDataset,
     RegressionDataset,
     SimilarityScreeningDataset,
-    RegressionWithAuxDataset
+    RegressionWithAuxDataset,
+    RegressionDatasetwithPositions,
+    AtomicEmbeddingWithPositionsDataset,
+    RegressionWithAuxAndPositionsDataset
 )
 
 
@@ -35,10 +38,29 @@ def regression_training_pipeline(
         RegressionLabelingStage(
             regression_targets=regression_targets, regression_masks=regression_masks
         ),
+    ]
+
+    return PipelineOrchestrator(stages)
+
+
+
+def regression_training_with_pos_pipeline(
+    dataset_config: DatasetConfig, smiles, regression_targets, regression_masks
+):
+    stages = [
+        InitializeBuildPipeline(dataset_config, RegressionDatasetwithPositions),
+        InsertSmilesStage(smiles=smiles),
+        ConformalEmbeddingStage(),
+        RelaxStage(dataset_config.embedding_model_config.mace_calc),
+        AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
+        RegressionLabelingStage(
+            regression_targets=regression_targets, regression_masks=regression_masks
+        ),
         AtomicPositionsStage()
     ]
 
     return PipelineOrchestrator(stages)
+
 
 
 def chiral_regression_training_pipeline(
@@ -49,7 +71,7 @@ def chiral_regression_training_pipeline(
     auxillary_data,
 ):
     stages = [
-        InitializeBuildPipeline(dataset_config, RegressionWithAuxDataset),
+        InitializeBuildPipeline(dataset_config, RegressionWithAuxAndPositionsDataset),
         InsertSmilesStage(smiles=smiles),
         ChiralConformalEmbeddingStage(),
         AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
@@ -57,6 +79,7 @@ def chiral_regression_training_pipeline(
             regression_targets=regression_targets, regression_masks=regression_masks
         ),
         AuxillaryDataStage(auxillary_data),
+        AtomicPositionsStage()
     ]
 
     return PipelineOrchestrator(stages)
@@ -69,6 +92,19 @@ def pretraining_pipeline(dataset_config: DatasetConfig, smiles):
         ConformalEmbeddingStage(),
         RelaxStage(dataset_config.embedding_model_config.mace_calc),
         AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
+    ]
+
+    return PipelineOrchestrator(stages)
+
+
+def pretraining_pipeline_with_positions(dataset_config: DatasetConfig, smiles):
+    stages = [
+        InitializeBuildPipeline(dataset_config, AtomicEmbeddingWithPositionsDataset),
+        InsertSmilesStage(smiles=smiles),
+        ConformalEmbeddingStage(),
+        RelaxStage(dataset_config.embedding_model_config.mace_calc),
+        AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
+        AtomicPositionsStage()
     ]
 
     return PipelineOrchestrator(stages)

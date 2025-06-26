@@ -2,6 +2,33 @@ from torch import nn
 import torch
 
 
+class BesselBasisFunctions(nn.Module):
+
+    # DimeNet Style Bessel Basis functions
+
+
+
+class GaussianBasisFunctions(nn.Module):
+
+    def __init__(self, N_radial_basis_functions: int, distance_cutoff: float, d_projection: int):
+
+        super().__init__()
+
+
+        centers = torch.linspace(0., self.d_cutoff, self.N_radial_basis_functions)
+
+        widths = (self.d_cutoff / self.N_radial_basis_functions) * torch.ones_like(centers)
+
+        self.register_buffer('centers', centers)
+        self.register_buffer('widths',  widths)
+
+
+
+    def forward(self, distances):
+
+        rbf = torch.exp(-0.5 * ((distances[..., None] - self.centers) / self.widths)**2)
+
+        return rbf
 
 
 class PairDistanceMatrixEncodingBlock(nn.Module):
@@ -16,13 +43,8 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
         self.d_projection = d_projection
 
 
-        centers = torch.linspace(0., self.d_cutoff, self.N_radial_basis_functions)
-
-        widths = (self.d_cutoff / self.N_radial_basis_functions) * torch.ones_like(centers)
-
-        self.register_buffer('centers', centers)
-        self.register_buffer('widths',  widths)
-        self.proj = nn.Linear(self.N_radial_basis_functions, self.d_projection, bias=False)
+        
+        self.proj = nn.Linear(N_radial_basis_functions, d_projection, bias=False)
 
 
 
@@ -32,7 +54,8 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
         # Calculate the pairwise distance matrix 
 
         distances = torch.cdist(positions, positions)
-        rbf = torch.exp(-0.5 * ((distances[..., None] - self.centers) / self.widths)**2)
+
+        # TODO: Bessel functions???
 
         P0  = self.proj(rbf)   
 

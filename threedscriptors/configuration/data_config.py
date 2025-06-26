@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
 from typing import Type
-from threedscriptors.data_handling.dataset import BaseDataset, AtomicEmbeddingDataset, RegressionDataset, SimilarityScreeningDataset, RegressionWithAuxDataset
+from threedscriptors.data_handling.dataset import BaseDataset, AtomicEmbeddingDataset, RegressionDataset, SimilarityScreeningDataset, RegressionWithAuxDataset, AtomicEmbeddingWithPositionsDataset, RegressionDatasetwithPositions, RegressionWithAuxAndPositionsDataset
 
 import torch
 from mace.calculators import MACECalculator
@@ -13,7 +13,10 @@ class DatasetTypes(Enum):
     ATOMICEMBEDDING_DATASET = AtomicEmbeddingDataset
     REGRESSION_DATASET = RegressionDataset
     REGRESSION_WITH_AUX_DATASET = RegressionWithAuxDataset
+    REGRESSION_WITH_POSITIONS_DATASET = RegressionDatasetwithPositions
     SIMILARITY_SCREENING_DATASET = SimilarityScreeningDataset
+    ATOMICEMBEDDING_WITHPOSITIONS_DATASET = AtomicEmbeddingWithPositionsDataset
+    REGRESSION_WITH_AUX_AND_POS = RegressionWithAuxAndPositionsDataset
 
     @classmethod
     def _missing_(cls, value: object) -> "DatasetTypes":

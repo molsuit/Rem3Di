@@ -8,6 +8,7 @@ from threedscriptors.configuration.architecture_config import (
     EncoderConfig,
     GlobalAggregatorConfig,
     RegressionHeadConfig,
+    PositionalEncodingConfig
 )
 from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.utils.model_utils import (
@@ -16,6 +17,7 @@ from threedscriptors.utils.model_utils import (
     get_mace_calculator_irrep_signature,
 )
 
+from typing import Optional
 
 class ConfigFactory:
     def __init__(
@@ -25,38 +27,25 @@ class ConfigFactory:
         attention_layer_config: AttentionLayerConfig,
         encoder_config: EncoderConfig,
         global_aggregator_config: GlobalAggregatorConfig,
+        positional_encoding_config: Optional[PositionalEncodingConfig] = None
     ):
         self.dataset_config = dataset_config
         self.embedding_preprocessor_config = embedding_preprocessor_config
         self.attention_layer_config = attention_layer_config
         self.encoder_config = encoder_config
         self.global_aggregator_config = global_aggregator_config
+        self.positional_encoding_config = positional_encoding_config
 
         mace_calculator = self.dataset_config.embedding_model_config.mace_calc
         self.initial_irreps = get_mace_calculator_irrep_signature(mace_calculator)
-        self.initial_irrep_dim = get_mace_calculator_embedding_dimension(
-            mace_calculator
-        )
+
 
     # A lot of boilerplate that fills in fields in the config
 
     def process_preprocessor_config(self):
         # Fills in the empty fields of the encoder config from known values
         self.embedding_preprocessor_config.input_irreps = self.initial_irreps
-        self.embedding_preprocessor_config.input_embedding_size = self.initial_irrep_dim
 
-        if self.embedding_preprocessor_config.pseudoscalars:
-            _, self.embedding_preprocessor_config.output_irreps = get_invariant_indices(
-                self.embedding_preprocessor_config.input_irreps + Irreps(f"{self.embedding_preprocessor_config.pseudoscalar_dimension}x0o")
-            )
-        else:
-            _, self.embedding_preprocessor_config.output_irreps = get_invariant_indices(
-                self.embedding_preprocessor_config.input_irreps
-            )
-
-        self.embedding_preprocessor_config.output_irreps_dim = (
-            self.embedding_preprocessor_config.output_irreps.dim
-        )
 
     def process_attention_layer_config(self):
         self.attention_layer_config.embedding_dim = (
@@ -100,21 +89,30 @@ class ConfigFactory:
 
         return regression_heads
 
+    def process_encoder_config(self):
+
+        if self.positional_encoding_config is not None:
+            self.encoder_config.d_pair = self.positional_encoding_config.d_projection
+
+
     def create_architecture_config_template(
         self, model_directory, head_config_template: RegressionHeadConfig
     ):
         # Creates the architecture config with default values and the
 
         self.process_preprocessor_config()
+        self.process_encoder_config()
         self.process_attention_layer_config()
         self.process_global_aggregator_config()
+
+
         regression_heads = self.process_regression_heads_config(head_config_template)
 
         architecture_config = ArchitectureConfig(
             embedding_preprocess_config=self.embedding_preprocessor_config,
             encoder_config=self.encoder_config,
             global_aggregator_config=self.global_aggregator_config,
-            regression_head_config=regression_heads,
+            regression_head_config=regression_heads,positional_encoding_config= self.positional_encoding_config
         )
 
         pyaml.to_yaml_file(

@@ -55,7 +55,7 @@ class GlobalAggregator(nn.Module):
         super().__init__()
         self.config = global_aggregator_config
         
-        self.pool = AttnPool(self.config.input_dim, d_hidden=self.config.input_dim, n_heads= 4, dropout= 0.2)
+        self.pool = AttnPool(self.config.input_dim, d_hidden=self.config.input_dim, n_heads=4, dropout= 0.2)
 
 
 
@@ -67,6 +67,8 @@ class GlobalAggregator(nn.Module):
 
     def forward(self, x):
         out = self.pool(x)
+        
+        #out = torch.mean(x, dim = 1)
         # intermediates = [f(x, dim=1) for f in self.aggregation_fns]
         # out = cat(intermediates, dim=-1)
 

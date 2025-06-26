@@ -39,11 +39,10 @@ def regression_pipeline(train_dataset, valid_dataset):
             DescriptorPCATask(train_dataset, PCACalculator()),
             DescriptorElementAnalysis(train_dataset),
             DescriptorElementAnalysis(valid_dataset),
+            PreprocessorVisualizationTask(train_dataset)
             #RegressionHeadPCATask(dataset, UMAPCalculator()), 
             #SimilarityScreeningTask(SIMILARITY_SCREENING_DATASET), 
             #DescriptorSimilarityAnalysisTask(train_dataset),
-
-
         ]
     
     return EvalPipelineRunner(tasks = tasks)

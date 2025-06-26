@@ -69,14 +69,14 @@ class PairBlock(nn.Module):
 
 
 class TransformerPairEncoder(nn.Module):
-    def __init__(self, encoder_config: EncoderConfig, d_pair):
+    def __init__(self, encoder_config: EncoderConfig):
         super().__init__()
 
         self.encoder_config = encoder_config
 
         self.layers = nn.ModuleList(
             [
-                PairBlock(**encoder_config.attention_layer_config.model_dump(), d_pair= d_pair)
+                PairBlock(**encoder_config.attention_layer_config.model_dump(), d_pair = self.encoder_config.d_pair)
                 for _ in range(encoder_config.N_layers)
             ]
         )

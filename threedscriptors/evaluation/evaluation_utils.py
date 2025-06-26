@@ -6,6 +6,8 @@ from threedscriptors.model.transformer_components import TransformerEncoder
 
 from collections.abc import Iterable
 
+
+
 import torch
 from torch.utils.data import DataLoader
 from threedscriptors.data_handling.dataset import (
@@ -17,7 +19,7 @@ from threedscriptors.data_handling.sample import Sample, sample_collate_fn
 from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
-
+from threedscriptors.model.model_output import ModelOutput
 
 def evaluate_regression_model_on_dataset(
     model: MultiTaskRegressionModel,
@@ -46,13 +48,16 @@ def evaluate_regression_model_on_dataset(
 
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
-            embeddings = samples.embeddings.to(device)
-            padding_mask = samples.padding_mask.to(device)
-            auxillary_data = samples.auxillary_data
-    
+            samples.to_(device)
+
+            samples.padding_mask = samples.padding_mask.bool()
+
+            output : ModelOutput = model(samples)
+
+
             regression_predictions[
                 batch_idx * batch_size : (batch_idx + 1) * batch_size, :
-            ], _ = model(embeddings, padding_mask, auxillary_data)
+            ] = output.regression_predictions
 
     return regression_predictions
 
@@ -78,12 +83,13 @@ def evaluate_molecular_descriptor_on_dataset(
 
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
-            embeddings = samples.embeddings.to(device)
-            padding_mask = samples.padding_mask.to(device)
+            samples.to_(device)
+            
+            samples.padding_mask = samples.padding_mask.bool()
+            output: ModelOutput = model.get_molecular_descriptor(samples)
 
-            descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
-                model.get_molecular_descriptor(embeddings, padding_mask).detach().cpu()
-            )
+            descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = output.molecular_descriptor
+            
 
     return descriptors
 

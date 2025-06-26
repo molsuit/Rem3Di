@@ -116,6 +116,9 @@ class PairOuterProdUpdate(nn.Module):
         ΔP_atoms = L.unsqueeze(2) * R.unsqueeze(1)   # (B,N,N,d_pair)
         ΔP_atoms = ΔP_atoms * ~mask_pair[..., None]
 
+
+        ## here ffn
+
         # -------- pair-driven term ----------------------------------------
 
         ΔP_pair = self.pair_ffn(P)               # (B,N,N,d_pair)

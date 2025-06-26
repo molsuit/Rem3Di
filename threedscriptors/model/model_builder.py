@@ -15,16 +15,20 @@ from threedscriptors.model.global_aggregator import GlobalAggregator
 from threedscriptors.model.regression_models import (
     MultitaskHeads,
     MultiTaskRegressionModel,
-    StructureBasedMultitaskRegressionModel
+    StructureBasedMultitaskRegressionModel,
 )
 from threedscriptors.model.transformer_components import TransformerEncoder
+from threedscriptors.model.pair_block import TransformerPairEncoder
+from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
 
+
+from threedscriptors.utils.model_utils import get_invariant_indices
 
 class ModelBuilder:
     def __init__(self, architecture_config: ArchitectureConfig):
         self.architecture_config = architecture_config
 
-        self.model: MultiTaskRegressionModel | None = None
+        self.model: MultiTaskRegressionModel| StructureBasedMultitaskRegressionModel | None = None
         self._N_trainable_parameters = None
 
     @classmethod
@@ -62,9 +66,9 @@ class ModelBuilder:
                     )
                 )
 
-    def build_model(self, mean_atomic_embedding=None, std_atomic_embedding=None):
+    def build_model(self, mean_atomic_embedding=None, std_atomic_embedding=None, equivariant_scale_factor = None):
         preprocessor = self.build_preprocess(
-            mean_atomic_embedding, std_atomic_embedding
+            mean_atomic_embedding, std_atomic_embedding, equivariant_scale_factor
         )
         encoder = self.build_encoder()
         aggregator = self.build_global_aggregator()
@@ -79,9 +83,21 @@ class ModelBuilder:
             )
 
         else:
-            model = 
+            distance_encoding = PairDistanceMatrixEncodingBlock(
+                **self.architecture_config.positional_encoding_config.model_dump()
+            )
+
+            model = StructureBasedMultitaskRegressionModel(
+                structure_encoding_block=distance_encoding,
+                pair_encoder=encoder,
+                preprocessor=preprocessor,
+                global_aggregator=aggregator,
+                multitask_heads=multitask_heads,
+            )
+
 
         self.model = model.float()
+        self.model.preprocessor.double()
 
         if (
             self.architecture_config.reload_full_model_weights
@@ -93,7 +109,7 @@ class ModelBuilder:
         return model
 
     def build_preprocess(
-        self, mean_atomic_embedding, std_atomic_embedding
+        self, mean_atomic_embedding, std_atomic_embedding, equivariant_scale_factor
     ) -> AtomicDescriptorPreprocess:
         preprocess_config = self.architecture_config.embedding_preprocess_config
 
@@ -103,19 +119,33 @@ class ModelBuilder:
             preprocessor = InvariantsFilter(preprocess_config)
 
         if (mean_atomic_embedding is not None) and (std_atomic_embedding is not None):
+
+
+            _, invariant_irreps = get_invariant_indices(self.architecture_config.embedding_preprocess_config.input_irreps)
+            invariant_dim = invariant_irreps.dim
+
             assert (
                 mean_atomic_embedding.shape[-1]
-                == self.architecture_config.embedding_preprocess_config.input_embedding_size
+                == invariant_dim
             )
             preprocessor.register_embedding_normalization(
                 mean_atomic_embedding, std_atomic_embedding
             )
 
+
+        if equivariant_scale_factor is not None:
+
+            preprocessor.register_equivariant_scale(equivariant_scale_factor)
+
         return preprocessor
 
     def build_encoder(self):
         encoder_config = self.architecture_config.encoder_config
-        encoder = TransformerEncoder(encoder_config)
+
+        if encoder_config.d_pair is None:
+            encoder = TransformerEncoder(encoder_config)
+        else:
+            encoder = TransformerPairEncoder(encoder_config=encoder_config)
         return encoder
 
     def build_global_aggregator(self):

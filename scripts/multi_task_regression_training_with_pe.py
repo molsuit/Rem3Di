@@ -7,6 +7,8 @@ from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
 
+
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 import yaml
 
 from datetime import datetime
@@ -15,17 +17,17 @@ from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
 )
 from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.data_handling.dataset import (
-    RegressionDataset, RegressionWithAuxDataset
-)
+
 import os
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.data_handling.sample import sample_collate_fn
 from threedscriptors.model.model_builder import ModelBuilder
+
 from threedscriptors.training.regression_training import multitask_masked_loss
 
 from threedscriptors.evaluation.training_evaluation import regression_pipeline
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def parse_args():
     """
@@ -56,30 +58,32 @@ training_data_dir = training_run_dir / Path(f"{training_idx}-{now.strftime("%Y_%
 os.makedirs(training_data_dir)
 
 training_config = TrainingConfig(
-    batch_size=128,
+    batch_size=64,
     epochs=20,
-    learning_rate=1e-4,
-    weight_decay= 1e-5,
+    learning_rate=1e-5,
+    weight_decay= 1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
     training_data_dir= training_data_dir,
-    mace_model_path="/share/snw30/projects/mace_model/mace_agnesi_medium.model",
-    train_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/adme_fang_train",
-    validation_dataset_path = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/adme_fang_valid",
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/adme_fang",
+    mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
+    train_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt_train",
+    validation_dataset_path = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt_valid",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/cmrt",
     normalized_targets=True,
 )
 
-
-
-
-
+architecture_config = pyaml.parse_yaml_file_as(
+    ArchitectureConfig,
+    f"{training_config.model_dir}/architecture_config.yaml",
+)
 
 train_pipeline_orchestrator = reload_dataset_pipeline(
     training_config.train_dataset_path,
 )
 train_dataset = train_pipeline_orchestrator.build()
-mean_embeddings, std_embeddings = train_dataset.get_atomic_embedding_normalization_constants()
+mean_embeddings, std_embeddings, equivariant_scale_factor = train_dataset.get_atomic_embedding_normalization_constants(input_irreps = architecture_config.embedding_preprocess_config.input_irreps)
+
+
 training_config.total_steps = len(train_dataset) * training_config.epochs
 
 
@@ -108,14 +112,11 @@ validation_loader = DataLoader(
     collate_fn=sample_collate_fn,
 )
 
-architecture_config = pyaml.parse_yaml_file_as(
-    ArchitectureConfig,
-    f"{training_config.model_dir}/architecture_config.yaml",
-)
+
 
 mb = ModelBuilder(architecture_config=architecture_config)
 model = mb.build_model(
-    mean_atomic_embedding=mean_embeddings, std_atomic_embedding=std_embeddings
+    mean_atomic_embedding=mean_embeddings, std_atomic_embedding=std_embeddings, #equivariant_scale_factor= equivariant_scale_factor
 )
 
 
@@ -129,6 +130,8 @@ config={
             "valid_dataset_config": valid_dataset.dataset_config.model_dump()
         }
 
+
+ 
 if training_config.wandb_active:
     wandb.init(
         project="threedscriptors",
@@ -137,14 +140,14 @@ if training_config.wandb_active:
         config=config
     )
 
-    wandb.watch(models = model.preprocessor, log ="parameters", log_freq=100)
+    wandb.watch(models = model.preprocessor, log ="all", log_freq=10)
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+
 model.to(device)
 
 
 num_opt_steps = training_config.epochs * len(training_loader)
-optimizer = optim.AdamW(model.parameters(), lr=training_config.learning_rate, weight_decay=0.00001)
+optimizer = optim.AdamW(model.parameters(), lr=training_config.learning_rate, weight_decay=training_config.weight_decay)
 scheduler = OneCycleLR(
     optimizer, max_lr=training_config.learning_rate, total_steps=num_opt_steps
 )
@@ -155,14 +158,9 @@ assert model.multitask_heads.task_heads.keys() == stds_per_task.keys()
 
 stds = np.array(list(std_target_per_task.values()))
 
-
 print("Starting Training")
-
+     
 loss_data = []
-
-
-
-
 
 for epoch in range(training_config.epochs):
     running_tloss = 0.0
@@ -173,24 +171,21 @@ for epoch in range(training_config.epochs):
     optimizer.zero_grad()
 
     for _batch, samples in enumerate(training_loader):
-        embeddings = samples.embeddings.to(device)
-        padding_mask = samples.padding_mask.to(device)
-        regression_targets = samples.regression_targets.to(device)
-        regression_masks = samples.regression_masks.to(device)
+        samples.to_(device)
 
-        auxillary_data = samples.auxillary_data
-        # TODO: Harmonize the definition of the padding mask. Torch True = padded, prev: True = not padded
-
-        prediction, descriptor = model(
-            embeddings, padding_mask=padding_mask, auxillary_data=auxillary_data
-        )
+        samples.padding_mask = samples.padding_mask.bool()
+        model_output = model(samples)
 
 
         loss, batch_weighed_loss_per_task_train = multitask_masked_loss(
-            predictions=prediction,
-            labels=regression_targets,
-            regression_mask=regression_masks,
+            predictions=model_output.regression_predictions,
+            labels=samples.regression_targets,
+            regression_mask=samples.regression_masks,
         )
+
+
+
+
 
         weighed_loss_per_task_train += batch_weighed_loss_per_task_train.detach()
 
@@ -218,22 +213,18 @@ for epoch in range(training_config.epochs):
 
     model.eval()
     with torch.no_grad():
-        for _batch, samples in enumerate(validation_loader):
-            embeddings = samples.embeddings.to(device)
-            padding_mask = samples.padding_mask.to(device)
-            regression_targets = samples.regression_targets.to(device)
-            regression_masks = samples.regression_masks.to(device)
-            auxillary_data = samples.auxillary_data
+        for _batch, val_samples in enumerate(validation_loader):
+            
+            val_samples.to_(device)
+            val_samples.padding_mask = val_samples.padding_mask.bool()
 
-            prediction, descriptor = model(
-                embeddings, padding_mask=padding_mask, auxillary_data=auxillary_data
-            )
+            val_output = model(val_samples)
 
             loss, batch_weighed_loss_per_task_val = multitask_masked_loss(
-                predictions=prediction,
-                labels=regression_targets,
-                regression_mask=regression_masks,
-            )
+            predictions=val_output.regression_predictions,
+            labels=val_samples.regression_targets,
+            regression_mask=val_samples.regression_masks,
+        )
             weighed_loss_per_task_val += batch_weighed_loss_per_task_val
 
             running_vloss += loss.item()
@@ -286,13 +277,13 @@ final_loss = avg_vloss
 print(final_loss)
 
 
-torch.save(model.state_dict(), f"{training_config.training_data_dir}/regression_model.pth")
-
-torch.save(
-    model.preprocessor.state_dict(), f"{training_config.training_data_dir}/preprocessor.pth"
-)
-torch.save(model.encoder.state_dict(), f"{training_config.training_data_dir}/encoder.pth")
-
+#torch.save(model.state_dict(), f"{training_config.training_data_dir}/regression_model.pth")
+#
+#torch.save(
+#    model.preprocessor.state_dict(), f"{training_config.training_data_dir}/preprocessor.pth"
+#)
+#torch.save(model.encoder.state_dict(), f"{training_config.training_data_dir}/encoder.pth")
+#
 pyaml.to_yaml_file(f"{training_config.training_data_dir}/training_config.yaml", training_config)
 
 
@@ -314,6 +305,9 @@ with open(f"{training_config.training_data_dir}/training_losses.yaml","x") as f:
 
 
 training_evaluation_pipeline = regression_pipeline(train_dataset, valid_dataset)
-
 training_evaluation_pipeline.evaluate(model)
-training_evaluation_pipeline.visualize(output_directory=training_config.training_data_dir, model_name= run_name)
+figs = training_evaluation_pipeline.visualize(output_directory=training_config.training_data_dir, model_name= run_name)
+
+#if training_config.wandb_active:
+#    for figname, figure in figs.items():
+#        wandb.log({figname: figure})

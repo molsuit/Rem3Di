@@ -14,7 +14,10 @@ from threedscriptors.data_handling.data_utils import (
     get_max_molecule_size_from_smiles,
     validate_ratios,
     compute_splits,
+
 )
+
+from threedscriptors.utils.model_utils import split_invariants_equivariants, get_invariant_indices
 from threedscriptors.data_handling.sample import Sample
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 
@@ -113,28 +116,58 @@ class BaseDataset(data.Dataset):
                     mode="constant",
                 )
                 for pos in positions
-            ]
+            ], dtype = np.float32
         )
-
+    
         return padding_dim, padded_positions, padded_atomic_numbers
 
-    def get_atomic_embedding_normalization_constants(self):
+    def get_atomic_embedding_normalization_constants(self,input_irreps):
 
         if isinstance(self.padding_mask, torch.Tensor):
             padding_mask = self.padding_mask.cpu().numpy()
         else:
             padding_mask = self.padding_mask
 
-        if isinstance(self.embeddings, torch.Tensor):
-            embeddings = self.embeddings.cpu().numpy()
+        print(f"Embeddings_shape {self.embeddings.shape}")
+
+        invariant_indices, _ = get_invariant_indices(input_irreps)
+        invariant_embeddings, equivariant_embeddings = split_invariants_equivariants(self.embeddings, invariant_indices)
+
+        if isinstance(invariant_embeddings, torch.Tensor):
+            invariant_embeddings = invariant_embeddings.cpu().numpy()
 
         masks = np.where(np.expand_dims(padding_mask, axis=-1) == 0.0, True, False)
 
-        mean_per_dim = np.mean(embeddings, axis=(0, 1), keepdims=True, where=masks)
+        inv_mean_per_dim, inv_std_per_dim = self.calculate_invariant_normalization_constants(invariant_embeddings, masks)
 
-        std_per_dim = np.std(embeddings, axis=(0, 1), keepdims=True, where=masks)
+
+        equivariant_scale_factor = self.calculate_equivariant_scale_factor(equivariant_embeddings, masks)
+
+        return inv_mean_per_dim, inv_std_per_dim, equivariant_scale_factor
+    
+
+    @staticmethod
+    def calculate_invariant_normalization_constants(invariant_embeddings, masks):
+        
+        mean_per_dim = np.mean(invariant_embeddings, axis=(0, 1), keepdims=True, where=masks)
+
+        std_per_dim = np.std(invariant_embeddings, axis=(0, 1), keepdims=True, where=masks)
 
         return torch.from_numpy(mean_per_dim), torch.from_numpy(std_per_dim)
+
+    @staticmethod
+    def calculate_equivariant_scale_factor(equivariant_embeddings, masks):
+        
+        masks = masks.squeeze(-1)
+        real_atom_equivariant_emebddings = equivariant_embeddings[masks]
+
+        vecs = real_atom_equivariant_emebddings.reshape(-1,3)
+        
+        eps = 1e-12
+        mean_sq = torch.mean(vecs ** 2)          # E[x²] over all x, y, z
+        scale   = 1.0 / torch.sqrt(mean_sq + eps)
+
+        return scale
 
     def split_dataset(self, splitting_ratios):
 
@@ -200,9 +233,9 @@ class RegressionTargetMixin:
 
 class AtomicPositionMixin:
     def __getitem__(self, idx):
-        pos = self.atmomic_positions[idx]
+        pos = self.atomic_positions[idx]
         sample: Sample = super().__getitem__(idx)
-        sample.positions = pos
+        sample.atomic_positions = pos
         return sample
 
 
@@ -241,6 +274,10 @@ class AtomicEmbeddingDataset(AtomicEmbeddingMixin, BaseDataset):
     pass
 
 
+class AtomicEmbeddingWithPositionsDataset(AtomicPositionMixin,AtomicEmbeddingMixin, BaseDataset):
+    pass
+
+
 class RegressionDataset(RegressionTargetMixin, AtomicEmbeddingMixin, BaseDataset):
     pass
 
@@ -250,7 +287,10 @@ class RegressionDatasetwithPositions(AtomicPositionMixin,RegressionTargetMixin, 
 
 
 
-
+class RegressionWithAuxAndPositionsDataset(
+    AtomicPositionMixin,AuxDataMixin, RegressionTargetMixin, AtomicEmbeddingMixin, BaseDataset
+):
+    pass
 
 
 class RegressionWithAuxDataset(

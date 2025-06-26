@@ -137,8 +137,6 @@ class DatasetBuilder:
                     smiles_0 = next(smiles_iterator)
                     smiles_1 = next(smiles_iterator)
                     # pairwise iterator returns enantiomer pairs
-                    print(smiles_0)
-                    print(smiles_1)
                 except StopIteration:
                     print(
                         f"Reached StopIteration prematurely. Completed reading {data_points_counter} molecules."
@@ -178,8 +176,6 @@ class DatasetBuilder:
                     )
                     continue
 
-                print(smiles_0)
-                print(smiles_1)
                 N_confs_per_enantionmer = len(embeded_molecules_0)
                 N_total_confs = 2 * N_confs_per_enantionmer
 
@@ -295,7 +291,7 @@ class DatasetBuilder:
             padding_mask[i, :num_atoms] = 0
 
         self.dataset.embeddings = torch.Tensor(embeddings)
-        self.dataset.padding_mask = torch.Tensor(padding_mask)
+        self.dataset.padding_mask = torch.Tensor(padding_mask).bool()
 
     def add_regression_data(
         self,
@@ -322,8 +318,6 @@ class DatasetBuilder:
         regression_targets = torch.Tensor(regression_targets)
         regression_masks = torch.Tensor(regression_masks)
 
-        print(type(regression_targets))
-        print(type(regression_masks))
         assert torch.all(torch.any(regression_targets, dim=0)), "There are some empty tasks "
 
 
@@ -354,6 +348,7 @@ class DatasetBuilder:
         assert self.dataset.molecules is not None
         _, padded_pos, _ = self.dataset.get_padded_positions()
 
+        print(padded_pos.dtype)
         self.dataset.atomic_positions = padded_pos
 
 
@@ -405,7 +400,9 @@ class DatasetBuilder:
         self.dataset.regression_targets = torch.Tensor(self.dataset.regression_targets)
 
 
-
+    def remove_hydrogen_descriptors(self):
+        pass
+        #for molecule
 
     
 

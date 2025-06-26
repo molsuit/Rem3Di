@@ -107,7 +107,7 @@ def load_data_from_disk(
         dataset.regression_masks = from_numpy(regression_masks_arr).float()
 
     if "embeddings.npy" in files:
-        dataset.embeddings = from_numpy(np.load(f"{directory}/embeddings.npy")).float()
+        dataset.embeddings = from_numpy(np.load(f"{directory}/embeddings.npy"))
         dataset.padding_mask = from_numpy(
             np.load(f"{directory}/padding_mask.npy")
         ).float()

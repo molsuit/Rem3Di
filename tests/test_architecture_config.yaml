@@ -1,58 +1,43 @@
 embedding_preprocess_config:
-  input_embedding_size: 640
   input_irreps: 128x0e+128x1o+128x0e
-  output_irreps: 128x0e+128x0e+128x0o
-  output_irreps_dim: 384
-  pseudoscalar_dimension: 128
-  pseudoscalar_embedding_dim: 128
-  pseudoscalars: true
+  output_irreps: 128x0e+128x0e
+  output_irreps_dim: 256
+  pseudoscalar_dimension: 0
+  pseudoscalar_embedding_dim: 0
+  pseudoscalars: false
   reload_state_dict: null
 encoder_config:
-  N_layers: 4
+  N_layers: 5
   attention_layer_config:
-    dim_feedforward: 512
+    dim_feedforward: 1024
     dropout: 0.3
-    embedding_dim: 384
+    embedding_dim: 256
     num_heads: 8
+  d_pair: 64
   reload_state_dict: null
 global_aggregator_config:
   aggregation_fn: mean
-  input_dim: 384
-  output_dim: 384
+  input_dim: 256
+  output_dim: 256
+positional_encoding_config:
+  N_radial_basis_functions: 16
+  d_projection: 64
+  distance_cutoff: 32.0
 regression_head_config:
 - activation_fn: SiLU
+  head_type: fully_connected
   hidden_dimensions:
   - 512
   - 256
   - 128
-  input_dimensions: 384
-  task_name: HLM
+  input_dimensions: 256
+  task_name: pIC50 (MERS-CoV Mpro)
 - activation_fn: SiLU
+  head_type: fully_connected
   hidden_dimensions:
   - 512
   - 256
   - 128
-  input_dimensions: 384
-  task_name: KSOL
-- activation_fn: SiLU
-  hidden_dimensions:
-  - 512
-  - 256
-  - 128
-  input_dimensions: 384
-  task_name: LogD
-- activation_fn: SiLU
-  hidden_dimensions:
-  - 512
-  - 256
-  - 128
-  input_dimensions: 384
-  task_name: MDR1-MDCKII
-- activation_fn: SiLU
-  hidden_dimensions:
-  - 512
-  - 256
-  - 128
-  input_dimensions: 384
-  task_name: MLM
+  input_dimensions: 256
+  task_name: pIC50 (SARS-CoV-2 Mpro)
 reload_full_model_weights: null
