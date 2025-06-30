@@ -61,6 +61,8 @@ class GlobalAggregator(nn.Module):
             self.config.input_dim
         )  # len(self.aggregation_fns) * self.config.input_dim
 
+        if global_aggregator_config.global_molecular_descriptor_dropout is not None:
+            self.dropout = nn.Dropout(global_aggregator_config.global_molecular_descriptor_dropout)
 
 
     def forward(self, x):
@@ -69,6 +71,7 @@ class GlobalAggregator(nn.Module):
         #out = torch.mean(x, dim = 1)
         # intermediates = [f(x, dim=1) for f in self.aggregation_fns]
         # out = cat(intermediates, dim=-1)
-
-        #out = self.dropout(out)
+        if self.config.global_molecular_descriptor_dropout is not None:
+            out = self.dropout(out)
+            
         return out

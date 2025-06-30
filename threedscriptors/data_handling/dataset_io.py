@@ -18,7 +18,7 @@ def store_data_to_disk(dataset: BaseDataset, directory: str):
 
     # Store Positions
     padding_dim, padded_positions, padded_atomic_numbers = (
-        dataset.get_padded_positions(only_heavy_atoms=False)
+        dataset.get_padded_positions()
     )
 
     np.save(f"{directory}/padded_positions.npy", padded_positions)

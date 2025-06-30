@@ -39,7 +39,7 @@ embedding_model_config = MaceCalculatorConfig(
     device="cuda",
 )
 dataset_config = DatasetConfig(
-    N_molecules=20000,
+    N_molecules=5000,
     dataset_type=RegressionWithAuxAndPositionsDataset,
     BFGS_tol=0.1,
     BFGS_max_steps=500,

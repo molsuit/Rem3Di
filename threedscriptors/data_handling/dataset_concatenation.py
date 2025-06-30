@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 
 import torch
-import torch.nn.functional as F
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
@@ -130,29 +129,19 @@ class DatasetConcatenation:
                 dataset.dataset_config.max_atoms
                 != self.new_dataset.dataset_config.max_atoms
             ):
-                self.expand_embedding_num_atoms(
-                    dataset, new_max_num_atoms=self.new_dataset.dataset_config.max_atoms
+                dataset.expand_embedding_num_atoms(
+                    new_max_num_atoms=self.new_dataset.dataset_config.max_atoms
                 )
 
         new_embeddings = torch.cat([d.embeddings for d in self.datasets])
         new_padding_masks = torch.cat([d.padding_mask for d in self.datasets])
+        new_atomic_positions = torch.cat([d.atomic_positions for d in self.datasets])
+
 
         self.new_dataset.embeddings = new_embeddings
         self.new_dataset.padding_mask = new_padding_masks
+        self.new_dataset.atomic_positions = new_atomic_positions
 
-    def expand_embedding_num_atoms(self, dataset: BaseDataset, new_max_num_atoms: int):
-        # Method can be used to increase the "Sequence length" i.e the number of atoms in a molecule. So that the embeddings do not have to be recalculated.
-        # Expand the padding mask and the atomic embeddings to the max dimension.
-
-        padding_width = new_max_num_atoms - dataset.dataset_config.max_atoms
-
-        dataset.embeddings = F.pad(
-            dataset.embeddings, pad=(0, 0, 0, padding_width), value=0
-        )
-
-        dataset.padding_mask = F.pad(
-            dataset.padding_mask, pad=(0, padding_width), value=1
-        )
 
     def concatenate_regression_targets(self):
         # Creates the Block matrices of regression targets, and regression masks.

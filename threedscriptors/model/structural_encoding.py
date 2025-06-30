@@ -28,9 +28,9 @@ class GaussianBasisFunctions(nn.Module):
         self.distance_cutoff = distance_cutoff
 
 
-        centers = torch.linspace(0., self.d_cutoff, self.N_radial_basis_functions)
+        centers = torch.linspace(0., self.distance_cutoff, self.N_radial_basis_functions)
 
-        widths = (self.d_cutoff / self.N_radial_basis_functions) * torch.ones_like(centers)
+        widths = (self.distance_cutoff / self.N_radial_basis_functions) * torch.ones_like(centers)
 
         self.register_buffer('centers', centers)
         self.register_buffer('widths',  widths)

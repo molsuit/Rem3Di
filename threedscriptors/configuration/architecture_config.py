@@ -159,6 +159,7 @@ class GlobalAggregatorConfig(BaseModel):
     aggregation_fn: Callable | Iterable[Callable]
     input_dim: int | None = None
     output_dim: int | None = None
+    global_molecular_descriptor_dropout : float | None = None
 
     @field_validator("aggregation_fn", mode="before")
     @classmethod

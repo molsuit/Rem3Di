@@ -8,6 +8,9 @@ from threedscriptors.configuration.data_config import (
 from threedscriptors.data_handling.dataset import (
     RegressionDatasetwithPositions,
 )
+
+
+from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 from threedscriptors.data_handling.dataset_io import (
     store_data_to_disk,
 )
@@ -39,7 +42,6 @@ non_task_columns = {
 
 
 load_dataset = "antiviral_potency"
-
 # Load the benchmark from polarishub
 smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
     dataset_registry[load_dataset],
@@ -48,21 +50,21 @@ smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
 )
 print(len(smiles))
 
-dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}"
+dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}_only_heavy_atoms_testset"
 
 MACE_PATH = (
-    "/share/snw30/projects/mace_model/MACE-OFF23_large.model"
+    "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
 )
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
-    model_name="mace_off23_large",
+    model_name="mace_off24_medium",
     model_path=MACE_PATH,
     enable_cueq=True,
     device="cuda",
 )
 
 dataset_config = DatasetConfig(
-    N_molecules=400,
+    N_molecules=1320,
     dataset_type=RegressionDatasetwithPositions,
     BFGS_tol=0.1,
     BFGS_max_steps=500,
@@ -70,6 +72,7 @@ dataset_config = DatasetConfig(
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
+    only_heavy_atoms=True
 )
 
 
@@ -81,7 +84,7 @@ dataset = regression_training_with_pos_pipeline(
 
 
 store_data_to_disk(dataset, f"{dataset_directory}_full")
-#
+
 #from threedscriptors.data_handling.data_utils import get_atom_species_in_smiles
 #atom_type_set = get_atom_species_in_smiles(ListSmilesIterator(dataset.smiles_list))
 #print(atom_type_set)
@@ -93,6 +96,6 @@ store_data_to_disk(dataset, f"{dataset_directory}_full")
 #
 #store_data_to_disk(split_datasets[0], f"{dataset_directory}_train")
 #store_data_to_disk(split_datasets[1], f"{dataset_directory}_valid")
-#
-#
+
+
 #

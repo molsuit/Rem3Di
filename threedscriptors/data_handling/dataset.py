@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.utils.data as data
 from ase import Atoms
+import torch.nn.functional as F
 
 if TYPE_CHECKING:
     # only for mypy / IDE - never executed at runtime
@@ -109,6 +110,8 @@ class BaseDataset(data.Dataset):
         positions = [at.get_positions() for at in self.molecules]
         atomic_numbers = [at.get_atomic_numbers() for at in self.molecules]
         padding_dim = np.array([len(an) for an in atomic_numbers]) # The dimension of the real atoms, required to reconstruct whcich element are padding and which ones are not.
+
+
 
         if self.dataset_config.only_heavy_atoms:
 
@@ -235,6 +238,34 @@ class BaseDataset(data.Dataset):
             returned_splits.append(new_dataset)
 
         return returned_splits
+
+
+
+    def expand_embedding_num_atoms(self, new_max_num_atoms: int):
+        # Method can be used to increase the "Sequence length" i.e the number of atoms in a molecule. So that the embeddings do not have to be recalculated.
+        # Expand the padding mask and the atomic embeddings to the max dimension.
+
+        padding_width = new_max_num_atoms - self.dataset_config.max_atoms
+
+        assert padding_width > 0
+        
+        self.embeddings = F.pad(
+            self.embeddings, pad=(0, 0, 0, padding_width), value=0
+        )
+
+        self.padding_mask = F.pad(
+            self.padding_mask, pad=(0, padding_width), value=1
+        )
+
+        print(self.padding_mask.shape)
+
+        if self.atomic_positions is not None:
+            print(self.atomic_positions.shape)
+            #self.atomic_positions is (B,N,3)
+            self.atomic_positions = F.pad(self.atomic_positions, pad = (0, 0,0, padding_width), value = 0.0)
+            print(self.atomic_positions.shape)
+
+        self.dataset_config.max_atoms = new_max_num_atoms
 
 
 class AtomicEmbeddingMixin:

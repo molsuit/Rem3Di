@@ -182,7 +182,7 @@ class StructureBasedMultitaskRegressionModel(nn.Module):
         super().__init__()
 
         self.structure_encoding_block = structure_encoding_block
-        self.pair_encoder = pair_encoder
+        self.encoder = pair_encoder
         self.preprocessor = preprocessor
         self.global_aggregator = global_aggregator
         self.multitask_heads = multitask_heads
@@ -205,7 +205,7 @@ class StructureBasedMultitaskRegressionModel(nn.Module):
 
         P0, distance_metric, pair_masks = self.structure_encoding_block(sample.atomic_positions, sample.padding_mask)
 
-        S, P = self.pair_encoder(S, sample.padding_mask, P0, pair_masks)
+        S, P = self.encoder(S, sample.padding_mask, P0, pair_masks)
 
         molecular_descriptor = self.global_aggregator(S)
 

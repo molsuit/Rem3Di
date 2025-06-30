@@ -2,7 +2,7 @@ import argparse
 import os
 from datetime import datetime
 from pathlib import Path
-
+import math
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
@@ -23,6 +23,7 @@ from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.training.regression_training import multitask_masked_loss
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
 
 def parse_args():
     """
@@ -45,10 +46,14 @@ run_name = parse_args()
 torch.manual_seed(0)
 np.random.seed(0)
 
-training_run_dir = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs")
-training_idx = len(list(training_run_dir.glob('*/')))
+training_run_dir = Path(
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
+)
+training_idx = len(list(training_run_dir.glob("*/")))
 now = datetime.now()
-training_data_dir = training_run_dir / Path(f"{training_idx}-{now.strftime("%Y_%m_%d_%H_%M_%S")}-{run_name}")
+training_data_dir = training_run_dir / Path(
+    f"{training_idx}-{now.strftime("%Y_%m_%d_%H_%M_%S")}-{run_name}"
+)
 
 os.makedirs(training_data_dir)
 
@@ -56,14 +61,15 @@ training_config = TrainingConfig(
     batch_size=64,
     epochs=20,
     learning_rate=1e-5,
-    weight_decay= 1e-3,
+    weight_decay=1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
-    training_data_dir= training_data_dir,
+    training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    train_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt_train",
-    validation_dataset_path = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt_valid",
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/cmrt",
+    train_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_train",
+    validation_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_valid",
+    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_testset_full",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_potency",
     normalized_targets=True,
 )
 
@@ -76,20 +82,29 @@ train_pipeline_orchestrator = reload_dataset_pipeline(
     training_config.train_dataset_path,
 )
 train_dataset = train_pipeline_orchestrator.build()
-mean_embeddings, std_embeddings, equivariant_scale_factor = train_dataset.get_atomic_embedding_normalization_constants(input_irreps = architecture_config.embedding_preprocess_config.input_irreps)
+mean_embeddings, std_embeddings, equivariant_scale_factor = (
+    train_dataset.get_atomic_embedding_normalization_constants(
+        input_irreps=architecture_config.embedding_preprocess_config.input_irreps
+    )
+)
 
 
 training_config.total_steps = len(train_dataset) * training_config.epochs
 
 
-mean_target_per_task, std_target_per_task = train_dataset.dataset_config.get_mean_std_per_task()
+mean_target_per_task, std_target_per_task = (
+    train_dataset.dataset_config.get_mean_std_per_task()
+)
 
 
 valid_pipeline_orchestrator = reload_dataset_pipeline(
     training_config.validation_dataset_path,
-    mean_targets= mean_target_per_task, std_targets= std_target_per_task
+    mean_targets=mean_target_per_task,
+    std_targets=std_target_per_task,
 )
 valid_dataset = valid_pipeline_orchestrator.build()
+
+
 
 training_loader = DataLoader(
     train_dataset,
@@ -108,23 +123,22 @@ validation_loader = DataLoader(
 )
 
 
-
 mb = ModelBuilder(architecture_config=architecture_config)
 model = mb.build_model(
-    mean_atomic_embedding=mean_embeddings, std_atomic_embedding=std_embeddings, #equivariant_scale_factor= equivariant_scale_factor
+    mean_atomic_embedding=mean_embeddings,
+    std_atomic_embedding=std_embeddings,  # equivariant_scale_factor= equivariant_scale_factor
 )
 
 
 print(f"Trainable Parameters: {mb.N_trainable_parameters}")
 
 
-config={
-            "architecture_config": architecture_config.model_dump(),
-            "training_config": training_config.model_dump(),
-            "train_dataset_config": train_dataset.dataset_config.model_dump(),
-            "valid_dataset_config": valid_dataset.dataset_config.model_dump()
-        }
-
+config = {
+    "architecture_config": architecture_config.model_dump(),
+    "training_config": training_config.model_dump(),
+    "train_dataset_config": train_dataset.dataset_config.model_dump(),
+    "valid_dataset_config": valid_dataset.dataset_config.model_dump(),
+}
 
 
 if training_config.wandb_active:
@@ -132,17 +146,23 @@ if training_config.wandb_active:
         project="threedscriptors",
         entity="threedscriptors",
         name=run_name,
-        config=config
+        config=config,
     )
 
-    wandb.watch(models = model.preprocessor, log ="all", log_freq=10)
+    wandb.watch(models=[model.preprocessor,model.multitask_heads], log="all", log_freq=30)
+
+    
 
 
 model.to(device)
 
 
 num_opt_steps = training_config.epochs * len(training_loader)
-optimizer = optim.AdamW(model.parameters(), lr=training_config.learning_rate, weight_decay=training_config.weight_decay)
+optimizer = optim.AdamW(
+    model.parameters(),
+    lr=training_config.learning_rate,
+    weight_decay=training_config.weight_decay,
+)
 scheduler = OneCycleLR(
     optimizer, max_lr=training_config.learning_rate, total_steps=num_opt_steps
 )
@@ -156,6 +176,11 @@ stds = np.array(list(std_target_per_task.values()))
 print("Starting Training")
 
 loss_data = []
+best_val_loss = math.inf
+best_model_path = f"{training_config.training_data_dir}/best_model.pth"
+
+
+
 
 for epoch in range(training_config.epochs):
     running_tloss = 0.0
@@ -171,16 +196,11 @@ for epoch in range(training_config.epochs):
         samples.padding_mask = samples.padding_mask.bool()
         model_output = model(samples)
 
-
         loss, batch_weighed_loss_per_task_train = multitask_masked_loss(
             predictions=model_output.regression_predictions,
             labels=samples.regression_targets,
             regression_mask=samples.regression_masks,
         )
-
-
-
-
 
         weighed_loss_per_task_train += batch_weighed_loss_per_task_train.detach()
 
@@ -196,8 +216,8 @@ for epoch in range(training_config.epochs):
 
         running_tloss += loss.item()
 
-    avg_tloss = (
-        running_tloss / (_batch + 1)
+    avg_tloss = running_tloss / (
+        _batch + 1
     )  # TODO: if you don't have anything else to do, you could use TorchMetrics to calculate the loss. It's a bit of a hassle to set up though
     weighed_loss_per_task_train = weighed_loss_per_task_train / (_batch + 1)
 
@@ -216,10 +236,10 @@ for epoch in range(training_config.epochs):
             val_output = model(val_samples)
 
             loss, batch_weighed_loss_per_task_val = multitask_masked_loss(
-            predictions=val_output.regression_predictions,
-            labels=val_samples.regression_targets,
-            regression_mask=val_samples.regression_masks,
-        )
+                predictions=val_output.regression_predictions,
+                labels=val_samples.regression_targets,
+                regression_mask=val_samples.regression_masks,
+            )
             weighed_loss_per_task_val += batch_weighed_loss_per_task_val
 
             running_vloss += loss.item()
@@ -229,80 +249,133 @@ for epoch in range(training_config.epochs):
 
         print(f"Epoch {epoch} Training Loss: {avg_tloss} Validation Loss: {avg_vloss}")
 
+        if avg_vloss < best_val_loss:
+            best_val_loss = avg_vloss
+            torch.save(model.state_dict(), best_model_path)
+            print(f"  → New best model (val_loss {best_val_loss:.4f}), saving to {best_model_path}")
+
+
+
         current_lr = scheduler.get_last_lr()
 
-        destandardized_loss_per_task_val = weighed_loss_per_task_val.cpu().detach().numpy() * stds
+        destandardized_loss_per_task_val = (
+            weighed_loss_per_task_val.cpu().detach().numpy() * stds
+        )
 
         val_dict = dict(
-                zip(
-                    task_names,
-                    destandardized_loss_per_task_val.tolist(),
-                    strict=False,
-                )
+            zip(
+                task_names,
+                destandardized_loss_per_task_val.tolist(),
+                strict=False,
             )
+        )
 
-
-        destandardized_loss_per_task_train = weighed_loss_per_task_train.cpu().detach().numpy() * stds
+        destandardized_loss_per_task_train = (
+            weighed_loss_per_task_train.cpu().detach().numpy() * stds
+        )
 
         train_dict = dict(
-                zip(
-                    task_names,
-                    destandardized_loss_per_task_train.tolist(),
-                    strict=False,
-                )
+            zip(
+                task_names,
+                destandardized_loss_per_task_train.tolist(),
+                strict=False,
             )
+        )
 
-        epoch_loss_dict  = {
-                    "epoch" : epoch,
-                    "validation_loss": avg_vloss,
-                    "train_loss": avg_tloss,
-                    "task_validation_loss": val_dict,
-                    "task_train_loss": train_dict,
-                    "learning_rate": current_lr[0],
-                }
+        epoch_loss_dict = {
+            "epoch": epoch,
+            "validation_loss": avg_vloss,
+            "train_loss": avg_tloss,
+            "task_validation_loss": val_dict,
+            "task_train_loss": train_dict,
+            "learning_rate": current_lr[0],
+        }
 
         loss_data.append(epoch_loss_dict)
 
         if training_config.wandb_active:
-            wandb.log( epoch_loss_dict)
+            wandb.log(epoch_loss_dict)
 
 
 # undo the normalization ??
 final_loss = avg_vloss
 print(final_loss)
 
+print("Loading best model from", best_model_path)
+model.load_state_dict(torch.load(best_model_path, map_location=device))
+model.eval()
 
-#torch.save(model.state_dict(), f"{training_config.training_data_dir}/regression_model.pth")
+
+
+torch.save(model.state_dict(), f"{training_config.training_data_dir}/regression_model.pth")
 #
-#torch.save(
-#    model.preprocessor.state_dict(), f"{training_config.training_data_dir}/preprocessor.pth"
-#)
-#torch.save(model.encoder.state_dict(), f"{training_config.training_data_dir}/encoder.pth")
+torch.save(
+    model.preprocessor.state_dict(), f"{training_config.training_data_dir}/preprocessor.pth"
+ )
+torch.save(model.encoder.state_dict(), f"{training_config.training_data_dir}/encoder.pth")
 #
-pyaml.to_yaml_file(f"{training_config.training_data_dir}/training_config.yaml", training_config)
+pyaml.to_yaml_file(
+    f"{training_config.training_data_dir}/training_config.yaml", training_config
+)
 
 
-architecture_config.reload_full_model_weights = f"{training_config.training_data_dir}/regression_model.pth"
+architecture_config.reload_full_model_weights = (
+    f"{training_config.training_data_dir}/regression_model.pth"
+)
 
-pyaml.to_yaml_file(f"{training_config.training_data_dir}/architecture_config.yaml", architecture_config)
-
-
-
-pyaml.to_yaml_file(f"{training_config.training_data_dir}/train_dataset_config.yaml", train_dataset.dataset_config)
-
-
-pyaml.to_yaml_file(f"{training_config.training_data_dir}/valid_dataset_config.yaml", valid_dataset.dataset_config)
+pyaml.to_yaml_file(
+    f"{training_config.training_data_dir}/architecture_config.yaml", architecture_config
+)
 
 
-with open(f"{training_config.training_data_dir}/training_losses.yaml","x") as f:
+pyaml.to_yaml_file(
+    f"{training_config.training_data_dir}/train_dataset_config.yaml",
+    train_dataset.dataset_config,
+)
+
+
+pyaml.to_yaml_file(
+    f"{training_config.training_data_dir}/valid_dataset_config.yaml",
+    valid_dataset.dataset_config,
+)
+
+
+with open(f"{training_config.training_data_dir}/training_losses.yaml", "x") as f:
     yaml.safe_dump(loss_data, f)
 
+figs = {}
 
 
-training_evaluation_pipeline = regression_pipeline(train_dataset, valid_dataset)
+training_evaluation_pipeline = regression_pipeline(train_dataset)
 training_evaluation_pipeline.evaluate(model)
-figs = training_evaluation_pipeline.visualize(output_directory=training_config.training_data_dir, model_name= run_name)
+train_figs, train_result_report = training_evaluation_pipeline.output_results(
+    output_directory=f"{training_config.training_data_dir}/trainset_results", model_name=run_name
+)
 
-#if training_config.wandb_active:
-#    for figname, figure in figs.items():
-#        wandb.log({figname: figure})
+
+
+
+validation_evaluation_pipeline = regression_pipeline(valid_dataset)
+validation_evaluation_pipeline.evaluate(model)
+train_figs, train_result_report =validation_evaluation_pipeline.output_results(
+    output_directory=f"{training_config.training_data_dir}/valset_results", model_name=run_name
+)
+
+test_pipeline_orchestrator = reload_dataset_pipeline(
+    training_config.test_dataset_path,
+    mean_targets=mean_target_per_task,
+    std_targets=std_target_per_task,
+)
+test_dataset = test_pipeline_orchestrator.build()
+test_dataset.expand_embedding_num_atoms(new_max_num_atoms=train_dataset.dataset_config.max_atoms)
+
+
+test_evaluation_pipeline = regression_pipeline(test_dataset)
+test_evaluation_pipeline.evaluate(model)
+figs, result_report = test_evaluation_pipeline.output_results(
+    output_directory=f"{training_config.training_data_dir}/testset_results", model_name=run_name
+)
+
+if training_config.wandb_active:
+    for figname, figure in figs.items():
+        wandb.log({figname: figure})

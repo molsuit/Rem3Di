@@ -11,31 +11,31 @@ from threedscriptors.evaluation.evaluation_pipeline import (
     RegressionTestTask,
 )
 
-#SIMILARITY_SCREENING_DATASET_PATH = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/virtual_screening"
-#SIMILARITY_SCREENING_DATASET = reload_dataset_pipeline(SIMILARITY_SCREENING_DATASET_PATH, normalize_targets= False, dataset_cls=AtomicEmbeddingDataset).build()
+from threedscriptors.data_handling.dataset import BaseDataset
 
 
-def regression_pipeline(train_dataset, valid_dataset):
+def regression_pipeline(dataset: BaseDataset):
 
-    tasks = [RegressionTestTask(valid_dataset),
-            DescriptorPCATask(train_dataset, UMAPCalculator()),
-            DescriptorPCATask(train_dataset, PCACalculator()),
-            DescriptorElementAnalysis(train_dataset),
-            DescriptorElementAnalysis(valid_dataset),
-            PreprocessorVisualizationTask(train_dataset)
-            #RegressionHeadPCATask(dataset, UMAPCalculator()),
-            #SimilarityScreeningTask(SIMILARITY_SCREENING_DATASET),
-            #DescriptorSimilarityAnalysisTask(train_dataset),
-        ]
+    tasks = [
+        RegressionTestTask(dataset),
+        DescriptorPCATask(dataset, UMAPCalculator()),
+        DescriptorPCATask(dataset, PCACalculator()),
+        DescriptorElementAnalysis(dataset),
+        #PreprocessorVisualizationTask(dataset),
+        # RegressionHeadPCATask(dataset, UMAPCalculator()),
+        # SimilarityScreeningTask(SIMILARITY_SCREENING_DATASET),
+        # DescriptorSimilarityAnalysisTask(train_dataset),
+    ]
 
-    return EvalPipelineRunner(tasks = tasks)
+    return EvalPipelineRunner(
+        tasks=tasks,
+        dataset_name=dataset.dataset_config.dataset_name,
+        dataset_split=dataset.dataset_config.dataset_split,
+    )
 
 
 def chiral_regression_pipeline(dataset):
 
-    tasks = [
-        ChiralPredictionTask(dataset),
-        PreprocessorVisualizationTask(dataset)
-    ]
+    tasks = [ChiralPredictionTask(dataset), PreprocessorVisualizationTask(dataset)]
 
-    return EvalPipelineRunner(tasks = tasks)
+    return EvalPipelineRunner(tasks=tasks)

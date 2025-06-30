@@ -13,6 +13,7 @@ class TrainingConfig(BaseModel):
     mace_model_path: str
     train_dataset_path: str
     validation_dataset_path: Path
+    test_dataset_path: Path
     model_dir: str
     training_data_dir: Path
     total_steps: int | None = None

@@ -117,6 +117,8 @@ def evaluate_atomic_descriptors(
         for batch_idx, samples in enumerate(dataloader):
             embeddings = samples.embeddings.to(device)
 
+            batch_size = embeddings.shape[0]
+
             regression_predictions[
                 batch_idx * batch_size : (batch_idx + 1) * batch_size, :
             ] = model.preprocessor(embeddings)
@@ -221,9 +223,7 @@ def capacity_diagnostics(Z, bins=128, dead_thr=0.2, eps=1e-12):
     eigvals = np.linalg.eigvalsh(cov)
     d_eff = (eigvals.sum()**2) / (np.square(eigvals).sum() + eps)
 
-    print("largest 10 eigvals:", eigvals[::-1][:10])
-    print("smallest 10 eigvals:", eigvals[:10])
-    print(f"Effective dimension {d_eff}")
+
     C_eff = d_eff * max_bits_per_dim
 
     utilisation = H_tot / (C_eff + eps)
@@ -231,6 +231,4 @@ def capacity_diagnostics(Z, bins=128, dead_thr=0.2, eps=1e-12):
 
     eig = np.sort(eigvals)[::-1]           # descending
 
-
-
-    return H_tot, utilisation, dead_dims, eig
+    return H_tot, utilisation, dead_dims, eig, d_eff

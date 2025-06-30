@@ -273,7 +273,7 @@ class DatasetBuilder:
         only_heavy_atoms = self.dataset.dataset_config.only_heavy_atoms
         # Assert that the mace caluclator of the embeddings and the relaxation are the same?
         # Check the maximum number of atoms in loaded smiles
-        self.dataset.get_max_atoms(only_heavy_atoms)
+        self.dataset.get_max_atoms()
 
         embeddings = np.zeros(
             shape=(
@@ -293,12 +293,16 @@ class DatasetBuilder:
             enumerate(self.dataset.molecules), total=len(self.dataset.molecules)
         ):
             descriptors = calculator.get_descriptors(atoms, invariants_only=False)
+            print(f"Before slicing {descriptors.shape}")
 
             atomic_numbers = atoms.get_atomic_numbers()
             if only_heavy_atoms:
                 # Slices out only the atoms with atomic number != 1
                 heavy_atoms_indices = np.argwhere(atomic_numbers > 1)
-                descriptors = descriptors[heavy_atoms_indices,:]
+                print(heavy_atoms_indices)
+
+                descriptors = descriptors[heavy_atoms_indices,:].squeeze()
+                print(f"After_slicing {descriptors.shape}")
                 num_atoms = len(heavy_atoms_indices)
 
             else:
@@ -363,6 +367,10 @@ class DatasetBuilder:
 
         assert self.dataset.molecules is not None
         _, padded_pos, _ = self.dataset.get_padded_positions()
+
+
+        if isinstance(padded_pos, np.ndarray):
+            padded_pos = torch.from_numpy(padded_pos)
 
         self.dataset.atomic_positions = padded_pos
 

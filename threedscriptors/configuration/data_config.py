@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
+from typing import Optional
 
 import torch
 from mace.calculators import MACECalculator
@@ -114,6 +115,13 @@ class MaceCalculatorConfig(BaseModel):
         }
 
 
+class DatasetSplit(Enum):
+    TRAIN = 0
+    VALIDATION = 1
+    TEST = 2
+
+
+
 class DatasetConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     N_molecules: int | None
@@ -126,6 +134,8 @@ class DatasetConfig(BaseModel):
     regression_is_normalized: bool = False
     tasks: Sequence[TaskConfig] | None = None
     only_heavy_atoms: bool = False
+    dataset_name: Optional[str] = None
+    dataset_split: Optional[DatasetSplit] = None
 
 
     def get_task_name_set(self):
@@ -160,3 +170,53 @@ class DatasetConfig(BaseModel):
     def _serialize_dataset_type(self, v: DatasetTypes, info):
         # turn DatasetTypes.atomic → "atomic"
         return v.name
+
+
+    @field_validator('dataset_split', mode='before')
+    @classmethod
+    def _validate_dataset_split(cls, v):
+        # allow None
+        if v is None:
+            return None
+
+        # already an enum
+        if isinstance(v, DatasetSplit):
+            return v
+
+        # from string like "train", "VALIDATION", etc.
+        if isinstance(v, str):
+            try:
+                return DatasetSplit[v.strip().upper()]
+            except KeyError:
+                raise ValueError(
+                    f"string value '{v}' is not a valid DatasetSplit; "
+                    f"expected one of {[e.name for e in DatasetSplit]}"
+                )
+
+        # from integer like 0, 1, 2
+        if isinstance(v, int):
+            try:
+                return DatasetSplit(v)
+            except ValueError:
+                raise ValueError(
+                    f"integer value {v} is not a valid DatasetSplit; "
+                    f"expected one of {[e.value for e in DatasetSplit]}"
+                )
+
+        # anything else is invalid
+        raise TypeError(
+            f"cannot interpret {v!r} as a DatasetSplit; "
+            f"must be None, one of {[(e.name, e.value) for e in DatasetSplit]}, "
+            f"or their names/values"
+        )
+    
+    @field_serializer('dataset_split')
+    def _serialize_dataset_split(self, v: Optional[DatasetSplit], _info):
+        """
+        Convert the enum back to a JSON-friendly form.
+        Here we output the lowercase name (e.g. "train", "validation", "test"),
+        but you could return v.value if you prefer integers.
+        """
+        if v is None:
+            return None
+        return v.name.lower()

@@ -35,6 +35,7 @@ class BuildStage(ABC):
             return result
         except Exception:
             logger.exception("💥 Failed")
+            raise
 
     @abstractmethod
     def _run(self, builder: DatasetBuilder): ...
@@ -136,6 +137,8 @@ class AtomicEmbeddingStage(BuildStage):
             calculator=self.mace_calculator
         )
         return builder
+
+
 
 
 class MolecularDescriptorStage(BuildStage):
