@@ -1,53 +1,14 @@
 import torch
 from torch import nn
 
-
-class BesselBasisFunctions(nn.Module):
-
-    # DimeNet Style Bessel Basis functions
-    def __init__(self, N_radial_basis_functions: int, distance_cutoff: float):
-
-        super().__init__()
-
-        self.N_radial_basis_functions = N_radial_basis_functions
-        self.distance_cutoff = distance_cutoff
-
-
-    def forward(distances):
-        pass
-
-
-
-class GaussianBasisFunctions(nn.Module):
-
-    def __init__(self, N_radial_basis_functions: int, distance_cutoff: float):
-
-        super().__init__()
-
-        self.N_radial_basis_functions = N_radial_basis_functions
-        self.distance_cutoff = distance_cutoff
-
-
-        centers = torch.linspace(0., self.distance_cutoff, self.N_radial_basis_functions)
-
-        widths = (self.distance_cutoff / self.N_radial_basis_functions) * torch.ones_like(centers)
-
-        self.register_buffer('centers', centers)
-        self.register_buffer('widths',  widths)
-
-
-
-    def forward(self, distances):
-
-        rbf = torch.exp(-0.5 * ((distances[..., None] - self.centers) / self.widths)**2)
-
-        return rbf
+from threedscriptors.model.radial_basis_functions import GaussianBasisFunctions, BesselBasisFunctions
+from threedscriptors.configuration.architecture_config import RadialBasisFunctionType
 
 
 class PairDistanceMatrixEncodingBlock(nn.Module):
 
 
-    def __init__(self, N_radial_basis_functions: int, distance_cutoff: float, d_projection: int):
+    def __init__(self, N_radial_basis_functions: int, distance_cutoff: float, d_projection: int, basis_function_type = RadialBasisFunctionType):
 
         super().__init__()
 
@@ -55,7 +16,8 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
         self.d_cutoff = distance_cutoff
         self.d_projection = d_projection
 
-        self.radial_basis = GaussianBasisFunctions(N_radial_basis_functions, distance_cutoff)
+        
+        self.radial_basis = basis_function_type.value(N_radial_basis_functions, distance_cutoff)
 
         self.proj = nn.Linear(N_radial_basis_functions, d_projection, bias=False)
 
@@ -66,8 +28,6 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
         # positions (B, N, 3)
         # Calculate the pairwise distance matrix
         distances = torch.cdist(positions, positions)
-
-        # TODO: Bessel functions???
 
 
         rbf = self.radial_basis(distances)
@@ -85,5 +45,5 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
 
 
 class RandomWalkStructureEncodingBlock(nn.Module):
-    def forward(self, degree_matrix, adjacency_matrix):
+    def forward(self, transition_matrix):
         pass

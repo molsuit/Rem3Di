@@ -7,7 +7,7 @@ from threedscriptors.configuration.architecture_config import (
     EmbeddingPreprocessConfig,
     EncoderConfig,
     GlobalAggregatorConfig,
-    PositionalEncodingConfig,
+    RelativeDistancePositionalEncodingConfig,
     RegressionHeadConfig,
 )
 from threedscriptors.configuration.data_config import DatasetConfig
@@ -24,7 +24,7 @@ class ConfigFactory:
         attention_layer_config: AttentionLayerConfig,
         encoder_config: EncoderConfig,
         global_aggregator_config: GlobalAggregatorConfig,
-        positional_encoding_config: PositionalEncodingConfig | None = None
+        positional_encoding_config: RelativeDistancePositionalEncodingConfig | None = None
     ):
         self.dataset_config = dataset_config
         self.embedding_preprocessor_config = embedding_preprocessor_config
@@ -54,15 +54,10 @@ class ConfigFactory:
             self.attention_layer_config.embedding_dim
         )
 
-        if isinstance(self.global_aggregator_config.aggregation_fn, list):
-            self.global_aggregator_config.output_dim = (
-                len(self.global_aggregator_config.aggregation_fn)
-                * self.attention_layer_config.embedding_dim
-            )
-        else:
-            self.global_aggregator_config.output_dim = (
+        self.global_aggregator_config.output_dim = (
                 self.global_aggregator_config.input_dim
             )
+        
 
     def process_regression_heads_config(
         self, head_config_template: RegressionHeadConfig

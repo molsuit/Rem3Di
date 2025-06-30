@@ -207,6 +207,6 @@ class StructureBasedMultitaskRegressionModel(nn.Module):
 
         S, P = self.encoder(S, sample.padding_mask, P0, pair_masks)
 
-        molecular_descriptor = self.global_aggregator(S)
+        molecular_descriptor = self.global_aggregator(S, sample.padding_mask)
 
         return ModelOutput(molecular_descriptor=molecular_descriptor,updated_pair_encoding=P)

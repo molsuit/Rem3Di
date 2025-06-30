@@ -3,7 +3,7 @@ import torch
 from ase import Atoms
 from mace.calculators import mace_mp
 
-from threedscriptors.configuration.architecture_config import PositionalEncodingConfig
+from threedscriptors.configuration.architecture_config import RelativeDistancePositionalEncodingConfig
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     DatasetTypes,
@@ -116,4 +116,4 @@ def sample_regression_dataset_config():
 @pytest.fixture(scope="session")
 def positional_encoding_config():
 
-    return PositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=20.0, d_projection=64)
+    return RelativeDistancePositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=20.0, d_projection=64)

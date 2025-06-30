@@ -21,7 +21,7 @@ def regression_pipeline(dataset: BaseDataset):
         DescriptorPCATask(dataset, UMAPCalculator()),
         DescriptorPCATask(dataset, PCACalculator()),
         DescriptorElementAnalysis(dataset),
-        #PreprocessorVisualizationTask(dataset),
+        # PreprocessorVisualizationTask(dataset),
         # RegressionHeadPCATask(dataset, UMAPCalculator()),
         # SimilarityScreeningTask(SIMILARITY_SCREENING_DATASET),
         # DescriptorSimilarityAnalysisTask(train_dataset),

@@ -82,8 +82,11 @@ class ModelBuilder:
             )
 
         else:
+
+            pos_config = self.architecture_config.positional_encoding_config
             distance_encoding = PairDistanceMatrixEncodingBlock(
-                **self.architecture_config.positional_encoding_config.model_dump()
+                N_radial_basis_functions= pos_config.N_radial_basis_functions,
+                distance_cutoff= pos_config.distance_cutoff, d_projection= pos_config.d_projection, basis_function_type= pos_config.basis_function_type
             )
 
             model = StructureBasedMultitaskRegressionModel(

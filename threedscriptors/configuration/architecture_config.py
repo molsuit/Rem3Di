@@ -1,7 +1,7 @@
 import importlib
 from collections.abc import Callable, Iterable, Sequence
 from enum import Enum
-
+from typing import Literal, Union
 import torch.nn
 from e3nn.o3 import Irreps
 from pydantic import (
@@ -10,6 +10,7 @@ from pydantic import (
     computed_field,
     field_serializer,
     field_validator,
+    Field
 )
 
 from threedscriptors.configuration.config_utils import IrrepType
@@ -18,6 +19,9 @@ from threedscriptors.utils.model_utils import (
     get_invariant_indices,
 )
 
+from threedscriptors.model.radial_basis_functions import GaussianBasisFunctions, BesselBasisFunctions
+
+from threedscriptors.model.pooling import MeanPool, AttnPool
 
 class HeadType(Enum):
     RESIDUAL = "residual"
@@ -38,24 +42,6 @@ class Activations(Enum):
         else:
             raise ValueError(
                 f"Activation function '{activation_name}' is not supported."
-            )
-
-
-class Aggregations(Enum):
-    MEAN = "mean"
-    MAX = "max"
-    STD = "std"
-
-    @staticmethod
-    def get_aggregation_fn(aggregation_name: str) -> Callable:
-        if aggregation_name in Aggregations.__members__:
-            fn_name = Aggregations.__members__[aggregation_name].value
-            module = importlib.import_module("torch")
-            aggregation_fn = getattr(module, fn_name)
-            return aggregation_fn
-        else:
-            raise ValueError(
-                f"Aggregation function '{aggregation_name}' is not supported."
             )
 
 
@@ -155,32 +141,129 @@ class EmbeddingPreprocessConfig(BaseModel):
         return self.output_irreps.dim
 
 
+
+
+
+class Aggregations(Enum):
+    MEAN = MeanPool
+    ATTENTION = AttnPool
+
+    @classmethod
+    def _missing_(cls, value):
+        # 1) strings → by name
+        if isinstance(value, str):
+            try:
+                return cls[value.strip().upper()]
+            except KeyError:
+                pass
+
+        # 2&3) class or instance → by subclass check
+        pool_cls = value if isinstance(value, type) else type(value)
+        if issubclass(pool_cls, MeanPool):
+            return cls.MEAN
+        if issubclass(pool_cls, AttnPool):
+            return cls.ATTENTION
+
+        # let Enum blow up otherwise
+        return super()._missing_(value)
+
+    def __str__(self) -> str:
+        # for repr and JSON serializer
+        return self.name.lower()
+
+
+
+
+
+class MeanAggregatorConfig(BaseModel):
+    aggregator_type: Literal[Aggregations.MEAN]
+
+
+    @field_serializer("aggregator_type")
+    def _serialize_aggregator_type(self, v: Aggregations, info):
+        return v.name.lower()
+
+    @field_validator("aggregator_type", mode="before")
+    @classmethod
+    def check_aggregator_type(cls, v: str | Aggregations) -> Callable:
+        if isinstance(v, Aggregations):
+            return v
+        elif isinstance(v, str):
+            return Aggregations(v)
+
+
+class AttentionAggregatorConfig(BaseModel):
+    aggregator_type: Literal[Aggregations.ATTENTION]
+    num_heads: int
+    head_dim: int | None = None
+    attn_dropout: float | None = None
+
+    @field_serializer("aggregator_type")
+    def _serialize_aggregator_type(self, v: Aggregations, info):
+        return v.name.lower()
+    
+
+    @field_validator("aggregator_type", mode="before")
+    @classmethod
+    def check_aggregator_type(cls, v: str | Aggregations) -> Callable:
+        if isinstance(v, Aggregations):
+            return v
+        elif isinstance(v, str):
+            return Aggregations(v)
+
+
 class GlobalAggregatorConfig(BaseModel):
-    aggregation_fn: Callable | Iterable[Callable]
+    aggregator_type_config:MeanAggregatorConfig | AttentionAggregatorConfig
     input_dim: int | None = None
     output_dim: int | None = None
     global_molecular_descriptor_dropout : float | None = None
 
-    @field_validator("aggregation_fn", mode="before")
+class RandomWalkPositionalEncoding(BaseModel):
+    k_hop_random_walk : int
+    d_projection: int
+
+
+
+class RadialBasisFunctionType(Enum):
+    GAUSSIAN = GaussianBasisFunctions
+    BESSEL = BesselBasisFunctions
+
     @classmethod
-    def check_aggregation_fn(cls, v: str | Callable | Aggregations) -> Callable:
-        if isinstance(v, Aggregations):
-            return Aggregations.get_aggregation_fn(v.value.upper())
-        elif isinstance(v, Callable):
-            return v
-        elif isinstance(v, str):
-            return Aggregations.get_aggregation_fn(v.upper())
-
-    @field_serializer("aggregation_fn")
-    def serialize_aggregation_fn(self, aggregation_fn):
-        return aggregation_fn.__name__
+    def _missing_(cls, value):
+        # 1) strings → by name
+        if isinstance(value, str):
+            try:
+                return cls[value.strip().upper()]
+            except KeyError:
+                print("broken key")
+                raise
 
 
 
-class PositionalEncodingConfig(BaseModel):
+
+class RelativeDistancePositionalEncodingConfig(BaseModel):
     N_radial_basis_functions: int
     distance_cutoff: float
     d_projection: int
+    basis_function_type: RadialBasisFunctionType = RadialBasisFunctionType.GAUSSIAN
+    #with_cross_entropy_loss : bool = False
+
+
+    @field_serializer("basis_function_type")
+    def _serialize_aggregator_type(self, v: RadialBasisFunctionType, info):
+        return v.name.lower()
+    
+
+    @field_validator("basis_function_type", mode="before")
+    @classmethod
+    def check_aggregator_type(cls, v: str | RadialBasisFunctionType) -> Callable:
+        if isinstance(v, RadialBasisFunctionType):
+            return v
+        elif isinstance(v, str):
+            print("here")
+            return RadialBasisFunctionType(v)
+
+
 
 
 class ArchitectureConfig(BaseModel):
@@ -188,7 +271,7 @@ class ArchitectureConfig(BaseModel):
     encoder_config: EncoderConfig
     global_aggregator_config: GlobalAggregatorConfig
     regression_head_config: RegressionHeadConfig | Sequence[RegressionHeadConfig]
-    positional_encoding_config: PositionalEncodingConfig | None = None
+    positional_encoding_config: RelativeDistancePositionalEncodingConfig | RandomWalkPositionalEncoding | None = None
     reload_full_model_weights: str | None = None
 
 
