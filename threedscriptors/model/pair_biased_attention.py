@@ -115,7 +115,7 @@ class PairOuterProdUpdate(nn.Module):
         L = self.W_L(S)
         R = self.W_R(S)
         ΔP_atoms = L.unsqueeze(2) * R.unsqueeze(1)   # (B,N,N,d_pair)
-        ΔP_atoms = ΔP_atoms * ~mask_pair[..., None]
+        ΔP_atoms = ΔP_atoms * mask_pair[..., None]
 
 
         ## here ffn
@@ -127,6 +127,7 @@ class PairOuterProdUpdate(nn.Module):
 
 
         # -------- merge, symmetrise, residual -----------------------------
+        
         ΔP = ΔP_atoms + ΔP_pair
         P = P + 0.5 * (ΔP + ΔP.transpose(1, 2))
         return P

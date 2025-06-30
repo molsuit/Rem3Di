@@ -172,6 +172,14 @@ class AtomicPositionsStage(BuildStage):
         return builder
 
 
+class AddRandomWalkTransitionProbabilityMatrixStage(BuildStage):
+
+    def _run(self,builder: DatasetBuilder):
+
+        builder.add_random_walk_matrices()
+
+        return builder
+
 class AuxillaryDataStage(BuildStage):
     def __init__(self, auxillary_data):
         self.aux_data = auxillary_data

@@ -10,7 +10,10 @@ from ase.optimize import LBFGS
 from mace.calculators import MACECalculator
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
+from rdkit.Chem import rdmolops
 from rdkit2ase import rdkit2ase
+
+
 
 if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
@@ -55,7 +58,7 @@ def get_ase_atoms(smiles) -> Atoms:
     return atoms
 
 
-def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
+def get_ase_atoms_with_conformers(smiles, N_conformers: int, load_adjacency_matrix) -> list[Atoms]:
     # print(smiles)
     mol = Chem.MolFromSmiles(smiles)
 
@@ -71,18 +74,28 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
         mol, numConfs=N_conformers, numThreads=N_conformers, maxAttempts=5000
     )
 
-    confs = [
-        Atoms(
-            positions=conf.GetPositions(),
-            numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
-        )
-        for conf in mol.GetConformers()
-    ]
+    if load_adjacency_matrix:
+        A = rdmolops.GetAdjacencyMatrix(mol)
 
-    # if mol.GetNumConformers() != N_conformers:
-    #    print("Failed Embedding Multi Confs, trying again with random coords")
-    #
-    #    EmbedMultipleConfs(mol, numConfs=N_conformers, numThreads=N_conformers,maxAttempts=100000, useRandomCoords= True, forceTol=1)
+
+        confs = [
+            Atoms(
+                positions=conf.GetPositions(),
+                numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],info = {"adjacency_matrix" : A}
+            )
+            for conf in mol.GetConformers()
+        ]
+
+    else:
+        confs = [
+            Atoms(
+                positions=conf.GetPositions(),
+                numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()]
+            )
+            for conf in mol.GetConformers()
+        ]
+
+
 
     return confs
 

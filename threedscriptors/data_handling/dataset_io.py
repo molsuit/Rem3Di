@@ -55,6 +55,11 @@ def store_data_to_disk(dataset: BaseDataset, directory: str):
             for i in dataset.smiles_list:
                 f.write(i + "\n")
 
+
+    if dataset.random_walk_transition_matrix is not None:
+        rw_matrix = dataset.random_walk_transition_matrix.cpu().numpy()
+        np.save(f"{directory}/random_walk_transition_matrix.npy", rw_matrix)
+
     # Store Config
     to_yaml(f"{directory}/dataset_config.yaml", dataset.dataset_config)
 
@@ -125,5 +130,9 @@ def load_data_from_disk(
         dataset.auxillary_data = {
             key: from_numpy(np_auxillary_data[key]) for key in aux_keys
         }
+
+    if "random_walk_transition_matrix.npy" in files:
+        rws = np.load(f"{directory}/random_walk_transition_matrix.npy")
+        dataset.random_walk_transition_matrix = from_numpy(rws).float()
 
     return dataset

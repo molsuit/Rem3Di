@@ -13,12 +13,12 @@ from threedscriptors.configuration.architecture_config import (
     RegressionHeadConfig,
     AttentionAggregatorConfig,
     MeanAggregatorConfig,
-    Aggregations
+    Aggregations, RandomWalkPositionalEncoding
 )
 from threedscriptors.configuration.config_factory import ConfigFactory
 from threedscriptors.configuration.data_config import DatasetConfig
 
-run = "antiviral_potency_only_heavy_atoms"
+run = "antiviral_potency_rrwp"
 
 config_file = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{run}_full/dataset_config.yaml"
 dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, config_file)
@@ -26,10 +26,11 @@ dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, config_file)
 
 model_dir = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/{run}/"
 
-pos_encoding_config = None
+#pos_encoding_config = None
 
-pos_encoding_config = RelativeDistancePositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=20, d_projection=64)
+#pos_encoding_config = RelativeDistancePositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=20, d_projection=64)
 
+pos_encoding_config = RandomWalkPositionalEncoding(k_hop_random_walk=16, d_projection=64)
 
 
 embedding_preprocessor_config = EmbeddingPreprocessConfig(

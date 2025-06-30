@@ -28,7 +28,7 @@ class Sample:
     active_decoy_labels:   torch.Tensor | None = None
     molecular_descriptors: torch.Tensor | None = None
     atomic_positions:      torch.Tensor | None = None
-
+    random_walk_transition_matrix: torch.Tensor | None = None
 
     def to(self, device: torch.device, non_blocking: bool = True) -> "Sample":
         moved_fields = {

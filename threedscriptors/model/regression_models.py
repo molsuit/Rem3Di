@@ -15,7 +15,10 @@ from threedscriptors.model.atomic_descriptor_preprocess import (
 from threedscriptors.model.global_aggregator import GlobalAggregator
 from threedscriptors.model.model_output import ModelOutput
 from threedscriptors.model.pair_block import TransformerPairEncoder
-from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
+from threedscriptors.model.structural_encoding import (
+    PairDistanceMatrixEncodingBlock,
+    RandomWalkStructureEncodingBlock,
+)
 from threedscriptors.model.transformer_components import TransformerEncoder
 
 
@@ -129,7 +132,6 @@ class MultitaskHeads(nn.Module):
 
         preds = torch.cat(preds, dim=-1)
 
-
         return preds
 
 
@@ -147,7 +149,7 @@ class MultiTaskRegressionModel(nn.Module):
         self.preprocessor = preprocessor
         self.global_aggregator = global_aggregator
 
-    def forward(self, sample : Sample):
+    def forward(self, sample: Sample):
         out = self.get_molecular_descriptor(sample)
         descriptor = out.molecular_descriptor
         preds = self.multitask_heads(descriptor, sample.auxillary_data)
@@ -156,7 +158,7 @@ class MultiTaskRegressionModel(nn.Module):
 
         # Concatenate outputs along the feature dimension.
         # Final shape: (batch_size, N_tasks * output_dim)
-        out = ModelOutput(molecular_descriptor=descriptor, regression_predictions= preds)
+        out = ModelOutput(molecular_descriptor=descriptor, regression_predictions=preds)
         return out
 
     def get_molecular_descriptor(self, sample: Sample) -> torch.Tensor:
@@ -164,7 +166,7 @@ class MultiTaskRegressionModel(nn.Module):
         x = self.encoder(x, sample.padding_mask)
         descriptor = self.global_aggregator(x)
 
-        return ModelOutput(molecular_descriptor= descriptor)
+        return ModelOutput(molecular_descriptor=descriptor)
 
 
 class FusedMultiHeadRegression(nn.Module):
@@ -174,10 +176,16 @@ class FusedMultiHeadRegression(nn.Module):
 
 class StructureBasedMultitaskRegressionModel(nn.Module):
 
-
-    def __init__(self, structure_encoding_block: PairDistanceMatrixEncodingBlock, pair_encoder : TransformerPairEncoder,
+    def __init__(
+        self,
+        structure_encoding_block: (
+            PairDistanceMatrixEncodingBlock | RandomWalkStructureEncodingBlock
+        ),
+        pair_encoder: TransformerPairEncoder,
         preprocessor: AtomicDescriptorPreprocess,
-        global_aggregator: GlobalAggregator, multitask_heads: MultitaskHeads):
+        global_aggregator: GlobalAggregator,
+        multitask_heads: MultitaskHeads,
+    ):
 
         super().__init__()
 
@@ -187,26 +195,32 @@ class StructureBasedMultitaskRegressionModel(nn.Module):
         self.global_aggregator = global_aggregator
         self.multitask_heads = multitask_heads
 
-
-    def forward(self, sample : Sample) -> ModelOutput:
+    def forward(self, sample: Sample) -> ModelOutput:
 
         # S are the updated atomic descriptors, P are the positional encodings
 
         out = self.get_molecular_descriptor(sample)
 
-        out.regression_predictions = self.multitask_heads(out.molecular_descriptor, sample.auxillary_data)
+        out.regression_predictions = self.multitask_heads(
+            out.molecular_descriptor, sample.auxillary_data
+        )
 
         return out
-
 
     def get_molecular_descriptor(self, sample: Sample):
 
         S = self.preprocessor(sample.embeddings)
 
-        P0, distance_metric, pair_masks = self.structure_encoding_block(sample.atomic_positions, sample.padding_mask)
+        structure_encoding, pair_masks = self.structure_encoding_block(
+            sample
+        )
+
+        P0 = structure_encoding.pair_encoding
 
         S, P = self.encoder(S, sample.padding_mask, P0, pair_masks)
 
         molecular_descriptor = self.global_aggregator(S, sample.padding_mask)
 
-        return ModelOutput(molecular_descriptor=molecular_descriptor,updated_pair_encoding=P)
+        return ModelOutput(
+            molecular_descriptor=molecular_descriptor, pair_encoding=P
+        )

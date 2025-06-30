@@ -4,9 +4,10 @@ from mace.calculators import MACECalculator
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     MaceCalculatorConfig,
+    DatasetSplit
 )
 from threedscriptors.data_handling.dataset import (
-    RegressionDatasetwithPositions,
+    RegressionDatasetwithPositions,RegressionDatasetwithRandomWalks
 )
 
 
@@ -15,7 +16,7 @@ from threedscriptors.data_handling.dataset_io import (
     store_data_to_disk,
 )
 from threedscriptors.data_handling.pipelines import (
-    regression_training_with_pos_pipeline,
+    regression_training_with_pos_pipeline, regression_training_with_transition_probs_pipeline
 )
 from threedscriptors.data_handling.source_preprocessing.polaris_preprocessing import (
     load_polaris_dataset,
@@ -46,11 +47,11 @@ load_dataset = "antiviral_potency"
 smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
     dataset_registry[load_dataset],
     smiles_column=smiles_column[load_dataset],
-    non_task_columns=non_task_columns[load_dataset],datasplit="Test"
+    non_task_columns=non_task_columns[load_dataset],datasplit="Train"
 )
 print(len(smiles))
 
-dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}_only_heavy_atoms_testset"
+dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}_rrwp"
 
 MACE_PATH = (
     "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
@@ -64,38 +65,45 @@ embedding_model_config = MaceCalculatorConfig(
 )
 
 dataset_config = DatasetConfig(
-    N_molecules=1320,
-    dataset_type=RegressionDatasetwithPositions,
+    N_molecules=1321,
+    dataset_type=RegressionDatasetwithRandomWalks,#RegressionDatasetwithPositions,
     BFGS_tol=0.1,
     BFGS_max_steps=500,
     N_conformers=1,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
-    only_heavy_atoms=True
+    only_heavy_atoms=False,
+    load_adjacency_matrix=True, 
+    dataset_name= load_dataset
 )
 
 
-dataset = regression_training_with_pos_pipeline(
+#pipeline = regression_training_with_pos_pipeline(
+#    dataset_config, smiles, regression_targets, regression_masks
+#) 
+
+pipeline = regression_training_with_transition_probs_pipeline(
     dataset_config, smiles, regression_targets, regression_masks
-).build()
+) 
+
+dataset = pipeline.build()
 
 
 
 
 store_data_to_disk(dataset, f"{dataset_directory}_full")
 
-#from threedscriptors.data_handling.data_utils import get_atom_species_in_smiles
-#atom_type_set = get_atom_species_in_smiles(ListSmilesIterator(dataset.smiles_list))
-#print(atom_type_set)
-#
-#
-#splitting_ratio = [0.8,0.2]
-#
-#split_datasets = dataset.split_dataset(splitting_ratio)
-#
-#store_data_to_disk(split_datasets[0], f"{dataset_directory}_train")
-#store_data_to_disk(split_datasets[1], f"{dataset_directory}_valid")
+from threedscriptors.data_handling.data_utils import get_atom_species_in_smiles
+
+atom_type_set = get_atom_species_in_smiles(ListSmilesIterator(dataset.smiles_list))
+
+dataset_split = [DatasetSplit.TRAIN, DatasetSplit.VALIDATION]
+splitting_ratio = [0.8,0.2]
+
+split_datasets = dataset.split_dataset(splitting_ratio, dataset_split)
+
+store_data_to_disk(split_datasets[0], f"{dataset_directory}_train")
+store_data_to_disk(split_datasets[1], f"{dataset_directory}_valid")
 
 
-#

@@ -5,6 +5,8 @@ import torch
 
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
+    RandomWalkPositionalEncoding,
+    RelativeDistancePositionalEncodingConfig,
 )
 from threedscriptors.model.atomic_descriptor_preprocess import (
     AtomicDescriptorPreprocess,
@@ -18,7 +20,10 @@ from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
     StructureBasedMultitaskRegressionModel,
 )
-from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
+from threedscriptors.model.structural_encoding import (
+    PairDistanceMatrixEncodingBlock,
+    RandomWalkStructureEncodingBlock,
+)
 from threedscriptors.model.transformer_components import TransformerEncoder
 from threedscriptors.utils.model_utils import get_invariant_indices
 
@@ -27,7 +32,9 @@ class ModelBuilder:
     def __init__(self, architecture_config: ArchitectureConfig):
         self.architecture_config = architecture_config
 
-        self.model: MultiTaskRegressionModel| StructureBasedMultitaskRegressionModel | None = None
+        self.model: (
+            MultiTaskRegressionModel | StructureBasedMultitaskRegressionModel | None
+        ) = None
         self._N_trainable_parameters = None
 
     @classmethod
@@ -65,7 +72,12 @@ class ModelBuilder:
                     )
                 )
 
-    def build_model(self, mean_atomic_embedding=None, std_atomic_embedding=None, equivariant_scale_factor = None):
+    def build_model(
+        self,
+        mean_atomic_embedding=None,
+        std_atomic_embedding=None,
+        equivariant_scale_factor=None,
+    ):
         preprocessor = self.build_preprocess(
             mean_atomic_embedding, std_atomic_embedding, equivariant_scale_factor
         )
@@ -81,22 +93,39 @@ class ModelBuilder:
                 global_aggregator=aggregator,
             )
 
-        else:
+        elif isinstance(
+            self.architecture_config.positional_encoding_config,
+            RelativeDistancePositionalEncodingConfig,
+        ):
 
             pos_config = self.architecture_config.positional_encoding_config
-            distance_encoding = PairDistanceMatrixEncodingBlock(
-                N_radial_basis_functions= pos_config.N_radial_basis_functions,
-                distance_cutoff= pos_config.distance_cutoff, d_projection= pos_config.d_projection, basis_function_type= pos_config.basis_function_type
+            structure_encoding = PairDistanceMatrixEncodingBlock(
+                N_radial_basis_functions=pos_config.N_radial_basis_functions,
+                distance_cutoff=pos_config.distance_cutoff,
+                d_projection=pos_config.d_projection,
+                basis_function_type=pos_config.basis_function_type,
             )
 
-            model = StructureBasedMultitaskRegressionModel(
-                structure_encoding_block=distance_encoding,
-                pair_encoder=encoder,
-                preprocessor=preprocessor,
-                global_aggregator=aggregator,
-                multitask_heads=multitask_heads,
+        elif isinstance(
+            self.architecture_config.positional_encoding_config,
+            RandomWalkPositionalEncoding,
+        ):
+
+            pos_config = self.architecture_config.positional_encoding_config
+            structure_encoding = RandomWalkStructureEncodingBlock(
+                k_hop=pos_config.k_hop_random_walk, d_projection=pos_config.d_projection
             )
 
+        else:
+            raise ValueError("Invalid Choice of Structural Encoding")
+
+        model = StructureBasedMultitaskRegressionModel(
+            structure_encoding_block=structure_encoding,
+            pair_encoder=encoder,
+            preprocessor=preprocessor,
+            global_aggregator=aggregator,
+            multitask_heads=multitask_heads,
+        )
 
         self.model = model.float()
         self.model.preprocessor.double()
@@ -122,18 +151,15 @@ class ModelBuilder:
 
         if (mean_atomic_embedding is not None) and (std_atomic_embedding is not None):
 
-
-            _, invariant_irreps = get_invariant_indices(self.architecture_config.embedding_preprocess_config.input_irreps)
+            _, invariant_irreps = get_invariant_indices(
+                self.architecture_config.embedding_preprocess_config.input_irreps
+            )
             invariant_dim = invariant_irreps.dim
 
-            assert (
-                mean_atomic_embedding.shape[-1]
-                == invariant_dim
-            )
+            assert mean_atomic_embedding.shape[-1] == invariant_dim
             preprocessor.register_embedding_normalization(
                 mean_atomic_embedding, std_atomic_embedding
             )
-
 
         if equivariant_scale_factor is not None:
 

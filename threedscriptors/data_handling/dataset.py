@@ -42,7 +42,8 @@ class BaseDataset(data.Dataset):
         target_class_labels=None,
         active_decoy_labels=None,
         molecular_descriptors=None,
-        atomic_positions =None
+        atomic_positions =None,
+        random_walk_transition_matrix = None
     ):
         super().__init__()
 
@@ -62,6 +63,8 @@ class BaseDataset(data.Dataset):
         self.active_decoy_labels = active_decoy_labels
         self.molecular_descriptors = molecular_descriptors
         self.atomic_positions = atomic_positions
+        self.random_walk_transition_matrix = random_walk_transition_matrix
+
 
     def __len__(self):
         return len(self.molecules)
@@ -203,7 +206,7 @@ class BaseDataset(data.Dataset):
 
         return scale
 
-    def split_dataset(self, splitting_ratios):
+    def split_dataset(self, splitting_ratios, dataset_split):
 
         splitting_indices = compute_splits(
             self.dataset_config.N_molecules,
@@ -213,14 +216,17 @@ class BaseDataset(data.Dataset):
 
         returned_splits = []
 
-        for slice_indices in splitting_indices:
+        for slice_indices, split in zip(splitting_indices, dataset_split):
 
             dataset_split = self[slice_indices.start : slice_indices.stop]
-
+            
+            
             # Update the dataset config with new number of molecules
             new_dataset_config = self.dataset_config.model_copy(
                 update={"N_molecules": slice_indices.stop - slice_indices.start}
             )
+
+            new_dataset_config.dataset_split = split
 
             new_dataset = self.dataset_config.dataset_type.value(
                 dataset_config=new_dataset_config, **asdict(dataset_split)
@@ -332,6 +338,15 @@ class MolecularDescriptorMixin:
         return sample
 
 
+class RandomWalkMixin:
+    def __getitem__(self: BaseDataset, idx):
+
+        sample: Sample = super().__getitem__(idx)
+
+        sample.random_walk_transition_matrix = self.random_walk_transition_matrix[idx]
+
+        return sample
+
 class AtomicEmbeddingDataset(AtomicEmbeddingMixin, BaseDataset):
     pass
 
@@ -364,4 +379,9 @@ class RegressionWithAuxDataset(
 class SimilarityScreeningDataset(
     SimilarityScreeningMixin, MolecularDescriptorMixin, BaseDataset
 ):
+    pass
+
+
+
+class RegressionDatasetwithRandomWalks(RandomWalkMixin,RegressionTargetMixin, AtomicEmbeddingMixin, BaseDataset):
     pass

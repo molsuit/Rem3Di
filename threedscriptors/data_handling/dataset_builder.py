@@ -75,7 +75,7 @@ class DatasetBuilder:
                     )  # This ensures that the dataloading does not overshoot the targeted number of molecules
 
                     embeded_molecules = get_ase_atoms_with_conformers(
-                        smiles, N_conformers
+                        smiles, N_conformers, dataset_config.load_adjacency_matrix
                     )
                     if len(embeded_molecules) == 0:
                         print(f"Error Embedding Smiles {smiles}, No. {smiles_counter}")
@@ -293,16 +293,15 @@ class DatasetBuilder:
             enumerate(self.dataset.molecules), total=len(self.dataset.molecules)
         ):
             descriptors = calculator.get_descriptors(atoms, invariants_only=False)
-            print(f"Before slicing {descriptors.shape}")
 
             atomic_numbers = atoms.get_atomic_numbers()
             if only_heavy_atoms:
                 # Slices out only the atoms with atomic number != 1
                 heavy_atoms_indices = np.argwhere(atomic_numbers > 1)
-                print(heavy_atoms_indices)
+
 
                 descriptors = descriptors[heavy_atoms_indices,:].squeeze()
-                print(f"After_slicing {descriptors.shape}")
+
                 num_atoms = len(heavy_atoms_indices)
 
             else:
@@ -422,3 +421,46 @@ class DatasetBuilder:
 
 
 
+    def add_random_walk_matrices(self):
+        
+        transition_mats = []
+
+        max_atoms = self.dataset.get_max_atoms()
+        assert not self.dataset.dataset_config.only_heavy_atoms 
+
+
+        for molecule in self.dataset.molecules:
+            assert "adjacency_matrix" in molecule.info.keys()
+
+            # Get the adjacency matrix,
+            A = molecule.info["adjacency_matrix"]
+            print(A)
+
+  
+
+
+            A_self = A + np.eye(A.shape[0])
+            
+            deg = A_self.sum(axis=1)
+            D_inv = np.diag(1.0 / deg)
+            T = D_inv @ A_self
+            print(T.shape)
+            print()
+            ## Calculate the degree matrix
+            #D_inv = 1 / A.sum(axis = 1)
+            ## Invert and multiply 
+            #T = (D_inv[:, None] * A)
+            #
+            N_atoms = T.shape[0]
+            # Pad
+            T_padded = torch.zeros(size = (max_atoms, max_atoms))
+            T_padded[:N_atoms, :N_atoms] = torch.from_numpy(T)
+
+            #Collect
+
+            transition_mats.append(T_padded)
+
+
+        self.dataset.random_walk_transition_matrix = torch.stack(transition_mats, dim = 0)
+
+        print(self.dataset.random_walk_transition_matrix.shape)

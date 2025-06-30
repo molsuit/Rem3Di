@@ -14,6 +14,7 @@ from threedscriptors.data_handling.data_build_pipeline import (
     RelaxStage,
     ReloadFromDiskStage,
     SimilarityLabelingStage,
+    AddRandomWalkTransitionProbabilityMatrixStage,
 )
 
 
@@ -51,6 +52,26 @@ def regression_training_with_pos_pipeline(
     ]
 
     return PipelineOrchestrator(stages)
+
+
+
+def regression_training_with_transition_probs_pipeline(
+    dataset_config: DatasetConfig, smiles, regression_targets, regression_masks
+):
+    stages = [
+        InitializeBuildPipeline(dataset_config),
+        InsertSmilesStage(smiles=smiles),
+        ConformalEmbeddingStage(),
+        RelaxStage(dataset_config.embedding_model_config.mace_calc),
+        AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
+        RegressionLabelingStage(
+            regression_targets=regression_targets, regression_masks=regression_masks
+        ),
+        AddRandomWalkTransitionProbabilityMatrixStage()
+    ]
+
+    return PipelineOrchestrator(stages)
+
 
 
 

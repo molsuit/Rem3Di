@@ -66,10 +66,10 @@ training_config = TrainingConfig(
     wandb_active=True,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    train_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_only_heavy_atoms_train",
-    validation_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_only_heavy_atoms_valid",
-    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_only_heavy_atoms_testset_full",
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_potency_only_heavy_atoms",
+    train_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_rrwp_train",
+    validation_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_rrwp_valid",
+    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_rrwp_testset_full",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_potency_rrwp",
     normalized_targets=True,
 )
 

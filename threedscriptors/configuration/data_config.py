@@ -23,6 +23,7 @@ from threedscriptors.data_handling.dataset import (
     RegressionWithAuxAndPositionsDataset,
     RegressionWithAuxDataset,
     SimilarityScreeningDataset,
+    RegressionDatasetwithRandomWalks
 )
 
 
@@ -34,6 +35,7 @@ class DatasetTypes(Enum):
     SIMILARITY_SCREENING_DATASET = SimilarityScreeningDataset
     ATOMICEMBEDDING_WITHPOSITIONS_DATASET = AtomicEmbeddingWithPositionsDataset
     REGRESSION_WITH_AUX_AND_POS = RegressionWithAuxAndPositionsDataset
+    REGRESSION_DATATSET_WITH_RANDOMWALK = RegressionDatasetwithRandomWalks
 
     @classmethod
     def _missing_(cls, value: object) -> "DatasetTypes":
@@ -136,6 +138,7 @@ class DatasetConfig(BaseModel):
     only_heavy_atoms: bool = False
     dataset_name: Optional[str] = None
     dataset_split: Optional[DatasetSplit] = None
+    load_adjacency_matrix : bool = False
 
 
     def get_task_name_set(self):

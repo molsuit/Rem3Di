@@ -11,10 +11,13 @@ def test_distance_loading(molecule: Atoms, positional_encoding_config):
 
     atom_mask = torch.ones(size=(1, pos.shape[1])).bool()
 
-    pe = PairDistanceMatrixEncodingBlock(positional_encoding_config)
+    pe = PairDistanceMatrixEncodingBlock(
+        N_radial_basis_functions=positional_encoding_config.N_radial_basis_functions,
+        distance_cutoff=positional_encoding_config.distance_cutoff,
+        d_projection=positional_encoding_config.d_projection,
+        basis_function_type=positional_encoding_config.basis_function_type,
+    )
     P, distances, _ = pe(pos, atom_mask)
-
-
 
 
 def test_distance_encoding_with_padding(molecule: Atoms, positional_encoding_config):
@@ -34,19 +37,24 @@ def test_distance_encoding_with_padding(molecule: Atoms, positional_encoding_con
 
     pos = torch.from_numpy(pos).float().unsqueeze(0)
 
-    atom_mask = torch.ones(size=(1, N_atoms_padded))
-    atom_mask[0,N_atoms:] = 0
+    atom_mask = torch.zeros(size=(1, N_atoms_padded))
+    atom_mask[0, N_atoms:] = 1
 
     atom_mask = atom_mask.bool()
 
-    assert atom_mask.sum() == N_atoms
+    assert (~atom_mask).sum() == N_atoms
 
-    pe = PairDistanceMatrixEncodingBlock(positional_encoding_config)
+    pe = PairDistanceMatrixEncodingBlock(
+        N_radial_basis_functions=positional_encoding_config.N_radial_basis_functions,
+        distance_cutoff=positional_encoding_config.distance_cutoff,
+        d_projection=positional_encoding_config.d_projection,
+        basis_function_type=positional_encoding_config.basis_function_type,
+    )
 
     P, distances, mask_pair = pe(pos, atom_mask)
     N_pairs = N_atoms**2
 
     assert mask_pair.sum().cpu().numpy().item() == N_pairs
-    assert (P.transpose(1,2) == P).all()
+    assert (P.transpose(1, 2) == P).all()
 
     print(P.shape)
