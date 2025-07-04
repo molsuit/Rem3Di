@@ -7,10 +7,7 @@ from threedscriptors.configuration.data_config import (
     DatasetTypes,
 )
 from threedscriptors.data_handling.dataset import (
-    BaseDataset,
-    RegressionDataset,
-    RegressionWithAuxDataset,
-)
+    BaseDataset)
 
 
 class DatasetConcatenation:
@@ -20,38 +17,38 @@ class DatasetConcatenation:
 
         new_dataset_config = self.get_new_dataset_config()
 
-        dataset_classes = set([type(d) for d in self.datasets])
-        assert dataset_classes.issubset(
-            set([RegressionDataset, RegressionWithAuxDataset])
-        )
-        new_dataset_class = (
-            RegressionWithAuxDataset
-            if RegressionWithAuxDataset in dataset_classes
-            else RegressionDataset
-        )
-
-        self.new_dataset = new_dataset_class(dataset_config=new_dataset_config)
+    
+        self.new_dataset = new_dataset_config.dataset_type.value(dataset_config=new_dataset_config)
 
     def get_new_dataset_config(self):
         embedding_models = set(
             [d.dataset_config.embedding_model_config.model_name for d in self.datasets]
         )
         assert len(embedding_models) == 1
+
         assert all(
             [not d.dataset_config.regression_is_normalized for d in self.datasets]
         )
-        assert all(
-            [
-                [
-                    d.dataset_config.dataset_type == DatasetTypes.REGRESSION
-                    for d in self.datasets
-                ]
-            ]
-        )
+
+        dataset_classes = set([type(d) for d in self.datasets])
+        assert len(dataset_classes) == 1
+        (new_dataset_class,) = dataset_classes
+
+
+        heavy_atoms_only = [d.dataset_config.only_heavy_atoms for d in self.datasets]
+
+        assert all([heavy_atoms_only[0] == h for h in heavy_atoms_only])
+
+
+        splits = [d.dataset_config.dataset_split for d in self.datasets]
+
+        assert all([splits[0] == s for s in splits])
+
+        dataset_split = splits[0]
 
         new_dataset_config = DatasetConfig(
             N_molecules=sum([d.dataset_config.N_molecules for d in self.datasets]),
-            dataset_type=DatasetTypes.REGRESSION,
+            dataset_type=new_dataset_class,
             BFGS_tol=max([d.dataset_config.BFGS_tol for d in self.datasets]),
             BFGS_max_steps=max(
                 [d.dataset_config.BFGS_max_steps for d in self.datasets]
@@ -67,6 +64,9 @@ class DatasetConcatenation:
                 0
             ].dataset_config.embedding_model_config,
             tasks=[task for d in self.datasets for task in d.dataset_config.tasks],
+            dataset_name="+".join([d.dataset_config.dataset_name for d in self.datasets]),
+            dataset_split= dataset_split,
+            only_heavy_atoms= heavy_atoms_only[0]
         )
 
         task_names = [task.task_name for task in new_dataset_config.tasks]
@@ -81,6 +81,8 @@ class DatasetConcatenation:
         self.concatenate_atomic_embeddings()
         self.concatenate_regression_targets()
         self.concatenate_auxillary_data()
+        #self.concatenate_structural_encodings()
+
 
         return self.new_dataset
 
@@ -135,7 +137,12 @@ class DatasetConcatenation:
 
         new_embeddings = torch.cat([d.embeddings for d in self.datasets])
         new_padding_masks = torch.cat([d.padding_mask for d in self.datasets])
-        new_atomic_positions = torch.cat([d.atomic_positions for d in self.datasets])
+
+
+        new_pos = [d.atomic_positions for d in self.datasets]
+        new_atomic_positions = torch.cat(new_pos)
+        
+
 
 
         self.new_dataset.embeddings = new_embeddings
@@ -153,6 +160,7 @@ class DatasetConcatenation:
         new_regression_masks = torch.block_diag(*collected_regression_masks)
         self.new_dataset.regression_targets = new_regression_targets
         self.new_dataset.regression_masks = new_regression_masks
+
 
     def concatenate_auxillary_data(self):
         auxillary_data_keys = {}
@@ -183,3 +191,10 @@ class DatasetConcatenation:
             new_aux_data[key] = new_values.float()
 
         self.new_dataset.auxillary_data = new_aux_data
+    
+    def concatenate_structural_encodings(self):
+
+        collected_transition_matrices = [d.random_walk_transition_matrix for d in self.datasets]
+        
+        self.new_dataset.random_walk_transition_matrix = torch.cat(collected_transition_matrices)
+

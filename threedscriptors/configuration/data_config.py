@@ -47,13 +47,43 @@ class DatasetTypes(Enum):
 
 
 
+class LabelScalingType(Enum):
+    LOG = "log"
+
+
 class TaskConfig(BaseModel):
     task_name: str
     mean: float | None = None
     std: float | None = None
+    scaling: LabelScalingType | None = None
     has_auxillary_data: bool = False
     auxillary_data_dimension: int | None = None
 
+
+    @field_validator("scaling", mode="before")
+    @classmethod
+    def _coerce_scaling(cls, v):
+
+        if v is None:
+            return None
+
+        if isinstance(v, LabelScalingType):
+            return v
+        # string → enum by name (or via _missing_)
+        if isinstance(v, str):
+            print(v.lower())
+            return LabelScalingType(v.strip().lower())
+        
+        raise TypeError("`dataset_type` must be a DatasetTypes, a BaseDataset subclass, or a registered name")
+
+    @field_serializer("scaling")
+    def _serialize_dataset_type(self, v: LabelScalingType, info):
+        # turn DatasetTypes.atomic → "atomic"
+
+        if v is None:
+            return None
+        
+        return v.name
 
 class MaceCalculatorConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -141,7 +171,7 @@ class DatasetConfig(BaseModel):
     load_adjacency_matrix : bool = False
 
 
-    def get_task_name_set(self):
+    def get_task_names(self):
         return [tc.task_name for tc in self.tasks]
 
     def get_mean_std_per_task(self):

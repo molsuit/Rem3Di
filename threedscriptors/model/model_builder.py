@@ -86,6 +86,8 @@ class ModelBuilder:
         multitask_heads = self.build_regression_heads()
 
         if self.architecture_config.positional_encoding_config is None:
+
+
             model = MultiTaskRegressionModel(
                 regression_heads=multitask_heads,
                 encoder=encoder,
@@ -93,38 +95,41 @@ class ModelBuilder:
                 global_aggregator=aggregator,
             )
 
-        elif isinstance(
+        else:
+            if isinstance(
             self.architecture_config.positional_encoding_config,
             RelativeDistancePositionalEncodingConfig,
         ):
-
-            pos_config = self.architecture_config.positional_encoding_config
-            structure_encoding = PairDistanceMatrixEncodingBlock(
-                N_radial_basis_functions=pos_config.N_radial_basis_functions,
+                pos_config = self.architecture_config.positional_encoding_config
+                print(pos_config.basis_function_type)
+                structure_encoding = PairDistanceMatrixEncodingBlock(
+                    N_radial_basis_functions=pos_config.N_radial_basis_functions,
                 distance_cutoff=pos_config.distance_cutoff,
                 d_projection=pos_config.d_projection,
                 basis_function_type=pos_config.basis_function_type,
             )
 
-        elif isinstance(
+            elif isinstance(
             self.architecture_config.positional_encoding_config,
             RandomWalkPositionalEncoding,
         ):
 
-            pos_config = self.architecture_config.positional_encoding_config
-            structure_encoding = RandomWalkStructureEncodingBlock(
+                pos_config = self.architecture_config.positional_encoding_config
+                structure_encoding = RandomWalkStructureEncodingBlock(
                 k_hop=pos_config.k_hop_random_walk, d_projection=pos_config.d_projection
             )
 
-        else:
-            raise ValueError("Invalid Choice of Structural Encoding")
+            else:
+                raise ValueError("Invalid Choice of Structural Encoding")
 
-        model = StructureBasedMultitaskRegressionModel(
-            structure_encoding_block=structure_encoding,
-            pair_encoder=encoder,
-            preprocessor=preprocessor,
-            global_aggregator=aggregator,
-            multitask_heads=multitask_heads,
+
+
+            model = StructureBasedMultitaskRegressionModel(
+                structure_encoding_block=structure_encoding,
+                pair_encoder=encoder,
+                preprocessor=preprocessor,
+                global_aggregator=aggregator,
+                multitask_heads=multitask_heads,
         )
 
         self.model = model.float()

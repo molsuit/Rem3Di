@@ -54,7 +54,7 @@ from threedscriptors.evaluation.similarity_screening import (
 from threedscriptors.model.atomic_descriptor_preprocess import PseudoscalarGenerator
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
 from threedscriptors.training.regression_training import multitask_masked_loss
-from threedscriptors.configuration.data_config import DatasetSplit
+from threedscriptors.configuration.data_config import DatasetSplit, LabelScalingType
 
 import yaml as vanilla_yaml
 
@@ -406,15 +406,37 @@ class RegressionTestTask(BaseEvalTask):
         for task_idx, task in enumerate(self.dataset.dataset_config.tasks):
 
             sliced_preds = preds[masks[:, task_idx].squeeze(), task_idx]
-
-            rescaled_preds = (sliced_preds * task.std) + task.mean
-
+            print(sliced_preds)
+            
+            rescaled_preds = (sliced_preds * np.double(task.std)) + np.double(task.mean)
+            print(rescaled_preds)
             sliced_targets = targets[masks[:, task_idx].squeeze(), task_idx]
+            
 
-            rescaled_targets = (sliced_targets * task.std) + task.mean
+            rescaled_targets = (sliced_targets * np.double(task.std)) + np.double(task.mean)
+
+            if task.scaling == LabelScalingType.LOG:
+                print("Rescaling")
+                rescaled_preds = torch.exp(rescaled_preds.double())
+                rescaled_targets = torch.exp(rescaled_targets.double())
+
+
+
+            print(rescaled_targets)
+            fig = plt.figure()
+            plt.hist(rescaled_targets)
+            plt.savefig(f"{task.task_name}_targets.png")
+
+            fig = plt.figure()
+            plt.hist(rescaled_preds)
+            plt.savefig(f"{task.task_name}_preds.png")
+
+
+            print(f"{task.task_name} : {torch.mean((rescaled_preds-rescaled_targets)**2)}")
 
             mae = mean_absolute_error(rescaled_preds, rescaled_targets)
             mse = mean_squared_error(rescaled_preds, rescaled_targets)
+            print(mse)
             r2 = r2_score(rescaled_preds, rescaled_targets)
             pearson_r = pearson_corrcoef(rescaled_preds, rescaled_targets)
             kendall_tau = kendall_rank_corrcoef(rescaled_preds, rescaled_targets)

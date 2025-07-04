@@ -115,7 +115,7 @@ def load_data_from_disk(
         dataset.embeddings = from_numpy(np.load(f"{directory}/embeddings.npy"))
         dataset.padding_mask = from_numpy(
             np.load(f"{directory}/padding_mask.npy")
-        ).float()
+        ).bool()
 
     if "activity_labels.npy" in files:
         assert "target_class_labels.npy" in files

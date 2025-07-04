@@ -11,6 +11,8 @@ from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
 
+
+from threedscriptors.data_handling.dataset_analysis import DatasetPostLoadAnalysis
 import wandb
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
@@ -20,7 +22,7 @@ from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.data_handling.sample import sample_collate_fn
 from threedscriptors.evaluation.training_evaluation import regression_pipeline
 from threedscriptors.model.model_builder import ModelBuilder
-from threedscriptors.training.regression_training import multitask_masked_loss
+from threedscriptors.training.regression_training import multitask_masked_loss, DynamicallyWeighedMultitaskLoss, BaseMultitaskLoss
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -59,17 +61,17 @@ os.makedirs(training_data_dir)
 
 training_config = TrainingConfig(
     batch_size=64,
-    epochs=20,
+    epochs=100,
     learning_rate=1e-5,
     weight_decay=1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    train_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_rrwp_train",
-    validation_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_rrwp_valid",
-    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_rrwp_testset_full",
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_potency_rrwp",
+    train_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_train",
+    validation_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_valid",
+    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_testset_full",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_potency",
     normalized_targets=True,
 )
 
@@ -104,7 +106,12 @@ valid_pipeline_orchestrator = reload_dataset_pipeline(
 )
 valid_dataset = valid_pipeline_orchestrator.build()
 
+da_train = DatasetPostLoadAnalysis(train_dataset, output_dir= f"{training_config.training_data_dir}/trainset_results")
 
+da_valid = DatasetPostLoadAnalysis(valid_dataset, output_dir= f"{training_config.training_data_dir}/validset_results")
+
+da_train.run()
+da_valid.run()
 
 training_loader = DataLoader(
     train_dataset,
@@ -158,16 +165,22 @@ model.to(device)
 
 
 num_opt_steps = training_config.epochs * len(training_loader)
+
+
+#loss_fn = DynamicallyWeighedMultitaskLoss(N_tasks = len(train_dataset.dataset_config.tasks))
+
+loss_fn = BaseMultitaskLoss()
+
 optimizer = optim.AdamW(
-    model.parameters(),
-    lr=training_config.learning_rate,
-    weight_decay=training_config.weight_decay,
+    [{"params" : model.parameters(), "lr" : training_config.learning_rate, "weight_decay" : training_config.weight_decay},
+    #{"params": loss_fn.parameters(),  "lr": 1e-4, "weight_decay" : 0.0}
+    ]
 )
 scheduler = OneCycleLR(
-    optimizer, max_lr=training_config.learning_rate, total_steps=num_opt_steps
+    optimizer, max_lr=[training_config.learning_rate], total_steps=num_opt_steps
 )
 
-task_names = train_dataset.dataset_config.get_task_name_set()
+task_names = train_dataset.dataset_config.get_task_names()
 _, stds_per_task = train_dataset.dataset_config.get_mean_std_per_task()
 assert model.multitask_heads.task_heads.keys() == stds_per_task.keys()
 
@@ -180,27 +193,26 @@ best_val_loss = math.inf
 best_model_path = f"{training_config.training_data_dir}/best_model.pth"
 
 
-
+loss_fn.to(device)
 
 for epoch in range(training_config.epochs):
     running_tloss = 0.0
     weighed_loss_per_task_train = torch.zeros(
         len(train_dataset.dataset_config.tasks), device=device
     )
+
+    loss_fn.train()
     model.train()
     optimizer.zero_grad()
 
     for _batch, samples in enumerate(training_loader):
         samples.to_(device)
 
-        samples.padding_mask = samples.padding_mask.bool()
+
         model_output = model(samples)
 
-        loss, batch_weighed_loss_per_task_train = multitask_masked_loss(
-            predictions=model_output.regression_predictions,
-            labels=samples.regression_targets,
-            regression_mask=samples.regression_masks,
-        )
+
+        loss, batch_weighed_loss_per_task_train = loss_fn(samples, model_output)
 
         weighed_loss_per_task_train += batch_weighed_loss_per_task_train.detach()
 
@@ -222,44 +234,45 @@ for epoch in range(training_config.epochs):
     weighed_loss_per_task_train = weighed_loss_per_task_train / (_batch + 1)
 
     running_vloss = 0.0
+    running_mean_val_loss = 0.0
+
     weighed_loss_per_task_val = torch.zeros(
         len(train_dataset.dataset_config.tasks), device=device
     )
-
+    
+    loss_fn.eval()
     model.eval()
     with torch.no_grad():
         for _batch, val_samples in enumerate(validation_loader):
 
             val_samples.to_(device)
-            val_samples.padding_mask = val_samples.padding_mask.bool()
 
             val_output = model(val_samples)
 
-            loss, batch_weighed_loss_per_task_val = multitask_masked_loss(
-                predictions=val_output.regression_predictions,
-                labels=val_samples.regression_targets,
-                regression_mask=val_samples.regression_masks,
-            )
+            loss, batch_weighed_loss_per_task_val = loss_fn(val_samples, val_output)
             weighed_loss_per_task_val += batch_weighed_loss_per_task_val
 
             running_vloss += loss.item()
+
+            #val_base_loss, _ = val_loss_fn(val_samples, val_output)
+            #running_mean_val_loss += val_base_loss.item() 
 
         avg_vloss = running_vloss / (_batch + 1)
         weighed_loss_per_task_val = weighed_loss_per_task_val / (_batch + 1)
 
         print(f"Epoch {epoch} Training Loss: {avg_tloss} Validation Loss: {avg_vloss}")
 
-        if avg_vloss < best_val_loss:
-            best_val_loss = avg_vloss
+        if running_vloss < best_val_loss:
+            best_val_loss = running_vloss
             torch.save(model.state_dict(), best_model_path)
-            print(f"  → New best model (val_loss {best_val_loss:.4f}), saving to {best_model_path}")
+            print(f"  - New best model (val_loss {avg_vloss:.4f}), saving to {best_model_path}")
 
 
 
         current_lr = scheduler.get_last_lr()
 
         destandardized_loss_per_task_val = (
-            weighed_loss_per_task_val.cpu().detach().numpy() * stds
+            weighed_loss_per_task_val.cpu().detach().numpy() #* stds
         )
 
         val_dict = dict(
@@ -271,7 +284,7 @@ for epoch in range(training_config.epochs):
         )
 
         destandardized_loss_per_task_train = (
-            weighed_loss_per_task_train.cpu().detach().numpy() * stds
+            weighed_loss_per_task_train.cpu().detach().numpy() #* stds
         )
 
         train_dict = dict(
@@ -282,6 +295,8 @@ for epoch in range(training_config.epochs):
             )
         )
 
+#        task_loss_weights = dict(zip(task_names, loss_fn.log_vars.cpu().detach().numpy().tolist()))
+#
         epoch_loss_dict = {
             "epoch": epoch,
             "validation_loss": avg_vloss,
@@ -289,6 +304,8 @@ for epoch in range(training_config.epochs):
             "task_validation_loss": val_dict,
             "task_train_loss": train_dict,
             "learning_rate": current_lr[0],
+            #"loss_weights": task_loss_weights
+
         }
 
         loss_data.append(epoch_loss_dict)
@@ -361,21 +378,21 @@ train_figs, train_result_report =validation_evaluation_pipeline.output_results(
     output_directory=f"{training_config.training_data_dir}/valset_results", model_name=run_name
 )
 
-test_pipeline_orchestrator = reload_dataset_pipeline(
-    training_config.test_dataset_path,
-    mean_targets=mean_target_per_task,
-    std_targets=std_target_per_task,
-)
-test_dataset = test_pipeline_orchestrator.build()
-test_dataset.expand_embedding_num_atoms(new_max_num_atoms=train_dataset.dataset_config.max_atoms)
-
-
-test_evaluation_pipeline = regression_pipeline(test_dataset)
-test_evaluation_pipeline.evaluate(model)
-figs, result_report = test_evaluation_pipeline.output_results(
-    output_directory=f"{training_config.training_data_dir}/testset_results", model_name=run_name
-)
-
+#test_pipeline_orchestrator = reload_dataset_pipeline(
+#    training_config.test_dataset_path,
+#    mean_targets=mean_target_per_task,
+#    std_targets=std_target_per_task,
+#)
+#test_dataset = test_pipeline_orchestrator.build()
+#test_dataset.expand_embedding_num_atoms(new_max_num_atoms=train_dataset.dataset_config.max_atoms)
+#
+#
+#test_evaluation_pipeline = regression_pipeline(test_dataset)
+#test_evaluation_pipeline.evaluate(model)
+#figs, result_report = test_evaluation_pipeline.output_results(
+#    output_directory=f"{training_config.training_data_dir}/testset_results", model_name=run_name
+#)
+#
 if training_config.wandb_active:
     for figname, figure in figs.items():
         wandb.log({figname: figure})

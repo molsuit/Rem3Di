@@ -78,7 +78,7 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int, load_adjacency_matr
         A = rdmolops.GetAdjacencyMatrix(mol)
 
 
-        confs = [
+        ase_confs = [
             Atoms(
                 positions=conf.GetPositions(),
                 numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],info = {"adjacency_matrix" : A}
@@ -87,7 +87,7 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int, load_adjacency_matr
         ]
 
     else:
-        confs = [
+        ase_confs = [
             Atoms(
                 positions=conf.GetPositions(),
                 numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()]
@@ -97,7 +97,7 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int, load_adjacency_matr
 
 
 
-    return confs
+    return ase_confs, mol
 
 
 def get_relaxed_conformers(

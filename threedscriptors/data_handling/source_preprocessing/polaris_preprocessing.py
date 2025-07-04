@@ -77,7 +77,7 @@ def load_polaris_benchmark(benchmark_name: str):
 def load_polaris_dataset(dataset_name: str, smiles_column, non_task_columns, datasplit="Train"):
 
     dataset = po.load_dataset(dataset_name)
-
+    print(dataset)
     columns = dataset.columns
 
     target_cols = [c for c in columns if c not in non_task_columns]
@@ -89,7 +89,7 @@ def load_polaris_dataset(dataset_name: str, smiles_column, non_task_columns, dat
         # if "Set" in non_task_columns and datasplit is not None:
         #    data_dict = dataset[dataset["Set"] == datasplit]
         # else:
-        print(type(dataset))
+        
 
         set_col = dataset.zarr_data["Set"][:]
 
@@ -100,6 +100,8 @@ def load_polaris_dataset(dataset_name: str, smiles_column, non_task_columns, dat
     smiles = data_dict[smiles_column].squeeze().tolist()
 
     regression_targets = np.array([data_dict[task] for task in target_cols]).T.squeeze()
+
+    print(regression_targets)
 
     smiles, regression_targets, regression_masks = pretreat_polaris_dataset(
         smiles, regression_targets

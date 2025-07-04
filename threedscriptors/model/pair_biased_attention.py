@@ -43,7 +43,7 @@ class PairBiasedSelfAttention(nn.Module):
         # --- pair → per-head bias ----------------------------------------------
         self.ln_pair   = nn.LayerNorm(d_pair)
         self.pair2bias = nn.Linear(d_pair, n_heads, bias=False)
-        nn.init.zeros_(self.pair2bias.weight)        # ← keeps first forward identical
+        #nn.init.zeros_(self.pair2bias.weight)        # ← keeps first forward identical
                                                      #   to baseline encoder
         # --- misc. --------------------------------------------------------------
         self.dropout = nn.Dropout(dropout_p)
@@ -130,5 +130,6 @@ class PairOuterProdUpdate(nn.Module):
         
         ΔP = ΔP_atoms + ΔP_pair
         P = P + 0.5 * (ΔP + ΔP.transpose(1, 2))
+
         return P
 

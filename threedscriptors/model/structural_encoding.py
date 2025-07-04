@@ -29,19 +29,20 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
         positions = sample.atomic_positions
         atom_mask = sample.padding_mask
 
+        mask_pair = ~(atom_mask[:, :, None] | atom_mask[:, None, :])
         # positions (B, N, 3)
         # Calculate the pairwise distance matrix
         distances = torch.cdist(positions, positions)
-
-
+        
         rbf = self.radial_basis(distances)
+  
 
         P0  = self.proj(rbf)
-
-        mask_pair = ~(atom_mask[:, :, None] | atom_mask[:, None, :])
-
+        
         P0 = P0 * mask_pair.unsqueeze(-1)
         P0 = 0.5 * (P0 + P0.transpose(1,2))
+  
+
 
         return ModelOutput(pair_encoding= P0,pair_distances= distances),  mask_pair
 

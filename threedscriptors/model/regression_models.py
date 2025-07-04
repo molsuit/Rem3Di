@@ -164,7 +164,7 @@ class MultiTaskRegressionModel(nn.Module):
     def get_molecular_descriptor(self, sample: Sample) -> torch.Tensor:
         x = self.preprocessor(sample.embeddings)
         x = self.encoder(x, sample.padding_mask)
-        descriptor = self.global_aggregator(x)
+        descriptor = self.global_aggregator(x, sample.padding_mask)
 
         return ModelOutput(molecular_descriptor=descriptor)
 

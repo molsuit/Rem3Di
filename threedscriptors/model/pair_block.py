@@ -14,7 +14,7 @@ class FeedForward(nn.Module):
     def __init__(self, d_model: int, d_hidden: int | None = None, p_drop=0.1):
         super().__init__()
         d_hidden = d_hidden or 4 * d_model          # usual width factor
-        self.proj_in  = nn.Linear(d_model, d_hidden * 2)  # 2x for GEGLU
+        self.proj_in  = nn.Linear(d_model, d_hidden)#* 2)  # 2x for GEGLU
         self.proj_out = nn.Linear(d_hidden, d_model)
         self.dropout  = nn.Dropout(p_drop)
 
@@ -22,7 +22,7 @@ class FeedForward(nn.Module):
         x_in = self.proj_in(x)                      # (…, 2 d_hidden)
         x_g, x_h = x_in.chunk(2, dim=-1)
         x = F.gelu(x_g) * x_h                       # GEGLU
-        return self.proj_out(self.dropout(x))
+        return self.proj_out(self.dropout(x_in))
 
 
 class PairFFN(nn.Module):
@@ -66,6 +66,7 @@ class PairBlock(nn.Module):
         S = S + self.ffn_s(self.ln_s2(S))           # residual 2 (FFN)
 
         # --- pair stream ------------------------------------------------------
+        
         P = self.pair_up(S, P, mask_pair)
         P = self.pair_ffn(P)
 

@@ -220,7 +220,11 @@ class BaseDataset(data.Dataset):
 
             dataset_split = self[slice_indices.start : slice_indices.stop]
             
-            
+
+            print("Splitshapes")
+            print(dataset_split.embeddings.shape)
+            print(dataset_split.regression_targets.shape)
+        
             # Update the dataset config with new number of molecules
             new_dataset_config = self.dataset_config.model_copy(
                 update={"N_molecules": slice_indices.stop - slice_indices.start}
@@ -247,6 +251,7 @@ class BaseDataset(data.Dataset):
 
 
 
+
     def expand_embedding_num_atoms(self, new_max_num_atoms: int):
         # Method can be used to increase the "Sequence length" i.e the number of atoms in a molecule. So that the embeddings do not have to be recalculated.
         # Expand the padding mask and the atomic embeddings to the max dimension.
@@ -266,10 +271,10 @@ class BaseDataset(data.Dataset):
         print(self.padding_mask.shape)
 
         if self.atomic_positions is not None:
-            print(self.atomic_positions.shape)
+
             #self.atomic_positions is (B,N,3)
             self.atomic_positions = F.pad(self.atomic_positions, pad = (0, 0,0, padding_width), value = 0.0)
-            print(self.atomic_positions.shape)
+            
 
         self.dataset_config.max_atoms = new_max_num_atoms
 

@@ -1,4 +1,5 @@
 from math import ceil
+from threedscriptors.configuration.data_config import LabelScalingType
 
 import numpy as np
 import torch
@@ -12,6 +13,8 @@ from threedscriptors.data_handling.data_utils import (
     get_unique_smiles_id_from_smiles_list,
     relax_atoms,
 )
+
+
 from threedscriptors.data_handling.dataset import (
     BaseDataset,
 )
@@ -43,7 +46,7 @@ class DatasetBuilder:
         initial_smiles_list = self.dataset.smiles_list
 
         if dataset_config.N_molecules is None:
-            limit = len(initial_smiles_list)*dataset_config.N_conformers
+            limit = len(initial_smiles_list) * dataset_config.N_conformers
 
         else:
             limit = dataset_config.N_molecules
@@ -52,8 +55,11 @@ class DatasetBuilder:
 
         # Creates the conformal embeddings from smiles
         smiles_list = []
-        index_list = []  # index list describes to which smiles index a datapoint belongs.
+        index_list = (
+            []
+        )  # index list describes to which smiles index a datapoint belongs.
         molecules = []
+        rdkit_mols = []
 
         smiles_counter = 0
         data_points_counter = 0
@@ -74,7 +80,7 @@ class DatasetBuilder:
                         limit - data_points_counter,
                     )  # This ensures that the dataloading does not overshoot the targeted number of molecules
 
-                    embeded_molecules = get_ase_atoms_with_conformers(
+                    embeded_molecules, rd_kit_mol = get_ase_atoms_with_conformers(
                         smiles, N_conformers, dataset_config.load_adjacency_matrix
                     )
                     if len(embeded_molecules) == 0:
@@ -93,6 +99,8 @@ class DatasetBuilder:
                 data_points_counter += N_confs
                 pbar.update(N_confs)
 
+                rdkit_mols.append(rd_kit_mol)
+
                 smiles_counter = smiles_counter + 1
 
         num_molecules = len(molecules)
@@ -104,6 +112,8 @@ class DatasetBuilder:
         self.dataset.molecules = molecules
         self.dataset.smiles_list = smiles_list
         self.dataset.mol_ids = index_list
+
+        self.rd_kit_mols = rdkit_mols
 
     def load_pairwise_chiral_structures_from_smiles(self):
         dataset_config = self.dataset.dataset_config
@@ -119,7 +129,9 @@ class DatasetBuilder:
         smiles_iterator = ListSmilesIterator(initial_smiles_list)
 
         smiles_list = []
-        index_list = []  # index list describes to which smiles index a datapoint belongs.
+        index_list = (
+            []
+        )  # index list describes to which smiles index a datapoint belongs.
         molecules = []
 
         smiles_counter = 0
@@ -236,12 +248,17 @@ class DatasetBuilder:
 
         # correct all data by removing molecules with failed relaxations
 
+        print(failed_relaxations)
+
         if failed_relaxations != []:
             correct_molecule_indices = list(range(0, len(self.dataset.molecules)))
 
             correct_molecule_indices = [
                 i for i in correct_molecule_indices if i not in failed_relaxations
             ]
+
+
+            self.dataset.dataset_config.N_molecules = len(correct_molecule_indices)
 
             self.dataset.molecules = [
                 self.dataset.molecules[i] for i in correct_molecule_indices
@@ -254,21 +271,21 @@ class DatasetBuilder:
                 self.dataset.mol_ids[i] for i in correct_molecule_indices
             ]
 
+
+    
         else:
-            self.dataset.mol_ids = [self.dataset.mol_ids[i] for i in sucessfull_relaxations]
+            self.dataset.mol_ids = [
+                self.dataset.mol_ids[i] for i in sucessfull_relaxations
+            ]
             self.dataset.molecules = [
                 self.dataset.molecules[i] for i in sucessfull_relaxations
             ]
 
         print(f"{len(self.dataset.molecules)} Molecules")
 
-    def calculate_atomic_embeddings(
-        self, calculator: MACECalculator
-    ):
+    def calculate_atomic_embeddings(self, calculator: MACECalculator):
 
-        embedding_size = get_mace_calculator_embedding_dimension(
-            calculator
-        )
+        embedding_size = get_mace_calculator_embedding_dimension(calculator)
 
         only_heavy_atoms = self.dataset.dataset_config.only_heavy_atoms
         # Assert that the mace caluclator of the embeddings and the relaxation are the same?
@@ -299,8 +316,7 @@ class DatasetBuilder:
                 # Slices out only the atoms with atomic number != 1
                 heavy_atoms_indices = np.argwhere(atomic_numbers > 1)
 
-
-                descriptors = descriptors[heavy_atoms_indices,:].squeeze()
+                descriptors = descriptors[heavy_atoms_indices, :].squeeze()
 
                 num_atoms = len(heavy_atoms_indices)
 
@@ -333,16 +349,15 @@ class DatasetBuilder:
                 "Regression Target Array has unexpected numbers of dimensions"
             )
 
-
         regression_targets = torch.Tensor(regression_targets)
         regression_masks = torch.Tensor(regression_masks)
 
-        assert torch.all(torch.any(regression_targets, dim=0)), "There are some empty tasks "
-
+        assert torch.all(
+            torch.any(regression_targets, dim=0)
+        ), "There are some empty tasks "
 
         self.dataset.regression_targets = regression_targets
         self.dataset.regression_masks = regression_masks
-
 
     def add_molecular_descriptor(self, descriptor_calculator):
         # This should be discussed, if this goes to the evaluation or already in the dataset.
@@ -367,67 +382,122 @@ class DatasetBuilder:
         assert self.dataset.molecules is not None
         _, padded_pos, _ = self.dataset.get_padded_positions()
 
-
         if isinstance(padded_pos, np.ndarray):
             padded_pos = torch.from_numpy(padded_pos)
 
         self.dataset.atomic_positions = padded_pos
 
-
-
     def normalize_regression_targets(self, mean_targets, std_targets):
+
+        print("Sizes")
+        print(self.dataset.embeddings.shape)
+        print(self.dataset.regression_masks.shape)
+        print(self.dataset.regression_targets.shape)
+
         assert self.dataset.regression_targets is not None
 
-        dataset_tasks = self.dataset.dataset_config.get_task_name_set()
+        dataset_tasks = self.dataset.dataset_config.get_task_names()
 
         if isinstance(self.dataset.regression_targets, torch.Tensor):
             regression_targets = self.dataset.regression_targets.detach().cpu().numpy()
-
 
         if self.dataset.dataset_config.regression_is_normalized:
             print("Dataset was already normalized")
             return
 
+        log_scaling_mask = np.array(
+            [
+                tc.scaling == LabelScalingType.LOG
+                for tc in self.dataset.dataset_config.tasks
+            ]
+        ).reshape(-1, len(self.dataset.dataset_config.get_task_names()))
+
+        reg_masks = self.dataset.regression_masks.detach().cpu().numpy()
+
+        print(reg_masks.shape)
+        log_mask = np.logical_and(log_scaling_mask, reg_masks)
+
+        print(log_mask.shape)
+
+
+        if not np.all(regression_targets[log_mask] > 0):
+            remove_rows, _ = np.where((log_mask) & (regression_targets <= 0))
+
+            n_rows = self.dataset.embeddings.shape[0]
+            print(self.dataset.embeddings.shape)
+            keep = np.ones(n_rows, dtype=bool)
+            keep[remove_rows] = False
+
+            self.dataset.embeddings = self.dataset.embeddings[keep, :, :]
+            self.dataset.molecules = [
+                m for m, k in zip(self.dataset.molecules, keep) if k
+            ]
+
+            reg_masks = reg_masks[keep,:]
+            log_mask = log_mask[keep,:]
+            regression_targets = regression_targets[keep, :]
+            self.dataset.regression_masks = self.dataset.regression_masks[keep, :]
+            self.dataset.padding_mask = self.dataset.padding_mask[keep, :]
+            self.dataset.atomic_positions = self.dataset.atomic_positions[keep, :, :]
+
+
+            self.dataset.dataset_config.N_molecules = self.dataset.embeddings.shape[0]
+
+
+        assert np.all(regression_targets[log_mask] > 0)
+
+
+
+        regression_targets[log_mask] = np.log(regression_targets[log_mask])
+
+
 
         if mean_targets is None:
-            mean_targets = np.mean(regression_targets, axis=0, where=self.dataset.regression_masks)
+            mean_targets = np.mean(
+                regression_targets, axis=0, where=self.dataset.regression_masks
+            )
 
         else:
             assert list(mean_targets.keys()) == dataset_tasks
             mean_targets = np.array(list(mean_targets.values()))
-            print(mean_targets)
+    
 
         if std_targets is None:
-            std_targets = np.std(regression_targets, axis=0, where=self.dataset.regression_masks)
-            print(std_targets.shape)
+            std_targets = np.std(
+                regression_targets, axis=0, where=self.dataset.regression_masks
+            )
+
         else:
             assert list(std_targets.keys()) == dataset_tasks
             std_targets = np.array(list(std_targets.values()))
-            print(std_targets.shape)
 
-        self.dataset.regression_targets = (regression_targets - mean_targets) / std_targets
+        print(f"Mean Targets {mean_targets}")
+        print(f"Std Targets {std_targets}")
+
+        self.dataset.regression_targets = (
+            regression_targets - mean_targets
+        ) / std_targets
 
         for task, task_mean, task_std in zip(
-            self.dataset.dataset_config.tasks, mean_targets.tolist(), std_targets.tolist(), strict=False
+            self.dataset.dataset_config.tasks,
+            mean_targets.tolist(),
+            std_targets.tolist(),
+            strict=False,
         ):
 
             task.mean = task_mean
             task.std = task_std
 
-
         self.dataset.dataset_config.regression_is_normalized = True
 
         self.dataset.regression_targets = torch.Tensor(self.dataset.regression_targets)
 
-
-
     def add_random_walk_matrices(self):
-        
+
         transition_mats = []
 
         max_atoms = self.dataset.get_max_atoms()
-        assert not self.dataset.dataset_config.only_heavy_atoms 
-
+        assert not self.dataset.dataset_config.only_heavy_atoms
 
         for molecule in self.dataset.molecules:
             assert "adjacency_matrix" in molecule.info.keys()
@@ -436,31 +506,27 @@ class DatasetBuilder:
             A = molecule.info["adjacency_matrix"]
             print(A)
 
-  
-
-
             A_self = A + np.eye(A.shape[0])
-            
+
             deg = A_self.sum(axis=1)
             D_inv = np.diag(1.0 / deg)
             T = D_inv @ A_self
             print(T.shape)
             print()
             ## Calculate the degree matrix
-            #D_inv = 1 / A.sum(axis = 1)
-            ## Invert and multiply 
-            #T = (D_inv[:, None] * A)
+            # D_inv = 1 / A.sum(axis = 1)
+            ## Invert and multiply
+            # T = (D_inv[:, None] * A)
             #
             N_atoms = T.shape[0]
             # Pad
-            T_padded = torch.zeros(size = (max_atoms, max_atoms))
+            T_padded = torch.zeros(size=(max_atoms, max_atoms))
             T_padded[:N_atoms, :N_atoms] = torch.from_numpy(T)
 
-            #Collect
+            # Collect
 
             transition_mats.append(T_padded)
 
-
-        self.dataset.random_walk_transition_matrix = torch.stack(transition_mats, dim = 0)
+        self.dataset.random_walk_transition_matrix = torch.stack(transition_mats, dim=0)
 
         print(self.dataset.random_walk_transition_matrix.shape)
