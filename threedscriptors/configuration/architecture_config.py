@@ -26,6 +26,7 @@ from threedscriptors.model.pooling import MeanPool, AttnPool
 class HeadType(Enum):
     RESIDUAL = "residual"
     FULLY_CONNECTED = "fully_connected"
+    LINEAR = "linear"
 
 
 class Activations(Enum):
@@ -57,6 +58,7 @@ class EncoderConfig(BaseModel):
     attention_layer_config: AttentionLayerConfig
     reload_state_dict: str | None = None
     d_pair: int | None = None
+    d_geo: int| None = None
 
 
 class RegressionHeadConfig(BaseModel):
@@ -260,7 +262,6 @@ class RelativeDistancePositionalEncodingConfig(BaseModel):
         if isinstance(v, RadialBasisFunctionType):
             return v
         elif isinstance(v, str):
-            print("here")
             return RadialBasisFunctionType(v)
 
 

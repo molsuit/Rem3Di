@@ -2,8 +2,14 @@ import numpy as np
 from threedscriptors.data_handling.dataset import BaseDataset
 import matplotlib.pyplot as plt
 import os
-
+import torch 
+from itertools import groupby, combinations, chain 
+from threedscriptors.data_handling.data_utils import rmsd
 from ase.visualize.plot import plot_atoms
+from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature, get_invariant_indices
+from threedscriptors.data_handling.data_utils import get_atom_species_in_smiles
+from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
+
 
 
 class DatasetPostLoadAnalysis():
@@ -18,6 +24,35 @@ class DatasetPostLoadAnalysis():
     def calculate_atomic_descriptor_norms(atomic_descriptors, padding_masks):
         norms = np.linalg.norm(atomic_descriptors, axis = (0,1), where = ~padding_masks)
         return norms
+    
+    def get_dataset_size(self):
+
+        size = self.dataset.embeddings.element_size() * self.dataset.embeddings.nelement()
+
+        return size
+
+
+    def get_invariants_std(self):
+
+        irreps = get_mace_calculator_irrep_signature(self.dataset.dataset_config.embedding_model_config.mace_calc)
+        invariant_indices, _ = get_invariant_indices(irreps)
+
+
+        invariants = self.dataset.embeddings[:,:,invariant_indices]
+
+        std = torch.std(invariants, dim = (0,1))
+
+        plt.figure()
+        plt.hist(std)
+        plt.savefig(f"{self.output_dir}/invariants_std.png")
+
+        bar_std = plt.figure(figsize=(12, 4), dpi=100)
+        plt.bar(np.arange(len(std)),std, width=1,align="edge")
+        plt.xlim([0, len(std)])
+        plt.xlabel("MACE feature dimension")
+        plt.ylabel("Std of each invariant MACE feature dimension")
+        bar_std.savefig(f"{self.output_dir}/embeddings_std.png")
+
 
     def count_samples_per_task(self):
         num_samples = self.dataset.regression_masks.sum(0).tolist()
@@ -34,7 +69,11 @@ class DatasetPostLoadAnalysis():
         stds = np.std(rt, axis = 0, where = rm)
 
         return dict(zip(task_names, means)), dict(zip(task_names, stds))
-    
+
+
+    def get_atom_species(self):
+        smiles_iterator = ListSmilesIterator(self.dataset.smiles_list)
+        return get_atom_species_in_smiles(smiles_iterator)
 
     def plot_relaxed_atoms(self):
         
@@ -79,8 +118,7 @@ class DatasetPostLoadAnalysis():
         assert self.dataset.embeddings.shape[0] == N_samples
         assert N_samples == self.dataset.padding_mask.shape[0]
 
-        print(N_samples) 
-        print(self.dataset.regression_targets.shape)
+ 
         assert N_samples == self.dataset.regression_targets.shape[0]
         assert N_samples == self.dataset.regression_masks.shape[0]
 
@@ -91,8 +129,36 @@ class DatasetPostLoadAnalysis():
 
 
         assert (self.dataset.embeddings[self.dataset.padding_mask.unsqueeze(-1).expand_as(self.dataset.embeddings)] == 0).all()
+
         
+    def check_conformer_distance(self):
+
+        if self.dataset.dataset_config.N_conformers == 1:
+            return
         
+        mol_id_chunks = [list(g) for _, g in groupby(range(len(self.dataset.mol_ids)), key = lambda i : self.dataset.mol_ids[i])]
+
+        global_rmsds = []
+
+        for mol_indices in mol_id_chunks:
+            mols =[ self.dataset.molecules[i] for i in mol_indices]
+            positions = [m.get_positions() for m in mols]
+            
+
+            rmsds = []
+
+            for pos_conf_A, pos_conf_B in combinations(positions,2):
+                rmsds.append(rmsd(pos_conf_A, pos_conf_B))
+
+            global_rmsds.append(rmsds)
+
+        
+
+        flattend_rmsds = list(chain.from_iterable(global_rmsds))
+        rmsd_fig = plt.figure()
+
+        plt.hist(flattend_rmsds)
+        rmsd_fig.savefig(f"{self.output_dir}/rmsd_distribution.png")
 
 
 
@@ -101,9 +167,13 @@ class DatasetPostLoadAnalysis():
         self.plot_regression_target_distribution()
         counts = self.count_samples_per_task()
         mean, stds = self.mean_and_std()
+        size = self.get_dataset_size()
+        atom_species = self.get_atom_species()
+
         #self.plot_relaxed_atoms()
-        print(counts)
-        print(mean)
-        print(stds)
+
+
+        self.check_conformer_distance()
+        self.get_invariants_std()
 
         self.check_dataset_integrity()

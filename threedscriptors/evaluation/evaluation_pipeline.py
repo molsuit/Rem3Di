@@ -13,6 +13,9 @@ from torchmetrics.functional import (
     mean_absolute_error,
 )
 
+
+
+
 from threedscriptors.data_handling.dataset import (
     BaseDataset,
     RegressionDataset,
@@ -40,6 +43,7 @@ from threedscriptors.evaluation.evaluation_utils import (
     evaluate_atomic_descriptors,
     evaluate_molecular_descriptor_on_dataset,
     evaluate_regression_model_on_dataset,
+    clip_and_log_transform
 )
 from threedscriptors.evaluation.regression_analysis import (
     add_regression_head_activations_hooks,
@@ -99,7 +103,7 @@ class DescriptorPCATask(BaseEvalTask):
     def plot(self):
         assert self.reduced_dimensions is not None
         figs = {}
-        figs[f"Descriptor_{type(self.clustering_calculator).__name__}"] = (
+        figs[f"Descriptor_UMAP"] = (
             plot_reduced_dimension(self.reduced_dimensions)
         )
 
@@ -396,9 +400,7 @@ class RegressionTestTask(BaseEvalTask):
             # Average out the mean prediction around conformers
 
         preds = self.predictions
-
         targets = self.dataset.regression_targets
-
         masks = self.dataset.regression_masks.bool()
 
         loss_results = {}
@@ -406,37 +408,29 @@ class RegressionTestTask(BaseEvalTask):
         for task_idx, task in enumerate(self.dataset.dataset_config.tasks):
 
             sliced_preds = preds[masks[:, task_idx].squeeze(), task_idx]
-            print(sliced_preds)
-            
-            rescaled_preds = (sliced_preds * np.double(task.std)) + np.double(task.mean)
-            print(rescaled_preds)
+
+            rescaled_preds = (sliced_preds * task.std) + task.mean
+
             sliced_targets = targets[masks[:, task_idx].squeeze(), task_idx]
             
+
 
             rescaled_targets = (sliced_targets * np.double(task.std)) + np.double(task.mean)
 
             if task.scaling == LabelScalingType.LOG:
-                print("Rescaling")
                 rescaled_preds = torch.exp(rescaled_preds.double())
                 rescaled_targets = torch.exp(rescaled_targets.double())
 
 
+            print(task.task_name)
+            if "LogD" not in task.task_name:
+                print(f"clip and logging {task.task_name}")
+                rescaled_preds = clip_and_log_transform(rescaled_preds)
+                rescaled_targets = clip_and_log_transform(rescaled_targets)
 
-            print(rescaled_targets)
-            fig = plt.figure()
-            plt.hist(rescaled_targets)
-            plt.savefig(f"{task.task_name}_targets.png")
-
-            fig = plt.figure()
-            plt.hist(rescaled_preds)
-            plt.savefig(f"{task.task_name}_preds.png")
-
-
-            print(f"{task.task_name} : {torch.mean((rescaled_preds-rescaled_targets)**2)}")
-
-            mae = mean_absolute_error(rescaled_preds, rescaled_targets)
+            mae = mean_absolute_error(rescaled_targets, rescaled_preds)
             mse = mean_squared_error(rescaled_preds, rescaled_targets)
-            print(mse)
+
             r2 = r2_score(rescaled_preds, rescaled_targets)
             pearson_r = pearson_corrcoef(rescaled_preds, rescaled_targets)
             kendall_tau = kendall_rank_corrcoef(rescaled_preds, rescaled_targets)
@@ -575,16 +569,18 @@ class ChiralPredictionTask(BaseEvalTask):
         print(enantiomer_batched_targets[:2])
         mask = torch.ones_like(mean_predictions)
 
-        unscaled_mean_pred_loss, _ = multitask_masked_loss(
+        unscaled_mean_pred_loss = multitask_masked_loss(
             mean_predictions, enantiomer_targets, mask
         )
 
+        unscaled_mean_pred_loss = unscaled_mean_pred_loss.mean()
+
         cmrt_std = next(
-            [
+            (
                 task.std
                 for task in self.dataset.dataset_config.tasks
                 if task.task_name == "cmrt"
-            ]
+            ), None
         )
 
         print(type(unscaled_mean_pred_loss))
@@ -592,10 +588,11 @@ class ChiralPredictionTask(BaseEvalTask):
 
         mean_pred_loss_destandardized = unscaled_mean_pred_loss * cmrt_std
 
-        unscaled_model_loss, _ = multitask_masked_loss(
+        unscaled_model_loss = multitask_masked_loss(
             model_predictions, enantiomer_targets, mask
         )
 
+        unscaled_model_loss = unscaled_model_loss.mean()
         model_loss_destandardized = unscaled_model_loss * cmrt_std
 
         print(f"Model loss {unscaled_model_loss}")

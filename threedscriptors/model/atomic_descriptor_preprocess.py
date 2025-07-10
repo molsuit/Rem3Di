@@ -13,6 +13,61 @@ from threedscriptors.utils.model_utils import (
     split_invariants_equivariants,
 )
 
+class RMSLayerNorm(nn.Module):
+    def __init__(self, num_channels: int, eps: float = 1e-6):
+        """
+        RMS-style layer norm for equivariant (type-L) blocks.
+        
+        Args:
+          num_channels: number of irreducible blocks C
+          eps: small constant to avoid div/0
+        """
+        super().__init__()
+        # one learnable scale per channel/block
+        self.gamma = nn.Parameter(torch.ones(num_channels, 1))
+        self.eps = eps
+
+    def forward(self, S_e: torch.Tensor, padding_mask : torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+          x: tensor of shape (..., C, D)
+        
+        Returns:
+          normalized tensor of the same shape
+        """
+        # 1) compute per-block L2 norm over the last dim:
+        #    shape: (..., C, 1)
+
+
+        B, N, D = S_e.shape
+        C = D // 3
+
+
+        S_e = S_e.view(B,N,C,3)
+
+        block_norms = torch.linalg.norm(S_e, dim=-1, keepdim=True)
+
+        # 2) compute RMS of those norms *across* the C channels:
+        #    shape: (..., 1, 1)
+        rms = torch.sqrt(
+            torch.mean(block_norms.pow(2), dim=-2, keepdim=True)
+            + self.eps
+        )
+
+        if padding_mask is not None:
+            rms = rms.masked_fill(padding_mask[..., None, None], 1.0)
+
+        # 3) divide each block by the shared rms and apply per-channel scale
+        #    broadcasting gamma over any leading dims and over D
+        out = (S_e / rms) * self.gamma 
+
+        if padding_mask is not None:
+            out = out.masked_fill(padding_mask[..., None, None], 0.0)
+
+        
+        return out.reshape(B,N,D)
+    
+
 
 class AtomicDescriptorPreprocess(nn.Module):
     """
@@ -66,6 +121,8 @@ class AtomicDescriptorPreprocess(nn.Module):
             invariants - self.mean_inv_atomic_embedding
         ) / self.std_inv_atomic_embedding
 
+
+
         invariants = invariants.float()
         return invariants
 
@@ -77,11 +134,13 @@ class InvariantsFilter(AtomicDescriptorPreprocess):
 
 
 
-    def forward(self, atomic_embedding):
+    def forward(self, atomic_embedding, padding_mask):
 
         invariants = remove_equivariants(atomic_embedding, self.invariant_indices)
 
-        return self.rescale_invariant(invariants)
+        invariants = self.rescale_invariant(invariants)
+        invariants = invariants * (~padding_mask[..., None]).float()
+        return invariants
 
 
 class PseudoscalarGenerator(AtomicDescriptorPreprocess):
@@ -90,8 +149,6 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
         super().__init__(embedding_preprocess_config)
 
         self.in_irreps = get_equivariant_irreps(self.config.input_irreps)
-        print(self.in_irreps)
-
 
         # 1) cross-product: (1o ⊗ 1o) → 1e
         self.tp_cross = o3.TensorProduct(
@@ -116,51 +173,50 @@ class PseudoscalarGenerator(AtomicDescriptorPreprocess):
             shared_weights=True,
             irrep_normalization = "component")
 
-        self.register_buffer(
-            "equivariant_scale_factor",
-            torch.ones((1, 1, self.config.input_equivariant_dimension)),
-            persistent=True,
-        )
 
+        self.rms_norm = RMSLayerNorm(self.in_irreps.num_irreps)
+        self.ln = nn.LayerNorm(self.config.output_irreps_dim, dtype=torch.float32)
 
-        self.var_norm = VarianceNormalization(self.config.pseudoscalar_dimension)
-
-
-
-
-
-
-    def register_equivariant_scale(self, equivariant_scale_factor):
-
-        assert torch.all(self.equivariant_scale_factor == torch.ones((1, 1, self.config.input_equivariant_dimension))), "Equivariant scale buffer has already been set, and can not be overwritten"
-
-        self.equivariant_scale_factor = equivariant_scale_factor
+        #for p in self.tp_cross.parameters():
+        #    p.requires_grad_(False)  
+#
+        #for p in self.tp_dot.parameters():
+        #    p.requires_grad_(False)
 
 
 
-
-    def forward(self, atomic_embeddings):
+    def forward(self, atomic_embeddings, padding_mask):
 
 
         invariant_features, equivariant_features = split_invariants_equivariants(atomic_embeddings, self.invariant_indices)
 
         invariant_features = self.rescale_invariant(invariant_features)
 
-        equivariant_features = equivariant_features * self.equivariant_scale_factor
+        
+
+
+        
+        equivariant_features = self.rms_norm(equivariant_features, padding_mask)
+        #
 
         cross = self.tp_cross(equivariant_features, equivariant_features)  # v₂ x v₃
-
         chi = self.tp_dot(equivariant_features, cross)  # v₁ · (v₂ x v₃)
+        
 
-        #chi = self.var_norm(chi)
-        chi = chi.float()
+        if padding_mask is not None:
+            chi   = chi * (~padding_mask[..., None]).float()
+
+        chi = chi.to(torch.float32)
+
+        atomic_descriptors = torch.cat((invariant_features.float(), chi.float()), dim = -1)
+
+        #self.ln.to(torch.float32)
 
 
+        #atomic_descriptors = self.ln(atomic_descriptors)
 
-        atomic_descriptors = torch.cat((invariant_features, chi), dim = -1)
 
-
-        return atomic_descriptors
+        return atomic_descriptors 
 
 
 

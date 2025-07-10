@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn as nn
 from torch import Tensor
-
+from threedscriptors.model.structural_encoding import RadialFilter
 
 class PairBiasedSelfAttention(nn.Module):
     """
@@ -43,7 +43,7 @@ class PairBiasedSelfAttention(nn.Module):
         # --- pair → per-head bias ----------------------------------------------
         self.ln_pair   = nn.LayerNorm(d_pair)
         self.pair2bias = nn.Linear(d_pair, n_heads, bias=False)
-        #nn.init.zeros_(self.pair2bias.weight)        # ← keeps first forward identical
+        nn.init.zeros_(self.pair2bias.weight)        # ← keeps first forward identical
                                                      #   to baseline encoder
         # --- misc. --------------------------------------------------------------
         self.dropout = nn.Dropout(dropout_p)
@@ -95,41 +95,36 @@ class PairBiasedSelfAttention(nn.Module):
 
 
 class PairOuterProdUpdate(nn.Module):
-    def __init__(self, d_model: int, d_pair: int):
+    def __init__(self, d_model: int, d_pair: int, d_geo: int):
         super().__init__()
         # atom → pair part
         self.W_L = nn.Linear(d_model, d_pair, bias=False)
         self.W_R = nn.Linear(d_model, d_pair, bias=False)
 
+        self.p_geo_filter = RadialFilter(d_geo, d_pair)
 
         self.pair_ffn = nn.Sequential(
                 nn.Linear(d_pair, d_pair),
                 nn.SiLU(),                     # non-linearity
                 nn.Linear(d_pair, d_pair)
             )
-        # ReZero-style gate so the first forward pass is unchanged
-        self.gate = nn.Parameter(torch.zeros(1))
 
-    def forward(self, S, P, mask_pair):
-        # -------- atom-driven term ----------------------------------------
+        self.layer_norm = nn.LayerNorm(d_pair)
+
+
+    def forward(self, S, P, p_geo, mask_pair):
+        
+        
+        # The outer product of atomic descriptors thats gated by the rbf 
         L = self.W_L(S)
         R = self.W_R(S)
-        ΔP_atoms = L.unsqueeze(2) * R.unsqueeze(1)   # (B,N,N,d_pair)
-        ΔP_atoms = ΔP_atoms * mask_pair[..., None]
 
-
-        ## here ffn
-
-        # -------- pair-driven term ----------------------------------------
-
-        ΔP_pair = self.pair_ffn(P)               # (B,N,N,d_pair)
-        ΔP_pair = torch.sigmoid(self.gate) * ΔP_pair
-
-
-        # -------- merge, symmetrise, residual -----------------------------
+        delta_outer_product = torch.sigmoid(self.p_geo_filter(p_geo)) * (L.unsqueeze(2) * R.unsqueeze(1))   # (B,N,N,d_pair)
         
-        ΔP = ΔP_atoms + ΔP_pair
-        P = P + 0.5 * (ΔP + ΔP.transpose(1, 2))
+
+        P = P + 0.5 * (delta_outer_product+delta_outer_product.transpose(1,2))
+
+        P = P * mask_pair.unsqueeze(-1)
 
         return P
 

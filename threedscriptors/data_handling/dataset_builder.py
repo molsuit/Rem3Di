@@ -13,7 +13,7 @@ from threedscriptors.data_handling.data_utils import (
     get_unique_smiles_id_from_smiles_list,
     relax_atoms,
 )
-
+from rdkit import Chem 
 
 from threedscriptors.data_handling.dataset import (
     BaseDataset,
@@ -22,15 +22,14 @@ from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 from threedscriptors.utils.model_utils import get_mace_calculator_embedding_dimension
 
 
+
+
 class DatasetBuilder:
     def __init__(self, dataset: BaseDataset):
         self.dataset = dataset
 
     def add_smiles_data(self, smiles):
         smiles_list = smiles
-
-        # if self.dataset.dataset_config.N_molecules is not None:
-        #    assert self.dataset.dataset_config.N_molecules == len(smiles_list)
 
         self.dataset.smiles_list = smiles_list
         self.dataset.mol_ids = get_unique_smiles_id_from_smiles_list(smiles_list)
@@ -93,7 +92,10 @@ class DatasetBuilder:
                     continue
 
                 N_confs = len(embeded_molecules)
-                smiles_list.extend([smiles] * N_confs)
+
+
+                canonical_smiles = Chem.CanonSmiles(smiles)
+                smiles_list.extend([canonical_smiles] * N_confs)
                 index_list.extend([smiles_counter] * N_confs)
                 molecules.extend(embeded_molecules)
                 data_points_counter += N_confs
@@ -164,8 +166,8 @@ class DatasetBuilder:
 
                     N_conformers_per_enantiomer = ceil(total_N_conformers / 2)
 
-                    embeded_molecules_0 = get_ase_atoms_with_conformers(
-                        smiles_0, N_conformers_per_enantiomer
+                    embeded_molecules_0, _ = get_ase_atoms_with_conformers(
+                        smiles_0, N_conformers_per_enantiomer, load_adjacency_matrix=dataset_config.load_adjacency_matrix
                     )
                     if len(embeded_molecules_0) == 0:
                         raise ValueError(
@@ -191,7 +193,10 @@ class DatasetBuilder:
 
                 N_confs_per_enantionmer = len(embeded_molecules_0)
                 N_total_confs = 2 * N_confs_per_enantionmer
+                
 
+                smiles_0 = Chem.CanonSmiles(smiles_0)
+                smiles_1 = Chem.CanonSmiles(smiles_1)
                 smiles_list.extend(
                     [smiles_0] * N_confs_per_enantionmer
                     + [smiles_1] * N_confs_per_enantionmer
@@ -504,15 +509,13 @@ class DatasetBuilder:
 
             # Get the adjacency matrix,
             A = molecule.info["adjacency_matrix"]
-            print(A)
-
             A_self = A + np.eye(A.shape[0])
 
             deg = A_self.sum(axis=1)
             D_inv = np.diag(1.0 / deg)
             T = D_inv @ A_self
-            print(T.shape)
-            print()
+
+
             ## Calculate the degree matrix
             # D_inv = 1 / A.sum(axis = 1)
             ## Invert and multiply

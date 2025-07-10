@@ -166,10 +166,6 @@ class ModelBuilder:
                 mean_atomic_embedding, std_atomic_embedding
             )
 
-        if equivariant_scale_factor is not None:
-
-            preprocessor.register_equivariant_scale(equivariant_scale_factor)
-
         return preprocessor
 
     def build_encoder(self):

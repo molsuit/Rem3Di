@@ -42,15 +42,13 @@ non_task_columns = {
 }
 
 
-load_dataset = "antiviral_potency"
+load_dataset = "antiviral_admet"
 # Load the benchmark from polarishub
 smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
     dataset_registry[load_dataset],
     smiles_column=smiles_column[load_dataset],
-    non_task_columns=non_task_columns[load_dataset],datasplit="Train"
+    non_task_columns=non_task_columns[load_dataset],datasplit="Test"
 )
-
-
 
 
 dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}"
@@ -58,16 +56,17 @@ dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptor
 MACE_PATH = (
     "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
 )
+
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
-    model_name="mace_off24_medium",
+    model_name="mace_off_24_medium",
     model_path=MACE_PATH,
     enable_cueq=True,
     device="cuda",
 )
 
 dataset_config = DatasetConfig(
-    N_molecules=1031,
+    N_molecules=1000,
     dataset_type=RegressionDatasetwithPositions,#RegressionDatasetwithRandomWalks,
     BFGS_tol=0.1,
     BFGS_max_steps=500,
@@ -76,7 +75,7 @@ dataset_config = DatasetConfig(
     max_atoms=None,
     tasks=tasks,
     only_heavy_atoms=False,
-    load_adjacency_matrix=True, 
+    load_adjacency_matrix=False, 
     dataset_name= load_dataset
 )
 
@@ -93,26 +92,25 @@ dataset = pipeline.build()
 
 
 store_data_to_disk(dataset, f"{dataset_directory}_full")
+
+
+
+#dataset_split = [DatasetSplit.TRAIN, DatasetSplit.VALIDATION]
+#splitting_ratio = [0.8,0.2]
 #
-from threedscriptors.data_handling.data_utils import get_atom_species_in_smiles
-##
-atom_type_set = get_atom_species_in_smiles(ListSmilesIterator(dataset.smiles_list))
-
-dataset_split = [DatasetSplit.TRAIN, DatasetSplit.VALIDATION]
-splitting_ratio = [0.8,0.2]
+#split_datasets = dataset.split_dataset(splitting_ratio, dataset_split)
 #
-split_datasets = dataset.split_dataset(splitting_ratio, dataset_split)
-##
-
-train_dataset = split_datasets[0]
-store_data_to_disk(train_dataset, f"{dataset_directory}_train")
-
-validation_dataset = split_datasets[1]
-store_data_to_disk(validation_dataset, f"{dataset_directory}_valid")
-
-
-DatasetPostLoadAnalysis(dataset, f"{dataset_directory}_full").run()
-DatasetPostLoadAnalysis(train_dataset, f"{dataset_directory}_train").run()
-DatasetPostLoadAnalysis(validation_dataset,f"{dataset_directory}_valid").run()
-
-print(dataset.embeddings.element_size() * dataset.embeddings.nelement())
+#
+#train_dataset = split_datasets[0]
+#store_data_to_disk(train_dataset, f"{dataset_directory}_train")
+#
+#
+#
+#validation_dataset = split_datasets[1]
+#store_data_to_disk(validation_dataset, f"{dataset_directory}_valid")
+#
+#
+#DatasetPostLoadAnalysis(dataset, f"{dataset_directory}_full").run()
+#DatasetPostLoadAnalysis(train_dataset, f"{dataset_directory}_train").run()
+#DatasetPostLoadAnalysis(validation_dataset,f"{dataset_directory}_valid").run()
+#

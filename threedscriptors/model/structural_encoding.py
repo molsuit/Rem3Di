@@ -7,6 +7,19 @@ from threedscriptors.configuration.architecture_config import RadialBasisFunctio
 
 from threedscriptors.model.model_output import ModelOutput
 
+
+class RadialFilter(nn.Module):
+    def __init__(self, n_rad, out_dim, hidden=64):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(n_rad, hidden), nn.SiLU(),
+            nn.Linear(hidden, out_dim)
+        )
+    def forward(self, p_geo):                      # (N, N, n_rad)
+        return self.mlp(p_geo) 
+
+
+
 class PairDistanceMatrixEncodingBlock(nn.Module):
 
     def __init__(self, N_radial_basis_functions: int, distance_cutoff: float, d_projection: int, basis_function_type = RadialBasisFunctionType):
@@ -33,7 +46,7 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
         # positions (B, N, 3)
         # Calculate the pairwise distance matrix
         distances = torch.cdist(positions, positions)
-        
+    
         rbf = self.radial_basis(distances)
   
 
@@ -42,9 +55,7 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
         P0 = P0 * mask_pair.unsqueeze(-1)
         P0 = 0.5 * (P0 + P0.transpose(1,2))
   
-
-
-        return ModelOutput(pair_encoding= P0,pair_distances= distances),  mask_pair
+        return P0, rbf,  mask_pair
 
 
 

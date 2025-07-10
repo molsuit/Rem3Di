@@ -11,7 +11,7 @@ from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
 
-
+from threedscriptors.training.training_utils import cosine_matrix
 from threedscriptors.data_handling.dataset_analysis import DatasetPostLoadAnalysis
 import wandb
 from threedscriptors.configuration.architecture_config import (
@@ -20,7 +20,7 @@ from threedscriptors.configuration.architecture_config import (
 from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.data_handling.sample import sample_collate_fn
-from threedscriptors.evaluation.training_evaluation import regression_pipeline
+from threedscriptors.evaluation.training_evaluation import regression_pipeline, chiral_regression_pipeline
 from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.training.regression_training import multitask_masked_loss, DynamicallyWeighedMultitaskLoss, BaseMultitaskLoss
 
@@ -61,17 +61,17 @@ os.makedirs(training_data_dir)
 
 training_config = TrainingConfig(
     batch_size=64,
-    epochs=100,
+    epochs=400,
     learning_rate=1e-5,
     weight_decay=1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    train_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_train",
-    validation_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_valid",
-    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_testset_full",
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_potency",
+    train_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_train",
+    validation_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_valid",
+    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_full",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_admet",
     normalized_targets=True,
 )
 
@@ -83,13 +83,17 @@ architecture_config = pyaml.parse_yaml_file_as(
 train_pipeline_orchestrator = reload_dataset_pipeline(
     training_config.train_dataset_path,
 )
+
+
+
+
 train_dataset = train_pipeline_orchestrator.build()
+
 mean_embeddings, std_embeddings, equivariant_scale_factor = (
     train_dataset.get_atomic_embedding_normalization_constants(
         input_irreps=architecture_config.embedding_preprocess_config.input_irreps
     )
 )
-
 
 training_config.total_steps = len(train_dataset) * training_config.epochs
 
@@ -106,12 +110,16 @@ valid_pipeline_orchestrator = reload_dataset_pipeline(
 )
 valid_dataset = valid_pipeline_orchestrator.build()
 
-da_train = DatasetPostLoadAnalysis(train_dataset, output_dir= f"{training_config.training_data_dir}/trainset_results")
 
-da_valid = DatasetPostLoadAnalysis(valid_dataset, output_dir= f"{training_config.training_data_dir}/validset_results")
+print(set(set(train_dataset.smiles_list) & set(valid_dataset.smiles_list)))
 
-da_train.run()
-da_valid.run()
+
+#da_train = DatasetPostLoadAnalysis(train_dataset, output_dir= f"{training_config.training_data_dir}/trainset_results")
+#
+#da_valid = DatasetPostLoadAnalysis(valid_dataset, output_dir= f"{training_config.training_data_dir}/validset_results")
+#
+#da_train.run()
+#da_valid.run()
 
 training_loader = DataLoader(
     train_dataset,
@@ -133,7 +141,7 @@ validation_loader = DataLoader(
 mb = ModelBuilder(architecture_config=architecture_config)
 model = mb.build_model(
     mean_atomic_embedding=mean_embeddings,
-    std_atomic_embedding=std_embeddings,  # equivariant_scale_factor= equivariant_scale_factor
+    std_atomic_embedding=std_embeddings
 )
 
 
@@ -156,11 +164,9 @@ if training_config.wandb_active:
         config=config,
     )
 
-    wandb.watch(models=[model.preprocessor,model.multitask_heads], log="all", log_freq=30)
+    #wandb.watch(models=[model.preprocessor,model.multitask_heads], log="all", log_freq=30)
 
     
-
-
 model.to(device)
 
 
@@ -170,6 +176,11 @@ num_opt_steps = training_config.epochs * len(training_loader)
 #loss_fn = DynamicallyWeighedMultitaskLoss(N_tasks = len(train_dataset.dataset_config.tasks))
 
 loss_fn = BaseMultitaskLoss()
+
+
+
+
+
 
 optimizer = optim.AdamW(
     [{"params" : model.parameters(), "lr" : training_config.learning_rate, "weight_decay" : training_config.weight_decay},
@@ -195,6 +206,20 @@ best_model_path = f"{training_config.training_data_dir}/best_model.pth"
 
 loss_fn.to(device)
 
+
+shared_parameters = [p for p in model.encoder.parameters() if p.requires_grad]
+
+
+
+rows, cols = torch.tril_indices(row=len(task_names), col=len(task_names), offset=-1)
+
+
+task_pair_indices = torch.nonzero(torch.tril(torch.ones((len(task_names),len( task_names))),-1))
+
+map_task_to_sim_dict = {idx : (task_names[p[0]],task_names[p[1]]) for idx, p in enumerate(task_pair_indices)}
+
+full_training_grad_alignment = []
+
 for epoch in range(training_config.epochs):
     running_tloss = 0.0
     weighed_loss_per_task_train = torch.zeros(
@@ -205,6 +230,8 @@ for epoch in range(training_config.epochs):
     model.train()
     optimizer.zero_grad()
 
+    #grad_alignment_epoch = []
+
     for _batch, samples in enumerate(training_loader):
         samples.to_(device)
 
@@ -214,13 +241,22 @@ for epoch in range(training_config.epochs):
 
         loss, batch_weighed_loss_per_task_train = loss_fn(samples, model_output)
 
+
+        #grad_cosine_matrix = cosine_matrix(batch_weighed_loss_per_task_train, shared_parameters)
+        
+        #grad_alignment_epoch.append(grad_cosine_matrix[rows, cols].detach().cpu())
+
         weighed_loss_per_task_train += batch_weighed_loss_per_task_train.detach()
 
+
         loss.backward()
+
 
         torch.nn.utils.clip_grad_norm_(
             model.parameters(), max_norm=training_config.max_grad_norm
         )
+
+
 
         optimizer.step()
         scheduler.step()
@@ -240,6 +276,7 @@ for epoch in range(training_config.epochs):
         len(train_dataset.dataset_config.tasks), device=device
     )
     
+
     loss_fn.eval()
     model.eval()
     with torch.no_grad():
@@ -296,7 +333,17 @@ for epoch in range(training_config.epochs):
         )
 
 #        task_loss_weights = dict(zip(task_names, loss_fn.log_vars.cpu().detach().numpy().tolist()))
+#       
+
+        #grad_alignment_epoch = torch.stack(grad_alignment_epoch, dim = -1)
+        #print(f"Gradalginemnet shape {grad_alignment_epoch.shape}")
+        #full_training_grad_alignment.append(grad_alignment_epoch)
+
 #
+        task_pair_string_list = [str(v) for v in map_task_to_sim_dict.values() ]
+        #alignment_dict = dict(zip(task_pair_string_list, grad_alignment_epoch.#mean(dim=0)))
+
+
         epoch_loss_dict = {
             "epoch": epoch,
             "validation_loss": avg_vloss,
@@ -304,6 +351,7 @@ for epoch in range(training_config.epochs):
             "task_validation_loss": val_dict,
             "task_train_loss": train_dict,
             "learning_rate": current_lr[0],
+            #"grad_alignment": alignment_dict
             #"loss_weights": task_loss_weights
 
         }
@@ -314,10 +362,61 @@ for epoch in range(training_config.epochs):
             wandb.log(epoch_loss_dict)
 
 
-# undo the normalization ??
+
+#
+#
+#print(map_task_to_sim_dict)
+#
+#
+#cosine_sim_dict = {v : [] for v in map_task_to_sim_dict.values()}
+#print(cosine_sim_dict)
+#
+#
+#full_training_grad_alignment = torch.stack(full_training_grad_alignment)
+#print(full_training_grad_alignment.shape)
+#
+#
+#import matplotlib.pyplot as plt
+#
+#
+#
+#times = list(range(training_config.epochs))
+#
+#for i, task_pair in map_task_to_sim_dict.items():
+#
+#
+#    task_pair_data= full_training_grad_alignment[:,i,:].squeeze()
+#    
+#
+#    print(task_pair_data.shape)
+#    print(times)
+#
+#    fig, ax = plt.subplots()
+#
+#    fig.set_figwidth(20.)
+
+#    ax.violinplot(task_pair_data.T, positions=times, widths=0.8, #showmeans=False, showextrema=True, showmedians=True)
+#    ax.set_xlabel("Time")
+#    ax.set_ylabel("Cosine Similarity of gradients")
+#    ax.set_title(f"Distribution grad cosine sim over training time {task_pair}")
+
+#    fig.savefig(f"{training_config.training_data_dir}/grad_tasks_cosine_sim_{str#(task_pair)}.png")
+#
+#
+#    print(task_pair)
+#    ratio_0 = (task_pair_data < 0.0).float().mean()
+#    ratio_0_1 = (task_pair_data < -0.1).float().mean() 
+#    print(f"Smaller 0.0  {ratio_0}")
+#    print(f"Smaller -0.1  {ratio_0_1}")
+#
+#
+#
+#
+#
+## undo the normalization ??
 final_loss = avg_vloss
 print(final_loss)
-
+#
 print("Loading best model from", best_model_path)
 model.load_state_dict(torch.load(best_model_path, map_location=device))
 model.eval()
@@ -378,21 +477,21 @@ train_figs, train_result_report =validation_evaluation_pipeline.output_results(
     output_directory=f"{training_config.training_data_dir}/valset_results", model_name=run_name
 )
 
-#test_pipeline_orchestrator = reload_dataset_pipeline(
-#    training_config.test_dataset_path,
-#    mean_targets=mean_target_per_task,
-#    std_targets=std_target_per_task,
-#)
-#test_dataset = test_pipeline_orchestrator.build()
-#test_dataset.expand_embedding_num_atoms(new_max_num_atoms=train_dataset.dataset_config.max_atoms)
-#
-#
-#test_evaluation_pipeline = regression_pipeline(test_dataset)
-#test_evaluation_pipeline.evaluate(model)
-#figs, result_report = test_evaluation_pipeline.output_results(
-#    output_directory=f"{training_config.training_data_dir}/testset_results", model_name=run_name
-#)
-#
+test_pipeline_orchestrator = reload_dataset_pipeline(
+    training_config.test_dataset_path,
+    mean_targets=mean_target_per_task,
+    std_targets=std_target_per_task,
+)
+test_dataset = test_pipeline_orchestrator.build()
+test_dataset.expand_embedding_num_atoms(new_max_num_atoms=train_dataset.dataset_config.max_atoms)
+
+
+test_evaluation_pipeline = regression_pipeline(test_dataset)
+test_evaluation_pipeline.evaluate(model)
+figs, result_report = test_evaluation_pipeline.output_results(
+    output_directory=f"{training_config.training_data_dir}/testset_results", model_name=run_name
+)
+
 if training_config.wandb_active:
     for figname, figure in figs.items():
         wandb.log({figname: figure})

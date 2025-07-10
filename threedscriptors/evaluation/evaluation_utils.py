@@ -46,10 +46,7 @@ def evaluate_regression_model_on_dataset(
         for batch_idx, samples in enumerate(dataloader):
             samples.to_(device)
 
-            samples.padding_mask = samples.padding_mask.bool()
-
             output : ModelOutput = model(samples)
-
 
             regression_predictions[
                 batch_idx * batch_size : (batch_idx + 1) * batch_size, :
@@ -81,7 +78,6 @@ def evaluate_molecular_descriptor_on_dataset(
         for batch_idx, samples in enumerate(dataloader):
             samples.to_(device)
 
-            samples.padding_mask = samples.padding_mask.bool()
             output: ModelOutput = model.get_molecular_descriptor(samples)
 
             descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = output.molecular_descriptor
@@ -232,3 +228,19 @@ def capacity_diagnostics(Z, bins=128, dead_thr=0.2, eps=1e-12):
     eig = np.sort(eigvals)[::-1]           # descending
 
     return H_tot, utilisation, dead_dims, eig, d_eff
+
+
+
+def clip_and_log_transform(y: torch.Tensor) -> torch.Tensor:
+    """
+    Clip to a detection limit and transform to log10 scale.
+
+    Parameters
+    ----------
+    y : torch.Tensor
+        The tensor to be clipped and transformed.
+    """
+    # Clip negative values to zero
+    y_clipped = torch.clamp(y, min=0.0)
+    # Log10 transform with +1 offset for zeros
+    return torch.log10(y_clipped + 1.0)

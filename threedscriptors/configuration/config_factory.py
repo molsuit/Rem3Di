@@ -7,7 +7,8 @@ from threedscriptors.configuration.architecture_config import (
     EmbeddingPreprocessConfig,
     EncoderConfig,
     GlobalAggregatorConfig,
-    RelativeDistancePositionalEncodingConfig,
+    RelativeDistancePositionalEncodingConfig, 
+    RandomWalkPositionalEncoding,
     RegressionHeadConfig,
 )
 from threedscriptors.configuration.data_config import DatasetConfig
@@ -24,7 +25,7 @@ class ConfigFactory:
         attention_layer_config: AttentionLayerConfig,
         encoder_config: EncoderConfig,
         global_aggregator_config: GlobalAggregatorConfig,
-        positional_encoding_config: RelativeDistancePositionalEncodingConfig | None = None
+        positional_encoding_config: RelativeDistancePositionalEncodingConfig | RandomWalkPositionalEncoding | None = None
     ):
         self.dataset_config = dataset_config
         self.embedding_preprocessor_config = embedding_preprocessor_config
@@ -85,6 +86,13 @@ class ConfigFactory:
 
         if self.positional_encoding_config is not None:
             self.encoder_config.d_pair = self.positional_encoding_config.d_projection
+
+            if isinstance(self.positional_encoding_config, RandomWalkPositionalEncoding):
+                self.encoder_config.d_geo = self.positional_encoding_config.k_hop_random_walk
+
+            elif isinstance(self.positional_encoding_config, RelativeDistancePositionalEncodingConfig):
+                self.encoder_config.d_geo = self.positional_encoding_config.N_radial_basis_functions
+
 
 
     def create_architecture_config_template(

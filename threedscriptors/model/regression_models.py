@@ -99,7 +99,7 @@ class MultitaskHeads(nn.Module):
         head.add_module("initial_norm", nn.LayerNorm(head_config.input_dimensions))
 
         dimensions = [head_config.input_dimensions, *head_config.hidden_dimensions]
-
+        idx = 0
         for idx, (in_dim, out_dim) in enumerate(pairwise(dimensions)):
             if head_config.head_type == HeadType.FULLY_CONNECTED:
                 head.add_module(
@@ -162,7 +162,7 @@ class MultiTaskRegressionModel(nn.Module):
         return out
 
     def get_molecular_descriptor(self, sample: Sample) -> torch.Tensor:
-        x = self.preprocessor(sample.embeddings)
+        x = self.preprocessor(sample.embeddings,sample.padding_mask)
         x = self.encoder(x, sample.padding_mask)
         descriptor = self.global_aggregator(x, sample.padding_mask)
 
@@ -209,15 +209,14 @@ class StructureBasedMultitaskRegressionModel(nn.Module):
 
     def get_molecular_descriptor(self, sample: Sample):
 
-        S = self.preprocessor(sample.embeddings)
+        S = self.preprocessor(sample.embeddings, sample.padding_mask)
 
-        structure_encoding, pair_masks = self.structure_encoding_block(
+        P0, p_geo, pair_masks = self.structure_encoding_block(
             sample
         )
 
-        P0 = structure_encoding.pair_encoding
 
-        S, P = self.encoder(S, sample.padding_mask, P0, pair_masks)
+        S, P = self.encoder(S, sample.padding_mask, P0, p_geo, pair_masks)
 
         molecular_descriptor = self.global_aggregator(S, sample.padding_mask)
 

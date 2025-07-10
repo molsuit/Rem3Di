@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from threedscriptors.configuration.data_config import TaskConfig
+from threedscriptors.configuration.data_config import TaskConfig, LabelScalingType
 
 
 def get_one_hot_columns_encodings(columns: list):
@@ -34,7 +34,7 @@ def get_task_configs(aux_data: dict) -> TaskConfig:
     aux_data_dim = sum([v.shape[1] if v.ndim == 2 else 1 for v in aux_data.values()])
 
     task = TaskConfig(
-        task_name="cmrt", has_auxillary_data=True, auxillary_data_dimension=aux_data_dim
+        task_name="cmrt", has_auxillary_data=True, auxillary_data_dimension=aux_data_dim, scaling= LabelScalingType.LOG
     )
 
     return [task]
@@ -67,7 +67,7 @@ def load_cmrt_data(dataset_filepath: str, single_column_type=False):
 
     smiles = df["SMILES"]
 
-    regression_targets = np.log(df["RT"].to_numpy() * df["Speed"].to_numpy()).reshape(
+    regression_targets = (df["RT"].to_numpy() * df["Speed"].to_numpy()).reshape(
         -1, 1
     )
     regression_masks = np.ones_like(

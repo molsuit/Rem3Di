@@ -14,7 +14,6 @@ from rdkit.Chem import rdmolops
 from rdkit2ase import rdkit2ase
 
 
-
 if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
@@ -95,7 +94,7 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int, load_adjacency_matr
             for conf in mol.GetConformers()
         ]
 
-
+    
 
     return ase_confs, mol
 
@@ -238,19 +237,38 @@ def compute_splits(size: int, ratios: Sequence[float], split_interval) -> list[s
     """Return slice objects for each split boundary."""
     raw_counts = (np.asarray(ratios) * size).astype(int)
 
-    print(raw_counts)
-
     base = (raw_counts // split_interval).astype(int) * split_interval
 
     leftover = (size - base.sum()) // split_interval
 
     base[0] += leftover* split_interval
 
-    print(base)
     # Fix any rounding drift so the slices cover the full length
 
     offsets = np.cumsum(np.insert(base, 0, 0))
-    print(offsets)
+
     return [slice(offsets[i], offsets[i + 1]) for i in range(len(ratios))]
 
 
+def rmsd(A, B):
+    """
+    Compute RMSD between two point sets A and B (shape: Nx3).
+    Centers each, finds optimal rotation, then returns RMSD.
+    """
+    # center
+    A_cent = A - A.mean(axis=0)
+    B_cent = B - B.mean(axis=0)
+
+    # covariance
+    C = A_cent.T @ B_cent
+
+    # SVD
+    V, S, Wt = np.linalg.svd(C)
+
+    # ensure right‐handed coordinate system
+    d = np.sign(np.linalg.det(V @ Wt))
+    U = V @ np.diag([1,1,d]) @ Wt
+
+    # rotated A and RMSD
+    A_rot = A_cent @ U
+    return np.sqrt(((A_rot - B_cent)**2).sum() / A.shape[0])

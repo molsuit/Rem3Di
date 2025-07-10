@@ -74,15 +74,15 @@ class BaseDataset(data.Dataset):
 
     def to_torch(self):
         if self.embeddings is not None:
-            self.embeddings = torch.Tensor(self.embeddings)
+            self.embeddings = torch.from_numpy(self.embeddings)
         if self.padding_mask is not None:
-            self.padding_mask = torch.Tensor(self.padding_mask)
+            self.padding_mask = torch.from_numpy(self.padding_mask)
         if self.regression_masks is not None:
-            self.regression_masks = torch.Tensor(self.regression_masks)
+            self.regression_masks = torch.from_numpy(self.regression_masks)
         if self.regression_targets is not None:
-            self.regression_targets = torch.Tensor(self.regression_targets)
+            self.regression_targets = torch.from_numpy(self.regression_targets)
         if self.atomic_positions is not None:
-            self.atomic_positions = torch.Tensor(self.atomic_positions)
+            self.atomic_positions = torch.from_numpy(self.atomic_positions)
 
     def get_max_atoms(self):
         if self.dataset_config.max_atoms is None:
@@ -206,25 +206,33 @@ class BaseDataset(data.Dataset):
 
         return scale
 
-    def split_dataset(self, splitting_ratios, dataset_split):
+    def split_dataset(self, splitting_ratios, dataset_split, shuffle = True):
 
         splitting_indices = compute_splits(
             self.dataset_config.N_molecules,
             splitting_ratios,
             self.dataset_config.N_conformers,
         )
+        
+        N = self.dataset_config.N_molecules
+
+
+        if shuffle:
+            # perm =  list that contains randomly shuffeld indices
+            rng = np.random.default_rng()
+            perm = rng.permutation(N).tolist()
+        else:
+            perm = list(range(N))
 
         returned_splits = []
 
         for slice_indices, split in zip(splitting_indices, dataset_split):
-
-            dataset_split = self[slice_indices.start : slice_indices.stop]
             
+            block_idx = perm[slice_indices.start : slice_indices.stop]
 
-            print("Splitshapes")
-            print(dataset_split.embeddings.shape)
-            print(dataset_split.regression_targets.shape)
-        
+
+            dataset_split = self[block_idx]
+                    
             # Update the dataset config with new number of molecules
             new_dataset_config = self.dataset_config.model_copy(
                 update={"N_molecules": slice_indices.stop - slice_indices.start}
@@ -236,15 +244,10 @@ class BaseDataset(data.Dataset):
                 dataset_config=new_dataset_config, **asdict(dataset_split)
             )
 
-            new_dataset.molecules = self.molecules[
-                slice_indices.start : slice_indices.stop
-            ]
+            new_dataset.molecules   = [self.molecules[i]   for i in block_idx]
+            new_dataset.mol_ids     = [self.mol_ids[i]     for i in block_idx]
+            new_dataset.smiles_list = [self.smiles_list[i] for i in block_idx]
 
-            new_dataset.mol_ids = self.mol_ids[slice_indices.start : slice_indices.stop]
-
-            new_dataset.smiles_list = self.smiles_list[
-                slice_indices.start : slice_indices.stop
-            ]
             returned_splits.append(new_dataset)
 
         return returned_splits

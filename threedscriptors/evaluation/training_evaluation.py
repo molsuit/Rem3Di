@@ -19,7 +19,6 @@ def regression_pipeline(dataset: BaseDataset):
     tasks = [
         RegressionTestTask(dataset),
         DescriptorPCATask(dataset, UMAPCalculator()),
-        DescriptorPCATask(dataset, PCACalculator()),
         DescriptorElementAnalysis(dataset),
         # PreprocessorVisualizationTask(dataset),
         # RegressionHeadPCATask(dataset, UMAPCalculator()),
@@ -34,8 +33,12 @@ def regression_pipeline(dataset: BaseDataset):
     )
 
 
-def chiral_regression_pipeline(dataset):
+def chiral_regression_pipeline(dataset : BaseDataset):
 
-    tasks = [ChiralPredictionTask(dataset), PreprocessorVisualizationTask(dataset)]
+    tasks = [ChiralPredictionTask(dataset)]  # , PreprocessorVisualizationTask(dataset)]
 
-    return EvalPipelineRunner(tasks=tasks)
+    return EvalPipelineRunner(
+        tasks=tasks,
+        dataset_name=dataset.dataset_config.dataset_name,
+        dataset_split=dataset.dataset_config.dataset_split,
+    )

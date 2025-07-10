@@ -63,3 +63,49 @@ class AttnPool(nn.Module):
         # weighted sum in original feature space
         pooled = torch.einsum('bhn,bnd->bhd', attn, x) # (B, H, d_in)
         return pooled.mean(dim=1)  
+
+
+
+class ChiralAttnPool(nn.Module):
+    """
+    Keep one unified x but preserve the sign of pseudoscalar channels.
+
+    parity = torch.BoolTensor([False, …,  True, …])  # True for odd channels
+    """
+    def __init__(self, d_in, parity, n_heads=4, dropout=0.0):
+        super().__init__()
+        self.register_buffer('parity', parity)   # shape (d_in,)
+        self.n_heads = n_heads
+        self.d_k     = d_in // n_heads
+
+        # -------- separate even / odd projections ----------
+        self.K_e = nn.Linear(parity.eq(False).sum(), d_in, bias=False)
+        self.K_o = nn.Linear(parity.eq(True ).sum(), d_in, bias=False)
+
+        # queries are **even** so they don't flip under reflection
+        self.query = nn.Parameter(torch.randn(n_heads, self.d_k))
+        nn.init.xavier_uniform_(self.query)
+
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, pad_mask=None):
+        B, N, D = x.shape
+
+        # ---------- split input by parity ----------
+        x_e = x[..., ~self.parity]          # (B,N,d_even)
+        x_o = x[...,  self.parity]          # (B,N,d_odd)
+
+        # ---------- keys ----------
+        k = self.K_e(x_e) + self.K_o(x_o)   # (B,N,d_in) keeps odd sign
+        k = k.view(B, N, self.n_heads, self.d_k)
+
+        # ---------- attention logits (parity-even) ----------
+        logits = torch.einsum('bnhd,hd->bhn', k, self.query) / self.d_k**0.5
+        if pad_mask is not None:
+            logits = logits.masked_fill(pad_mask[:,None,:]==1, -1e9)
+        w = self.dropout(torch.softmax(logits, dim=-1))      # (B,H,N)
+
+        # ---------- pooling ----------
+        g = torch.einsum('bhn,bnd->bhd', w, x).mean(1)        # (B,D)
+
+        return g

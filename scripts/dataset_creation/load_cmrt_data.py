@@ -3,7 +3,10 @@ from mace.calculators import MACECalculator
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     MaceCalculatorConfig,
+    DatasetSplit
 )
+from threedscriptors.data_handling.dataset_analysis import DatasetPostLoadAnalysis
+
 from threedscriptors.data_handling.data_utils import get_atom_species_in_smiles
 from threedscriptors.data_handling.dataset import (
     RegressionWithAuxAndPositionsDataset,
@@ -16,7 +19,7 @@ from threedscriptors.data_handling.source_preprocessing.cmrt_preprocessing impor
 )
 
 dataset_directory = (
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt_only_heavy_atoms"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt"
 )
 
 smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
@@ -30,7 +33,7 @@ print(aux_data)
 MACE_PATH = (
     "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
 )
-print(len(smiles))
+
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda", default_dtype="float64"),
     model_name="mace_off_24_medium",
@@ -47,7 +50,8 @@ dataset_config = DatasetConfig(
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
-    only_heavy_atoms=True
+    only_heavy_atoms=False,
+    load_adjacency_matrix=False
 )
 
 dataset = chiral_regression_training_pipeline(
@@ -70,11 +74,18 @@ store_data_to_disk(dataset, f"{dataset_directory}_full")
 atom_type_set = get_atom_species_in_smiles(ListSmilesIterator(dataset.smiles_list))
 print(atom_type_set)
 
+dataset_split = [DatasetSplit.TRAIN, DatasetSplit.VALIDATION]
 
 splitting_ratio = [0.8,0.2]
 
-split_datasets = dataset.split_dataset(splitting_ratio)
+split_datasets = dataset.split_dataset(splitting_ratio, dataset_split)
+train_dataset = split_datasets[0]
+store_data_to_disk(train_dataset, f"{dataset_directory}_train")
 
-store_data_to_disk(split_datasets[0], f"{dataset_directory}_train")
-store_data_to_disk(split_datasets[1], f"{dataset_directory}_valid")
+validation_dataset = split_datasets[1]
+store_data_to_disk(validation_dataset, f"{dataset_directory}_valid")
 
+
+DatasetPostLoadAnalysis(dataset, f"{dataset_directory}_full").run()
+DatasetPostLoadAnalysis(train_dataset, f"{dataset_directory}_train").run()
+DatasetPostLoadAnalysis(validation_dataset,f"{dataset_directory}_valid").run()

@@ -27,10 +27,14 @@ class PCACalculator(ClusteringCalculator):
 
 class UMAPCalculator(ClusteringCalculator):
     @staticmethod
-    def get_dimensionality_reduction(data_matrix: torch.Tensor, k=2):
+    def get_dimensionality_reduction(data_matrix: torch.Tensor, k=2, return_fit = False):
         fit = umap.UMAP(n_components=k)
         data_matrix = data_matrix.detach().cpu().numpy()
         umap_projection = fit.fit_transform(data_matrix)
+        if return_fit:
+            return umap_projection, fit
+        
+        
         return umap_projection
 
 
