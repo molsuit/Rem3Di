@@ -6,7 +6,6 @@ import math
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
-import yaml
 from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, Subset
@@ -26,7 +25,7 @@ from threedscriptors.data_handling.sample import sample_collate_fn
 from threedscriptors.evaluation.training_evaluation import regression_pipeline, chiral_regression_pipeline
 from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.training.regression_training import multitask_masked_loss, DynamicallyWeighedMultitaskLoss, BaseMultitaskLoss
-
+from threedscriptors.training.telemetry import TrainingTelemetry
 from threedscriptors.training.data_normalization import DataNormalizationModule
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -73,7 +72,7 @@ split_config = SplitConfig(
 
 training_config = TrainingConfig(
     batch_size=64,
-    epochs=400,
+    epochs=20,
     learning_rate=1e-5,
     weight_decay=1e-3,
     max_grad_norm=1.0,
@@ -98,8 +97,10 @@ dataset = dataset.convert_to_dataset_type(RegressionDatasetwithPositions)
 
 dataset_splitting = DatasetSplitting(dataset)
 
-for train_idx, val_idx in dataset_splitting.get_split(training_config.split_config):
+for train_idx, val_idx, split_name in dataset_splitting.get_split(training_config.split_config):
 
+
+    os.makedirs(f"{training_config.training_data_dir}/{split_name.lower()}")
 
     train_dataset = Subset(dataset, train_idx)
     valid_dataset = Subset(dataset, val_idx)
@@ -147,32 +148,11 @@ for train_idx, val_idx in dataset_splitting.get_split(training_config.split_conf
         "dataset_config": dataset.dataset_config.model_dump(),
     }
 
-
-    if training_config.wandb_active:
-        wandb.init(
-            project="threedscriptors",
-            entity="threedscriptors",
-            group=
-            name=run_name,
-            config=config,
-        )
-
-        #wandb.watch(models=[model.preprocessor,model.multitask_heads], log="all", log_freq=30)
-
         
     model.to(device)
 
 
-
-    num_opt_steps = training_config.epochs * len(training_loader)
-
-
-    #loss_fn = DynamicallyWeighedMultitaskLoss(N_tasks = len(train_dataset.dataset_config.tasks))
-
     loss_fn = BaseMultitaskLoss()
-
-
-
 
     optimizer = optim.AdamW(
         [{"params" : model.parameters(), "lr" : training_config.learning_rate, "weight_decay" : training_config.weight_decay},
@@ -180,237 +160,92 @@ for train_idx, val_idx in dataset_splitting.get_split(training_config.split_conf
         ]
     )
     scheduler = OneCycleLR(
-        optimizer, max_lr=[training_config.learning_rate], total_steps=num_opt_steps
+        optimizer, max_lr=[training_config.learning_rate], total_steps=training_config.epochs * len(training_loader)
     )
-
-    task_names = dataset.dataset_config.get_task_names()
-    stds_per_task = data_normalization.std_tasks
-    #assert model.multitask_heads.task_heads.keys() == stds_per_task.keys()
-
-    print("Starting Training")
-
-    loss_data = []
-    best_val_loss = math.inf
     best_model_path = f"{training_config.training_data_dir}/best_model.pth"
 
-
     loss_fn.to(device)
+    
+    
+    with TrainingTelemetry(training_config=training_config, dataset_config= dataset.dataset_config, run_name = run_name, split_name=split_name, config = config) as telemetry:
 
 
-    shared_parameters = [p for p in model.encoder.parameters() if p.requires_grad]
+        print("Starting Training")
+        
+        for epoch in range(training_config.epochs):
 
-
-
-    rows, cols = torch.tril_indices(row=len(task_names), col=len(task_names), offset=-1)
-
-
-    task_pair_indices = torch.nonzero(torch.tril(torch.ones((len(task_names),len( task_names))),-1))
-
-    map_task_to_sim_dict = {idx : (task_names[p[0]],task_names[p[1]]) for idx, p in enumerate(task_pair_indices)}
-
-    full_training_grad_alignment = []
-
-    for epoch in range(training_config.epochs):
-        running_tloss = 0.0
-        weighed_loss_per_task_train = torch.zeros(
-            len(dataset.dataset_config.tasks), device=device
-        )
-
-        loss_fn.train()
-        model.train()
-        optimizer.zero_grad()
-
-        #grad_alignment_epoch = []
-
-        for _batch, samples in enumerate(training_loader):
-            samples = data_normalization(samples)
-            samples.to_(device)
-
-
-
-            model_output = model(samples)
-
-
-            loss, batch_weighed_loss_per_task_train = loss_fn(samples, model_output)
-
-
-            #grad_cosine_matrix = cosine_matrix(batch_weighed_loss_per_task_train, shared_parameters)
-            
-            #grad_alignment_epoch.append(grad_cosine_matrix[rows, cols].detach().cpu())
-
-            weighed_loss_per_task_train += batch_weighed_loss_per_task_train.detach()
-
-
-            loss.backward()
-
-
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(), max_norm=training_config.max_grad_norm
+            # Initialize task and total train losses
+            accumulated_train_loss = 0.0
+            accumulated_train_loss_per_task = torch.zeros(
+                len(dataset.dataset_config.tasks), device=device
             )
 
-
-
-            optimizer.step()
-            scheduler.step()
+            loss_fn.train()
+            model.train()
             optimizer.zero_grad()
 
-            running_tloss += loss.item()
 
-        avg_tloss = running_tloss / (
-            _batch + 1
-        )  
-        weighed_loss_per_task_train = weighed_loss_per_task_train / (_batch + 1)
+            for batch_idx, samples in enumerate(training_loader):
+                samples = data_normalization(samples)
+                samples.to_(device)
+                model_output = model(samples)
 
-        running_vloss = 0.0
-        running_mean_val_loss = 0.0
+                loss, batch_weighed_loss_per_task_train = loss_fn(samples, model_output)
 
-        weighed_loss_per_task_val = torch.zeros(
-            len(dataset.dataset_config.tasks), device=device
-        )
-        
+                loss.backward()
 
-        loss_fn.eval()
-        model.eval()
-        with torch.no_grad():
-            for _batch, val_samples in enumerate(validation_loader):
-                
-
-                val_samples = data_normalization(val_samples)
-                val_samples.to_(device)
-
-                val_output = model(val_samples)
-
-                loss, batch_weighed_loss_per_task_val = loss_fn(val_samples, val_output)
-                weighed_loss_per_task_val += batch_weighed_loss_per_task_val
-
-                running_vloss += loss.item()
-
-                #val_base_loss, _ = val_loss_fn(val_samples, val_output)
-                #running_mean_val_loss += val_base_loss.item() 
-
-            avg_vloss = running_vloss / (_batch + 1)
-            weighed_loss_per_task_val = weighed_loss_per_task_val / (_batch + 1)
-
-            print(f"Epoch {epoch} Training Loss: {avg_tloss} Validation Loss: {avg_vloss}")
-
-            if running_vloss < best_val_loss:
-                best_val_loss = running_vloss
-                torch.save(model.state_dict(), best_model_path)
-                print(f"  - New best model (val_loss {avg_vloss:.4f}), saving to {best_model_path}")
-
-
-
-            current_lr = scheduler.get_last_lr()
-
-            destandardized_loss_per_task_val = (
-                weighed_loss_per_task_val.cpu().detach().numpy() #* stds
-            )
-
-            val_dict = dict(
-                zip(
-                    task_names,
-                    destandardized_loss_per_task_val.tolist(),
-                    strict=False,
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_norm=training_config.max_grad_norm
                 )
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+
+                accumulated_train_loss += loss.item()
+                accumulated_train_loss_per_task += batch_weighed_loss_per_task_train.detach()
+
+
+            avg_train_loss = accumulated_train_loss / (batch_idx+1)
+            avg_train_loss_per_task = accumulated_train_loss_per_task / (batch_idx + 1)
+
+            accumulated_validation_loss = 0.0
+            accumulated_validation_loss_per_task = torch.zeros(
+                len(dataset.dataset_config.tasks), device=device
             )
+            
+            loss_fn.eval()
+            model.eval()
 
-            destandardized_loss_per_task_train = (
-                weighed_loss_per_task_train.cpu().detach().numpy() #* stds
-            )
+            with torch.no_grad():
+                for batch_idx, val_samples in enumerate(validation_loader):
+                    val_samples = data_normalization(val_samples)
+                    val_samples.to_(device)
 
-            train_dict = dict(
-                zip(
-                    task_names,
-                    destandardized_loss_per_task_train.tolist(),
-                    strict=False,
-                )
-            )
+                    val_output = model(val_samples)
 
-    #        task_loss_weights = dict(zip(task_names, loss_fn.log_vars.cpu().detach().numpy().tolist()))
-    #       
+                    loss, batch_weighed_loss_per_task_val = loss_fn(val_samples, val_output)
+                    accumulated_validation_loss_per_task += batch_weighed_loss_per_task_val
 
-            #grad_alignment_epoch = torch.stack(grad_alignment_epoch, dim = -1)
-            #print(f"Gradalginemnet shape {grad_alignment_epoch.shape}")
-            #full_training_grad_alignment.append(grad_alignment_epoch)
+                    accumulated_validation_loss += loss.item()
 
-    #
-            task_pair_string_list = [str(v) for v in map_task_to_sim_dict.values() ]
-            #alignment_dict = dict(zip(task_pair_string_list, grad_alignment_epoch.#mean(dim=0)))
+                avg_validation_loss = accumulated_validation_loss / (batch_idx + 1)
+                avg_validation_loss_per_task = accumulated_validation_loss_per_task / (batch_idx + 1)
 
 
-            epoch_loss_dict = {
-                "epoch": epoch,
-                "validation_loss": avg_vloss,
-                "train_loss": avg_tloss,
-                "task_validation_loss": val_dict,
-                "task_train_loss": train_dict,
-                "learning_rate": current_lr[0],
-                #"grad_alignment": alignment_dict
-                #"loss_weights": task_loss_weights
+                current_lr = scheduler.get_last_lr()[0]
 
-            }
+                telemetry.log_epoch(epoch, avg_train_loss, avg_train_loss_per_task, avg_validation_loss, avg_validation_loss_per_task, current_lr)
 
-            loss_data.append(epoch_loss_dict)
-
-            if training_config.wandb_active:
-                wandb.log(epoch_loss_dict)
+                if telemetry.best_epoch:
+                    
+                    torch.save(model.state_dict(), best_model_path)
+                    print(f"  - New best model (val_loss {avg_validation_loss:.4f}), saving to {best_model_path}")
 
 
 
-    #
-    #
-    #print(map_task_to_sim_dict)
-    #
-    #
-    #cosine_sim_dict = {v : [] for v in map_task_to_sim_dict.values()}
-    #print(cosine_sim_dict)
-    #
-    #
-    #full_training_grad_alignment = torch.stack(full_training_grad_alignment)
-    #print(full_training_grad_alignment.shape)
-    #
-    #
-    #import matplotlib.pyplot as plt
-    #
-    #
-    #
-    #times = list(range(training_config.epochs))
-    #
-    #for i, task_pair in map_task_to_sim_dict.items():
-    #
-    #
-    #    task_pair_data= full_training_grad_alignment[:,i,:].squeeze()
-    #    
-    #
-    #    print(task_pair_data.shape)
-    #    print(times)
-    #
-    #    fig, ax = plt.subplots()
-    #
-    #    fig.set_figwidth(20.)
+   
+    continue
 
-    #    ax.violinplot(task_pair_data.T, positions=times, widths=0.8, #showmeans=False, showextrema=True, showmedians=True)
-    #    ax.set_xlabel("Time")
-    #    ax.set_ylabel("Cosine Similarity of gradients")
-    #    ax.set_title(f"Distribution grad cosine sim over training time {task_pair}")
-
-    #    fig.savefig(f"{training_config.training_data_dir}/grad_tasks_cosine_sim_{str#(task_pair)}.png")
-    #
-    #
-    #    print(task_pair)
-    #    ratio_0 = (task_pair_data < 0.0).float().mean()
-    #    ratio_0_1 = (task_pair_data < -0.1).float().mean() 
-    #    print(f"Smaller 0.0  {ratio_0}")
-    #    print(f"Smaller -0.1  {ratio_0_1}")
-    #
-    #
-    #
-    #
-    #
-    ## undo the normalization ??
-    final_loss = avg_vloss
-    print(final_loss)
-    #
     print("Loading best model from", best_model_path)
     model.load_state_dict(torch.load(best_model_path, map_location=device))
     model.eval()
@@ -418,7 +253,7 @@ for train_idx, val_idx in dataset_splitting.get_split(training_config.split_conf
 
 
     torch.save(model.state_dict(), f"{training_config.training_data_dir}/regression_model.pth")
-    #
+    
     torch.save(
         model.preprocessor.state_dict(), f"{training_config.training_data_dir}/preprocessor.pth"
     )
@@ -443,10 +278,6 @@ for train_idx, val_idx in dataset_splitting.get_split(training_config.split_conf
         dataset.dataset_config,
     )
 
-
-
-    with open(f"{training_config.training_data_dir}/training_losses.yaml", "x") as f:
-        yaml.safe_dump(loss_data, f)
 
     figs = {}
 

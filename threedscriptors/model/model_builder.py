@@ -101,7 +101,6 @@ class ModelBuilder:
             RelativeDistancePositionalEncodingConfig,
         ):
                 pos_config = self.architecture_config.positional_encoding_config
-                print(pos_config.basis_function_type)
                 structure_encoding = PairDistanceMatrixEncodingBlock(
                     N_radial_basis_functions=pos_config.N_radial_basis_functions,
                 distance_cutoff=pos_config.distance_cutoff,

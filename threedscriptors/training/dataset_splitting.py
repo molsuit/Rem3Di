@@ -59,7 +59,7 @@ class DatasetSplitting:
 
         validation_structure_ids = self.dataset.get_structure_ids_for_mol(val_mol_ids)
 
-        return train_structure_ids, validation_structure_ids
+        return train_structure_ids, validation_structure_ids, "Train"
 
     def _repeated_cv(
         self,
@@ -92,7 +92,7 @@ class DatasetSplitting:
         fold_slices = compute_splits(n_mols, [1 / N_splits] * N_splits)
 
         # --- 2. Repeated CV ---------------------------------------------------
-        for _ in range(N_repeats):
+        for i_repeat in range(N_repeats):
 
             # 2a. (Re)shuffle indices
             if shuffle:
@@ -122,7 +122,7 @@ class DatasetSplitting:
                 )
                 val_structure_ids = self.dataset.get_structure_ids_for_mol(val_mol_ids)
 
-                yield train_structure_ids, val_structure_ids
+                yield train_structure_ids, val_structure_ids, f"Split_{i_repeat}-Fold_{val_fold_idx}"
 
     def _bemis_murcko_scaffold_splitting(self):
         raise NotImplementedError
@@ -131,7 +131,7 @@ class DatasetSplitting:
 
     def get_split(
         self, split_config: SplitConfig
-    ) -> Iterator[Tuple[List[int], List[int]]]:
+    ) -> Iterator[Tuple[List[int], List[int], str]]:
         """
         Unified entry‑point.  Yields (train_ids, val_ids) tuples according to
         the strategy described by *split_config*.
