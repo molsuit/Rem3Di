@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-
+from threedscriptors.data_handling.mol_id import StructureID
 import numpy as np
 from ase import Atoms
 from torch import from_numpy
@@ -32,10 +32,6 @@ def store_data_to_disk(dataset: BaseDataset, directory: str):
 
     # Store Regression Targets
     if dataset.regression_targets is not None:
-        if dataset.dataset_config.regression_is_normalized:
-            # undo the normalization
-            raise ValueError
-
         np.save(f"{directory}/regression_targets.npy", dataset.regression_targets)
         np.save(f"{directory}/regression_masks.npy", dataset.regression_masks)
 
@@ -50,10 +46,11 @@ def store_data_to_disk(dataset: BaseDataset, directory: str):
         np.save(f"{directory}/target_class_labels.npy", dataset.target_class_labels)
 
     # Store Smiles
-    if dataset.smiles_list is not None:
-        with open(f"{directory}/smiles_list", "w") as f:
-            for i in dataset.smiles_list:
-                f.write(i + "\n")
+    if dataset.smiles_list and dataset.structure_ids is not None:
+        with open(f"{directory}/smiles", "w") as f:
+            for smi, structure_id in zip(dataset.smiles_list, dataset.structure_ids):
+
+                f.write(f"{structure_id.to_id_string()} {smi}" + "\n")
 
 
     if dataset.random_walk_transition_matrix is not None:
@@ -67,7 +64,7 @@ def store_data_to_disk(dataset: BaseDataset, directory: str):
 def load_data_from_disk(
     directory: str | Path,
     load_molecules: bool = True,
-):
+) -> BaseDataset:
     directory = str(directory)
     # Load dataset_config first
     dataset_config = from_yaml(f"{directory}/dataset_config.yaml", DatasetConfig)
@@ -95,13 +92,25 @@ def load_data_from_disk(
             molecules.append(atom)
         dataset.molecules = molecules
 
-    if "smiles_list" in files:
-        with open(directory + "/smiles_list") as f:
-            smiles_list = f.readlines()
-            smiles_list = [i.strip() for i in smiles_list]
+    if "smiles" in files:
+        smiles_list = []
+        structure_ids = []
+
+        with open(directory + "/smiles") as f:
+
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                id_str, smi = line.split(" ", 1)
+
+                id = StructureID.from_id_string(id_str, smiles=smi)
+                
+                smiles_list.append(smi)
+                structure_ids.append(id)
 
         dataset.smiles_list = smiles_list
-        dataset.mol_ids = get_unique_smiles_id_from_smiles_list(smiles_list)
+        dataset.structure_ids = structure_ids
 
     if "regression_targets.npy" in files:
         assert "regression_masks.npy" in files

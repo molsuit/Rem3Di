@@ -16,7 +16,7 @@ from threedscriptors.data_handling.dataset_io import (
     store_data_to_disk,
 )
 from threedscriptors.data_handling.pipelines import (
-    regression_training_with_pos_pipeline, regression_training_with_transition_probs_pipeline
+    regression_training_with_pos_pipeline
 )
 from threedscriptors.data_handling.source_preprocessing.polaris_preprocessing import (
     load_polaris_dataset,
@@ -47,7 +47,7 @@ load_dataset = "antiviral_admet"
 smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
     dataset_registry[load_dataset],
     smiles_column=smiles_column[load_dataset],
-    non_task_columns=non_task_columns[load_dataset],datasplit="Test"
+    non_task_columns=non_task_columns[load_dataset],datasplit="Train"
 )
 
 
@@ -62,21 +62,20 @@ embedding_model_config = MaceCalculatorConfig(
     model_name="mace_off_24_medium",
     model_path=MACE_PATH,
     enable_cueq=True,
-    device="cuda",
+    device="cuda"
 )
 
 dataset_config = DatasetConfig(
-    N_molecules=1000,
-    dataset_type=RegressionDatasetwithPositions,#RegressionDatasetwithRandomWalks,
-    BFGS_tol=0.1,
+    N_molecules=100,
+    dataset_type=RegressionDatasetwithPositions,
+    BFGS_tol=0.5,
     BFGS_max_steps=500,
-    N_conformers=1,
+    N_conformers=3,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
     only_heavy_atoms=False,
-    load_adjacency_matrix=False, 
-    dataset_name= load_dataset
+    dataset_name= load_dataset,
 )
 
 
@@ -84,12 +83,7 @@ pipeline = regression_training_with_pos_pipeline(
     dataset_config, smiles, regression_targets, regression_masks
 ) 
 
-#pipeline = regression_training_with_transition_probs_pipeline(
-#    dataset_config, smiles, regression_targets, regression_masks
-#) 
-
 dataset = pipeline.build()
-
 
 store_data_to_disk(dataset, f"{dataset_directory}_full")
 

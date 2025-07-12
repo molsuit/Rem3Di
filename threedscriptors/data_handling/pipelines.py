@@ -15,6 +15,7 @@ from threedscriptors.data_handling.data_build_pipeline import (
     ReloadFromDiskStage,
     SimilarityLabelingStage,
     AddRandomWalkTransitionProbabilityMatrixStage,
+    CanonicalizeStructureIDStage,
 )
 
 
@@ -48,26 +49,10 @@ def regression_training_with_pos_pipeline(
         RegressionLabelingStage(
             regression_targets=regression_targets, regression_masks=regression_masks
         ),
-        AtomicPositionsStage()
-    ]
+        AtomicPositionsStage(),
+        AddRandomWalkTransitionProbabilityMatrixStage(),
+        CanonicalizeStructureIDStage(),
 
-    return PipelineOrchestrator(stages)
-
-
-
-def regression_training_with_transition_probs_pipeline(
-    dataset_config: DatasetConfig, smiles, regression_targets, regression_masks
-):
-    stages = [
-        InitializeBuildPipeline(dataset_config),
-        InsertSmilesStage(smiles=smiles),
-        ConformalEmbeddingStage(),
-        RelaxStage(dataset_config.embedding_model_config.mace_calc),
-        AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
-        RegressionLabelingStage(
-            regression_targets=regression_targets, regression_masks=regression_masks
-        ),
-        AddRandomWalkTransitionProbabilityMatrixStage()
     ]
 
     return PipelineOrchestrator(stages)
@@ -138,16 +123,13 @@ def similarity_screening_pipeline(
 
 
 def reload_dataset_pipeline(
-    directory, mean_targets = None, std_targets = None
+    directory
 ) -> PipelineOrchestrator :
 
 
     stages = [
         ReloadFromDiskStage(directory),
         AtomicPositionsStage(),
-        NormalizationStage(
-            mean_targets, std_targets,
-        ),
     ]
     return PipelineOrchestrator(stages)
 

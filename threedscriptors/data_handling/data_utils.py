@@ -10,7 +10,6 @@ from ase.optimize import LBFGS
 from mace.calculators import MACECalculator
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
-from rdkit.Chem import rdmolops
 from rdkit2ase import rdkit2ase
 
 
@@ -57,7 +56,12 @@ def get_ase_atoms(smiles) -> Atoms:
     return atoms
 
 
-def get_ase_atoms_with_conformers(smiles, N_conformers: int, load_adjacency_matrix) -> list[Atoms]:
+
+def contains_ionic_atom(mol: Chem.Mol) -> bool:
+    """Return True if *any* atom in `mol` has non-zero formal charge."""
+    return any(atom.GetFormalCharge() != 0 for atom in mol.GetAtoms())
+
+def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
     # print(smiles)
     mol = Chem.MolFromSmiles(smiles)
 
@@ -65,38 +69,29 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int, load_adjacency_matr
         raise ValueError
 
     mol = Chem.AddHs(mol)
-    charge = Chem.GetFormalCharge(mol)
-    if charge != 0:
-        raise ValueError("Charged molecule")
+    charged = contains_ionic_atom(mol)
+
+
+    if charged:
+        raise ValueError(f"Smiles {smiles} is a charged molecule")
 
     EmbedMultipleConfs(
-        mol, numConfs=N_conformers, numThreads=N_conformers, maxAttempts=5000
+        mol, numConfs=N_conformers, numThreads=N_conformers, maxAttempts=500
     )
 
-    if load_adjacency_matrix:
-        A = rdmolops.GetAdjacencyMatrix(mol)
-
-
-        ase_confs = [
+    ase_confs = [
             Atoms(
                 positions=conf.GetPositions(),
-                numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],info = {"adjacency_matrix" : A}
+                numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
+                info={"smiles": smiles}
             )
             for conf in mol.GetConformers()
         ]
 
-    else:
-        ase_confs = [
-            Atoms(
-                positions=conf.GetPositions(),
-                numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()]
-            )
-            for conf in mol.GetConformers()
-        ]
+    if len(ase_confs) == 0:
+        raise ValueError
 
-    
-
-    return ase_confs, mol
+    return ase_confs
 
 
 def get_relaxed_conformers(
@@ -128,33 +123,42 @@ def get_relaxed_conformers(
     return molecules
 
 
-def get_max_molecule_size_from_smiles(
-    smiles_iterator: SmilesIterator, max_num_molecules=math.inf
-) -> int:
-    max_atoms = 0
+def count_atoms_from_smiles(
+    smiles_iterator: SmilesIterator, heavy_atoms_only = False, max_num_molecules = np.inf) -> int:
+    
+    # Returns the max and sum of the atoms from smiles
+
+    atom_count = []
+
     for i, smiles in enumerate(smiles_iterator):
         mol = Chem.MolFromSmiles(smiles)
-        mol = Chem.AddHs(mol)
-        num_atoms = mol.GetNumAtoms()
-        if num_atoms > max_atoms:
-            max_atoms = num_atoms
+
+        if not heavy_atoms_only:
+            mol = Chem.AddHs(mol)
+        
+        atom_count.append(mol.GetNumAtoms())
+        
+
         if i >= max_num_molecules:
             break
-    return max_atoms
+
+    return max(atom_count, default = 0), sum(atom_count)
 
 
-def get_max_molecule_size_from_atoms(atoms: list[Atoms]):
-    max_atoms = 0
-    for mol in atoms:
-        number_of_atoms = len(mol)
-        max_atoms = max(max_atoms, number_of_atoms)
-    return max_atoms
 
-def get_max_num_of_heavy_atom_from_atoms(atoms : list[Atoms]):
+def get_all_atom_counts(atoms: list[Atoms], heavy_atoms_only= False):
+    if heavy_atoms_only:
+        counts = ((mol.get_atomic_numbers() != 1).sum() for mol in atoms)
+    else:
+        counts = (len(mol) for mol in atoms)
 
-    heavy_counts = ((mol.get_atomic_numbers() != 1).sum() for mol in atoms)
-    return max(heavy_counts, default=0)
+    return counts
 
+def count_atoms_from_ase(atoms : list[Atoms], heavy_atoms_only= False):
+    # Returns the max and the sum of the numbers of atoms inside a list of ase atoms
+    counts = get_all_atom_counts(atoms, heavy_atoms_only)
+
+    return max(counts, default=0), sum(counts)
 
 
 def get_atom_species_in_smiles(smiles_iterator: SmilesIterator):
@@ -204,6 +208,9 @@ def get_unique_smiles_id_from_smiles_list(smiles_list: list[str]):
     return result_ids
 
 
+
+
+
 def get_functional_group_label(smiles: list[str]):
     # This function is specific to the test functional group dataset, and is not meaningful in any other context.
 
@@ -233,19 +240,19 @@ def validate_ratios(ratios: Sequence[float]) -> None:
 
 
 
-def compute_splits(size: int, ratios: Sequence[float], split_interval) -> list[slice]:
+def compute_splits(size: int, ratios: Sequence[float]) -> list[slice]:
     """Return slice objects for each split boundary."""
     raw_counts = (np.asarray(ratios) * size).astype(int)
 
-    base = (raw_counts // split_interval).astype(int) * split_interval
 
-    leftover = (size - base.sum()) // split_interval
 
-    base[0] += leftover* split_interval
+    leftover = (size - raw_counts.sum())
+
+    raw_counts[0] += leftover
 
     # Fix any rounding drift so the slices cover the full length
 
-    offsets = np.cumsum(np.insert(base, 0, 0))
+    offsets = np.cumsum(np.insert(raw_counts, 0, 0))
 
     return [slice(offsets[i], offsets[i + 1]) for i in range(len(ratios))]
 

@@ -202,6 +202,13 @@ class SimilarityLabelingStage(BuildStage):
         return builder
 
 
+class CanonicalizeStructureIDStage(BuildStage):
+    
+    def _run(self, builder: DatasetBuilder):
+        builder.canonicalize_structure_ids()
+        return builder
+
+
 
 class PipelineOrchestrator:
     def __init__(self, stages: list[BuildStage]):

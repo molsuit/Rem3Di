@@ -162,13 +162,10 @@ class DatasetConfig(BaseModel):
     BFGS_max_steps: int
     N_conformers: int = 1
     embedding_model_config: MaceCalculatorConfig | None = None
-    max_atoms: int | None = None
-    regression_is_normalized: bool = False
     tasks: Sequence[TaskConfig] | None = None
     only_heavy_atoms: bool = False
     dataset_name: Optional[str] = None
     dataset_split: Optional[DatasetSplit] = None
-    load_adjacency_matrix : bool = False
 
 
     def get_task_names(self):

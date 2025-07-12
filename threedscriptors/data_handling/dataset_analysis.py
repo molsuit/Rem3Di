@@ -7,7 +7,7 @@ from itertools import groupby, combinations, chain
 from threedscriptors.data_handling.data_utils import rmsd
 from ase.visualize.plot import plot_atoms
 from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature, get_invariant_indices
-from threedscriptors.data_handling.data_utils import get_atom_species_in_smiles
+from threedscriptors.data_handling.data_utils import get_atom_species_in_smiles, get_all_atom_counts
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 
 
@@ -25,6 +25,16 @@ class DatasetPostLoadAnalysis():
         norms = np.linalg.norm(atomic_descriptors, axis = (0,1), where = ~padding_masks)
         return norms
     
+    def plot_molecule_size_distribution(self):
+        counts = get_all_atom_counts(self.dataset.molecules, heavy_atoms_only= self.dataset.dataset_config.only_heavy_atoms)
+
+        fig = plt.figure()
+        plt.hist(np.array(counts))
+        plt.xlabel("Molecule Size")
+        plt.ylabel("Frequency")
+        fig.savefig(f"{self.output_dir}/histogram_molecule_size.png")
+        plt.close(fig)
+              
     def get_dataset_size(self):
 
         size = self.dataset.embeddings.element_size() * self.dataset.embeddings.nelement()
@@ -169,7 +179,7 @@ class DatasetPostLoadAnalysis():
         mean, stds = self.mean_and_std()
         size = self.get_dataset_size()
         atom_species = self.get_atom_species()
-
+        self.plot_molecule_size_distribution()
         #self.plot_relaxed_atoms()
 
 

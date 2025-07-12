@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-
+from threedscriptors.training.dataset_splitting import SplitConfig
 from pydantic import BaseModel
 
 
@@ -11,8 +11,8 @@ class TrainingConfig(BaseModel):
     weight_decay: float
     max_grad_norm: float | None = None
     mace_model_path: str
-    train_dataset_path: str
-    validation_dataset_path: Path
+    split_config : SplitConfig
+    dataset_path: str
     test_dataset_path: Path
     model_dir: str
     training_data_dir: Path

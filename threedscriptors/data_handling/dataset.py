@@ -12,10 +12,8 @@ if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig
 
 from threedscriptors.data_handling.data_utils import (
-    compute_splits,
-    get_max_molecule_size_from_atoms,
-    get_max_molecule_size_from_smiles,
-    get_max_num_of_heavy_atom_from_atoms,
+    count_atoms_from_smiles,
+    count_atoms_from_ase
 )
 from threedscriptors.data_handling.sample import Sample
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
@@ -24,16 +22,16 @@ from threedscriptors.utils.model_utils import (
     split_invariants_equivariants,
 )
 
+from threedscriptors.data_handling.mol_id import StructureID
 type Molecules = list[Atoms]
-
 
 class BaseDataset(data.Dataset):
     def __init__(
         self,
         dataset_config: "DatasetConfig",
         smiles_list=None,
-        mol_ids=None,
-        molecules: list[Atoms] | None = None,
+        structure_ids: list[StructureID] | None =None,
+        molecules: Molecules | None = None,
         embeddings=None,
         padding_mask=None,
         regression_targets=None,
@@ -52,8 +50,8 @@ class BaseDataset(data.Dataset):
         # Create all the fields for the child classes, which allows us to unify the store data to disk classes
 
         self.smiles_list = smiles_list
-        self.mol_ids = mol_ids
-        self.molecules: list[Atoms] | None = molecules
+        self.structure_ids = structure_ids
+        self.molecules = molecules
         self.embeddings = embeddings
         self.padding_mask = padding_mask
         self.regression_targets = regression_targets
@@ -65,6 +63,10 @@ class BaseDataset(data.Dataset):
         self.atomic_positions = atomic_positions
         self.random_walk_transition_matrix = random_walk_transition_matrix
 
+
+        self.max_atoms = None
+        self.total_num_atoms = None
+        self.N_structures = None
 
     def __len__(self):
         return len(self.molecules)
@@ -85,28 +87,44 @@ class BaseDataset(data.Dataset):
             self.atomic_positions = torch.from_numpy(self.atomic_positions)
 
     def get_max_atoms(self):
-        if self.dataset_config.max_atoms is None:
+        if self.max_atoms is None:
 
-            if self.dataset_config.only_heavy_atoms:
-                assert self.molecules is not None
-                self.dataset_config.max_atoms = get_max_num_of_heavy_atom_from_atoms(self.molecules)
+            if self.molecules is not None:
+                self.max_atoms, _ = count_atoms_from_ase(self.molecules, heavy_atoms_only= self.dataset_config.only_heavy_atoms)
 
-            elif self.molecules is not None:
-                self.dataset_config.max_atoms = get_max_molecule_size_from_atoms(
-                    self.molecules
-                )
             else:
                 assert self.smiles_list is not None
                 smiles_iterator = ListSmilesIterator(self.smiles_list)
-                self.dataset_config.max_atoms = get_max_molecule_size_from_smiles(
-                    smiles_iterator
+                self.max_atoms, _ = count_atoms_from_smiles(
+                    smiles_iterator, heavy_atoms_only= self.dataset_config.only_heavy_atoms
                 )
 
+        return self.max_atoms
+    
 
+    def get_structure_ids_for_mol(self, mol_ids):
 
-        return self.dataset_config.max_atoms
+        return [idx for idx, id in enumerate(self.structure_ids) if id.molecule_id in mol_ids]
 
+    def get_all_mol_ids(self):
+        return list(set([id.molecule_id for id in self.structure_ids]))
 
+    def get_total_number_of_atoms(self):
+        
+        if self.total_num_atoms is None:
+
+            if self.molecules is not None:
+                _, self.total_num_atoms = count_atoms_from_ase(self.molecules, heavy_atoms_only= self.dataset_config.only_heavy_atoms)
+            
+            else:
+                assert self.smiles_list is not None
+
+                smiles_iterator = ListSmilesIterator(self.smiles_list)
+                _, self.total_num_atoms = count_atoms_from_smiles(
+                        smiles_iterator, heavy_atoms_only= self.dataset_config.only_heavy_atoms
+                    )
+
+        return self.total_num_atoms
 
     def get_padded_positions(self):
 
@@ -114,6 +132,7 @@ class BaseDataset(data.Dataset):
         atomic_numbers = [at.get_atomic_numbers() for at in self.molecules]
         padding_dim = np.array([len(an) for an in atomic_numbers]) # The dimension of the real atoms, required to reconstruct whcich element are padding and which ones are not.
 
+        max_atoms= self.get_max_atoms()
 
 
         if self.dataset_config.only_heavy_atoms:
@@ -138,7 +157,7 @@ class BaseDataset(data.Dataset):
         padded_atomic_numbers = np.array(
             [
                 np.pad(
-                    an, (0, self.dataset_config.max_atoms - len(an)), mode="constant"
+                    an, (0, max_atoms - len(an)), mode="constant"
                 )
                 for an in atomic_numbers
             ]
@@ -149,7 +168,7 @@ class BaseDataset(data.Dataset):
             [
                 np.pad(
                     pos,
-                    ((0, self.dataset_config.max_atoms - pos.shape[0]), (0, 0)),
+                    ((0, max_atoms - pos.shape[0]), (0, 0)),
                     mode="constant",
                 )
                 for pos in positions
@@ -157,101 +176,6 @@ class BaseDataset(data.Dataset):
         )
 
         return padding_dim, padded_positions, padded_atomic_numbers
-
-    def get_atomic_embedding_normalization_constants(self,input_irreps):
-
-        if isinstance(self.padding_mask, torch.Tensor):
-            padding_mask = self.padding_mask.cpu().numpy()
-        else:
-            padding_mask = self.padding_mask
-
-        print(f"Embeddings_shape {self.embeddings.shape}")
-
-        invariant_indices, _ = get_invariant_indices(input_irreps)
-        invariant_embeddings, equivariant_embeddings = split_invariants_equivariants(self.embeddings, invariant_indices)
-
-        if isinstance(invariant_embeddings, torch.Tensor):
-            invariant_embeddings = invariant_embeddings.cpu().numpy()
-
-        masks = np.where(np.expand_dims(padding_mask, axis=-1) == 0.0, True, False)
-
-        inv_mean_per_dim, inv_std_per_dim = self.calculate_invariant_normalization_constants(invariant_embeddings, masks)
-
-
-        equivariant_scale_factor = self.calculate_equivariant_scale_factor(equivariant_embeddings, masks)
-
-        return inv_mean_per_dim, inv_std_per_dim, equivariant_scale_factor
-
-
-    @staticmethod
-    def calculate_invariant_normalization_constants(invariant_embeddings, masks):
-
-        mean_per_dim = np.mean(invariant_embeddings, axis=(0, 1), keepdims=True, where=masks)
-
-        std_per_dim = np.std(invariant_embeddings, axis=(0, 1), keepdims=True, where=masks)
-
-        return torch.from_numpy(mean_per_dim), torch.from_numpy(std_per_dim)
-
-    @staticmethod
-    def calculate_equivariant_scale_factor(equivariant_embeddings, masks):
-
-        masks = masks.squeeze(-1)
-        real_atom_equivariant_emebddings = equivariant_embeddings[masks]
-
-        vecs = real_atom_equivariant_emebddings.reshape(-1,3)
-
-        eps = 1e-12
-        mean_sq = torch.mean(vecs ** 2)          # E[x²] over all x, y, z
-        scale   = 1.0 / torch.sqrt(mean_sq + eps)
-
-        return scale
-
-    def split_dataset(self, splitting_ratios, dataset_split, shuffle = True):
-
-        splitting_indices = compute_splits(
-            self.dataset_config.N_molecules,
-            splitting_ratios,
-            self.dataset_config.N_conformers,
-        )
-        
-        N = self.dataset_config.N_molecules
-
-
-        if shuffle:
-            # perm =  list that contains randomly shuffeld indices
-            rng = np.random.default_rng()
-            perm = rng.permutation(N).tolist()
-        else:
-            perm = list(range(N))
-
-        returned_splits = []
-
-        for slice_indices, split in zip(splitting_indices, dataset_split):
-            
-            block_idx = perm[slice_indices.start : slice_indices.stop]
-
-
-            dataset_split = self[block_idx]
-                    
-            # Update the dataset config with new number of molecules
-            new_dataset_config = self.dataset_config.model_copy(
-                update={"N_molecules": slice_indices.stop - slice_indices.start}
-            )
-
-            new_dataset_config.dataset_split = split
-
-            new_dataset = self.dataset_config.dataset_type.value(
-                dataset_config=new_dataset_config, **asdict(dataset_split)
-            )
-
-            new_dataset.molecules   = [self.molecules[i]   for i in block_idx]
-            new_dataset.mol_ids     = [self.mol_ids[i]     for i in block_idx]
-            new_dataset.smiles_list = [self.smiles_list[i] for i in block_idx]
-
-            returned_splits.append(new_dataset)
-
-        return returned_splits
-
 
 
 
@@ -270,9 +194,7 @@ class BaseDataset(data.Dataset):
         self.padding_mask = F.pad(
             self.padding_mask, pad=(0, padding_width), value=1
         )
-
-        print(self.padding_mask.shape)
-
+        
         if self.atomic_positions is not None:
 
             #self.atomic_positions is (B,N,3)
@@ -281,8 +203,36 @@ class BaseDataset(data.Dataset):
 
         self.dataset_config.max_atoms = new_max_num_atoms
 
+    def convert_to_dataset_type(self, dataset_cls):
+
+        def infer_required_fields(dataset_cls):
+            fields = set( ['structure_ids']) # Structure ids is required
+            for base in dataset_cls.__mro__: # Gets the inheritance order
+                if hasattr(base, "required_fields"):
+
+                    fields.update(base.required_fields)
+            return fields
+
+       
+        req = infer_required_fields(dataset_cls)
+        print(req)
+
+        filtered = {}
+        for k in req:
+            v = getattr(self,k)
+            filtered.update({k:v})
+
+        return dataset_cls(dataset_config=self.dataset_config, **filtered)
+
+
+
+
+
+
+
 
 class AtomicEmbeddingMixin:
+    required_fields = ["embeddings","padding_mask"]
     def __getitem__(self, idx):
         emb = self.embeddings[idx]
         padding_mask = self.padding_mask[idx]
@@ -295,6 +245,8 @@ class AtomicEmbeddingMixin:
 
 
 class RegressionTargetMixin:
+    required_fields = ["regression_targets","regression_masks"]
+
     def __getitem__(self, idx):
         sample: Sample = super().__getitem__(idx)
 
@@ -308,6 +260,8 @@ class RegressionTargetMixin:
 
 
 class AtomicPositionMixin:
+    required_fields = ["atomic_positions"]
+
     def __getitem__(self, idx):
         pos = self.atomic_positions[idx]
         sample: Sample = super().__getitem__(idx)
@@ -316,6 +270,8 @@ class AtomicPositionMixin:
 
 
 class AuxDataMixin:
+    required_fields = ["auxillary_data"]
+
     def __getitem__(self, idx):
         sample: Sample = super().__getitem__(idx)
 
@@ -329,6 +285,8 @@ class AuxDataMixin:
 
 
 class SimilarityScreeningMixin:
+    required_fields = ["active_decoy_labels","target_class_labels"]
+
     def __getitem__(self, idx):
         sample: Sample = super().__getitem__(idx)
 
@@ -338,6 +296,9 @@ class SimilarityScreeningMixin:
 
 
 class MolecularDescriptorMixin:
+    required_fields = ["molecular_descriptors"]
+
+
     def __getitem__(self: BaseDataset, idx):
         sample: Sample = super().__getitem__(idx)
 
@@ -347,6 +308,8 @@ class MolecularDescriptorMixin:
 
 
 class RandomWalkMixin:
+    required_fields = ["random_walk_transition_matrix"]
+
     def __getitem__(self: BaseDataset, idx):
 
         sample: Sample = super().__getitem__(idx)
@@ -354,6 +317,8 @@ class RandomWalkMixin:
         sample.random_walk_transition_matrix = self.random_walk_transition_matrix[idx]
 
         return sample
+
+
 
 class AtomicEmbeddingDataset(AtomicEmbeddingMixin, BaseDataset):
     pass

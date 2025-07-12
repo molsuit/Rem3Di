@@ -102,18 +102,6 @@ def load_polaris_dataset(dataset_name: str, smiles_column, non_task_columns, dat
     regression_targets = np.array([data_dict[task] for task in target_cols]).T.squeeze()
 
 
-    np.set_printoptions(threshold=np.inf,
-                        precision=3,        # three digits after the decimal
-                        floatmode='fixed')  # fixed-point notation
-    print(regression_targets)
-
-
-
-
-    print(np.nanmean(regression_targets, axis= 0))
-    print(np.nanstd(regression_targets, axis = 0))
-
-
     smiles, regression_targets, regression_masks = pretreat_polaris_dataset(
         smiles, regression_targets
     )
