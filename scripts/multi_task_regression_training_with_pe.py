@@ -72,7 +72,7 @@ split_config = SplitConfig(
 
 training_config = TrainingConfig(
     batch_size=64,
-    epochs=20,
+    epochs=100,
     learning_rate=1e-5,
     weight_decay=1e-3,
     max_grad_norm=1.0,
@@ -80,7 +80,7 @@ training_config = TrainingConfig(
     split_config=split_config,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet",
+    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_10conf",
     test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_test",
     model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_admet",
     normalized_targets=True,
@@ -96,6 +96,8 @@ dataset = reload_dataset_pipeline(training_config.dataset_path).build()
 dataset = dataset.convert_to_dataset_type(RegressionDatasetwithPositions)
 
 dataset_splitting = DatasetSplitting(dataset)
+
+lowest_val_losses = []
 
 for train_idx, val_idx, split_name in dataset_splitting.get_split(training_config.split_config):
 
@@ -242,9 +244,12 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
                     print(f"  - New best model (val_loss {avg_validation_loss:.4f}), saving to {best_model_path}")
 
 
+    lowest_val_losses.append(telemetry.best_validation_loss)
 
    
     continue
+
+
 
     print("Loading best model from", best_model_path)
     model.load_state_dict(torch.load(best_model_path, map_location=device))
@@ -315,3 +320,5 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
     if training_config.wandb_active:
         for figname, figure in figs.items():
             wandb.log({figname: figure})
+
+print(lowest_val_losses)

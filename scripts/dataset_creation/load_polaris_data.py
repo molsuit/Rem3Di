@@ -51,7 +51,7 @@ smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
 )
 
 
-dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}"
+dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}_10conf"
 
 MACE_PATH = (
     "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
@@ -66,11 +66,11 @@ embedding_model_config = MaceCalculatorConfig(
 )
 
 dataset_config = DatasetConfig(
-    N_molecules=100,
+    N_molecules=1000,
     dataset_type=RegressionDatasetwithPositions,
-    BFGS_tol=0.5,
+    BFGS_tol=0.1,
     BFGS_max_steps=500,
-    N_conformers=3,
+    N_conformers=10,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
@@ -87,24 +87,4 @@ dataset = pipeline.build()
 
 store_data_to_disk(dataset, f"{dataset_directory}_full")
 
-
-
-#dataset_split = [DatasetSplit.TRAIN, DatasetSplit.VALIDATION]
-#splitting_ratio = [0.8,0.2]
-#
-#split_datasets = dataset.split_dataset(splitting_ratio, dataset_split)
-#
-#
-#train_dataset = split_datasets[0]
-#store_data_to_disk(train_dataset, f"{dataset_directory}_train")
-#
-#
-#
-#validation_dataset = split_datasets[1]
-#store_data_to_disk(validation_dataset, f"{dataset_directory}_valid")
-#
-#
-#DatasetPostLoadAnalysis(dataset, f"{dataset_directory}_full").run()
-#DatasetPostLoadAnalysis(train_dataset, f"{dataset_directory}_train").run()
-#DatasetPostLoadAnalysis(validation_dataset,f"{dataset_directory}_valid").run()
-#
+DatasetPostLoadAnalysis(dataset, f"{dataset_directory}_full").run()

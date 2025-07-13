@@ -119,7 +119,7 @@ class DatasetBuilder:
 
         dataset_config.N_molecules = len(molecules)
         print(
-            f"Read a total of {dataset_config.N_molecules} from {smiles_counter} distinct SMILES"
+            f"Read a total of {dataset_config.N_molecules} from {smiles_counter+1} distinct SMILES"
         )
         self.dataset.molecules = molecules
         self.dataset.smiles_list = smiles_list
