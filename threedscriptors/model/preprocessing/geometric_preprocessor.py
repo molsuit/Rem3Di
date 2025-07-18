@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from threedscriptors.data_handling.sample import Sample
 
-from threedscriptors.model.radial_basis_functions import GaussianBasisFunctions, BesselBasisFunctions
+from threedscriptors.model.preprocessing.radial_basis_functions import GaussianBasisFunctions, BesselBasisFunctions
 from threedscriptors.configuration.architecture_config import RadialBasisFunctionType
 
 from threedscriptors.model.model_output import ModelOutput
@@ -20,7 +20,7 @@ class RadialFilter(nn.Module):
 
 
 
-class PairDistanceMatrixEncodingBlock(nn.Module):
+class PairDistanceMatrixGeometricPreprocessor(nn.Module):
 
     def __init__(self, N_radial_basis_functions: int, distance_cutoff: float, d_projection: int, basis_function_type = RadialBasisFunctionType):
 
@@ -41,7 +41,6 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
 
         positions = sample.atomic_positions
         atom_mask = sample.padding_mask
-
         mask_pair = ~(atom_mask[:, :, None] | atom_mask[:, None, :])
         # positions (B, N, 3)
         # Calculate the pairwise distance matrix
@@ -59,7 +58,7 @@ class PairDistanceMatrixEncodingBlock(nn.Module):
 
 
 
-class RandomWalkStructureEncodingBlock(nn.Module):
+class RandomWalkGeometricPreprocessor(nn.Module):
     def __init__(self,k_hop: int, d_projection: int):
         
         super().__init__()
@@ -98,6 +97,8 @@ class RandomWalkStructureEncodingBlock(nn.Module):
             powers.append(T_k)
 
 
+        #TODO: This should probably be symmetrized?
+
         T_stack = torch.stack(powers, dim=-1)
         P0 = self.proj(T_stack)
-        return ModelOutput(pair_encoding= P0), mask_pair
+        return P0, T_stack, mask_pair

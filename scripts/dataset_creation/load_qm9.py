@@ -1,14 +1,90 @@
 from pathlib import Path
-from threedscriptors.data_handling.source_preprocessing.qm9_preprocessing import load_qm9
-import numpy as np 
+from threedscriptors.data_handling.source_preprocessing.qm9_preprocessing import (
+    load_qm9,QM9PropertyNames
+)
+from threedscriptors.data_handling.dataset_builder import DatasetBuilder
+import numpy as np
+from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions
+from threedscriptors.data_handling.dataset_io import store_data_to_disk
 
-qm9_dir = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_raw")
+from threedscriptors.data_handling.pipelines import (
+    regression_training_from_structures_pipeline,
+)
+
+from mace.calculators import MACECalculator
+
+from threedscriptors.configuration.data_config import (
+    DatasetConfig,
+    MaceCalculatorConfig,
+    DatasetSplit,
+)
+
+qm9_dir = Path(
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_raw"
+)
+
+
+N_molecules = 120000
+
+tasks_to_load = [ QM9PropertyNames.gap ]
+
+smiles, molecules, structure_ids, regression_targets, regression_masks, task_configs = (
+    load_qm9(qm9_dir, N_molecules, tasks_to_load= tasks_to_load)
+)
+
+assert regression_targets.shape[1] == len(tasks_to_load)
+
+dataset_directory = (
+    f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9"
+)
+
+MACE_PATH = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
+
+embedding_model_config = MaceCalculatorConfig(
+    mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
+    model_name="mace_off_24_medium",
+    model_path=MACE_PATH,
+    enable_cueq=True,
+    device="cuda",
+)
+
+dataset_config = DatasetConfig(
+    N_molecules=N_molecules,
+    dataset_type=RegressionDatasetwithPositions,
+    BFGS_tol=0.1,
+    BFGS_max_steps=500,
+    N_conformers=1,
+    embedding_model_config=embedding_model_config,
+    max_atoms=None,
+    tasks=task_configs,
+    only_heavy_atoms=False,
+    dataset_name="qm9",
+)
 
 
 
 
-smiles, molecules, regression_targets, regression_masks, task_configs = load_qm9(qm9_dir)
+dataset = regression_training_from_structures_pipeline(
+    dataset_config, molecules, structure_ids, regression_targets, regression_masks
+).build()
 
 
+#store_data_to_disk(dataset, dataset_directory +"full")
 
-print("SMILES:", smiles)
+
+from threedscriptors.training.dataset_splitting import DatasetSplitting
+
+
+ds = DatasetSplitting(dataset)
+names = ["pretraining", "finetuning", "test"] 
+split_ratios = [0.7, 0.2, 0.1]
+split_dataset_indices = ds.general_split(split_ratios, True)
+
+
+for ids, name in zip(split_dataset_indices,names):
+    new_dataset = ds.materialise_dataset_split(dataset, ids)
+
+
+    db = DatasetBuilder(new_dataset)
+    db.canonicalize_structure_ids()
+    store_data_to_disk(new_dataset, dataset_directory+"_" + name)

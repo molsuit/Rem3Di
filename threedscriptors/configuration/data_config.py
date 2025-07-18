@@ -166,7 +166,7 @@ class DatasetConfig(BaseModel):
     only_heavy_atoms: bool = False
     dataset_name: Optional[str] = None
     dataset_split: Optional[DatasetSplit] = None
-
+    max_atoms: int| None  = None
 
     def get_task_names(self):
         return [tc.task_name for tc in self.tasks]

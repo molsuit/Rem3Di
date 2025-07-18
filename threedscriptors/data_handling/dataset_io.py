@@ -46,11 +46,18 @@ def store_data_to_disk(dataset: BaseDataset, directory: str):
         np.save(f"{directory}/target_class_labels.npy", dataset.target_class_labels)
 
     # Store Smiles
-    if dataset.smiles_list and dataset.structure_ids is not None:
+    if dataset.structure_ids is not None:
         with open(f"{directory}/smiles", "w") as f:
-            for smi, structure_id in zip(dataset.smiles_list, dataset.structure_ids):
 
-                f.write(f"{structure_id.to_id_string()} {smi}" + "\n")
+            if dataset.smiles_list is not None:
+                for smi, structure_id in zip(dataset.smiles_list, dataset.structure_ids):
+
+                    f.write(f"{structure_id.to_id_string()} {smi}" + "\n")
+
+            else:
+                for structure_id in dataset.structure_ids:
+                    f.write(f"{structure_id.to_id_string()}" + "\n")
+
 
 
     if dataset.random_walk_transition_matrix is not None:
@@ -125,6 +132,9 @@ def load_data_from_disk(
         dataset.padding_mask = from_numpy(
             np.load(f"{directory}/padding_mask.npy")
         ).bool()
+
+        print(f"embeddings shape {dataset.embeddings.shape}")
+        print(f"embeddings mmask {dataset.padding_mask.shape}")
 
     if "activity_labels.npy" in files:
         assert "target_class_labels.npy" in files

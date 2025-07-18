@@ -9,7 +9,7 @@ import torch
 from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, Subset
-from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions
+from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions, RegressionDatasetwithRandomWalks
 from threedscriptors.training.dataset_splitting import DatasetSplitting, SplitConfig, SplitStrategy
 
 from threedscriptors.training.training_utils import cosine_matrix
@@ -64,9 +64,9 @@ training_data_dir = training_run_dir / Path(
 os.makedirs(training_data_dir)
 
 split_config = SplitConfig(
-    strategy= SplitStrategy.REPEATED_CV,
-    N_folds = 5,
-    N_repeats = 5,
+    strategy= SplitStrategy.SINGLE,
+    N_folds = None,
+    N_repeats = None,
     shuffle = True
 )
 
@@ -80,9 +80,9 @@ training_config = TrainingConfig(
     split_config=split_config,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_10conf",
-    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_test",
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_admet",
+    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_finetuning",
+    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/qm9_finetuning",
     normalized_targets=True,
 )
 
@@ -92,7 +92,7 @@ architecture_config = pyaml.parse_yaml_file_as(
 )
 
 dataset = reload_dataset_pipeline(training_config.dataset_path).build()
-
+#dataset.expand_embedding_num_atoms(29)
 dataset = dataset.convert_to_dataset_type(RegressionDatasetwithPositions)
 
 dataset_splitting = DatasetSplitting(dataset)
@@ -128,11 +128,28 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
 
     data_normalization = DataNormalizationModule(dataset = train_dataset)
+    mean_per_task = data_normalization.mean_tasks
+    std_per_task = data_normalization.std_tasks
+
+    task_configs =  [cfg.model_copy(deep=True) for cfg in dataset.dataset_config.tasks]
+    
+    for cfg, mean, std in zip(task_configs, mean_per_task, std_per_task):
+        cfg.mean = mean
+        cfg.std = std
+
+
     inv_mean_per_dim, inv_std_per_dim = data_normalization.get_atomic_embedding_normalization_constants()
+
+
+    print(f"Mean per task {data_normalization.mean_tasks}")
+    print(f"Std per task {data_normalization.std_tasks}")
 
 
 
     mb = ModelBuilder(architecture_config=architecture_config)
+
+    print(task_configs)
+    mb.insert_task_configs_into_regression_heads(task_configs)
     model = mb.build_model(
         mean_atomic_embedding=inv_mean_per_dim,
         std_atomic_embedding=inv_std_per_dim

@@ -19,7 +19,7 @@ from threedscriptors.model.architecture_config import (
     GlobalAggregatorConfig,
     RegressionHeadConfig,
 )
-from threedscriptors.model.atomic_descriptor_preprocess import (
+from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
     InvariantsFilter,
     PseudoscalarGenerator,
 )
@@ -27,7 +27,7 @@ from threedscriptors.model.global_aggregator import GlobalAggregator
 from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
-from threedscriptors.model.transformer_components import TransformerEncoder
+from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature
 
 # Load the competition from the Hub

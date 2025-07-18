@@ -13,7 +13,7 @@ from torchmetrics.functional import (
     mean_absolute_error,
 )
 
-
+from threedscriptors.data_handling.data_utils import get_molecular_weight, get_all_atom_counts
 
 
 from threedscriptors.data_handling.dataset import (
@@ -26,7 +26,6 @@ from threedscriptors.evaluation.clustering import (
     ClusteringCalculator,
     plot_reduced_dimension,
     plot_reduced_dimension_functional_group_comparison,
-    plot_reduced_dimension_with_with_regression_labels,
 )
 from threedscriptors.evaluation.descriptor_calculators import (
     MolfeatDescriptorCalculator,
@@ -55,7 +54,7 @@ from threedscriptors.evaluation.similarity_screening import (
     plot_reference_vs_model_classification_metric,
     plot_roc,
 )
-from threedscriptors.model.atomic_descriptor_preprocess import PseudoscalarGenerator
+from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import PseudoscalarGenerator
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
 from threedscriptors.training.regression_training import multitask_masked_loss
 from threedscriptors.configuration.data_config import DatasetSplit, LabelScalingType
@@ -93,9 +92,7 @@ class DescriptorPCATask(BaseEvalTask):
 
         descriptors = evaluate_molecular_descriptor_on_dataset(model, self.dataset)
 
-        if self.dataset.regression_targets is not None:
-            self.predictions = evaluate_regression_model_on_dataset(model, self.dataset)
-
+    
         self.reduced_dimensions = (
             self.clustering_calculator.get_dimensionality_reduction(descriptors)
         )
@@ -108,21 +105,24 @@ class DescriptorPCATask(BaseEvalTask):
         )
 
         if self.dataset.regression_targets is not None:
-
-            for i in range(self.predictions.shape[1]):
+            for i in range(self.dataset.regression_targets.shape[1]):
                 task_name = self.dataset.dataset_config.tasks[i].task_name
                 fig_with_regression_coloring = (
-                    plot_reduced_dimension_with_with_regression_labels(
-                        self.reduced_dimensions, self.predictions[:, i]
+                    plot_reduced_dimension(
+                        self.reduced_dimensions,color =  self.dataset.regression_targets[:, i], suptitle= f"Molecular Descriptor Clustering color = {task_name}"
                     )
                 )
-                fig_with_regression_coloring.suptitle(
-                    f"Molecular Descriptor Clustering with {task_name} color values"
-                )
+
                 figs[
-                    f"Descriptor_{type(self.clustering_calculator)}_with_regression_labels_task_{task_name}"
+                    f"Descriptor_UMAP_with_regression_labels_task_{task_name}"
                 ] = fig_with_regression_coloring
 
+        molecular_weights = get_molecular_weight(self.dataset.molecules)
+        num_heavy_atoms = list(get_all_atom_counts(self.dataset.molecules, heavy_atoms_only=True))
+
+        figs[f"Descriptor_UMAP_with_molecular_weight"] = (
+                    plot_reduced_dimension(self.reduced_dimensions, num_heavy_atoms, suptitle="UMAP projection c= N heavy atoms")
+                )
         self.figs = figs
 
 

@@ -1,6 +1,7 @@
 from threedscriptors.data_handling.dataset import BaseDataset
 from threedscriptors.data_handling.data_utils import compute_splits
 import numpy as np
+from dataclasses import asdict
 
 from itertools import chain
 import matplotlib.pyplot as plt
@@ -151,11 +152,7 @@ class DatasetSplitting:
             raise ValueError(f"Unknown split strategy: {split_config.strategy}")
 
     def visualise_splitting(self, N_repeats=5, N_splits=5):
-        splits = list(
-            self._repeated_cv(
-                N_repeats, N_splits, shuffle=True
-            )
-        )
+        splits = list(self._repeated_cv(N_repeats, N_splits, shuffle=True))
 
         # ---------- build a 2‑D matrix: rows = splits×folds, cols = samples ------------
         N_structures = len(self.dataset.structure_ids)
@@ -187,3 +184,52 @@ class DatasetSplitting:
 
         plt.tight_layout()
         return fig
+
+    def general_split(self, split_ratios, shuffle):
+
+        # 1. Get the set of mol ids
+        mol_ids = self.dataset.get_all_mol_ids()
+        N_mols = len(mol_ids)
+
+        # 2 Get random permutation if shuffle true
+
+        if shuffle:
+            # perm =  list that contains randomly shuffeld indices
+            rng = np.random.default_rng()
+            perm = rng.permutation(N_mols).tolist()
+        else:
+            perm = list(range(N_mols))
+
+
+        # Split the mol ids
+
+        splitting_indices = compute_splits(N_mols, split_ratios)
+
+        index_per_slice = []
+
+        for splitting_slice in splitting_indices:
+            
+            
+            split_perm = perm[splitting_slice.start : splitting_slice.stop]
+
+            split_mol_ids = [mol_ids[i] for i in split_perm]
+            structure_ids = self.dataset.get_structure_ids_for_mol(split_mol_ids)
+
+            index_per_slice.append(structure_ids)
+
+        return index_per_slice
+
+    @staticmethod
+    def materialise_dataset_split(dataset: BaseDataset, indices: list[int]):
+
+        # Split a dataset based on indices and create a completely new object, instead of just passing indices through a torch Subset
+
+        data = dataset[indices]
+        structure_ids = [dataset.structure_ids[i] for i in indices]
+        smiles_list = [dataset.smiles_list[i] for i in indices]
+        molecules = [dataset.molecules[i] for i in indices]
+        config = dataset.dataset_config
+        new_dataset = BaseDataset(config, **asdict(data), structure_ids= structure_ids, smiles_list=smiles_list, molecules= molecules)
+
+
+        return new_dataset 

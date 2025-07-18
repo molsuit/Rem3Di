@@ -5,21 +5,26 @@ from threedscriptors.configuration.data_config import TaskConfig
 from tqdm import tqdm
 from rdkit import Chem
 import re
+from threedscriptors.data_handling.mol_id import StructureID
+import random
+from enum import IntEnum
 
-# ----------------------------------------------------------------------
-# Column labels in the order they appear after the identifier
-# (taken from the original QM9 paper, cf. Table 3 in your screenshot)
-PROPERTY_NAMES = [
-    "A", "B", "C",                       # rotational constants  [GHz]
-    "mu",                                # dipole moment         [D]
-    "alpha",                             # isotropic polarizab.  [a0^3]
-    "epsilon_HOMO", "epsilon_LUMO",      # orbital energies      [Ha]
-    "gap",                               # HOMO–LUMO gap         [Ha]
-    "r2",                                # ⟨R²⟩                  [a0²]
-    "zpve",                              # zero‑point vibr. E    [Ha]
-    "U0", "U", "H", "G",                 # thermochemistry       [Ha]
-    "Cv"                                 # heat capacity         [cal mol⁻¹ K⁻¹]
-]
+class QM9PropertyNames(IntEnum):
+    A              = 0  # rotational constant [GHz]
+    B              = 1  # rotational constant [GHz]
+    C              = 2  # rotational constant [GHz]
+    mu             = 3  # dipole moment [D]
+    alpha          = 4  # isotropic polarizability [a0^3]
+    epsilon_HOMO   = 5  # orbital energy [Ha]
+    epsilon_LUMO   = 6  # orbital energy [Ha]
+    gap            = 7  # HOMO–LUMO gap [Ha]
+    r2             = 8  # ⟨R²⟩ [a0²]
+    zpve           = 9  # zero‑point vibrational energy [Ha]
+    U0             = 10 # internal energy at 0 K [Ha]
+    U              = 11 # internal energy [Ha]
+    H              = 12 # enthalpy [Ha]
+    G              = 13 # Gibbs free energy [Ha]
+    Cv             = 14 # heat capacity [cal·mol⁻¹·K⁻¹]
 
 
 
@@ -63,8 +68,11 @@ def parse_qm9_xyz(path: Path):
 
         fh.readline()                   # vibrational frequencies
         smiles = fh.readline().split()[0]
+        smiles = Chem.CanonSmiles(smiles, useChiral=False)
+        
+        
 
-    atoms = Atoms(symbols=symbols, positions=np.asarray(coords))
+    atoms = Atoms(symbols=symbols, positions=np.asarray(coords), info = {"smiles" : smiles})
     atoms.info["gdb_index"] = int(gdb_idx)
 
     return atoms, props, smiles
@@ -72,17 +80,23 @@ def parse_qm9_xyz(path: Path):
 
 
 
-def load_qm9(qm9_dir: Path, N_molecules: int | None = None):
+def load_qm9(qm9_dir: Path, N_molecules: int | None = None, tasks_to_load = list[QM9PropertyNames] | None, shuffle: bool = True):
     
 
 
     xyz_files = sorted(qm9_dir.glob("**/*.xyz"))  
+
+    if shuffle:
+        random.shuffle(xyz_files)
+
+
     if N_molecules is not None:
         xyz_files = xyz_files[:N_molecules]                # limit to N_molecules
 
     all_props = []
     all_smiles = []
-    molecules  = []
+    molecules : list[Atoms] = []
+    
 
     for f in tqdm(xyz_files):
         atoms, props, smiles = parse_qm9_xyz(f)
@@ -94,12 +108,25 @@ def load_qm9(qm9_dir: Path, N_molecules: int | None = None):
         all_smiles.append(smiles)
 
     regression_targets  = np.stack(all_props)
+    print(regression_targets.shape)
+
+    if tasks_to_load is not None:
+        task_col_indices = [t.value for t in tasks_to_load]
+
+        regression_targets= regression_targets[:,task_col_indices]
+        task_names = [t.name for t in tasks_to_load]
+
+    else: 
+        task_names = [p.name for p in QM9PropertyNames]
+
+    print(task_names)
 
     regression_masks = np.ones_like(regression_targets, dtype=bool)
 
-    task_names = PROPERTY_NAMES
+    
 
     task_configs = [TaskConfig(task_name=task_name) for task_name in task_names]
 
+    structure_ids = [StructureID(structure_id= idx, molecule_id=idx, smiles_id=idx, conformer_id=0, enantiomer_id= 0, canonical_smiles=smi) for idx, smi in enumerate(all_smiles)] 
 
-    return all_smiles, molecules, regression_targets, regression_masks, task_configs
+    return all_smiles, molecules, structure_ids, regression_targets, regression_masks, task_configs

@@ -1,5 +1,8 @@
 from collections.abc import Iterable
 
+
+from threedscriptors.model.remedi_model import REM3DIModel
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -14,7 +17,7 @@ from threedscriptors.model.model_output import ModelOutput
 from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
-from threedscriptors.model.transformer_components import TransformerEncoder
+from threedscriptors.model.encoder import TransformerEncoder
 
 
 def evaluate_regression_model_on_dataset(
@@ -56,7 +59,7 @@ def evaluate_regression_model_on_dataset(
 
 
 def evaluate_molecular_descriptor_on_dataset(
-    model: MultiTaskRegressionModel, dataset: AtomicEmbeddingDataset, device="cuda"
+    model: REM3DIModel, dataset: AtomicEmbeddingDataset, device="cuda"
 ):
     batch_size = min(64, len(dataset))
     dataloader: Iterable[Sample] = DataLoader(
@@ -71,16 +74,16 @@ def evaluate_molecular_descriptor_on_dataset(
     model.eval()
 
     descriptors = torch.zeros(
-        size=(len(dataset), model.global_aggregator.config.output_dim)
+        size=(len(dataset), model.encoder.aggregator.config.output_dim)
     )
 
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
             samples.to_(device)
 
-            output: ModelOutput = model.get_molecular_descriptor(samples)
+            molecular_descriptor = model(samples)
 
-            descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = output.molecular_descriptor
+            descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = molecular_descriptor
 
 
     return descriptors

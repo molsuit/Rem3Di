@@ -9,7 +9,7 @@ from threedscriptors.configuration.architecture_config import (
     GlobalAggregatorConfig,
     RelativeDistancePositionalEncodingConfig, 
     RandomWalkPositionalEncoding,
-    RegressionHeadConfig,
+    RegressionHeadConfig,DecoderConfig
 )
 from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.utils.model_utils import (
@@ -25,7 +25,9 @@ class ConfigFactory:
         attention_layer_config: AttentionLayerConfig,
         encoder_config: EncoderConfig,
         global_aggregator_config: GlobalAggregatorConfig,
-        positional_encoding_config: RelativeDistancePositionalEncodingConfig | RandomWalkPositionalEncoding | None = None
+        positional_encoding_config: RelativeDistancePositionalEncodingConfig |  RandomWalkPositionalEncoding | None = None, 
+        decoder_config : DecoderConfig | None = None
+
     ):
         self.dataset_config = dataset_config
         self.embedding_preprocessor_config = embedding_preprocessor_config
@@ -33,6 +35,7 @@ class ConfigFactory:
         self.encoder_config = encoder_config
         self.global_aggregator_config = global_aggregator_config
         self.positional_encoding_config = positional_encoding_config
+        self.decoder_config = decoder_config
 
         mace_calculator = self.dataset_config.embedding_model_config.mace_calc
         self.initial_irreps = get_mace_calculator_irrep_signature(mace_calculator)
@@ -94,6 +97,11 @@ class ConfigFactory:
                 self.encoder_config.d_geo = self.positional_encoding_config.N_radial_basis_functions
 
 
+    def process_decoder_config(self):
+
+        if self.decoder_config is not None:
+            self.decoder_config.d_descriptor = self.global_aggregator_config.output_dim
+
 
     def create_architecture_config_template(
         self, model_directory, head_config_template: RegressionHeadConfig
@@ -104,7 +112,7 @@ class ConfigFactory:
         self.process_encoder_config()
         self.process_attention_layer_config()
         self.process_global_aggregator_config()
-
+        self.process_decoder_config()
 
         regression_heads = self.process_regression_heads_config(head_config_template)
 
@@ -112,7 +120,8 @@ class ConfigFactory:
             embedding_preprocess_config=self.embedding_preprocessor_config,
             encoder_config=self.encoder_config,
             global_aggregator_config=self.global_aggregator_config,
-            regression_head_config=regression_heads,positional_encoding_config= self.positional_encoding_config
+            regression_head_config=regression_heads,positional_encoding_config= self.positional_encoding_config,
+            decoder_config= self.decoder_config
         )
 
         pyaml.to_yaml_file(

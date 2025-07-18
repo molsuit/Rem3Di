@@ -22,7 +22,7 @@ from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 from threedscriptors.utils.model_utils import get_mace_calculator_embedding_dimension
 from rdkit.Chem import rdmolops
 
-
+from threedscriptors.data_handling.data_utils import count_atoms_from_ase
 from threedscriptors.data_handling.mol_id import StructureID
 
 
@@ -57,11 +57,19 @@ class DatasetBuilder:
         self.dataset.smiles_list = smiles_list
 
 
-    def add_molecules(self, molecules: list[Atoms], mol_ids: list[StructureID]):
+    def add_molecules(self, molecules: list[Atoms], structure_ids: list[StructureID]):
 
-        assert mol_ids.shape[0] == len(molecules)
+        assert len(structure_ids) == len(molecules)
         self.dataset.molecules = molecules
-        self.dataset.mol_ids = mol_ids
+        self.dataset.structure_ids = structure_ids
+
+        if all([sid.canonical_smiles is not None for sid in structure_ids]):
+            self.dataset.smiles_list = [sid.canonical_smiles for sid in structure_ids]
+
+        self.dataset.N_structures = len(molecules)
+        self.dataset.max_atoms, self.dataset.total_num_atoms = count_atoms_from_ase(molecules, self.dataset.dataset_config.only_heavy_atoms)
+
+        self.dataset.dataset_config.max_atoms = self.dataset.max_atoms
 
     def embed_structures_from_smiles(self):
         dataset_config = self.dataset.dataset_config
@@ -125,6 +133,8 @@ class DatasetBuilder:
         self.dataset.smiles_list = smiles_list
         self.dataset.structure_ids = index_list
         self.dataset.N_structures = len(index_list)
+    
+
 
     def canonicalize_structure_ids(self):
 
@@ -439,4 +449,3 @@ class DatasetBuilder:
 
         self.dataset.random_walk_transition_matrix = torch.stack(transition_mats, dim=0)
 
-        print(self.dataset.random_walk_transition_matrix.shape)

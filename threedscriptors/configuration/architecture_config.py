@@ -19,8 +19,8 @@ from threedscriptors.utils.model_utils import (
     get_invariant_indices,
 )
 
-from threedscriptors.model.radial_basis_functions import GaussianBasisFunctions, BesselBasisFunctions
-
+from threedscriptors.model.preprocessing.radial_basis_functions import GaussianBasisFunctions, BesselBasisFunctions
+from threedscriptors.configuration.data_config import TaskConfig
 from threedscriptors.model.pooling import MeanPool, AttnPool
 
 class HeadType(Enum):
@@ -60,11 +60,21 @@ class EncoderConfig(BaseModel):
     d_pair: int | None = None
     d_geo: int| None = None
 
+class DecoderConfig(BaseModel):
+    N_layers: int
+    d_descriptor: int | None = None
+    attention_layer_config: AttentionLayerConfig
+    reload_state_dict: str | None = None
+    d_pair: int | None = None
+    d_geo: int| None = None
+
+
 
 class RegressionHeadConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     task_name: str | None = None
+    task_config: TaskConfig | None = None
     activation_fn: Callable = torch.nn.SiLU()
     hidden_dimensions: list[int] = [256, 128]
     input_dimensions: int | None = None
@@ -223,6 +233,7 @@ class GlobalAggregatorConfig(BaseModel):
 class RandomWalkPositionalEncoding(BaseModel):
     k_hop_random_walk : int
     d_projection: int
+    reload_state_dict: str | None = None
 
 
 
@@ -248,8 +259,7 @@ class RelativeDistancePositionalEncodingConfig(BaseModel):
     distance_cutoff: float
     d_projection: int
     basis_function_type: RadialBasisFunctionType = RadialBasisFunctionType.GAUSSIAN
-    #with_cross_entropy_loss : bool = False
-
+    reload_state_dict: str| None = None
 
     @field_serializer("basis_function_type")
     def _serialize_aggregator_type(self, v: RadialBasisFunctionType, info):
@@ -274,6 +284,7 @@ class ArchitectureConfig(BaseModel):
     regression_head_config: RegressionHeadConfig | Sequence[RegressionHeadConfig]
     positional_encoding_config: RelativeDistancePositionalEncodingConfig | RandomWalkPositionalEncoding | None = None
     reload_full_model_weights: str | None = None
+    decoder_config: DecoderConfig | None = None
 
 
 

@@ -12,15 +12,15 @@ from threedscriptors.configuration.architecture_config import (
     RelativeDistancePositionalEncodingConfig,
     RegressionHeadConfig,
     AttentionAggregatorConfig,
-    MeanAggregatorConfig,
+    MeanAggregatorConfig, DecoderConfig, 
     Aggregations, RandomWalkPositionalEncoding, RadialBasisFunctionType
 )
 from threedscriptors.configuration.config_factory import ConfigFactory
 from threedscriptors.configuration.data_config import DatasetConfig
 
-run = "antiviral_admet"
+run = "qm9_finetuning"
 
-config_file = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{run}_full/dataset_config.yaml"
+config_file = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{run}/dataset_config.yaml"
 dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, config_file)
  
 
@@ -46,6 +46,10 @@ encoder_config = EncoderConfig(
     N_layers=5, attention_layer_config=attention_layer_config
 )
 
+#decoder_config = DecoderConfig(N_layers=3, attention_layer_config=attention_layer_config)
+decoder_config = None
+
+
 
 mean_aggregator_config = MeanAggregatorConfig(aggregator_type= Aggregations.MEAN)
 
@@ -62,12 +66,17 @@ cf = ConfigFactory(
     attention_layer_config,
     encoder_config,
     global_aggregator_config,
-    positional_encoding_config=pos_encoding_config
+    positional_encoding_config=pos_encoding_config, 
+    decoder_config = decoder_config
 )
+
+
+
+
 
 head_config_template = RegressionHeadConfig(
     activation_fn=torch.nn.SiLU(),
-    hidden_dimensions=[512,256,256,128],
+    hidden_dimensions=[512,256,128],
     head_type=HeadType.FULLY_CONNECTED,
 )
 

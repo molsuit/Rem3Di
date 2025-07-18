@@ -24,7 +24,8 @@ class DataNormalizationModule():
             self.indices = None
 
         # compute mean/std on the (possibly indexed) base dataset
-        self._compute_mean_std()
+        if self.base_ds.regression_targets is not None:
+            self._compute_mean_std()
 
     def __call__(self, sample: Sample):
         rt = sample.regression_targets  # [..., T]

@@ -38,7 +38,7 @@ class UMAPCalculator(ClusteringCalculator):
         return umap_projection
 
 
-def plot_reduced_dimension(principle_components):
+def plot_reduced_dimension(principle_components, color = "k", suptitle = None):
     # Plot a scatter plot of the principle components. Color each point according to it molecules type in dataset.mol_ids
     pc1 = principle_components[:, 0]
     pc2 = principle_components[:, 1]
@@ -58,55 +58,25 @@ def plot_reduced_dimension(principle_components):
 
     # Create the scatter plot
     fig = plt.figure(figsize=(8, 6))
-    plt.scatter(pc1, pc2, edgecolor="k", alpha=0.7, s= 1)
+    plt.scatter(pc1, pc2, c=color, alpha=0.7, s= 0.4)
 
-    ## Manually build a legend
-    # legend_handles = [
-    #    Line2D(
-    #        [0],
-    #        [0],
-    #        marker="o",
-    #        color="w",
-    #        label=moltype,
-    #        markerfacecolor=color_map[moltype],
-    #        markersize=8,
-    #        markeredgecolor="k",
-    #    )
-    #    for moltype in unique_types
-    # ]
-    # plt.legend(
-    #    handles=legend_handles,
-    #    title="Molecule Type",
-    #    bbox_to_anchor=(1.05, 1),
-    #    loc="upper left",
-    # )
 
     # Labeling
-    plt.xlabel("PC1")
-    plt.ylabel("PC2")
-    plt.title("PCA Scatter Plot of Molecule Descriptors")
+    plt.xlabel("UMAP1")
+    plt.ylabel("UMAP2")
+    plt.title("UMAP Plot of Molecule Descriptors")
     plt.tight_layout()
 
-    return fig
 
-
-def plot_reduced_dimension_chiral_molecules():
-    pass
-
-
-def plot_reduced_dimension_with_with_regression_labels(principle_components, predictions):
-
-    fig = plt.figure()
-
-    colors = get_colors_for_predictions(predictions)
-
-    plt.scatter(principle_components[:,0], principle_components[:,1], c = colors)
-
-    plt.xlabel("Reduced Dimension 1")
-    plt.ylabel("Reduced Dimension 2")
-
+    if suptitle is not None:
+        fig.suptitle(suptitle)
 
     return fig
+
+
+
+
+
 
 
 def plot_reduced_dimension_functional_group_comparison(reduced_dimensions, smiles):

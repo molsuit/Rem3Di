@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
-from threedscriptors.model.atomic_descriptor_preprocess import (
+from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
     AtomicDescriptorPreprocess,
 )
 

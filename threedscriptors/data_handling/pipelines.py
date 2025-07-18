@@ -121,6 +121,27 @@ def similarity_screening_pipeline(
 
     return PipelineOrchestrator(stages)
 
+def regression_training_from_structures_pipeline(
+    dataset_config: DatasetConfig,
+    molecules,
+    structure_ids,
+    regression_targets,
+    regression_masks,
+):
+    stages = [
+        InitializeBuildPipeline(dataset_config),
+        InsertMoleculeStage(molecules=molecules, structure_ids=structure_ids),
+        AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
+        RegressionLabelingStage(
+            regression_targets=regression_targets, regression_masks=regression_masks
+        ),AtomicPositionsStage(),
+        AddRandomWalkTransitionProbabilityMatrixStage(),
+    ]
+
+    return PipelineOrchestrator(stages)
+
+
+
 
 def reload_dataset_pipeline(
     directory
@@ -136,21 +157,4 @@ def reload_dataset_pipeline(
 
 
 
-def regression_training_from_structures_pipeline(
-    dataset_config: DatasetConfig,
-    molecules,
-    mol_ids,
-    regression_targets,
-    regression_masks,
-):
-    stages = [
-        InitializeBuildPipeline(dataset_config),
-        InsertMoleculeStage(molecules=molecules, mol_ids=mol_ids),
-        RelaxStage(dataset_config.embedding_model_config.mace_calc),
-        AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
-        RegressionLabelingStage(
-            regression_targets=regression_targets, regression_masks=regression_masks
-        ),
-    ]
 
-    return PipelineOrchestrator(stages)

@@ -88,8 +88,10 @@ class BaseDataset(data.Dataset):
 
     def get_max_atoms(self):
         if self.max_atoms is None:
-
-            if self.molecules is not None:
+            if self.dataset_config.max_atoms is not None:
+                self.max_atoms = self.dataset_config.max_atoms
+            
+            elif self.molecules is not None:
                 self.max_atoms, _ = count_atoms_from_ase(self.molecules, heavy_atoms_only= self.dataset_config.only_heavy_atoms)
 
             else:
@@ -99,6 +101,7 @@ class BaseDataset(data.Dataset):
                     smiles_iterator, heavy_atoms_only= self.dataset_config.only_heavy_atoms
                 )
 
+           
         return self.max_atoms
     
 
@@ -132,7 +135,9 @@ class BaseDataset(data.Dataset):
         atomic_numbers = [at.get_atomic_numbers() for at in self.molecules]
         padding_dim = np.array([len(an) for an in atomic_numbers]) # The dimension of the real atoms, required to reconstruct whcich element are padding and which ones are not.
 
+
         max_atoms= self.get_max_atoms()
+        print(f"Current Atom Count {max_atoms}")
 
 
         if self.dataset_config.only_heavy_atoms:
@@ -154,6 +159,8 @@ class BaseDataset(data.Dataset):
             padding_dim = np.array([len(hi) for hi in heavy_indices])
 
 
+
+        print(f"max an {max([len(an) for an in atomic_numbers])}")
         padded_atomic_numbers = np.array(
             [
                 np.pad(
@@ -175,6 +182,7 @@ class BaseDataset(data.Dataset):
             ], dtype = np.float32
         )
 
+
         return padding_dim, padded_positions, padded_atomic_numbers
 
 
@@ -183,7 +191,7 @@ class BaseDataset(data.Dataset):
         # Method can be used to increase the "Sequence length" i.e the number of atoms in a molecule. So that the embeddings do not have to be recalculated.
         # Expand the padding mask and the atomic embeddings to the max dimension.
 
-        padding_width = new_max_num_atoms - self.dataset_config.max_atoms
+        padding_width = new_max_num_atoms - self.max_atoms
 
         assert padding_width > 0
         
@@ -201,7 +209,7 @@ class BaseDataset(data.Dataset):
             self.atomic_positions = F.pad(self.atomic_positions, pad = (0, 0,0, padding_width), value = 0.0)
             
 
-        self.dataset_config.max_atoms = new_max_num_atoms
+        self.max_atoms = new_max_num_atoms
 
     def convert_to_dataset_type(self, dataset_cls):
 
@@ -215,7 +223,6 @@ class BaseDataset(data.Dataset):
 
        
         req = infer_required_fields(dataset_cls)
-        print(req)
 
         filtered = {}
         for k in req:
@@ -223,12 +230,6 @@ class BaseDataset(data.Dataset):
             filtered.update({k:v})
 
         return dataset_cls(dataset_config=self.dataset_config, **filtered)
-
-
-
-
-
-
 
 
 class AtomicEmbeddingMixin:

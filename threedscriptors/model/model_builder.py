@@ -8,23 +8,28 @@ from threedscriptors.configuration.architecture_config import (
     RandomWalkPositionalEncoding,
     RelativeDistancePositionalEncodingConfig,
 )
-from threedscriptors.model.atomic_descriptor_preprocess import (
+from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
     AtomicDescriptorPreprocess,
     InvariantsFilter,
     PseudoscalarGenerator,
 )
+from threedscriptors.model.preprocessing.preprocessing import Preprocessor
+from threedscriptors.configuration.data_config import TaskConfig
+from threedscriptors.model.decoder import TransformerDecoder
 from threedscriptors.model.global_aggregator import GlobalAggregator
-from threedscriptors.model.pair_block import TransformerPairEncoder
 from threedscriptors.model.regression_models import (
     MultitaskHeads,
     MultiTaskRegressionModel,
-    StructureBasedMultitaskRegressionModel,
 )
-from threedscriptors.model.structural_encoding import (
-    PairDistanceMatrixEncodingBlock,
-    RandomWalkStructureEncodingBlock,
+
+from threedscriptors.model.preprocessing.geometric_preprocessor import (
+    PairDistanceMatrixGeometricPreprocessor,
+    RandomWalkGeometricPreprocessor,
 )
-from threedscriptors.model.transformer_components import TransformerEncoder
+from threedscriptors.model.encoder import TransformerEncoder
+from threedscriptors.model.pair_encoder import TransformerPairEncoder
+
+
 from threedscriptors.utils.model_utils import get_invariant_indices
 
 
@@ -32,9 +37,8 @@ class ModelBuilder:
     def __init__(self, architecture_config: ArchitectureConfig):
         self.architecture_config = architecture_config
 
-        self.model: (
-            MultiTaskRegressionModel | StructureBasedMultitaskRegressionModel | None
-        ) = None
+        self.model: MultiTaskRegressionModel | None = None
+
         self._N_trainable_parameters = None
 
     @classmethod
@@ -53,105 +57,85 @@ class ModelBuilder:
     def N_trainable_parameters(self):
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
-    def _reload_weights(self):
-        if self.architecture_config.reload_full_model_weights:
-            self.model.load_state_dict(
-                torch.load(self.architecture_config.reload_full_model_weights)
-            )
-        else:
-            if self.architecture_config.embedding_preprocess_config.reload_state_dict:
-                self.model.preprocessor.load_state_dict(
-                    torch.load(
-                        self.architecture_config.embedding_preprocess_config.reload_state_dict
-                    )
-                )
-            if self.architecture_config.encoder_config.reload_state_dict:
-                self.model.encoder.load_state_dict(
-                    torch.load(
-                        self.architecture_config.encoder_config.reload_state_dict
-                    )
-                )
+    def insert_task_configs_into_regression_heads(self, task_configs: list[TaskConfig]):
 
-    def build_model(
-        self,
-        mean_atomic_embedding=None,
-        std_atomic_embedding=None,
-        equivariant_scale_factor=None,
-    ):
-        preprocessor = self.build_preprocess(
-            mean_atomic_embedding, std_atomic_embedding, equivariant_scale_factor
+        for task_cfg, head_cfg in zip(
+            task_configs, self.architecture_config.regression_head_config
+        ):
+
+            assert head_cfg.task_name == task_cfg.task_name
+            head_cfg.task_config = task_cfg
+
+    def _reload_model_weights(self):
+
+        self.model.load_state_dict(
+            torch.load(self.architecture_config.reload_full_model_weights)
+        )
+
+    def build_model(self, mean_atomic_embedding=None, std_atomic_embedding=None):
+        preprocessor = self.build_preprocessor(
+            mean_atomic_embedding, std_atomic_embedding
         )
         encoder = self.build_encoder()
-        aggregator = self.build_global_aggregator()
+
         multitask_heads = self.build_regression_heads()
 
-        if self.architecture_config.positional_encoding_config is None:
+        model = MultiTaskRegressionModel(
+            preprocessor=preprocessor,
+            encoder=encoder,
+            regression_heads=multitask_heads,
+        )
 
+        self.model = model.float()
+        self.model.preprocessor.atomic_preprocessor.double()
 
-            model = MultiTaskRegressionModel(
-                regression_heads=multitask_heads,
-                encoder=encoder,
-                preprocessor=preprocessor,
-                global_aggregator=aggregator,
-            )
+        if self.architecture_config.reload_full_model_weights:
+            self._reload_model_weights()
 
-        else:
-            if isinstance(
+        return model
+
+    def build_geometric_preprocessing(self):
+
+        if isinstance(
             self.architecture_config.positional_encoding_config,
             RelativeDistancePositionalEncodingConfig,
         ):
-                pos_config = self.architecture_config.positional_encoding_config
-                structure_encoding = PairDistanceMatrixEncodingBlock(
-                    N_radial_basis_functions=pos_config.N_radial_basis_functions,
+            pos_config = self.architecture_config.positional_encoding_config
+            structure_encoding = PairDistanceMatrixGeometricPreprocessor(
+                N_radial_basis_functions=pos_config.N_radial_basis_functions,
                 distance_cutoff=pos_config.distance_cutoff,
                 d_projection=pos_config.d_projection,
                 basis_function_type=pos_config.basis_function_type,
             )
 
-            elif isinstance(
+        elif isinstance(
             self.architecture_config.positional_encoding_config,
             RandomWalkPositionalEncoding,
         ):
 
-                pos_config = self.architecture_config.positional_encoding_config
-                structure_encoding = RandomWalkStructureEncodingBlock(
+            pos_config = self.architecture_config.positional_encoding_config
+            structure_encoding = RandomWalkGeometricPreprocessor(
                 k_hop=pos_config.k_hop_random_walk, d_projection=pos_config.d_projection
             )
 
-            else:
-                raise ValueError("Invalid Choice of Structural Encoding")
+        else:
+            raise ValueError("Invalid Choice of Structural Encoding")
 
+        if pos_config.reload_state_dict is not None:
 
+            structure_encoding.load_state_dict(torch.load(pos_config.reload_state_dict))
 
-            model = StructureBasedMultitaskRegressionModel(
-                structure_encoding_block=structure_encoding,
-                pair_encoder=encoder,
-                preprocessor=preprocessor,
-                global_aggregator=aggregator,
-                multitask_heads=multitask_heads,
-        )
+        return structure_encoding
 
-        self.model = model.float()
-        self.model.preprocessor.double()
-
-        if (
-            self.architecture_config.reload_full_model_weights
-            or self.architecture_config.embedding_preprocess_config.reload_state_dict
-            or self.architecture_config.encoder_config.reload_state_dict
-        ):
-            self._reload_weights()
-
-        return model
-
-    def build_preprocess(
-        self, mean_atomic_embedding, std_atomic_embedding, equivariant_scale_factor
+    def build_atomic_preprocessor(
+        self, mean_atomic_embedding, std_atomic_embedding
     ) -> AtomicDescriptorPreprocess:
         preprocess_config = self.architecture_config.embedding_preprocess_config
 
         if preprocess_config.pseudoscalars:
-            preprocessor = PseudoscalarGenerator(preprocess_config)
+            atomic_preprocessor = PseudoscalarGenerator(preprocess_config)
         else:
-            preprocessor = InvariantsFilter(preprocess_config)
+            atomic_preprocessor = InvariantsFilter(preprocess_config)
 
         if (mean_atomic_embedding is not None) and (std_atomic_embedding is not None):
 
@@ -161,29 +145,59 @@ class ModelBuilder:
             invariant_dim = invariant_irreps.dim
 
             assert mean_atomic_embedding.shape[-1] == invariant_dim
-            preprocessor.register_embedding_normalization(
+            atomic_preprocessor.register_embedding_normalization(
                 mean_atomic_embedding, std_atomic_embedding
             )
 
-        return preprocessor
+        if preprocess_config.reload_state_dict is not None:
+
+            atomic_preprocessor.load_state_dict(
+                torch.load(preprocess_config.reload_state_dict)
+            )
+
+        return atomic_preprocessor
+
+    def build_preprocessor(
+        self, mean_atomic_embedding, std_atomic_embedding
+    ) -> Preprocessor:
+
+        atomic_preprocessor = self.build_atomic_preprocessor(
+            mean_atomic_embedding, std_atomic_embedding
+        )
+
+        if self.architecture_config.positional_encoding_config is not None:
+
+            geometric_preprocessor = self.build_geometric_preprocessing()
+
+        return Preprocessor(
+            atomic_preprocessor=atomic_preprocessor,
+            geometric_preprocessor=geometric_preprocessor,
+        )
+
+    def build_decoder(self) -> TransformerDecoder:
+        return TransformerDecoder(self.architecture_config.decoder_config)
 
     def build_encoder(self):
         encoder_config = self.architecture_config.encoder_config
+        global_aggregator = self.build_global_aggregator()
 
         if encoder_config.d_pair is None:
-            encoder = TransformerEncoder(encoder_config)
+            encoder = TransformerEncoder(encoder_config, global_aggregator)
         else:
-            encoder = TransformerPairEncoder(encoder_config=encoder_config)
+            encoder = TransformerPairEncoder(
+                encoder_config=encoder_config, global_aggregator=global_aggregator
+            )
+
+        if encoder_config.reload_state_dict:
+
+            encoder.load_state_dict(torch.load(encoder_config.reload_state_dict))
+
         return encoder
 
-    def build_global_aggregator(self):
-        global_aggregator_config = self.architecture_config.global_aggregator_config
+    def build_global_aggregator(self) -> GlobalAggregator:
+        return GlobalAggregator(self.architecture_config.global_aggregator_config)
 
-        global_aggregator = GlobalAggregator(global_aggregator_config)
-
-        return global_aggregator
-
-    def build_regression_heads(self):
+    def build_regression_heads(self) -> MultitaskHeads:
         regression_head_config = self.architecture_config.regression_head_config
 
         if isinstance(regression_head_config, Sequence):

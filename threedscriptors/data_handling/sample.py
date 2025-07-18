@@ -57,3 +57,14 @@ def sample_collate_fn(batch: list[Sample]) -> Sample:
             # and for tensors it will stack them
             batched[f.name] = default_collate(vals)
     return Sample(**batched)
+
+
+
+@dataclass
+class PreprocessedSample:
+    preprocessed_atomic_embeddings : torch.Tensor | None = None
+    padding_mask:          torch.Tensor | None = None
+    initial_pair_representation: torch.Tensor | None = None
+    geometrical_encoding: torch.Tensor | None = None
+    pair_mask: torch.Tensor | None = None
+    pair_distance_matrix: torch.Tensor | None = None

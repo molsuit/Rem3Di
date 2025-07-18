@@ -16,7 +16,13 @@ from rdkit2ase import rdkit2ase
 if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
-from threedscriptors.model.transformer_components import TransformerEncoder
+
+
+
+
+def get_molecular_weight(molecules: list[Atoms]):
+
+    return [ sum(m.get_masses()) for m in molecules]
 
 
 def get_mirrored_molecules(molecules: list[Atoms]):
@@ -169,18 +175,7 @@ def get_atom_species_in_smiles(smiles_iterator: SmilesIterator):
     return atom_species_set
 
 
-def get_global_descriptor(
-    smiles: str, encoder: TransformerEncoder, calculator: MACECalculator
-):
-    # TODO: Maybe check SMILES validity?
-    atoms = get_ase_atoms(smiles)
-    mace_des = calculator.get_descriptors(atoms, invariants_only=True)
-    mace_des = torch.tensor(mace_des).unsqueeze(0).float()
-    encoder.eval()
-    with torch.no_grad():
-        global_descriptor = encoder(mace_des)
 
-    return global_descriptor
 
 
 def has_task_with_auxillary_data(tasks: Sequence["TaskConfig"]) -> bool:
@@ -243,8 +238,6 @@ def validate_ratios(ratios: Sequence[float]) -> None:
 def compute_splits(size: int, ratios: Sequence[float]) -> list[slice]:
     """Return slice objects for each split boundary."""
     raw_counts = (np.asarray(ratios) * size).astype(int)
-
-
 
     leftover = (size - raw_counts.sum())
 

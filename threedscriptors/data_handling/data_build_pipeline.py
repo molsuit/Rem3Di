@@ -73,12 +73,12 @@ class InsertSmilesStage(BuildStage):
 
 
 class InsertMoleculeStage(BuildStage):
-    def __init__(self, molecules, mol_ids):
+    def __init__(self, molecules, structure_ids):
         self.molecules = molecules
-        self.mol_ids = mol_ids
+        self.structure_ids = structure_ids 
 
     def _run(self, builder):
-        builder.add_molecules(self.molecules, self.mol_ids)
+        builder.add_molecules(self.molecules, self.structure_ids)
         return builder
 
 

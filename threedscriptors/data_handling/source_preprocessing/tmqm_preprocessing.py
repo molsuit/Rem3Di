@@ -77,7 +77,13 @@ def load_molecules(file: str) -> tuple[list[Atoms], list[str]]:
     mol = read(file, index=":")
     csd_ids = [m.info["CSD_code"] for m in mol]
 
-    return mol, csd_ids
+
+    filter = [m.info["q"] == 0 and m.info["S"] == 0 for m in mol]
+
+    filtered_csd_ids = [id for id, keep in zip(csd_ids, filter) if keep]
+    filtered_mols = [m for m, keep in zip(mol, filter) if keep]
+    
+    return filtered_mols, filtered_csd_ids
 
 
 def load_regression_targets(

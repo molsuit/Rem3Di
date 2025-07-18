@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from threedscriptors.training.dataset_splitting import SplitConfig
 from pydantic import BaseModel
-
+from enum import Enum
 
 class TrainingConfig(BaseModel):
     batch_size: int
@@ -13,11 +13,11 @@ class TrainingConfig(BaseModel):
     mace_model_path: str
     split_config : SplitConfig
     dataset_path: str
-    test_dataset_path: Path
+    test_dataset_path: Path | None = None
     model_dir: str
     training_data_dir: Path
     total_steps: int | None = None
-    masking_probability: float | None = None
+    noise_level: float | None = None
     wandb_active: bool = False
     normalized_targets: bool = True
     normalized_atomic_descriptors: bool = False

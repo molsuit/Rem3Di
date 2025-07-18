@@ -5,7 +5,7 @@ from mace.calculators import mace_mp
 
 from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
 from threedscriptors.data_handling.data_utils import get_ase_atoms
-from threedscriptors.model.atomic_descriptor_preprocess import (
+from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
     PseudoscalarGenerator,
 )
 from threedscriptors.utils.model_utils import (

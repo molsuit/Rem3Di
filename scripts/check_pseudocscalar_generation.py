@@ -1,6 +1,6 @@
 import torch 
 
-from threedscriptors.model.atomic_descriptor_preprocess import RMSLayerNorm, PseudoscalarGenerator
+from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import RMSLayerNorm, PseudoscalarGenerator
 
 from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
 

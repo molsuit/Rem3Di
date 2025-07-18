@@ -14,14 +14,14 @@ from threedscriptors.data_handling.data_build_pipeline import (
     PipelineOrchestrator,
     ReloadFromDiskStage,
 )
-from threedscriptors.model.atomic_descriptor_preprocess import InvariantsFilter
+from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import InvariantsFilter
 from threedscriptors.model.global_aggregator import GlobalAggregator
 from threedscriptors.model.regression_models import (
     MultitaskHeads,
     StructureBasedMultitaskRegressionModel,
     TransformerPairEncoder,
 )
-from threedscriptors.model.structural_encoding import PairDistanceMatrixEncodingBlock
+from threedscriptors.model.preprocessing.geometric_preprocessor import PairDistanceMatrixEncodingBlock
 
 pos_encoding_config = PositionalEncodingConfig(
     N_radial_basis_functions=16, distance_cutoff=20.0, d_projection=64

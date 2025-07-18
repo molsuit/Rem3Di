@@ -1,8 +1,10 @@
-import torch
-import torch.nn.functional as F
 from torch import nn
 
-from threedscriptors.configuration.architecture_config import GlobalAggregatorConfig, AttentionAggregatorConfig, MeanAggregatorConfig
+from threedscriptors.configuration.architecture_config import (
+    GlobalAggregatorConfig,
+    AttentionAggregatorConfig,
+    MeanAggregatorConfig,
+)
 
 from threedscriptors.model.pooling import MeanPool, AttnPool
 
@@ -14,13 +16,21 @@ class GlobalAggregator(nn.Module):
 
         print(global_aggregator_config.aggregator_type_config)
 
+        if isinstance(
+            global_aggregator_config.aggregator_type_config, AttentionAggregatorConfig
+        ):
+            self.attn_conf = global_aggregator_config.aggregator_type_config
 
-        if isinstance(global_aggregator_config.aggregator_type_config, AttentionAggregatorConfig):
-            self.attn_conf  = global_aggregator_config.aggregator_type_config
+            self.pool = AttnPool(
+                d_in=self.config.input_dim,
+                d_hidden=self.attn_conf.head_dim,
+                n_heads=self.attn_conf.num_heads,
+                dropout=self.attn_conf.attn_dropout,
+            )
 
-            self.pool = AttnPool(d_in = self.config.input_dim, d_hidden=self.attn_conf.head_dim, n_heads=self.attn_conf.num_heads, dropout= self.attn_conf.attn_dropout)
-    
-        elif isinstance(global_aggregator_config.aggregator_type_config, MeanAggregatorConfig): 
+        elif isinstance(
+            global_aggregator_config.aggregator_type_config, MeanAggregatorConfig
+        ):
 
             self.pool = MeanPool()
 
@@ -28,11 +38,12 @@ class GlobalAggregator(nn.Module):
             raise ValueError("No pool given")
 
         if global_aggregator_config.global_molecular_descriptor_dropout is not None:
-            self.dropout = nn.Dropout(global_aggregator_config.global_molecular_descriptor_dropout)
+            self.dropout = nn.Dropout(
+                global_aggregator_config.global_molecular_descriptor_dropout
+            )
 
-
-    def forward(self, x, padding_mask):
-        out = self.pool(x, padding_mask)
+    def forward(self, S, padding_mask):
+        out = self.pool(S, padding_mask)
 
         if self.config.global_molecular_descriptor_dropout is not None:
             out = self.dropout(out)

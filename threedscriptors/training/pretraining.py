@@ -1,9 +1,4 @@
 import torch
-from torch.optim import Optimizer
-
-from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.model.transformer_components import Transformer
-
 
 def get_random_mask(padding_mask, masking_probability=0.15):
     # Padding mask denotes the padded atoms that should not be masked during pretraining
@@ -36,78 +31,18 @@ def atomic_embedding_loss(decoder_prediction, atomic_embedding, reconstruction_m
     return loss
 
 
-def train_loop(
-    data_loader,
-    model: Transformer,
-    optimizer: Optimizer,
-    scheduler,
-    training_config: TrainingConfig,
-    device,
+def atom_denoising_loss(
+    input_atomic_embeddings, denoised_embeddings, padding_mask, noise_level
 ):
-    running_tloss = 0.0
-    masking_probability = training_config.masking_probability
 
-    model.train()
-    optimizer.zero_grad()
+    # Compute squared differences
+    squared_diff = (denoised_embeddings - input_atomic_embeddings) ** 2
+    # Apply the mask
+    
+    masked_squared_diff = squared_diff * ~padding_mask[:,:,None]
 
-    for _batch, (embeddings, padding_mask, _, _) in enumerate(data_loader):
-        reconstruction_mask = get_random_mask(padding_mask, masking_probability)
+    atoms_in_batch = torch.sum((~padding_mask).to(torch.float32))
+    
+    loss =  1 / atoms_in_batch * torch.sum(masked_squared_diff)# * 1 / noise_level**2
+    return loss
 
-        embeddings = embeddings.to(device)
-        padding_mask = padding_mask.to(device)
-        reconstruction_mask = reconstruction_mask.to(device)
-
-        # TODO: Harmonize the definition of the padding mask. Torch True = padded, prev: True = not padded
-
-        decoder_prediction = model(
-            embeddings,
-            padding_mask=padding_mask,
-            reconstruction_mask=reconstruction_mask,
-        )
-
-        loss = atomic_embedding_loss(
-            decoder_prediction, embeddings, reconstruction_mask
-        )
-
-        loss.backward()
-        optimizer.step()
-        scheduler.step()
-        optimizer.zero_grad()
-
-        running_tloss += loss.item()
-
-    avg_tloss = running_tloss / (_batch + 1)
-
-    return avg_tloss
-
-
-def validation_loop(
-    data_loader, model: Transformer, training_config: TrainingConfig, device="cuda"
-):
-    running_vloss = 0.0
-    # Set the model to evaluation mode, disabling dropout and using population
-    # statistics for batch normalization.
-
-    with torch.no_grad():
-        model.eval()
-        masking_probability = training_config.masking_probability
-
-        for _batch, (embeddings, padding_mask, _, _) in enumerate(data_loader):
-            reconstruction_mask = get_random_mask(padding_mask, masking_probability)
-
-            embeddings = embeddings.to(device)
-            padding_mask = padding_mask.to(device)
-            reconstruction_mask = reconstruction_mask.to(device)
-
-            decoder_prediction = model(
-                embeddings,
-                padding_mask=padding_mask,
-                reconstruction_mask=reconstruction_mask,
-            )
-
-            loss = atomic_embedding_loss(
-                decoder_prediction, embeddings, reconstruction_mask
-            )
-            running_vloss += loss.item()
-        avg_vloss = running_vloss / (_batch + 1)
-        return avg_vloss
