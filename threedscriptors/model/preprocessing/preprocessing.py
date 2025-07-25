@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
-    AtomicDescriptorPreprocess,
+    AtomicDescriptorPreprocessor,
 )
 from threedscriptors.model.preprocessing.geometric_preprocessor import (
     RandomWalkGeometricPreprocessor,
@@ -16,7 +16,7 @@ class Preprocessor(nn.Module):
 
     def __init__(
         self,
-        atomic_preprocessor: AtomicDescriptorPreprocess,
+        atomic_preprocessor: AtomicDescriptorPreprocessor,
         geometric_preprocessor: (
             RandomWalkGeometricPreprocessor
             | PairDistanceMatrixGeometricPreprocessor
@@ -31,15 +31,13 @@ class Preprocessor(nn.Module):
 
     def forward(self, sample: Sample) -> PreprocessedSample:
 
-        preprocessed_atomic_embeddings = self.atomic_preprocessor(
+        preprocessed_sample = self.atomic_preprocessor(
             sample.embeddings, sample.padding_mask
         )
 
         # Now we convert the sample to a PreprocessedSample dataclass instance.
-        preprocessed_sample = PreprocessedSample(
-            preprocessed_atomic_embeddings=preprocessed_atomic_embeddings,
-            padding_mask=sample.padding_mask,
-        )
+        preprocessed_sample.padding_mask = sample.padding_mask,
+        
 
         if self.geometric_preprocessor is not None:
 

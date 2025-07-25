@@ -99,12 +99,12 @@ class EmbeddingPreprocessConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     input_irreps: IrrepType | None = None
-    pseudoscalars: bool = True
     pseudoscalar_dimension: int
-
+    chiral_embedding_dimension: int
     reload_state_dict: str | None = None
-
-    pseudoscalar_embedding_dim: int | None = None
+    gated: bool = True
+    pseudoscalars: bool = True
+    equivariant_rms_normalization : bool = True
 
 
     @computed_field(return_type=IrrepType, repr= True)

@@ -8,7 +8,7 @@ from pydantic import BaseModel, BeforeValidator, PlainSerializer, WithJsonSchema
 IrrepType = Annotated[
     Irreps,
     BeforeValidator(lambda v: Irreps(v)),
-    PlainSerializer(lambda v: str(v)),
+    PlainSerializer(lambda v: str(v), when_used="json"),
     WithJsonSchema(
         {
             "type": "string",
