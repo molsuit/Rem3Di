@@ -107,6 +107,8 @@ def load_qm9(qm9_dir: Path, N_molecules: int | None = None, tasks_to_load = list
         all_props.append(props)
         all_smiles.append(smiles)
 
+
+    print(all_props)
     regression_targets  = np.stack(all_props)
     print(regression_targets.shape)
 

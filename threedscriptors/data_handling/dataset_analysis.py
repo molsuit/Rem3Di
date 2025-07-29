@@ -29,7 +29,7 @@ class DatasetPostLoadAnalysis():
         counts = get_all_atom_counts(self.dataset.molecules, heavy_atoms_only= self.dataset.dataset_config.only_heavy_atoms)
 
         fig = plt.figure()
-        plt.hist(np.array(counts))
+        plt.hist(np.array(list(counts)))
         plt.xlabel("Molecule Size")
         plt.ylabel("Frequency")
         fig.savefig(f"{self.output_dir}/histogram_molecule_size.png")
@@ -123,7 +123,7 @@ class DatasetPostLoadAnalysis():
 
     def check_dataset_integrity(self):
 
-        N_samples = self.dataset.dataset_config.N_molecules
+        N_samples = len(self.dataset.molecules)
 
         assert self.dataset.embeddings.shape[0] == N_samples
         assert N_samples == self.dataset.padding_mask.shape[0]
@@ -183,7 +183,7 @@ class DatasetPostLoadAnalysis():
         #self.plot_relaxed_atoms()
 
 
-        self.check_conformer_distance()
+        #self.check_conformer_distance()
         self.get_invariants_std()
 
         self.check_dataset_integrity()

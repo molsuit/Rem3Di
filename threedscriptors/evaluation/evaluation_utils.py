@@ -24,6 +24,7 @@ def evaluate_regression_model_on_dataset(
     model: MultiTaskRegressionModel,
     dataset: RegressionWithAuxDataset | RegressionDataset,
     device="cuda",
+    undo_standardization = False
 ):
 
     # returns the predictions of the model on dataset in standardized units
@@ -49,7 +50,10 @@ def evaluate_regression_model_on_dataset(
         for batch_idx, samples in enumerate(dataloader):
             samples.to_(device)
 
-            output : ModelOutput = model(samples)
+            if undo_standardization:
+                output : ModelOutput = model.inference(samples)
+            else:
+                output : ModelOutput = model(samples)
 
             regression_predictions[
                 batch_idx * batch_size : (batch_idx + 1) * batch_size, :

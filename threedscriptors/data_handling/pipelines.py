@@ -106,6 +106,20 @@ def pretraining_pipeline_with_positions(dataset_config: DatasetConfig, smiles):
 
     return PipelineOrchestrator(stages)
 
+def pretraining_pipeline_from_structures(dataset_config: DatasetConfig, molecules, structure_ids):
+    stages = [
+        InitializeBuildPipeline(dataset_config),
+        InsertMoleculeStage(molecules=molecules, structure_ids=structure_ids),
+        AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
+        AtomicPositionsStage(),
+        AddRandomWalkTransitionProbabilityMatrixStage(),
+    ]
+
+    return PipelineOrchestrator(stages)
+
+
+
+
 
 def similarity_screening_pipeline(
     dataset_config: DatasetConfig, smiles, target_class_labels, active_decoy_labels

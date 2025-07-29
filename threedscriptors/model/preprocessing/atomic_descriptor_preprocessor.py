@@ -146,6 +146,7 @@ class InvariantNormalization(nn.Module):
         if padding_mask is not None:
             x = x.masked_fill(padding_mask[..., None], 0.0)
 
+        
         return x
 
 
@@ -176,7 +177,7 @@ class AtomicDescriptorPreprocessor(nn.Module):
         self.has_chiral_embedding = self.config.pseudoscalars
 
 
-    def forward(self, embeddings, padding_mask = None) -> PreprocessedSample:
+    def forward(self, embeddings: torch.Tensor, padding_mask: torch.Tensor | None = None) -> PreprocessedSample:
 
         invariants, equivariants = split_invariants_equivariants(embeddings, self.invariant_indices)
 
@@ -184,11 +185,15 @@ class AtomicDescriptorPreprocessor(nn.Module):
 
         if self.has_chiral_embedding:
             normalized_equivariants = self.equivariant_rms_norm(equivariants, padding_mask)
-
+            
             chiral_embedding = self.chiral_embedding_model(normalized_invariants, normalized_equivariants, padding_mask)
 
+
+            normalized_invariants = normalized_invariants.to(dtype = torch.float32)
             return PreprocessedSample(preprocessed_atomic_embeddings=torch.cat((normalized_invariants, chiral_embedding), dim = -1), chiral_embeddings=chiral_embedding)
         
         else:
+            normalized_invariants = normalized_invariants.to(dtype = torch.float32)
+
             return PreprocessedSample(preprocessed_atomic_embeddings=normalized_invariants)
 

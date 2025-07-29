@@ -11,10 +11,15 @@ from threedscriptors.evaluation.evaluation_pipeline import (
     RegressionTestTask,
 )
 
+from threedscriptors.configuration.data_config import DatasetSplit
+
 from threedscriptors.data_handling.dataset import BaseDataset
 
 
-def regression_pipeline(dataset: BaseDataset):
+def regression_pipeline(dataset: BaseDataset, dataset_split: DatasetSplit | None = None):
+
+    if dataset_split is None:
+        dataset_split = dataset.dataset_config.dataset_split
 
     tasks = [
         RegressionTestTask(dataset),
@@ -29,7 +34,7 @@ def regression_pipeline(dataset: BaseDataset):
     return EvalPipelineRunner(
         tasks=tasks,
         dataset_name=dataset.dataset_config.dataset_name,
-        dataset_split=dataset.dataset_config.dataset_split,
+        dataset_split=dataset_split,
     )
 
 

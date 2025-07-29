@@ -9,11 +9,12 @@ import torch
 from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, Subset
-from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions, RegressionDatasetwithRandomWalks
+from threedscriptors.data_handling.indexed_subset import IndexedSubset
+
+
+from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions, RegressionDatasetwithRandomWalks, RegressionWithAuxAndPositionsDataset
 from threedscriptors.training.dataset_splitting import DatasetSplitting, SplitConfig, SplitStrategy
 
-from threedscriptors.training.training_utils import cosine_matrix
-from threedscriptors.data_handling.dataset_analysis import DatasetPostLoadAnalysis
 import wandb
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
@@ -72,17 +73,17 @@ split_config = SplitConfig(
 
 training_config = TrainingConfig(
     batch_size=64,
-    epochs=100,
-    learning_rate=1e-5,
+    epochs=50,
+    learning_rate=1e-4,
     weight_decay=1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_finetuning",
-    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm",
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/qm9_finetuning",
+    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt_training",
+    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_test",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/cmrt_training",
     normalized_targets=True,
 )
 
@@ -91,9 +92,10 @@ architecture_config = pyaml.parse_yaml_file_as(
     f"{training_config.model_dir}/architecture_config.yaml",
 )
 
+print("Start Dataloading")
 dataset = reload_dataset_pipeline(training_config.dataset_path).build()
 #dataset.expand_embedding_num_atoms(29)
-dataset = dataset.convert_to_dataset_type(RegressionDatasetwithPositions)
+dataset = dataset.convert_to_dataset_type(RegressionWithAuxAndPositionsDataset)
 
 dataset_splitting = DatasetSplitting(dataset)
 
@@ -104,8 +106,8 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
     os.makedirs(f"{training_config.training_data_dir}/{split_name.lower()}")
 
-    train_dataset = Subset(dataset, train_idx)
-    valid_dataset = Subset(dataset, val_idx)
+    train_dataset = IndexedSubset(dataset, train_idx)
+    valid_dataset = IndexedSubset(dataset, val_idx)
 
 
 
@@ -128,34 +130,19 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
 
     data_normalization = DataNormalizationModule(dataset = train_dataset)
-    mean_per_task = data_normalization.mean_tasks
-    std_per_task = data_normalization.std_tasks
-
-    task_configs =  [cfg.model_copy(deep=True) for cfg in dataset.dataset_config.tasks]
     
-    for cfg, mean, std in zip(task_configs, mean_per_task, std_per_task):
-        cfg.mean = mean
-        cfg.std = std
 
+    task_configs = data_normalization.task_configs
 
     inv_mean_per_dim, inv_std_per_dim = data_normalization.get_atomic_embedding_normalization_constants()
 
 
-    print(f"Mean per task {data_normalization.mean_tasks}")
-    print(f"Std per task {data_normalization.std_tasks}")
-
-
-
     mb = ModelBuilder(architecture_config=architecture_config)
-
-    print(task_configs)
     mb.insert_task_configs_into_regression_heads(task_configs)
     model = mb.build_model(
         mean_atomic_embedding=inv_mean_per_dim,
         std_atomic_embedding=inv_std_per_dim
     )
-
-
 
 
     print(f"Trainable Parameters: {mb.N_trainable_parameters}")
@@ -169,13 +156,21 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
         
     model.to(device)
+    model.encoder.to(dtype=torch.float32)
+    model.multitask_heads.to(dtype=torch.float32)
 
 
     loss_fn = BaseMultitaskLoss()
 
+    #all_params = model.parameters()
+
+    all_params = (
+    list(model.encoder.parameters())
+    + list(model.preprocessor.geometric_preprocessor.parameters())
+)
+
     optimizer = optim.AdamW(
-        [{"params" : model.parameters(), "lr" : training_config.learning_rate, "weight_decay" : training_config.weight_decay},
-        #{"params": loss_fn.parameters(),  "lr": 1e-4, "weight_decay" : 0.0}
+        [{"params" : all_params, "lr" : training_config.learning_rate, "weight_decay" : training_config.weight_decay},
         ]
     )
     scheduler = OneCycleLR(
@@ -264,10 +259,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
     lowest_val_losses.append(telemetry.best_validation_loss)
 
    
-    continue
-
-
-
+    
     print("Loading best model from", best_model_path)
     model.load_state_dict(torch.load(best_model_path, map_location=device))
     model.eval()
@@ -294,17 +286,15 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
         f"{training_config.training_data_dir}/architecture_config.yaml", architecture_config
     )
 
-
     pyaml.to_yaml_file(
         f"{training_config.training_data_dir}/dataset_config.yaml",
         dataset.dataset_config,
     )
 
-
     figs = {}
 
-
-    training_evaluation_pipeline = regression_pipeline(train_dataset)
+    from threedscriptors.configuration.data_config import DatasetSplit
+    training_evaluation_pipeline = regression_pipeline(train_dataset, dataset_split=DatasetSplit.TRAIN)
     training_evaluation_pipeline.evaluate(model)
     train_figs, train_result_report = training_evaluation_pipeline.output_results(
         output_directory=f"{training_config.training_data_dir}/trainset_results", model_name=run_name
@@ -313,29 +303,14 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
 
 
-    validation_evaluation_pipeline = regression_pipeline(valid_dataset)
+    validation_evaluation_pipeline = regression_pipeline(valid_dataset, dataset_split=DatasetSplit.TRAIN)
     validation_evaluation_pipeline.evaluate(model)
     train_figs, train_result_report =validation_evaluation_pipeline.output_results(
         output_directory=f"{training_config.training_data_dir}/valset_results", model_name=run_name
     )
 
-    test_pipeline_orchestrator = reload_dataset_pipeline(
-        training_config.test_dataset_path,
-        mean_targets=mean_target_per_task,
-        std_targets=std_target_per_task,
-    )
-    test_dataset = test_pipeline_orchestrator.build()
-    test_dataset.expand_embedding_num_atoms(new_max_num_atoms=train_dataset.dataset_config.max_atoms)
-
-
-    test_evaluation_pipeline = regression_pipeline(test_dataset)
-    test_evaluation_pipeline.evaluate(model)
-    figs, result_report = test_evaluation_pipeline.output_results(
-        output_directory=f"{training_config.training_data_dir}/testset_results", model_name=run_name
-    )
-
+    
     if training_config.wandb_active:
         for figname, figure in figs.items():
             wandb.log({figname: figure})
 
-print(lowest_val_losses)

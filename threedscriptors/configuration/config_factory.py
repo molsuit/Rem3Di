@@ -114,7 +114,12 @@ class ConfigFactory:
         self.process_global_aggregator_config()
         self.process_decoder_config()
 
-        regression_heads = self.process_regression_heads_config(head_config_template)
+
+        if self.dataset_config.tasks is not None:
+            regression_heads = self.process_regression_heads_config(head_config_template)
+
+        else:
+            regression_heads = None
 
         architecture_config = ArchitectureConfig(
             embedding_preprocess_config=self.embedding_preprocessor_config,

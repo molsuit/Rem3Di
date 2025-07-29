@@ -18,7 +18,7 @@ from threedscriptors.configuration.architecture_config import (
 from threedscriptors.configuration.config_factory import ConfigFactory
 from threedscriptors.configuration.data_config import DatasetConfig
 
-run = "qm9_finetuning"
+run = "qm9_training"
 
 config_file = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{run}/dataset_config.yaml"
 dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, config_file)
@@ -33,7 +33,7 @@ pos_encoding_config = RelativeDistancePositionalEncodingConfig(N_radial_basis_fu
 #pos_encoding_config = RandomWalkPositionalEncoding(k_hop_random_walk=16, d_projection=64)
 
 embedding_preprocessor_config = EmbeddingPreprocessConfig(
-    pseudoscalars=False, pseudoscalar_dimension=0, pseudoscalar_embedding_dim=0,
+    pseudoscalars=True, pseudoscalar_dimension=64,chiral_embedding_dimension=64
 )
 
 attention_layer_config = AttentionLayerConfig(
@@ -46,8 +46,8 @@ encoder_config = EncoderConfig(
     N_layers=5, attention_layer_config=attention_layer_config
 )
 
-#decoder_config = DecoderConfig(N_layers=3, attention_layer_config=attention_layer_config)
 decoder_config = None
+#decoder_config = DecoderConfig(N_layers=4, attention_layer_config=attention_layer_config)
 
 
 

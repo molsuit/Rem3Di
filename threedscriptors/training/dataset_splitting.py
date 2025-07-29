@@ -34,13 +34,14 @@ class DatasetSplitting:
 
         # 1. Get the set of mol ids
         mol_ids = self.dataset.get_all_mol_ids()
+        print("1")
         N_mols = len(mol_ids)
 
         # 2 Get random permutation if shuffle true
 
         if shuffle:
             # perm =  list that contains randomly shuffeld indices
-            rng = np.random.default_rng()
+            rng = np.random.default_rng(seed= 1)
             perm = rng.permutation(N_mols).tolist()
         else:
             perm = list(range(N_mols))
@@ -97,7 +98,7 @@ class DatasetSplitting:
 
             # 2a. (Re)shuffle indices
             if shuffle:
-                rng = np.random.default_rng()
+                rng = np.random.default_rng(seed = 1)
                 perm = rng.permutation(n_mols).tolist()
             else:
                 perm = list(range(n_mols))
@@ -195,7 +196,7 @@ class DatasetSplitting:
 
         if shuffle:
             # perm =  list that contains randomly shuffeld indices
-            rng = np.random.default_rng()
+            rng = np.random.default_rng(seed = 1)
             perm = rng.permutation(N_mols).tolist()
         else:
             perm = list(range(N_mols))
@@ -229,6 +230,7 @@ class DatasetSplitting:
         smiles_list = [dataset.smiles_list[i] for i in indices]
         molecules = [dataset.molecules[i] for i in indices]
         config = dataset.dataset_config
+        config.N_molecules = len(molecules)
         new_dataset = BaseDataset(config, **asdict(data), structure_ids= structure_ids, smiles_list=smiles_list, molecules= molecules)
 
 

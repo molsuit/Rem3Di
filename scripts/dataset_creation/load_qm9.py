@@ -20,13 +20,13 @@ from threedscriptors.configuration.data_config import (
 )
 
 qm9_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_raw"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/qm9_raw"
 )
 
 
-N_molecules = 120000
+N_molecules = 134000
 
-tasks_to_load = [ QM9PropertyNames.gap ]
+tasks_to_load = [QM9PropertyNames.gap]
 
 smiles, molecules, structure_ids, regression_targets, regression_masks, task_configs = (
     load_qm9(qm9_dir, N_molecules, tasks_to_load= tasks_to_load)
@@ -69,15 +69,15 @@ dataset = regression_training_from_structures_pipeline(
 ).build()
 
 
-#store_data_to_disk(dataset, dataset_directory +"full")
+store_data_to_disk(dataset, dataset_directory +"full")
 
 
 from threedscriptors.training.dataset_splitting import DatasetSplitting
 
 
 ds = DatasetSplitting(dataset)
-names = ["pretraining", "finetuning", "test"] 
-split_ratios = [0.7, 0.2, 0.1]
+names = ["training", "test"] 
+split_ratios = [0.9, 0.1]
 split_dataset_indices = ds.general_split(split_ratios, True)
 
 

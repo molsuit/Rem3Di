@@ -8,7 +8,6 @@ import pydantic_yaml as pyaml
 import torch
 from threedscriptors.model.remedi_model import REM3DIModel
 from threedscriptors.data_handling.sample import PreprocessedSample
-from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
 from threedscriptors.data_handling.indexed_subset import IndexedSubset
@@ -83,7 +82,7 @@ split_config = SplitConfig(
 
 training_config = TrainingConfig(
     batch_size=64,
-    epochs=20,
+    epochs=50,
     learning_rate=1e-4,
     weight_decay=1e-3,
     max_grad_norm=1.0,
@@ -91,9 +90,9 @@ training_config = TrainingConfig(
     split_config=split_config,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_pretraining",
+    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/pcqmfull",
     noise_level=0.3,
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/qm9_pretraining",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/pcqmfull",
     normalized_targets=True,
 )
 
@@ -113,7 +112,7 @@ lowest_val_losses = []
 train_idx, val_idx, split_name = next(
     dataset_splitting.get_split(training_config.split_config)
 )
-
+print("Split")
 
 os.makedirs(f"{training_config.training_data_dir}/{split_name.lower()}")
 
@@ -144,23 +143,27 @@ validation_loader = DataLoader(
 
 
 data_normalization = DataNormalizationModule(dataset=train_dataset)
+print("Starting Normalization ")
 inv_mean_per_dim, inv_std_per_dim = (
     data_normalization.get_atomic_embedding_normalization_constants()
 )
 
+print("Normalized")
 
+print("buuilding model")
 mb = ModelBuilder(architecture_config=architecture_config)
 preprocessor = mb.build_preprocessor(inv_mean_per_dim, inv_std_per_dim)
 encoder = mb.build_encoder()
 decoder = mb.build_decoder()
 
+preprocessor.to(dtype=torch.float64)
 
 config = {
     "architecture_config": architecture_config.model_dump(),
     "training_config": training_config.model_dump(),
     "dataset_config": dataset.dataset_config.model_dump(),
 }
-
+print("Model built")
 
 all_params = (
     list(encoder.parameters())
@@ -213,6 +216,7 @@ with TrainingTelemetry(
             samples.to_(device)
             preprocessed_samples: PreprocessedSample = preprocessor(samples)
 
+
             input_atomic_embeddings = (
                 preprocessed_samples.preprocessed_atomic_embeddings.clone()
             )
@@ -221,6 +225,7 @@ with TrainingTelemetry(
                 preprocessed_samples.preprocessed_atomic_embeddings,
                 preprocessed_samples.padding_mask,
             )
+
             noise_module.step()
 
             molecular_descriptor = encoder(preprocessed_samples)
@@ -239,6 +244,11 @@ with TrainingTelemetry(
             )
 
             denoising_loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(
+                    all_params, max_norm=training_config.max_grad_norm
+                )
+
             optimizer.step()
             lr_scheduler.step()
             optimizer.zero_grad()
@@ -306,8 +316,8 @@ model = REM3DIModel(preprocessor=preprocessor, encoder=encoder)
 umap_clustering_calculator = UMAPCalculator()
 umap_task_train = DescriptorPCATask(train_dataset, umap_clustering_calculator)
 umap_task_val = DescriptorPCATask(valid_dataset, umap_clustering_calculator)
-eval_train = EvalPipelineRunner([umap_task_train], "qm9", DatasetSplit.TRAIN)
-eval_validation = EvalPipelineRunner([umap_task_val], "qm9", DatasetSplit.VALIDATION)
+eval_train = EvalPipelineRunner([umap_task_train], "pcqmc", DatasetSplit.TRAIN)
+eval_validation = EvalPipelineRunner([umap_task_val], "pcqm", DatasetSplit.VALIDATION)
 
 
 eval_train.evaluate(model)

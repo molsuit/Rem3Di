@@ -68,3 +68,4 @@ class PreprocessedSample:
     geometrical_encoding: torch.Tensor | None = None
     pair_mask: torch.Tensor | None = None
     pair_distance_matrix: torch.Tensor | None = None
+    chiral_embeddings: torch.Tensor | None = None

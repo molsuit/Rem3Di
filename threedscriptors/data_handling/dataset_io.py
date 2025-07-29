@@ -94,10 +94,11 @@ def load_data_from_disk(
         for i, padding in enumerate(padding_dim):
             atom = Atoms(
                 numbers=atomic_numbers[i, :padding],
-                positions=positions[i, :padding, :].squeeze(),
+                positions=positions[i, :padding, :],
             )
             molecules.append(atom)
         dataset.molecules = molecules
+        print("Read Pos")
 
     if "smiles" in files:
         smiles_list = []
@@ -118,6 +119,7 @@ def load_data_from_disk(
 
         dataset.smiles_list = smiles_list
         dataset.structure_ids = structure_ids
+        print("Read Smiles")
 
     if "regression_targets.npy" in files:
         assert "regression_masks.npy" in files
@@ -129,9 +131,11 @@ def load_data_from_disk(
 
     if "embeddings.npy" in files:
         dataset.embeddings = from_numpy(np.load(f"{directory}/embeddings.npy"))
+        print("loaded embeddings")
         dataset.padding_mask = from_numpy(
             np.load(f"{directory}/padding_mask.npy")
         ).bool()
+        print("loaded mask")
 
         print(f"embeddings shape {dataset.embeddings.shape}")
         print(f"embeddings mmask {dataset.padding_mask.shape}")

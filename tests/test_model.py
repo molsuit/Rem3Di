@@ -3,7 +3,7 @@ import torch
 
 from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
 from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
-    AtomicDescriptorPreprocess,
+    AtomicDescriptorPreprocessor,
 )
 
 
@@ -15,7 +15,7 @@ def test_overwrite_mean_atomic_embeddings():
         input_embedding_size=384,
     )
 
-    preprocessor = AtomicDescriptorPreprocess(config)
+    preprocessor = AtomicDescriptorPreprocessor(config)
 
     mean = torch.ones(size=(384,))
     std = torch.ones(size=(384,))
@@ -35,7 +35,7 @@ def test_reload_embedding_normalization(tmp_path):
         input_embedding_size=384,
     )
 
-    preprocessor = AtomicDescriptorPreprocess(config)
+    preprocessor = AtomicDescriptorPreprocessor(config)
 
     mean = 2 * torch.ones(size=(1,1,384))
     std = 2 * torch.ones(size=(1,1,384))

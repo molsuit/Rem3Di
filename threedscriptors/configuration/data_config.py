@@ -47,8 +47,29 @@ class DatasetTypes(Enum):
 
 
 
-class LabelScalingType(Enum):
-    LOG = "log"
+class LabelScalingType(str, Enum):
+    NONE  = "none"
+    Z     = "z"
+    LOG_Z = "log_z"
+
+    @classmethod
+    def _missing_(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, LabelScalingType):
+            return value
+        if isinstance(value, str):
+            v = value.strip().lower()
+            if v in {"none", "identity"}:
+                return cls.NONE
+            if v in {"z", "standard", "standardize"}:
+                return cls.Z
+            if v in {"log", "log_z", "log-standardize", "log-standardise"}:
+                return cls.LOG_Z
+        # Returning None lets Pydantic raise its usual validation error
+        return None
+    
+
 
 
 class TaskConfig(BaseModel):
@@ -77,13 +98,10 @@ class TaskConfig(BaseModel):
         raise TypeError("`dataset_type` must be a DatasetTypes, a BaseDataset subclass, or a registered name")
 
     @field_serializer("scaling")
-    def _serialize_dataset_type(self, v: LabelScalingType, info):
-        # turn DatasetTypes.atomic → "atomic"
+    def _serialize_scaling(self, v: LabelScalingType | None, _info):
+        return None if v is None else v.name
 
-        if v is None:
-            return None
-        
-        return v.name
+
 
 class MaceCalculatorConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -169,7 +187,10 @@ class DatasetConfig(BaseModel):
     max_atoms: int| None  = None
 
     def get_task_names(self):
-        return [tc.task_name for tc in self.tasks]
+        if self.tasks is None:
+            return None 
+        else: 
+            return [tc.task_name for tc in self.tasks]
 
     def get_mean_std_per_task(self):
 

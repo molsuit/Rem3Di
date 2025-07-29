@@ -69,7 +69,7 @@ class PairBlock(nn.Module):
     def forward(self, S, mask, P, p_geo, mask_pair):
 
         # Atom Representation Attention Update
-
+        
         S = S + self.attn(self.ln_s1(S), P, mask)
 
         S = S + self.ffn_s(self.ln_s2(S))  # FFN Update

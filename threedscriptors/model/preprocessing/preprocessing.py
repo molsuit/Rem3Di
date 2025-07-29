@@ -16,7 +16,7 @@ class Preprocessor(nn.Module):
 
     def __init__(
         self,
-        atomic_preprocessor: AtomicDescriptorPreprocessor,
+        atomic_preprocessor,
         geometric_preprocessor: (
             RandomWalkGeometricPreprocessor
             | PairDistanceMatrixGeometricPreprocessor
@@ -26,17 +26,19 @@ class Preprocessor(nn.Module):
 
         super().__init__()
 
-        self.atomic_preprocessor = atomic_preprocessor
+        self.atomic_preprocessor : AtomicDescriptorPreprocessor = atomic_preprocessor
         self.geometric_preprocessor = geometric_preprocessor
 
     def forward(self, sample: Sample) -> PreprocessedSample:
 
-        preprocessed_sample = self.atomic_preprocessor(
+        preprocessed_sample : PreprocessedSample = self.atomic_preprocessor(
             sample.embeddings, sample.padding_mask
         )
 
+
+
         # Now we convert the sample to a PreprocessedSample dataclass instance.
-        preprocessed_sample.padding_mask = sample.padding_mask,
+        preprocessed_sample.padding_mask = sample.padding_mask
         
 
         if self.geometric_preprocessor is not None:
@@ -47,4 +49,5 @@ class Preprocessor(nn.Module):
                 preprocessed_sample.pair_mask,
             ) = self.geometric_preprocessor(sample)
 
+        
         return preprocessed_sample

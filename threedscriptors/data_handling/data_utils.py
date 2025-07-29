@@ -20,17 +20,20 @@ from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 
 
 
+
+
 def get_molecular_weight(molecules: list[Atoms]):
 
     return [ sum(m.get_masses()) for m in molecules]
 
 
-def get_mirrored_molecules(molecules: list[Atoms]):
+def get_mirrored_molecules(molecules: list[Atoms], new_smiles: str):
     mirrored_molecules = []
 
     for mol in molecules:
         mirrored_mol = mol.copy()
         mirrored_mol.set_positions(-mol.get_positions())
+        mirrored_mol.info["smiles"] = new_smiles
         mirrored_molecules.append(mirrored_mol)
 
     return mirrored_molecules
@@ -84,6 +87,9 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
     EmbedMultipleConfs(
         mol, numConfs=N_conformers, numThreads=N_conformers, maxAttempts=500
     )
+
+
+    AllChem.MMFFOptimizeMoleculeConfs(mol, maxIters=500, nonBondedThresh=500.0)
 
     ase_confs = [
             Atoms(

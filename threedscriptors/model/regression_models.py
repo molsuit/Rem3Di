@@ -8,6 +8,8 @@ from threedscriptors.configuration.architecture_config import (
     HeadType,
     RegressionHeadConfig,
 )
+
+from threedscriptors.configuration.data_config import LabelScalingType
 from threedscriptors.data_handling.sample import Sample
 
 
@@ -108,9 +110,17 @@ class RegressionHead(nn.Module):
         self.head = head
         
         
+        mean = self.task_config.mean
+        std = self.task_config.std
+        if type(self.task_config.mean ) is float:
+            mean = torch.Tensor([mean])
 
-        self.register_buffer("task_mean", self.task_config.mean)
-        self.register_buffer("task_std", self.task_config.std)
+        if type(self.task_config.std) is float: 
+            std = torch.Tensor([std])
+
+
+        self.register_buffer("task_mean", mean)
+        self.register_buffer("task_std", std)
 
 
     def forward(self, molecular_descriptor):
@@ -119,8 +129,17 @@ class RegressionHead(nn.Module):
 
     def inference(self, molecular_descriptor):
         standardized_prediction = self.head(molecular_descriptor)
+        
+        
+        standardized_prediction = (standardized_prediction * self.task_std) + self.task_mean
+
+        if self.task_config.scaling == LabelScalingType.LOG_Z:
+            standardized_prediction = torch.exp(standardized_prediction)
+            
+
+        return standardized_prediction
             # undo the standardization:
-        return (standardized_prediction * self.task_std) + self.task_mean
+        
 
 
 
@@ -197,9 +216,22 @@ class MultiTaskRegressionModel(nn.Module):
         return ModelOutput(
             molecular_descriptor=molecular_descriptor, regression_predictions=preds
         )
+    
+    def inference(self, sample: Sample):
+        # Calls the multitask inference method that returns the prediction in the original unit system
+        
+        molecular_descriptor = self.get_molecular_descriptor(sample)
+
+        preds = self.multitask_heads.inference(molecular_descriptor, sample.auxillary_data)
+
+        return ModelOutput(
+            molecular_descriptor=molecular_descriptor, regression_predictions=preds
+        )
+
 
     def get_molecular_descriptor(self, sample: Sample) -> torch.Tensor:
         preprocessed_sample = self.preprocessor(sample)
+
         molecular_descriptor = self.encoder(preprocessed_sample)
         return molecular_descriptor
 

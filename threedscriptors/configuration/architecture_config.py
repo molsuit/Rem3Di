@@ -142,10 +142,12 @@ class EmbeddingPreprocessConfig(BaseModel):
 
         _, even_invariants = get_invariant_indices(self.input_irreps)
 
-        odd_invariants = self.pseudoscalar_irrep
+        if self.pseudoscalars:
+            odd_invariants_chiral_embedding = Irreps([(self.chiral_embedding_dimension,(0,-1))])
+        else:
+            odd_invariants_chiral_embedding =  Irreps()
 
-
-        return even_invariants+odd_invariants
+        return even_invariants+odd_invariants_chiral_embedding
 
     @computed_field(return_type=int, repr = True)
     @property
@@ -281,7 +283,7 @@ class ArchitectureConfig(BaseModel):
     embedding_preprocess_config: EmbeddingPreprocessConfig
     encoder_config: EncoderConfig
     global_aggregator_config: GlobalAggregatorConfig
-    regression_head_config: RegressionHeadConfig | Sequence[RegressionHeadConfig]
+    regression_head_config: RegressionHeadConfig | Sequence[RegressionHeadConfig] | None
     positional_encoding_config: RelativeDistancePositionalEncodingConfig | RandomWalkPositionalEncoding | None = None
     reload_full_model_weights: str | None = None
     decoder_config: DecoderConfig | None = None

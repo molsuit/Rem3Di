@@ -56,7 +56,6 @@ class DatasetBuilder:
         self.dataset.structure_ids = mol_ids
         self.dataset.smiles_list = smiles_list
 
-
     def add_molecules(self, molecules: list[Atoms], structure_ids: list[StructureID]):
 
         assert len(structure_ids) == len(molecules)
@@ -67,7 +66,9 @@ class DatasetBuilder:
             self.dataset.smiles_list = [sid.canonical_smiles for sid in structure_ids]
 
         self.dataset.N_structures = len(molecules)
-        self.dataset.max_atoms, self.dataset.total_num_atoms = count_atoms_from_ase(molecules, self.dataset.dataset_config.only_heavy_atoms)
+        self.dataset.max_atoms, self.dataset.total_num_atoms = count_atoms_from_ase(
+            molecules, self.dataset.dataset_config.only_heavy_atoms
+        )
 
         self.dataset.dataset_config.max_atoms = self.dataset.max_atoms
 
@@ -133,8 +134,6 @@ class DatasetBuilder:
         self.dataset.smiles_list = smiles_list
         self.dataset.structure_ids = index_list
         self.dataset.N_structures = len(index_list)
-    
-
 
     def canonicalize_structure_ids(self):
 
@@ -145,11 +144,11 @@ class DatasetBuilder:
             new_structure_ids.append(
                 StructureID(
                     structure_id=new_unique_s_id,
-                    smiles_id= old_id.smiles_id,
+                    smiles_id=old_id.smiles_id,
                     canonical_smiles=old_id.canonical_smiles,
                     molecule_id=old_id.molecule_id,
                     enantiomer_id=old_id.enantiomer_id,
-                    conformer_id=old_id.conformer_id
+                    conformer_id=old_id.conformer_id,
                 )
             )
 
@@ -157,65 +156,62 @@ class DatasetBuilder:
 
     def load_pairwise_chiral_structures_from_smiles(self):
         dataset_config = self.dataset.dataset_config
+        mace_calculator = dataset_config.embedding_model_config.mace_calc
 
         initial_smiles_list = self.dataset.smiles_list
 
         if dataset_config.N_molecules is None:
-            limit = len(initial_smiles_list) + 1
-
+            # maximum possible number of pairs we can read from the list
+            target_num_pairs = len(initial_smiles_list) // 2
         else:
-            limit = dataset_config.N_molecules
+            # interpret N_molecules as "number of molecule *pairs*" we want to read
+            target_num_pairs = dataset_config.N_molecules
 
         smiles_iterator = ListSmilesIterator(initial_smiles_list)
 
         smiles_list = []
-        index_list = (
-            []
-        )  # index list describes to which smiles index a datapoint belongs.
+        structure_ids: list[StructureID] = []
         molecules = []
 
+        running_structure_id = 0
+        molecule_id = 0
         smiles_counter = 0
-
-        data_points_counter = 0
-
-        mace_calculator = dataset_config.embedding_model_config.mace_calc
 
         ### Returns a dataset with already relaxed (and mirrored!!!) Structures
 
         # Somewhere there should be an assert that odd features change sign...
 
-        with tqdm(total=limit) as pbar:
-            while data_points_counter < limit:
+        
+
+        with tqdm(total=target_num_pairs) as pbar:
+            while molecule_id < target_num_pairs:
+
                 try:
                     smiles_0 = next(smiles_iterator)
                     smiles_1 = next(smiles_iterator)
+                    can_smi_0 = Chem.CanonSmiles(smiles_0)
+                    can_smi_1 = Chem.CanonSmiles(smiles_1)
+
                     # pairwise iterator returns enantiomer pairs
                 except StopIteration:
-                    print(
-                        f"Reached StopIteration prematurely. Completed reading {data_points_counter} molecules."
+                    tqdm.write(
+                        f"Reached StopIteration prematurely. Completed reading {molecule_id} molecules."
                     )
                     break
 
                 try:
-                    total_N_conformers = min(
-                        dataset_config.N_conformers,
-                        limit - data_points_counter,
-                    )  # This ensures that the dataloading does not overshoot the targeted number of molecules
 
-                    N_conformers_per_enantiomer = ceil(total_N_conformers / 2)
-
-                    embeded_molecules_0, _ = get_ase_atoms_with_conformers(
-                        smiles_0,
-                        N_conformers_per_enantiomer,
-                        load_adjacency_matrix=dataset_config.load_adjacency_matrix,
+                    embedded_molecules_0 = get_ase_atoms_with_conformers(
+                        can_smi_0, dataset_config.N_conformers
                     )
-                    if len(embeded_molecules_0) == 0:
+                    
+                    if len(embedded_molecules_0) == 0:
                         raise ValueError(
                             f"Error Embedding Smiles {smiles_0}, No. {smiles_counter}"
                         )
 
                     # relax embedded_molecules
-                    for mol in embeded_molecules_0:
+                    for mol in embedded_molecules_0:
                         relax_atoms(
                             mol,
                             mace_calculator,
@@ -223,42 +219,68 @@ class DatasetBuilder:
                             max_steps=dataset_config.BFGS_max_steps,
                         )
 
-                    embeded_molecules_1 = get_mirrored_molecules(embeded_molecules_0)
+                    embedded_molecules_1 = get_mirrored_molecules(embedded_molecules_0, can_smi_1)
 
                 except ValueError as ve:
                     tqdm.write(
                         f"Error with Generating Conformers for Smiles {smiles_0}: {ve}"
                     )
+                    smiles_counter += 2
                     continue
+                
 
-                N_confs_per_enantionmer = len(embeded_molecules_0)
-                N_total_confs = 2 * N_confs_per_enantionmer
+                for conf_id, mol in enumerate(embedded_molecules_0):
+                    molecules.append(mol)
+                    smiles_list.append(can_smi_0)
 
-                smiles_0 = Chem.CanonSmiles(smiles_0)
-                smiles_1 = Chem.CanonSmiles(smiles_1)
-                smiles_list.extend(
-                    [smiles_0] * N_confs_per_enantionmer
-                    + [smiles_1] * N_confs_per_enantionmer
-                )
-                index_list.extend(
-                    [smiles_counter] * N_confs_per_enantionmer
-                    + [smiles_counter + 1] * N_conformers_per_enantiomer
-                )
-                molecules.extend(embeded_molecules_0 + embeded_molecules_1)
-                data_points_counter += N_total_confs
-                pbar.update(N_total_confs)
+                    structure_ids.append(
+                        StructureID(
+                            structure_id=running_structure_id,
+                            canonical_smiles=can_smi_0,
+                            molecule_id=molecule_id,
+                            conformer_id=conf_id,
+                            enantiomer_id=1,
+                            smiles_id=smiles_counter,  # first SMILES in the pair
+                        )
+                    )
+                    running_structure_id += 1
 
-                smiles_counter = smiles_counter + 2
 
-        num_molecules = len(molecules)
-        dataset_config.N_molecules = num_molecules
+                # RIGHT enantiomer
+                for conf_id, mol in enumerate(embedded_molecules_1):
+                    molecules.append(mol)
+                    smiles_list.append(can_smi_1)
 
-        print(
-            f"Read a total of {data_points_counter} from {smiles_counter} distinct SMILES"
-        )
+                    structure_ids.append(
+                        StructureID(
+                            structure_id=running_structure_id,
+                            canonical_smiles=can_smi_1,
+                            molecule_id=molecule_id,
+                            conformer_id=conf_id,
+                            enantiomer_id=2,
+                            smiles_id=smiles_counter + 1,  # second SMILES in the pair
+                        )
+                    )
+                    running_structure_id += 1
+
+
+                # Book-keeping
+                smiles_counter += 2
+                molecule_id += 1
+                pbar.update(1)
+
+        N_unique_molecules = molecule_id
+
         self.dataset.molecules = molecules
         self.dataset.smiles_list = smiles_list
-        self.dataset.mol_ids = index_list
+        self.dataset.structure_ids = structure_ids
+
+        self.dataset.N_structures = len(structure_ids)
+        
+        # For backward compatibility, if the rest of your pipeline still expects
+        # cfg.N_molecules to mean "how many 3D structures we have", switch the line below
+        # to: cfg.N_molecules = len(molecules)
+        dataset_config.N_molecules = N_unique_molecules
 
     def relax_structures(self, mace_calculator: MACECalculator):
         assert self.dataset.molecules is not None
@@ -302,6 +324,8 @@ class DatasetBuilder:
         self.dataset.structure_ids = [
             self.dataset.structure_ids[i] for i in sucessfull_relaxations
         ]
+
+
 
     def calculate_atomic_embeddings(self, calculator: MACECalculator):
 
@@ -449,3 +473,8 @@ class DatasetBuilder:
 
         self.dataset.random_walk_transition_matrix = torch.stack(transition_mats, dim=0)
 
+
+
+
+    def sanitize_log_scaled_regression_targets(self):
+        raise NotImplementedError

@@ -9,163 +9,114 @@ from threedscriptors.utils.model_utils import (
     get_invariant_indices,
     split_invariants_equivariants,
 )
+import math
+from typing import Optional, Tuple, Iterable, Union
+import torch
+from torch.utils.data import DataLoader, TensorDataset
 
-from torch.utils.data import Subset
+from torch.utils.data import Subset, Dataset
+from threedscriptors.data_handling.dataset import BaseDataset
+from threedscriptors.data_handling.indexed_subset import IndexedSubset
 from torch import nn
 
-class DataNormalizationModule():
-    def __init__(self, dataset):
-        # If this is a Subset, grab the underlying dataset and its indices
-        if isinstance(dataset, Subset):
-            self.base_ds = dataset.dataset
-            self.indices = torch.as_tensor(dataset.indices)
-        else:
-            self.base_ds = dataset
-            self.indices = None
 
-        # compute mean/std on the (possibly indexed) base dataset
-        if self.base_ds.regression_targets is not None:
-            self._compute_mean_std()
+from dataclasses import dataclass
 
-    def __call__(self, sample: Sample):
-        rt = sample.regression_targets  # [..., T]
+from threedscriptors.configuration.data_config import LabelScalingType
+from typing import Optional, Tuple
+
+
+@dataclass
+class NormalizationStats:
+    mean: torch.Tensor  # [1, T]
+    std: torch.Tensor  # [1, T]
+    log_mask: torch.Tensor  # [T] bool
+    scaling: list[LabelScalingType]
+
+    def to(self, device):
+        return NormalizationStats(
+            mean=self.mean.to(device),
+            std=self.std.to(device),
+            log_mask=self.log_mask.to(device),
+            scaling=self.scaling,
+        )
+
+class DataNormalizationModule(nn.Module):
+    """
+    Responsibility (only):
+      * compute masked mean/std (per task) in the correct space
+      * normalize / denormalize regression targets
+
+    Assumptions:
+      * regression_masks: 1 == valid, 0 == missing
+      * if a task is LOG_Z, any non-positive target has ALREADY been masked out elsewhere
+    """
+
+    def __init__(
+        self,
+        dataset,
+        *,
+        eps: float = 1e-12,
+    ):
+        super().__init__()
+        self.eps = eps
+        self.dataset = dataset  # BaseDataset or IndexedSubset
+
+        self.stats: Optional[NormalizationStats] = None
+        if getattr(self.dataset, "regression_targets", None) is not None:
+            self.stats = self._compute_regression_stats()
+
+    # ------------------------------------------------------------------ #
+    # Public API
+    # ------------------------------------------------------------------ #
+
+    def __call__(self, sample: Sample) -> Sample:
+        if self.stats is None or sample.regression_targets is None:
+            return sample
+
+        rt = sample.regression_targets
         mask = sample.regression_masks.to(rt.dtype)
-
-        # In‐place normalization
-        rt.sub_(self.mean_tasks).div_(self.std_tasks)
-        rt.mul_(mask)
-
+        sample.regression_targets = self.transform(rt, mask)
         return sample
 
-    def _take(self, arr):
-        """Index into arr if we have a Subset, else return it directly"""
-        if self.indices is None:
-            return arr
-        return arr[self.indices]
+    def transform(self, y: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
+        """Normalize using precomputed stats; respects mask."""
+        assert self.stats is not None
 
-    def _compute_mean_std(self):
-        # Pull out the full arrays (or the subset of them)
-        x = self._take(self.base_ds.regression_targets)  # shape [N, T]
-        mask = self._take(self.base_ds.regression_masks)  # shape [N, T]
+        if mask is None:
+            mask = torch.ones_like(y, dtype=y.dtype, device=y.device)
 
-        # Ensure tensors
-        x = torch.as_tensor(x, dtype=torch.float32)
-        mask = torch.as_tensor(mask, dtype=torch.float32)
+        mean, std = self.stats.mean.to(y.device), self.stats.std.to(y.device)
+        log_mask = self.stats.log_mask.to(y.device) # This should probably be moved to the device as a buffer, right?
 
-        # Compute masked mean/std along dim=0
-        count = mask.sum(dim=0).clamp(min=1)  # [T]
-        mean_tasks = (x * mask).sum(dim=0) / count
-        var_tasks = ((x - mean_tasks) ** 2 * mask).sum(dim=0) / count
-        std_tasks = torch.sqrt(var_tasks).clamp(min=1e-12)
+        if log_mask.any():
+            lm = log_mask.view(*(1,) * (y.dim() - 1), -1)
+            valid = (mask > 0) & lm
+            y = torch.where(valid, torch.log(y.clamp_min(self.eps)), y) # maybe this should be log (x +1 )?? 
 
-        # Unsqueeze so they broadcast over any leading batch dims
-        self.mean_tasks = mean_tasks.unsqueeze(0)  # [1, T]
-        self.std_tasks = std_tasks.unsqueeze(0)  # [1, T]
+        y = (y - mean) / std
+        return y * mask
 
-    def normalize_regression_targets(self, mean_targets, std_targets):
+    def inverse_transform(self, y_hat: torch.Tensor) -> torch.Tensor:
+        """Inverse normalization (no masking here)."""
+        assert self.stats is not None
+        mean, std = self.stats.mean.to(y_hat.device), self.stats.std.to(y_hat.device)
+        log_mask = self.stats.log_mask.to(y_hat.device)
 
-        print("Sizes")
-        print(self.dataset.embeddings.shape)
-        print(self.dataset.regression_masks.shape)
-        print(self.dataset.regression_targets.shape)
+        y = y_hat * std + mean
+        if log_mask.any():
+            lm = log_mask.view(*(1,) * (y.dim() - 1), -1)
+            y = torch.where(lm, torch.exp(y), y)
+        return y
 
-        assert self.dataset.regression_targets is not None
+    # ---------------- invariants (input irreps) ------------------------ #
 
-        dataset_tasks = self.dataset.dataset_config.get_task_names()
-
-        if isinstance(self.dataset.regression_targets, torch.Tensor):
-            regression_targets = self.dataset.regression_targets.detach().cpu().numpy()
-
-        if self.dataset.dataset_config.regression_is_normalized:
-            print("Dataset was already normalized")
-            return
-
-        log_scaling_mask = np.array(
-            [
-                tc.scaling == LabelScalingType.LOG
-                for tc in self.dataset.dataset_config.tasks
-            ]
-        ).reshape(-1, len(self.dataset.dataset_config.get_task_names()))
-
-        reg_masks = self.dataset.regression_masks.detach().cpu().numpy()
-
-        print(reg_masks.shape)
-        log_mask = np.logical_and(log_scaling_mask, reg_masks)
-
-        print(log_mask.shape)
-
-        if not np.all(regression_targets[log_mask] > 0):
-            remove_rows, _ = np.where((log_mask) & (regression_targets <= 0))
-
-            n_rows = self.dataset.embeddings.shape[0]
-            print(self.dataset.embeddings.shape)
-            keep = np.ones(n_rows, dtype=bool)
-            keep[remove_rows] = False
-
-            self.dataset.embeddings = self.dataset.embeddings[keep, :, :]
-            self.dataset.molecules = [
-                m for m, k in zip(self.dataset.molecules, keep) if k
-            ]
-
-            reg_masks = reg_masks[keep, :]
-            log_mask = log_mask[keep, :]
-            regression_targets = regression_targets[keep, :]
-            self.dataset.regression_masks = self.dataset.regression_masks[keep, :]
-            self.dataset.padding_mask = self.dataset.padding_mask[keep, :]
-            self.dataset.atomic_positions = self.dataset.atomic_positions[keep, :, :]
-
-            self.dataset.dataset_config.N_molecules = self.dataset.embeddings.shape[0]
-
-        assert np.all(regression_targets[log_mask] > 0)
-
-        regression_targets[log_mask] = np.log(regression_targets[log_mask])
-
-        if mean_targets is None:
-            mean_targets = np.mean(
-                regression_targets, axis=0, where=self.dataset.regression_masks
-            )
-
-        else:
-            assert list(mean_targets.keys()) == dataset_tasks
-            mean_targets = np.array(list(mean_targets.values()))
-
-        if std_targets is None:
-            std_targets = np.std(
-                regression_targets, axis=0, where=self.dataset.regression_masks
-            )
-
-        else:
-            assert list(std_targets.keys()) == dataset_tasks
-            std_targets = np.array(list(std_targets.values()))
-
-        print(f"Mean Targets {mean_targets}")
-        print(f"Std Targets {std_targets}")
-
-        self.dataset.regression_targets = (
-            regression_targets - mean_targets
-        ) / std_targets
-
-        for task, task_mean, task_std in zip(
-            self.dataset.dataset_config.tasks,
-            mean_targets.tolist(),
-            std_targets.tolist(),
-            strict=False,
-        ):
-
-            task.mean = task_mean
-            task.std = task_std
-
-        self.dataset.dataset_config.regression_is_normalized = True
-
-        self.dataset.regression_targets = torch.Tensor(self.dataset.regression_targets)
-
-    def get_atomic_embedding_normalization_constants(self):
-
-        padding_mask = self._take(self.base_ds.padding_mask)
-        embeddings = self._take(self.base_ds.embeddings)
+    def get_atomic_embedding_normalization_constants(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        padding_mask = self.dataset.padding_mask  # True = padding, False = real
+        embeddings = self.dataset.embeddings
 
         input_irreps = get_mace_calculator_irrep_signature(
-            self.base_ds.dataset_config.embedding_model_config.mace_calc
+            self.dataset.dataset_config.embedding_model_config.mace_calc
         )
 
         invariant_indices, _ = get_invariant_indices(input_irreps)
@@ -173,36 +124,177 @@ class DataNormalizationModule():
             embeddings, invariant_indices
         )
 
-        masks = padding_mask.unsqueeze(-1) == 0
+        valid_mask = (~padding_mask).unsqueeze(-1)  # True == real atom
+        print("Before invariant norms")
 
-        inv_mean_per_dim, inv_std_per_dim = (
-            self.calculate_invariant_normalization_constants(
-                invariant_embeddings, masks
-            )
-        )
-
-        return inv_mean_per_dim, inv_std_per_dim
+        return self.calculate_invariant_normalization_constants_streaming(invariant_embeddings, valid_mask)
 
     @staticmethod
-    def calculate_invariant_normalization_constants(invariant_embeddings, masks):
+    def calculate_invariant_normalization_constants(
+        invariant_embeddings: torch.Tensor,
+        masks: torch.Tensor,
+        eps: float = 1e-12,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        x, m = invariant_embeddings, masks
 
-        x = invariant_embeddings
-        m = masks
-
-        # 1) count of valid elems per‐dim
-        count = m.sum(dim=(0, 1), keepdim=True).clamp(min=1)  # [1,1,D]
-
-        # 2) masked sum
-        sum_ = (x * m).sum(dim=(0, 1), keepdim=True)  # [1,1,D]
-
-        # 3) mean
-        mean_per_dim = sum_ / count  # [1,1,D]
-
-        # 4) variance
-        sq_diff = (x - mean_per_dim) ** 2 * m
-        var = sq_diff.sum(dim=(0, 1), keepdim=True) / count
-
-        # 5) std
-        std_per_dim = torch.sqrt(var)
-
+        count = m.sum(dim=(0, 1), keepdim=True).clamp(min=1)
+        mean_per_dim = (x * m).sum(dim=(0, 1), keepdim=True) / count
+        var = ((x - mean_per_dim) ** 2 * m).sum(dim=(0, 1), keepdim=True) / count
+        std_per_dim = torch.sqrt(var).clamp_min(eps)
         return mean_per_dim, std_per_dim
+    
+
+    @staticmethod
+    @torch.no_grad()
+    def calculate_invariant_normalization_constants_streaming(invariant_embeddings, valid_masks,
+        batch_size: int = 2048,
+        num_workers: int = 0,
+        pin_memory: bool = True,
+        accumulate_on_cpu: bool = True,
+        accum_dtype: torch.dtype = torch.float64,
+        eps: float = 1e-12,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Compute per-dimension mean/std for invariant embeddings with a mask,
+        streaming over a DataLoader to avoid OOM.
+
+        Parameters
+        ----------
+        data
+            Either:
+            • a DataLoader that yields (x, m) with shapes [B, N, D] and [B, N, 1 or D], or
+            • a tuple (embeddings, masks) as tensors (or NumPy arrays) with shapes [B, N, D] and [B, N, 1 or D].
+        batch_size
+            Used only if `data` is not already a DataLoader.
+        num_workers, pin_memory
+            DataLoader settings when we construct it for you.
+        accumulate_on_cpu
+            Keep the small running sums on CPU to minimize GPU memory.
+        accum_dtype
+            dtype for accumulators; float64 is safest.
+        eps
+            Lower bound for std to avoid divide-by-zero.
+
+        Returns
+        -------
+        (mean, std): each shaped [1, 1, D], float32
+        """
+
+        # Helper: turn (tensors or numpy arrays) into a DataLoader
+        def _as_loader(emb, msk) -> DataLoader:
+
+            # Convert NumPy -> torch if needed
+            if not isinstance(emb, torch.Tensor):
+                emb = torch.as_tensor(emb)
+            if not isinstance(msk, torch.Tensor):
+                msk = torch.as_tensor(msk)
+
+            # We don't move to GPU here; we stream batches and move as needed.
+            ds = TensorDataset(emb, msk)
+            loader = DataLoader(
+                ds,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+                persistent_workers=(num_workers > 0),
+            )
+
+            return loader
+
+        loader = _as_loader(invariant_embeddings, valid_masks)
+
+        # Accumulators (tiny: shape [1,1,D])
+        total_sum = None
+        total_sumsq = None
+        total_count = None
+
+        def _accum_to_device(t: torch.Tensor) -> torch.Tensor:
+            t = t.to(dtype=accum_dtype)
+            return t.cpu() if accumulate_on_cpu else t
+
+        for xb, mb in loader:
+            # Cast for stable math; keep batch on whatever device it arrived
+            xb = xb.float()
+            mb = mb.float()
+            # Reductions over [B, N]
+            s  = (xb * mb).sum(dim=(0, 1), keepdim=True)
+            ss = ((xb * xb) * mb).sum(dim=(0, 1), keepdim=True)
+            c  = mb.sum(dim=(0, 1), keepdim=True).clamp(min=1)
+
+            s, ss, c = map(_accum_to_device, (s, ss, c))
+
+            if total_sum is None:
+                total_sum, total_sumsq, total_count = s, ss, c
+            else:
+                total_sum   += s
+                total_sumsq += ss
+                total_count += c
+
+        mean = total_sum / total_count
+        var  = total_sumsq / total_count - mean.pow(2)
+        std  = var.clamp_min(0).sqrt().clamp_min(eps)
+
+
+        print(f"mean shape {mean.shape}, std_ shape {std.shape}")
+        return mean.to(torch.float32), std.to(torch.float32)
+
+    # ------------------------------------------------------------------ #
+    # Internals
+    # ------------------------------------------------------------------ #
+
+    def _compute_regression_stats(self) -> NormalizationStats:
+        """
+        Mask semantics: 1 == valid label, 0 == missing.
+        No mask mutation here; we trust upstream sanitation.
+        """
+        x   = torch.as_tensor(self.dataset.regression_targets, dtype=torch.float32)  # [N, T]
+        msk = torch.as_tensor(self.dataset.regression_masks,   dtype=torch.float32)  # [N, T]
+        valid = msk > 0
+
+        tasks   = self.dataset.dataset_config.tasks
+        scaling = [t.scaling or LabelScalingType.Z for t in tasks]
+        log_mask = torch.tensor(
+            [s == LabelScalingType.LOG_Z for s in scaling],
+            dtype=torch.bool,
+            device=x.device,
+        )
+
+        if log_mask.any():
+            lm = log_mask.unsqueeze(0)
+            bad = (valid & lm & (x <= 0)).any()
+            if bad:
+                raise ValueError(
+                    "Found non-positive, unmasked targets for LOG_Z tasks. "
+                    "Sanitize them upstream before instantiating DataNormalizationModule."
+                )
+
+        # compute stats in the correct space
+        y = x.clone()
+        if log_mask.any():
+            lm = log_mask.unsqueeze(0)
+            log_valid = valid & lm
+            y = torch.where(log_valid, torch.log(y.clamp_min(self.eps)), y)
+
+        valid_f = valid.to(y.dtype)
+        count = valid_f.sum(dim=0).clamp(min=1)
+        mean_tasks = (y * valid_f).sum(dim=0) / count
+        var_tasks  = ((y - mean_tasks) ** 2 * valid_f).sum(dim=0) / count
+        std_tasks  = torch.sqrt(var_tasks).clamp(min=self.eps)
+
+        stats = NormalizationStats(
+            mean=mean_tasks.unsqueeze(0),
+            std=std_tasks.unsqueeze(0),
+            log_mask=log_mask.cpu(),
+            scaling=scaling,
+        )
+
+        # optionally persist to TaskConfig
+        for t, m, s in zip(tasks, stats.mean.squeeze(0).tolist(), stats.std.squeeze(0).tolist()):
+            t.mean = m
+            t.std = s
+
+
+        self.task_configs = tasks
+
+        return stats

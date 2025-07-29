@@ -54,6 +54,9 @@ class PairDistanceMatrixGeometricPreprocessor(nn.Module):
         P0 = P0 * mask_pair.unsqueeze(-1)
         P0 = 0.5 * (P0 + P0.transpose(1,2))
   
+        P0 = P0.float()
+        rbf = rbf.float()
+
         return P0, rbf,  mask_pair
 
 

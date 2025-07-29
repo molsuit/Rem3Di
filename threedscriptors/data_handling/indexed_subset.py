@@ -1,32 +1,42 @@
 from torch.utils.data import Subset
+from threedscriptors.data_handling.dataset import BaseDataset
+from typing import Generic, Sequence, TypeVar
 import torch
 import numpy as np
 
-class IndexedSubset(Subset):
+
+
+TBase = TypeVar("TBase", bound="BaseDataset")
+
+class IndexedSubset(Subset[TBase], Generic[TBase]):
+    dataset : TBase
+
+    def __init__(self, dataset: TBase, indices: Sequence[int]):
+        super().__init__(dataset, indices)
+        # cache once so we don't re-create tensors every getattr
+        self._idx_torch = torch.as_tensor(indices, dtype=torch.long)
+
+
     def __getattr__(self, name):
-        # 1. Try to get the attribute from Subset (e.g. .dataset, .indices)
+        # 1) try Subset attributes first
         try:
             return super().__getattr__(name)
         except AttributeError:
             pass
 
-        # 2. Otherwise, fetch it from the base dataset
+        # 2) pull from base dataset
         attr = getattr(self.dataset, name)
-
-        # 3. Now handle slicing by type
-        # 3a. torch.Tensor — use tensor indexing
+        # 3) slice depending on type
         if isinstance(attr, torch.Tensor):
-            idx_tensor = torch.tensor(self.indices, dtype=torch.long, device=attr.device)
-            return attr[idx_tensor]
-
-        # 3b. numpy.ndarray — use ndarray fancy‐indexing
-        if isinstance(attr, np.ndarray):
-            return attr[np.array(self.indices, dtype=int)]
-
-        # 3c. list or tuple — build a new sequence
+            return attr[self._idx_torch.to(attr.device)]
         if isinstance(attr, (list, tuple)):
             sliced = [attr[i] for i in self.indices]
             return type(attr)(sliced)
-
-        # 4. Nothing to slice here — return as‐is
+        if isinstance(attr, dict):
+            # build a new dict, slicing tensor/ndarray/list values
+            new = {}
+            for k, v in attr.items():
+                new[k] = v[self._idx_torch.to(v.device)]
+            return new
+        # 4) not sliceable → return as-is
         return attr

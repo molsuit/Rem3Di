@@ -9,9 +9,7 @@ from threedscriptors.configuration.architecture_config import (
     RelativeDistancePositionalEncodingConfig,
 )
 from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
-    AtomicDescriptorPreprocess,
-    InvariantsFilter,
-    PseudoscalarGenerator,
+    AtomicDescriptorPreprocessor,
 )
 from threedscriptors.model.preprocessing.preprocessing import Preprocessor
 from threedscriptors.configuration.data_config import TaskConfig
@@ -129,13 +127,11 @@ class ModelBuilder:
 
     def build_atomic_preprocessor(
         self, mean_atomic_embedding, std_atomic_embedding
-    ) -> AtomicDescriptorPreprocess:
+    ) -> AtomicDescriptorPreprocessor:
         preprocess_config = self.architecture_config.embedding_preprocess_config
 
-        if preprocess_config.pseudoscalars:
-            atomic_preprocessor = PseudoscalarGenerator(preprocess_config)
-        else:
-            atomic_preprocessor = InvariantsFilter(preprocess_config)
+        atomic_preprocessor = AtomicDescriptorPreprocessor(preprocess_config=preprocess_config)
+
 
         if (mean_atomic_embedding is not None) and (std_atomic_embedding is not None):
 
@@ -145,15 +141,16 @@ class ModelBuilder:
             invariant_dim = invariant_irreps.dim
 
             assert mean_atomic_embedding.shape[-1] == invariant_dim
-            atomic_preprocessor.register_embedding_normalization(
-                mean_atomic_embedding, std_atomic_embedding
-            )
+            
+            atomic_preprocessor.invariant_normalization.set_stats(mean = mean_atomic_embedding, std= std_atomic_embedding)
+
 
         if preprocess_config.reload_state_dict is not None:
 
             atomic_preprocessor.load_state_dict(
                 torch.load(preprocess_config.reload_state_dict)
             )
+        
 
         return atomic_preprocessor
 

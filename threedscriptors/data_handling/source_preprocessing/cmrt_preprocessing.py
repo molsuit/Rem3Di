@@ -34,7 +34,7 @@ def get_task_configs(aux_data: dict) -> TaskConfig:
     aux_data_dim = sum([v.shape[1] if v.ndim == 2 else 1 for v in aux_data.values()])
 
     task = TaskConfig(
-        task_name="cmrt", has_auxillary_data=True, auxillary_data_dimension=aux_data_dim, scaling= LabelScalingType.LOG
+        task_name="cmrt", has_auxillary_data=True, auxillary_data_dimension=aux_data_dim, scaling= LabelScalingType.LOG_Z
     )
 
     return [task]

@@ -100,17 +100,25 @@ class BaseDataset(data.Dataset):
                 self.max_atoms, _ = count_atoms_from_smiles(
                     smiles_iterator, heavy_atoms_only= self.dataset_config.only_heavy_atoms
                 )
-
+            
+            self.dataset_config.max_atoms = self.max_atoms
            
         return self.max_atoms
     
 
     def get_structure_ids_for_mol(self, mol_ids):
-
-        return [idx for idx, id in enumerate(self.structure_ids) if id.molecule_id in mol_ids]
+        mol_ids_set = set(mol_ids)
+        return [idx for idx, id in enumerate(self.structure_ids) if id.molecule_id in mol_ids_set]
 
     def get_all_mol_ids(self):
-        return list(set([id.molecule_id for id in self.structure_ids]))
+    # preserves first-seen order (unlike set(...))
+        seen, out = set(), []
+        for sid in self.structure_ids:
+            m = sid.molecule_id
+            if m not in seen:
+                seen.add(m)
+                out.append(m)
+        return out
 
     def get_total_number_of_atoms(self):
         
@@ -135,7 +143,7 @@ class BaseDataset(data.Dataset):
         atomic_numbers = [at.get_atomic_numbers() for at in self.molecules]
         padding_dim = np.array([len(an) for an in atomic_numbers]) # The dimension of the real atoms, required to reconstruct whcich element are padding and which ones are not.
 
-
+        print(f"Current Atom Count {self.max_atoms}")
         max_atoms= self.get_max_atoms()
         print(f"Current Atom Count {max_atoms}")
 
