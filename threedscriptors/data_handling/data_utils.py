@@ -10,7 +10,6 @@ from ase.optimize import LBFGS
 from mace.calculators import MACECalculator
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
-from rdkit2ase import rdkit2ase
 
 
 if TYPE_CHECKING:
@@ -61,7 +60,13 @@ def get_ase_atoms(smiles) -> Atoms:
             randomSeed=-1,
         )
 
-    atoms = rdkit2ase(mol)
+    conf = mol.GetConformer()
+    atoms = Atoms(
+                positions=conf.GetPositions(),
+                numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
+                info={"smiles": smiles}
+            )
+    
     return atoms
 
 
