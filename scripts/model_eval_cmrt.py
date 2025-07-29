@@ -10,7 +10,7 @@ from threedscriptors.configuration.data_config import DatasetSplit
 
 dataset_name = "cmrt_test"
 # load model
-model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/59-2025_07_27_15_49_14-CMRT_NewSplit"
+model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/130-2025_07_29_18_21_25-CMRT_paired_train_diffin_lin"
 
 evaluation_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/"
 

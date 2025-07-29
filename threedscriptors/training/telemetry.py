@@ -63,7 +63,10 @@ class TrainingTelemetry:
             wandb.finish()
 
     def zip_task_losses(self, task_losses: torch.Tensor):
-
+        
+        if task_losses is None:
+            return None
+        
         task_losses = task_losses.cpu().detach().numpy()
         zipped = dict(
             zip(
@@ -92,7 +95,7 @@ class TrainingTelemetry:
             self.best_epoch = False
 
         training_task_loss = self.zip_task_losses(avg_train_loss_per_task)
-
+            
         validation_task_loss = self.zip_task_losses(avg_validation_loss_per_task)
 
         epoch_train_data = {

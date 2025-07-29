@@ -191,7 +191,7 @@ class DatasetBuilder:
                     smiles_1 = next(smiles_iterator)
                     can_smi_0 = Chem.CanonSmiles(smiles_0)
                     can_smi_1 = Chem.CanonSmiles(smiles_1)
-
+                    
                     # pairwise iterator returns enantiomer pairs
                 except StopIteration:
                     tqdm.write(

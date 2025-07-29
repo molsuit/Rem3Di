@@ -6,6 +6,7 @@ import torch
 import torch.utils.data as data
 from ase import Atoms
 import torch.nn.functional as F
+from typing import Optional
 
 if TYPE_CHECKING:
     # only for mypy / IDE - never executed at runtime
@@ -239,6 +240,95 @@ class BaseDataset(data.Dataset):
 
         return dataset_cls(dataset_config=self.dataset_config, **filtered)
 
+class EnantiomerPairMixin:
+    """
+    Makes the dataset index over *pairs* of enantiomers.
+    Each __getitem__(i) returns (sample_e1, sample_e2).
+
+    Assumptions:
+      - self.structure_ids is aligned with dataset storage (same order as tensors).
+      - Enantiomers share (molecule_id, conformer_id) and differ by enantiomer_id in {1,2}.
+    """
+
+    required_fields = ["structure_ids"]
+
+    def __init__(self, *args, **kwargs):
+            """
+            pair_by_conformer:
+                If True, pairs are formed per (molecule_id, conformer_id).
+                If False, pairs are formed per molecule_id (use only if you know each molecule has exactly one R/S).
+
+            include_singletons:
+                If True, unpaired entries (missing partner) are kept and mapped to None.
+                If False, they are dropped from the index (recommended).
+            """
+            super().__init__(*args, **kwargs)
+            self._build_enantiomer_index()
+
+    def get_enantiomer_idx(self, idx: int) -> Optional[int]:
+        """Return the partner dataset index for a given dataset index, or None if none exists."""
+        return self._partner_of.get(idx, None)
+
+    def get_pair_indices(self, pair_idx: int) -> tuple[int, Optional[int]]:
+        """Return (idx_e1, idx_e2) for a pair index."""
+        return self._pair_index[pair_idx]
+
+    # ---------- Dataset overrides ----------
+    def __len__(self) -> int:
+        # number of *pairs* exposed by this mixin
+        return len(self._pair_index)
+    
+    # ---------- internal ----------
+    def _build_enantiomer_index(self):
+
+        # Group dataset indices by key: (molecule_id, conformer_id) or molecule_id
+        groups: dict[tuple[int, Optional[int]], dict[int, int]] = {}
+
+        for idx, sid in enumerate(self.structure_ids):
+            assert idx == sid.structure_id
+            # Skip entries with no enantiomer label
+            if sid.enantiomer_id not in (1, 2):
+                continue
+            key = (sid.molecule_id, sid.conformer_id) 
+            d = groups.setdefault(key, {})
+            d[sid.enantiomer_id] = idx
+
+        
+        self._pair_index: list[tuple[int, int]] = []
+        self._partner_of: dict[int, int] = {}
+
+        # Build symmetric mapping + the compact list of unique pairs
+        for _, d in groups.items():
+            i1 = d.get(1, None)
+            i2 = d.get(2, None)
+
+            if i1 is not None and i2 is not None:
+                # Record pair (always [1] first for determinism)
+                self._pair_index.append((i1, i2))
+                self._partner_of[i1] = i2
+                self._partner_of[i2] = i1
+            else:
+                raise ValueError
+            
+    
+    def __getitem__(self,pair_idx):
+        idx_e1, idx_e2 = self.get_pair_indices(pair_idx)
+        # Always return first as enantiomer_id==1 if available (stable ordering)
+        sample_e1 = super().__getitem__(idx_e1)
+        sample_e2 = super().__getitem__(idx_e2)
+
+        return sample_e1, sample_e2
+
+
+    def get_pair_indices_for_structures(self, structure_id_set: set[int]) -> list[int]:
+        """
+        Return indices of *pairs* whose two structures are both inside `structure_id_set`.
+        """
+        return [
+            pair_idx
+            for pair_idx, (s1, s2) in enumerate(self._pair_index)
+            if (s1 in structure_id_set) and (s2 in structure_id_set)
+        ]
 
 class AtomicEmbeddingMixin:
     required_fields = ["embeddings","padding_mask"]
@@ -351,6 +441,11 @@ class RegressionWithAuxAndPositionsDataset(
 ):
     pass
 
+
+class PairedRegressionWithAuxAndPositionDataset(
+    EnantiomerPairMixin,AtomicPositionMixin,AuxDataMixin, RegressionTargetMixin, AtomicEmbeddingMixin, BaseDataset
+):
+    pass
 
 class RegressionWithAuxDataset(
     AuxDataMixin, RegressionTargetMixin, AtomicEmbeddingMixin, BaseDataset

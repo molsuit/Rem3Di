@@ -90,9 +90,9 @@ training_config = TrainingConfig(
     split_config=split_config,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/pcqmfull",
+    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/geomfull",
     noise_level=0.3,
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/pcqmfull",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/geomfull",
     normalized_targets=True,
 )
 

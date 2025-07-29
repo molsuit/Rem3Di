@@ -7,7 +7,7 @@ from threedscriptors.configuration.data_config import (
 from threedscriptors.data_handling.dataset_analysis import DatasetPostLoadAnalysis
 
 from threedscriptors.data_handling.dataset import (
-    RegressionWithAuxAndPositionsDataset,
+    RegressionWithAuxAndPositionsDataset,PairedRegressionWithAuxAndPositionDataset
 )
 from threedscriptors.data_handling.dataset_io import store_data_to_disk
 from threedscriptors.data_handling.pipelines import chiral_regression_training_pipeline
@@ -42,9 +42,9 @@ embedding_model_config = MaceCalculatorConfig(
     device="cuda",
 )
 dataset_config = DatasetConfig(
-    N_molecules=3000,
+    N_molecules=5000,
     dataset_type=RegressionWithAuxAndPositionsDataset,
-    BFGS_tol=0.1,
+    BFGS_tol=0.3,
     BFGS_max_steps=500,
     N_conformers=2,
     embedding_model_config=embedding_model_config,
@@ -61,11 +61,6 @@ dataset = chiral_regression_training_pipeline(
     regression_masks=regression_masks,
     auxillary_data=aux_data,
 ).build()
-
-
-print(dataset.regression_masks)
-print(dataset.regression_targets)
-
 
 store_data_to_disk(dataset, f"{dataset_directory}_full")
 

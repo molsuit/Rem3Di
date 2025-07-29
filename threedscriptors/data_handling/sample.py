@@ -60,6 +60,13 @@ def sample_collate_fn(batch: list[Sample]) -> Sample:
 
 
 
+def paired_sample_collate_fn(batch: list[tuple["Sample", "Sample"]]):
+    left, right = zip(*batch)  # two lists of Samples (right may include None)
+    batch = sample_collate_fn(list(left)+list(right))
+    return batch
+
+
+
 @dataclass
 class PreprocessedSample:
     preprocessed_atomic_embeddings : torch.Tensor | None = None

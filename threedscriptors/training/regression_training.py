@@ -24,6 +24,36 @@ def multitask_masked_loss(predictions, labels, regression_mask):
 
     return weighted_loss
 
+
+def chiral_difference_loss(predictions, labels, regression_mask):
+
+    # predictions is stacked along the batch dimension, enantiomer 1 at the top, enantiomer2 at the bottom. We only want to penalize the difference of the predicted retention time. 
+
+    B = predictions.shape[0]
+    if B % 2 != 0:
+        raise ValueError("Batch size must be even — got {}".format(B))
+    N = B // 2
+
+    pred_e1, pred_e2 = predictions[:N], predictions[N:]
+    lab_e1,  lab_e2  = labels[:N],        labels[N:]
+
+    print(predictions)
+    print(labels)
+
+    mask_e1 = regression_mask[:N].bool()
+    mask_e2 = regression_mask[N:].bool()
+
+    valid = mask_e1 & mask_e2  
+
+    diff_pred = pred_e1[valid] - pred_e2[valid]
+    diff_lab  = lab_e1[valid]  - lab_e2[valid]
+
+    real_loss = (predictions-labels).pow(2).mean()
+
+    loss = (diff_pred - diff_lab).pow(2).mean()
+
+    return loss
+
 class BaseMultitaskLoss(nn.Module):
 
     def __init__(self):
@@ -57,3 +87,13 @@ class DynamicallyWeighedMultitaskLoss(nn.Module):
         return loss, loss_per_task  
 
 
+
+class ChiralDifferenceLoss(nn.Module):
+
+    def __init__(self):
+
+        super().__init__()
+
+    def forward(self, sample: Sample, output : ModelOutput):
+        
+        return 

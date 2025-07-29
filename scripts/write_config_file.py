@@ -18,7 +18,7 @@ from threedscriptors.configuration.architecture_config import (
 from threedscriptors.configuration.config_factory import ConfigFactory
 from threedscriptors.configuration.data_config import DatasetConfig
 
-run = "qm9_training"
+run = "cmrt_training"
 
 config_file = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{run}/dataset_config.yaml"
 dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, config_file)
@@ -33,17 +33,17 @@ pos_encoding_config = RelativeDistancePositionalEncodingConfig(N_radial_basis_fu
 #pos_encoding_config = RandomWalkPositionalEncoding(k_hop_random_walk=16, d_projection=64)
 
 embedding_preprocessor_config = EmbeddingPreprocessConfig(
-    pseudoscalars=True, pseudoscalar_dimension=64,chiral_embedding_dimension=64
+    pseudoscalars=True, pseudoscalar_dimension=64,chiral_embedding_dimension=32
 )
 
 attention_layer_config = AttentionLayerConfig(
-    num_heads=8,
-    dim_feedforward=1024,
+    num_heads=4,
+    dim_feedforward=640,
     dropout=0.3,
 )
 
 encoder_config = EncoderConfig(
-    N_layers=5, attention_layer_config=attention_layer_config
+    N_layers=2, attention_layer_config=attention_layer_config
 )
 
 decoder_config = None
@@ -53,7 +53,7 @@ decoder_config = None
 
 mean_aggregator_config = MeanAggregatorConfig(aggregator_type= Aggregations.MEAN)
 
-attention_aggregator_config = AttentionAggregatorConfig(aggregator_type= Aggregations.ATTENTION, num_heads = 16, attn_dropout= 0.3)
+attention_aggregator_config = AttentionAggregatorConfig(aggregator_type= Aggregations.ATTENTION, num_heads = 8, attn_dropout= 0.3)
 
 global_aggregator_config = GlobalAggregatorConfig(
     aggregator_type_config= attention_aggregator_config,
@@ -76,7 +76,7 @@ cf = ConfigFactory(
 
 head_config_template = RegressionHeadConfig(
     activation_fn=torch.nn.SiLU(),
-    hidden_dimensions=[512,256,128],
+    hidden_dimensions=[256,128],
     head_type=HeadType.FULLY_CONNECTED,
 )
 

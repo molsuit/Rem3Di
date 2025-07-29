@@ -18,14 +18,15 @@ def get_one_hot_columns_encodings(columns: list):
     return column_array, one_hot_dict
 
 
-def build_auxillary_data(column_type: list, proh_proportion: np.ndarray):
+def build_auxillary_data(column_type: list, proh_proportion: np.ndarray, speed : np.ndarray):
     column_array, _ = get_one_hot_columns_encodings(column_type)
 
     proh_proportion = proh_proportion.reshape(-1, 1)
 
+    speed = speed.reshape(-1, 1)
     # aux_data = {"column_type": column_array, "proh_proportion": proh_proportion}
 
-    arr = np.hstack((column_array, proh_proportion)).astype(np.float32)
+    arr = np.hstack((column_array, proh_proportion, speed)).astype(np.float32)
     aux_data = {"cmrt": arr}
     return aux_data
 
@@ -60,14 +61,17 @@ def load_cmrt_data(dataset_filepath: str, single_column_type=False):
     classes_appearing_twice = unique_pair_indices[counts == 2]
     df = df[df["pair_index"].isin(classes_appearing_twice)]
 
+    
+
     aux_data = build_auxillary_data(
         column_type=df["Column"].tolist(),
         proh_proportion=df["i-PrOH_proportion"].to_numpy(),
+        speed = df["Speed"].to_numpy()
     )
 
     smiles = df["SMILES"]
 
-    regression_targets = (df["RT"].to_numpy() * df["Speed"].to_numpy()).reshape(
+    regression_targets = (df["RT"].to_numpy()).reshape(
         -1, 1
     )
     regression_masks = np.ones_like(

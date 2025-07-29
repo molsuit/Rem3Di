@@ -1,4 +1,4 @@
-from threedscriptors.data_handling.source_preprocessing.geom_preprocessing import load_geom
+from threedscriptors.data_handling.source_preprocessing.geom_preprocessing import load_geom, load_geom_parallel
 
 
 from threedscriptors.data_handling.dataset_builder import DatasetBuilder
@@ -20,7 +20,9 @@ from threedscriptors.configuration.data_config import (
 # change to where you untarred the rdkit folder
 base_path = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data"
 
-smiles_list, molecules, structure_ids = load_geom(base_path, boltzmann_weight_threshold=0.15, N_molecules=None)
+#smiles_list, molecules, structure_ids = load_geom(base_path, boltzmann_weight_threshold=0.15, N_molecules=None)
+
+smiles_list, molecules, structure_ids = load_geom_parallel(base_path, boltzmann_weight_threshold=0.15, max_atoms= 100, N_structures=150000, max_workers=None, )
 
 dataset_directory = (
     f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/geom"
