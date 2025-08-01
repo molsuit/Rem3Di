@@ -10,50 +10,84 @@ from threedscriptors.data_handling.source_preprocessing.tmqm_preprocessing impor
     load_tmqm_dataset,
 )
 
-directory = (
-    "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/tmqm/"
+from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset, RegressionDatasetwithPositions
+from threedscriptors.data_handling.dataset_io import store_data_to_disk
+
+from threedscriptors.data_handling.pipelines import pretraining_pipeline_from_structures
+
+from mace.calculators import MACECalculator
+from threedscriptors.data_handling.source_preprocessing.tmqm_preprocessing import TmqmTask
+from threedscriptors.configuration.data_config import (
+    DatasetConfig,
+    MaceCalculatorConfig,
+    DatasetSplit,
+)
+from threedscriptors.training.dataset_splitting import DatasetSplitting
+from threedscriptors.data_handling.dataset_builder import DatasetBuilder
+
+dataset_directory = (
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm/"
 )
 
-tasks = ["HL_Gap"]
-csd_ids_int, molecules, regression_targets, regression_masks, tasks = load_tmqm_dataset(
-    f"{directory}/raw_data/", tasks
-)
+tasks = [TmqmTask.HL_GAP]
 
+
+structure_ids, molecules, regression_targets, regression_masks, tasks = load_tmqm_dataset(
+    f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/tmqm", tasks)
+
+import matplotlib.pyplot as plt
 
 MACE_PATH = (
-    "/data/fast-pc-06/snw30/projects/models/2023-12-03-mace-128-L1_epoch-199.model"
+    "/share/snw30/projects/mace_model/mace_agnesi_medium.model"
 )
 
+
+
 embedding_model_config = MaceCalculatorConfig(
-    mace_calc=None,
-    model_name="medium",
+    mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
+    model_name="mace_mp",
     model_path=MACE_PATH,
     enable_cueq=True,
     device="cuda",
 )
 
-
 dataset_config = DatasetConfig(
-    N_molecules=10,
-    dataset_type=DatasetTypes.REGRESSION,
-    BFGS_tol=0.2,
+    N_molecules=structure_ids[-1].molecule_id,
+    dataset_type=RegressionDatasetwithPositions,
+    BFGS_tol=0.1,
     BFGS_max_steps=500,
     N_conformers=1,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
+    only_heavy_atoms=False,
+    dataset_name="tmqm",
 )
 
 
 dataset = regression_training_from_structures_pipeline(
     dataset_config=dataset_config,
     molecules=molecules,
-    mol_ids=csd_ids_int,
+    structure_ids=structure_ids,
     regression_targets=regression_targets,
     regression_masks=regression_masks,
 ).build()
 
+store_data_to_disk(dataset, dataset_directory)
 
-print(dataset.embeddings.dtype)
 
-# store_data_to_disk(dataset, directory)
+
+
+
+ds = DatasetSplitting(dataset)
+names = ["training", "test"] 
+split_ratios = [0.9, 0.1]
+split_dataset_indices = ds.general_split(split_ratios, True)
+
+
+for ids, name in zip(split_dataset_indices,names):
+    new_dataset = ds.materialise_dataset_split(dataset, ids)
+    
+    db = DatasetBuilder(new_dataset)
+    db.canonicalize_structure_ids()
+    store_data_to_disk(new_dataset, dataset_directory+"_" + name)

@@ -1,16 +1,19 @@
 from matplotlib.pyplot import Figure
 
-from threedscriptors.data_handling.dataset import AtomicEmbeddingDataset
-from threedscriptors.data_handling.dataset_io import load_data_from_disk
-from threedscriptors.evaluation.clustering import PCACalculator
+from threedscriptors.evaluation.clustering import PCACalculator, UMAPCalculator
 from threedscriptors.evaluation.evaluation_pipeline import EnolThiolEvalTask
 from threedscriptors.model.model_builder import ModelBuilder
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 
-model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/cmrt"
-model = ModelBuilder.from_directory(model_directory).build_model()
+model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/139-2025_07_30_10_44_46-400kpcqm_hot_with_l1"
+model = ModelBuilder.from_directory(model_directory).build_remedi_model()
 
 dataset_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/functional_group_dataset"
-dataset = load_data_from_disk(dataset_directory, dataset_cls=AtomicEmbeddingDataset)
+
+
+dataset = reload_dataset_pipeline(dataset_directory).build()
+
+
 
 task = EnolThiolEvalTask(dataset=dataset, clustering_calculator=PCACalculator())
 

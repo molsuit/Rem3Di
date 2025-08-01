@@ -61,6 +61,11 @@ class DatasetSplitting:
 
         validation_structure_ids = self.dataset.get_structure_ids_for_mol(val_mol_ids)
 
+        print(f"lables per class Train set{self.dataset.regression_masks[train_structure_ids,:].sum(dim= 0)}")
+
+        print(f"lables per class Vals set{self.dataset.regression_masks[validation_structure_ids,:].sum(dim= 0)}")
+
+
         return train_structure_ids, validation_structure_ids, "Train"
 
     def _repeated_cv(
@@ -123,6 +128,11 @@ class DatasetSplitting:
                     train_mol_ids
                 )
                 val_structure_ids = self.dataset.get_structure_ids_for_mol(val_mol_ids)
+
+                print(f"lables per class Train set{self.dataset.regression_masks[train_structure_ids,:].sum(dim= 0)}")
+
+                print(f"lables per class Vals set{self.dataset.regression_masks[val_structure_ids,:].sum(dim= 0)}")
+
 
                 yield train_structure_ids, val_structure_ids, f"Split_{i_repeat}-Fold_{val_fold_idx}"
 

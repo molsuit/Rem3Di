@@ -18,7 +18,8 @@ from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
 from threedscriptors.model.encoder import TransformerEncoder
-
+from typing import List
+from threedscriptors.data_handling.mol_id import StructureID
 
 def evaluate_regression_model_on_dataset(
     model: MultiTaskRegressionModel,
@@ -85,9 +86,9 @@ def evaluate_molecular_descriptor_on_dataset(
         for batch_idx, samples in enumerate(dataloader):
             samples.to_(device)
 
-            molecular_descriptor = model(samples)
+            model_output = model(samples)
 
-            descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = molecular_descriptor
+            descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = model_output.molecular_descriptor
 
 
     return descriptors
@@ -176,6 +177,34 @@ def compute_class_std(data, class_ids):
         class_mean[idx, :] = np.mean(data[mask, :], axis=0)
 
     return class_mean, class_std_dev
+
+
+def average_over_conformers(structure_ids: List[StructureID], predictions: torch.Tensor):
+
+    
+    classes  = [(sid.molecule_id, sid.enantiomer_id) for sid in structure_ids]
+    class_ids = {mol_e_id : i for i, mol_e_id in enumerate(set(classes))}
+
+
+    class_id_per_mol = []
+
+    for sid in structure_ids:
+        class_id_per_mol.append(class_ids[(sid.molecule_id, sid.enantiomer_id)])
+
+    class_id_per_mol = torch.as_tensor(class_id_per_mol).reshape(
+        -1,
+    )    
+
+    print(class_id_per_mol)
+    for class_id in class_ids.values():
+
+        mask = torch.where(class_id_per_mol == class_id)
+        class_mean = torch.mean(predictions[mask],dim = 0)
+        print(class_mean)
+
+        predictions[mask] = class_mean
+    
+    return predictions
 
 
 

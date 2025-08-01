@@ -10,6 +10,7 @@ from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, Subset
 from threedscriptors.data_handling.indexed_subset import IndexedSubset
+from threedscriptors.configuration.data_config import DatasetSplit
 
 
 from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions, RegressionDatasetwithRandomWalks, RegressionWithAuxAndPositionsDataset
@@ -20,7 +21,7 @@ from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
 )
 from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline, reload_regression_dataset_with_log_sanitation_pipeline
 from threedscriptors.data_handling.dataset_io import load_data_from_disk
 from threedscriptors.data_handling.sample import sample_collate_fn
 from threedscriptors.evaluation.training_evaluation import regression_pipeline, chiral_regression_pipeline
@@ -74,16 +75,15 @@ split_config = SplitConfig(
 training_config = TrainingConfig(
     batch_size=64,
     epochs=50,
-    learning_rate=1e-4,
+    learning_rate=2e-4,
     weight_decay=1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt_training",
-    test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_test",
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/cmrt_training",
+    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_logd",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_admet_logd",
     normalized_targets=True,
 )
 
@@ -93,9 +93,9 @@ architecture_config = pyaml.parse_yaml_file_as(
 )
 
 print("Start Dataloading")
-dataset = reload_dataset_pipeline(training_config.dataset_path).build()
+dataset = reload_regression_dataset_with_log_sanitation_pipeline(training_config.dataset_path).build()
 #dataset.expand_embedding_num_atoms(29)
-dataset = dataset.convert_to_dataset_type(RegressionWithAuxAndPositionsDataset)
+dataset = dataset.convert_to_dataset_type(RegressionDatasetwithPositions)
 
 dataset_splitting = DatasetSplitting(dataset)
 
@@ -164,10 +164,11 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
     #all_params = model.parameters()
 
-    all_params = (
-    list(model.encoder.parameters())
-    + list(model.preprocessor.geometric_preprocessor.parameters())
-)
+#    all_params = (
+#    list(model.encoder.parameters())
+#    + list(model.preprocessor.geometric_preprocessor.parameters())
+#)
+    all_params= model.multitask_heads.parameters()
 
     optimizer = optim.AdamW(
         [{"params" : all_params, "lr" : training_config.learning_rate, "weight_decay" : training_config.weight_decay},
@@ -293,7 +294,6 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
     figs = {}
 
-    from threedscriptors.configuration.data_config import DatasetSplit
     training_evaluation_pipeline = regression_pipeline(train_dataset, dataset_split=DatasetSplit.TRAIN)
     training_evaluation_pipeline.evaluate(model)
     train_figs, train_result_report = training_evaluation_pipeline.output_results(
@@ -303,11 +303,13 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
 
 
-    validation_evaluation_pipeline = regression_pipeline(valid_dataset, dataset_split=DatasetSplit.TRAIN)
+    validation_evaluation_pipeline = regression_pipeline(valid_dataset, dataset_split=DatasetSplit.VALIDATION)
     validation_evaluation_pipeline.evaluate(model)
     train_figs, train_result_report =validation_evaluation_pipeline.output_results(
         output_directory=f"{training_config.training_data_dir}/valset_results", model_name=run_name
     )
+
+
 
     
     if training_config.wandb_active:

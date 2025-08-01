@@ -20,15 +20,17 @@ from threedscriptors.configuration.data_config import (
 # change to where you untarred the rdkit folder
 base_path = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data"
 
-#smiles_list, molecules, structure_ids = load_geom(base_path, boltzmann_weight_threshold=0.15, N_molecules=None)
-
-smiles_list, molecules, structure_ids = load_geom_parallel(base_path, boltzmann_weight_threshold=0.15, max_atoms= 100, N_structures=150000, max_workers=None, )
-
+# Where the dataset will be stored
 dataset_directory = (
     f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/geom"
 )
 
+# The mace embedded model
 MACE_PATH = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
+
+
+smiles_list, molecules, structure_ids = load_geom_parallel(base_path, boltzmann_weight_threshold=0.15, max_atoms= 100, N_structures=75000, max_workers=None, )
+
 
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),

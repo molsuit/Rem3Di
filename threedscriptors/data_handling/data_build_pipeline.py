@@ -209,6 +209,14 @@ class CanonicalizeStructureIDStage(BuildStage):
         return builder
 
 
+class SanitizeLogLabels(BuildStage):
+
+    def _run(self,builder: DatasetBuilder):
+        builder.sanitize_log_scaled_regression_targets()
+        return builder
+
+
+
 
 class PipelineOrchestrator:
     def __init__(self, stages: list[BuildStage]):

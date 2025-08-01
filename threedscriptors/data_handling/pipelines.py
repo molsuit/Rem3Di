@@ -16,6 +16,7 @@ from threedscriptors.data_handling.data_build_pipeline import (
     SimilarityLabelingStage,
     AddRandomWalkTransitionProbabilityMatrixStage,
     CanonicalizeStructureIDStage,
+    SanitizeLogLabels
 )
 
 
@@ -149,7 +150,7 @@ def regression_training_from_structures_pipeline(
         RegressionLabelingStage(
             regression_targets=regression_targets, regression_masks=regression_masks
         ),AtomicPositionsStage(),
-        AddRandomWalkTransitionProbabilityMatrixStage(),
+        #AddRandomWalkTransitionProbabilityMatrixStage(),
     ]
 
     return PipelineOrchestrator(stages)
@@ -168,6 +169,17 @@ def reload_dataset_pipeline(
     ]
     return PipelineOrchestrator(stages)
 
+def reload_regression_dataset_with_log_sanitation_pipeline(
+    directory
+) -> PipelineOrchestrator :
+
+
+    stages = [
+        ReloadFromDiskStage(directory),
+        AtomicPositionsStage(),
+        SanitizeLogLabels()
+    ]
+    return PipelineOrchestrator(stages)
 
 
 

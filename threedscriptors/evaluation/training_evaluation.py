@@ -5,9 +5,8 @@ from threedscriptors.evaluation.clustering import (
 from threedscriptors.evaluation.evaluation_pipeline import (
     ChiralPredictionTask,
     DescriptorElementAnalysis,
-    DescriptorPCATask,
+    DescriptorClusteringTask,
     EvalPipelineRunner,
-    PreprocessorVisualizationTask,
     RegressionTestTask,
 )
 
@@ -23,7 +22,7 @@ def regression_pipeline(dataset: BaseDataset, dataset_split: DatasetSplit | None
 
     tasks = [
         RegressionTestTask(dataset),
-        DescriptorPCATask(dataset, UMAPCalculator()),
+        DescriptorClusteringTask(dataset, UMAPCalculator()),
         DescriptorElementAnalysis(dataset),
         # PreprocessorVisualizationTask(dataset),
         # RegressionHeadPCATask(dataset, UMAPCalculator()),

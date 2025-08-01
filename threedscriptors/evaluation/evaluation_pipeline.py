@@ -62,6 +62,7 @@ from threedscriptors.evaluation.similarity_screening import (
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
 from threedscriptors.training.regression_training import multitask_masked_loss
 from threedscriptors.configuration.data_config import DatasetSplit, LabelScalingType
+from threedscriptors.evaluation.evaluation_utils import average_over_conformers
 
 import yaml as vanilla_yaml
 
@@ -81,7 +82,7 @@ class BaseEvalTask(ABC):
         pass
 
 
-class DescriptorPCATask(BaseEvalTask):
+class DescriptorClusteringTask(BaseEvalTask):
     "Plots the PCA results of the Molecular Descriptor"
 
     def __init__(
@@ -98,7 +99,7 @@ class DescriptorPCATask(BaseEvalTask):
         descriptors = evaluate_molecular_descriptor_on_dataset(model, self.dataset)
 
         self.reduced_dimensions = (
-            self.clustering_calculator.get_dimensionality_reduction(descriptors)
+            self.clustering_calculator.get_dimensionality_reduction(descriptors, k=3)
         )
 
     def plot(self):
@@ -108,27 +109,43 @@ class DescriptorPCATask(BaseEvalTask):
 
         if self.dataset.regression_targets is not None:
             for i in range(self.dataset.regression_targets.shape[1]):
+                
+                mask = self.dataset.regression_masks[:,i].bool()
+
                 task_name = self.dataset.dataset_config.tasks[i].task_name
+                
                 fig_with_regression_coloring = plot_reduced_dimension(
-                    self.reduced_dimensions,
-                    color=self.dataset.regression_targets[:, i],
-                    suptitle=f"Molecular Descriptor Clustering color = {task_name}",
+                    self.reduced_dimensions[mask,:],
+                    color=self.dataset.regression_targets[mask, i],
+                    suptitle=f"Molecular Descriptor Clustering color = {task_name} Labels",
                 )
 
                 figs[f"Descriptor_UMAP_with_regression_labels_task_{task_name}"] = (
                     fig_with_regression_coloring
                 )
 
-        molecular_weights = get_molecular_weight(self.dataset.molecules)
-        num_heavy_atoms = list(
-            get_all_atom_counts(self.dataset.molecules, heavy_atoms_only=True)
-        )
 
-        figs[f"Descriptor_UMAP_with_molecular_weight"] = plot_reduced_dimension(
-            self.reduced_dimensions,
-            num_heavy_atoms,
-            suptitle="UMAP projection c= N heavy atoms",
-        )
+                fig_with_regression_coloring_preds = plot_reduced_dimension(
+                    self.reduced_dimensions[mask,:],
+                    color=self.dataset.regression_targets[mask, i],
+                    suptitle=f"Molecular Descriptor Clustering color = {task_name} Predictions",
+                )
+
+
+                figs[f"Descriptor_UMAP_with_regression_predictions_{task_name}"] = fig_with_regression_coloring_preds
+
+
+        if self.dataset.molecules is not None:
+            molecular_weights = get_molecular_weight(self.dataset.molecules)
+            num_heavy_atoms = list(
+                get_all_atom_counts(self.dataset.molecules, heavy_atoms_only=True)
+            )
+
+            figs[f"Descriptor_UMAP_with_molecular_weight"] = plot_reduced_dimension(
+                self.reduced_dimensions,
+                num_heavy_atoms,
+                suptitle="UMAP projection c= N heavy atoms",
+            )
         self.figs = figs
 
 
@@ -239,11 +256,13 @@ class RegressionHeadPCATask(BaseEvalTask):
 
 
 class RegressionTestTask(BaseEvalTask):
-    def __init__(self, dataset: RegressionDataset | RegressionWithAuxDataset):
+    def __init__(self, dataset: RegressionDataset | RegressionWithAuxDataset, polaris_eval_style = False):
         super().__init__()
 
         self.dataset = dataset
         self.labels = self.dataset.regression_targets
+        self.polaris_eval_style = polaris_eval_style
+
 
     def run(self, model):
         assert set([tc.task_name for tc in self.dataset.dataset_config.tasks]).issubset(
@@ -257,6 +276,7 @@ class RegressionTestTask(BaseEvalTask):
 
         self.calculate_model_loss()
 
+
     def plot(self):
         figs = {}
 
@@ -269,7 +289,7 @@ class RegressionTestTask(BaseEvalTask):
 
         task_mask = torch.tensor(self.dataset.regression_masks[:, task_idx], dtype=bool)
 
-        task_predictions = self.predictions[:, task_idx]
+        task_predictions = self.standardized_predictions[:, task_idx]
         predictions_with_labels = task_predictions[task_mask].detach().cpu().numpy()
 
         task_labels = self.dataset.regression_targets[:, task_idx]
@@ -286,6 +306,7 @@ class RegressionTestTask(BaseEvalTask):
 
     def _plot_prediction_vs_reference(self) -> dict[str : plt.Figure]:
         fig, ax = plt.subplots()
+
         for task_idx, task in enumerate(self.dataset.dataset_config.tasks):
 
             _, predictions_with_labels, labels = self.get_labeled_task_data(task_idx)
@@ -295,7 +316,8 @@ class RegressionTestTask(BaseEvalTask):
 
         plt.xlabel("Predictions")
         plt.ylabel("Reference Labels")
-
+        
+        
         ax.legend(
             # x=1.02 means just to the right of the axes
             bbox_to_anchor=(1.07, 1),
@@ -311,7 +333,7 @@ class RegressionTestTask(BaseEvalTask):
         # Get the model predictions for all tasks.
 
         if self.dataset.dataset_config.N_conformers > 1:
-            raise NotImplementedError
+            self.standardized_predictions = average_over_conformers(self.dataset.structure_ids, self.standardized_predictions)
             # Average out the mean prediction around conformers
 
         preds = self.standardized_predictions
@@ -329,11 +351,12 @@ class RegressionTestTask(BaseEvalTask):
            
             sliced_targets = targets[masks[:, task_idx].squeeze(), task_idx]
 
-            #print(task.task_name)
-            #if "LogD" not in task.task_name:
-            #    print(f"clip and logging {task.task_name}")
-            #    rescaled_preds = clip_and_log_transform(rescaled_preds)
-            #    rescaled_targets = clip_and_log_transform(rescaled_targets)
+            if self.polaris_eval_style:
+                print(task.task_name)
+                if "LogD" not in task.task_name:
+                    print(f"clip and logging {task.task_name}")
+                    sliced_preds = clip_and_log_transform(sliced_preds)
+                    sliced_targets = clip_and_log_transform(sliced_targets)
 
             mae = mean_absolute_error(sliced_targets, sliced_preds)
             mse = mean_squared_error(sliced_preds, sliced_targets)
@@ -791,94 +814,7 @@ class ChiralPredictionTask(BaseEvalTask):
         return fig
 
 
-class PreprocessorVisualizationTask(BaseEvalTask):
-    def __init__(self, dataset: BaseDataset):
-        super().__init__()
 
-        self.dataset = dataset
-
-    def run(self, model: MultiTaskRegressionModel):
-
-        self.atomic_descriptors = evaluate_atomic_descriptors(model, self.dataset)
-
-        assert isinstance(model.preprocessor, PseudoscalarGenerator)
-
-        self.pseudoscalars = model.preprocessor.slice_pseudoscalars(
-            self.atomic_descriptors
-        )
-
-    def _plot_ps_heatmap(self):
-
-        fig = plt.figure()
-        # pick out the 20 molecule indices (0, 16, 32, …, 16*19)
-        mol_indices = [i * 16 for i in range(20)]
-
-        print(self.dataset.smiles_list[0])
-
-        from rdkit import Chem
-
-        chiral_center = [
-            list(
-                Chem.FindMolChiralCenters(
-                    Chem.MolFromSmiles(self.dataset.smiles_list[i]),
-                    includeUnassigned=True,
-                )
-            )
-            for i in mol_indices
-        ]
-
-        print(list(chiral_center))
-        print(self.dataset.molecules[0])
-
-        # extract the last 16 descriptor dims for each of those molecules
-        # shape of each entry: (n_atoms, 16)
-
-        # compute global min & max for the color scale
-        vmin = min(torch.min(d) for d in self.pseudoscalars)
-        vmax = max(torch.max(d) for d in self.pseudoscalars)
-
-        # set up a 4x5 grid
-        fig, axes = plt.subplots(
-            nrows=4, ncols=5, figsize=(20, 16), sharex=False, sharey=False
-        )
-
-        for i, (ax, desc) in enumerate(
-            zip(axes.flat, self.pseudoscalars, strict=False)
-        ):
-            # transpose so rows = descriptor dims, cols = atom index
-            mat = desc.squeeze().T
-            im = ax.imshow(mat, cmap="RdBu", vmin=vmin, vmax=vmax, aspect="auto")
-            ax.set_title(f"Molecule {mol_indices[i]}")
-            ax.set_xlabel("Atom Number")
-            ax.set_ylabel("Descriptor Dim")
-
-        # tighten up and add one colorbar for all
-        fig.tight_layout()
-        fig.colorbar(im, ax=axes.ravel().tolist(), shrink=0.6, label="Descriptor Value")
-
-        return fig
-
-    def plot_ps_histogram(self):
-
-        fig = plt.figure()
-
-        ps = self.pseudoscalars.reshape(
-            -1,
-        )
-        plt.hist(ps, bins=100)
-
-        # plt.yscale("log")
-
-        return fig
-
-    def plot(self):
-
-        figs = {}
-
-        # figs["AtomicDesc"] = self._plot_ps_heatmap()
-        figs["ps_histogram"] = self.plot_ps_histogram()
-
-        self.figs = figs
 
 
 class DescriptorSimilarityAnalysisTask(BaseEvalTask):
@@ -904,7 +840,7 @@ class DescriptorSimilarityAnalysisTask(BaseEvalTask):
         self.figs = figs
 
 
-class EnolThiolEvalTask(DescriptorPCATask):
+class EnolThiolEvalTask(DescriptorClusteringTask):
     def __init__(self, dataset: BaseDataset, clustering_calculator):
         super().__init__(dataset=dataset, clustering_calculator=clustering_calculator)
 
@@ -941,6 +877,8 @@ class EvalPipelineRunner:
     def visualize(self, output_directory: str, model_name: str):
         figs: dict[str : plt.Figure] = {}  # taskname : Figure
 
+
+        os.makedirs(output_directory, exist_ok= True)
         for task in self.tasks:
             task.plot()
             figs.update(task.figs)

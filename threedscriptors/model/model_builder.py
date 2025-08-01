@@ -3,6 +3,7 @@ from collections.abc import Sequence
 import pydantic_yaml as pyaml
 import torch
 
+from threedscriptors.model.remedi_model import REM3DIModel
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
     RandomWalkPositionalEncoding,
@@ -13,7 +14,7 @@ from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
 )
 from threedscriptors.model.preprocessing.preprocessing import Preprocessor
 from threedscriptors.configuration.data_config import TaskConfig
-from threedscriptors.model.decoder import TransformerDecoder
+from threedscriptors.model.decoder import TransformerDecoder, TransformerPairDecoder
 from threedscriptors.model.global_aggregator import GlobalAggregator
 from threedscriptors.model.regression_models import (
     MultitaskHeads,
@@ -90,7 +91,22 @@ class ModelBuilder:
         if self.architecture_config.reload_full_model_weights:
             self._reload_model_weights()
 
-        return model
+        return self.model
+
+
+    def build_remedi_model(self):
+
+        preprocessor = self.build_preprocessor(None,None)
+        encoder = self.build_encoder()
+
+        model = REM3DIModel(preprocessor=preprocessor, encoder=encoder)
+        self.model = model.float()
+        self.model.preprocessor.atomic_preprocessor.double()
+
+        if self.architecture_config.reload_full_model_weights:
+            self._reload_model_weights()
+
+        return self.model
 
     def build_geometric_preprocessing(self):
 
@@ -172,7 +188,7 @@ class ModelBuilder:
         )
 
     def build_decoder(self) -> TransformerDecoder:
-        return TransformerDecoder(self.architecture_config.decoder_config)
+        return TransformerPairDecoder(self.architecture_config.decoder_config)
 
     def build_encoder(self):
         encoder_config = self.architecture_config.encoder_config

@@ -219,11 +219,11 @@ def get_unique_smiles_id_from_smiles_list(smiles_list: list[str]):
 
 def get_functional_group_label(smiles: list[str]):
     # This function is specific to the test functional group dataset, and is not meaningful in any other context.
-
+    print(smiles)
     functional_group_indices = {"OH": [], "NH2": [], "SH": []}
     # Conformers???
     for smiles_index, smiles_string in enumerate(smiles):
-        match smiles_string[0]:
+        match smiles_string[-1]:
             case "O":
                 functional_group_indices["OH"].append(smiles_index)
             case "S":
@@ -231,7 +231,9 @@ def get_functional_group_label(smiles: list[str]):
             case "N":
                 functional_group_indices["NH2"].append(smiles_index)
             case _:
+                print(f"Smi {smiles_string}")
                 raise ValueError("Non matching smiles in functional group dataset")
+            
 
     return functional_group_indices
 

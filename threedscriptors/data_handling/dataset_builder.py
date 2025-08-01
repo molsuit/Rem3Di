@@ -477,4 +477,24 @@ class DatasetBuilder:
 
 
     def sanitize_log_scaled_regression_targets(self):
-        raise NotImplementedError
+
+        x   = torch.as_tensor(self.dataset.regression_targets, dtype=torch.float32)
+
+        msk = torch.as_tensor(self.dataset.regression_masks,   dtype=torch.float32)  # [N, T]
+        valid = msk > 0
+
+        tasks   = self.dataset.dataset_config.tasks
+        scaling = [t.scaling or LabelScalingType.Z for t in tasks]
+        log_mask = torch.tensor(
+            [s == LabelScalingType.LOG_Z for s in scaling],
+            dtype=torch.bool
+        )
+
+
+        if log_mask.any():
+            lm = log_mask.unsqueeze(0)
+            bad = (valid & lm & (x <= 0))
+            print(f"Masked {bad.sum()} negative lables for log masking")
+            msk[bad] = 0
+            
+        self.dataset.regression_masks = msk

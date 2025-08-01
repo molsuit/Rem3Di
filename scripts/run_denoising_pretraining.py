@@ -19,8 +19,9 @@ from threedscriptors.training.dataset_splitting import (
 )
 
 from threedscriptors.evaluation.evaluation_pipeline import (
-    DescriptorPCATask,
+    DescriptorClusteringTask,
     EvalPipelineRunner,
+    DescriptorElementAnalysis,
 )
 from threedscriptors.evaluation.clustering import UMAPCalculator
 from threedscriptors.configuration.data_config import DatasetSplit
@@ -81,8 +82,8 @@ split_config = SplitConfig(
 )
 
 training_config = TrainingConfig(
-    batch_size=64,
-    epochs=50,
+    batch_size=128,
+    epochs=20,
     learning_rate=1e-4,
     weight_decay=1e-3,
     max_grad_norm=1.0,
@@ -90,9 +91,9 @@ training_config = TrainingConfig(
     split_config=split_config,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/geomfull",
+    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm",
     noise_level=0.3,
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/geomfull",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/tmqm",
     normalized_targets=True,
 )
 
@@ -103,7 +104,7 @@ architecture_config = pyaml.parse_yaml_file_as(
 
 dataset = reload_dataset_pipeline(training_config.dataset_path).build()
 
-#dataset = dataset.convert_to_dataset_type(AtomicEmbeddingWithPositionsDataset)
+# dataset = dataset.convert_to_dataset_type(AtomicEmbeddingWithPositionsDataset)
 
 dataset_splitting = DatasetSplitting(dataset)
 
@@ -118,7 +119,6 @@ os.makedirs(f"{training_config.training_data_dir}/{split_name.lower()}")
 
 train_dataset = IndexedSubset(dataset, train_idx)
 valid_dataset = IndexedSubset(dataset, val_idx)
-
 
 
 noise_scheduler = ConstantSchedule(training_config.noise_level)
@@ -148,9 +148,6 @@ inv_mean_per_dim, inv_std_per_dim = (
     data_normalization.get_atomic_embedding_normalization_constants()
 )
 
-print("Normalized")
-
-print("buuilding model")
 mb = ModelBuilder(architecture_config=architecture_config)
 preprocessor = mb.build_preprocessor(inv_mean_per_dim, inv_std_per_dim)
 encoder = mb.build_encoder()
@@ -164,6 +161,7 @@ config = {
     "dataset_config": dataset.dataset_config.model_dump(),
 }
 print("Model built")
+
 
 all_params = (
     list(encoder.parameters())
@@ -216,7 +214,6 @@ with TrainingTelemetry(
             samples.to_(device)
             preprocessed_samples: PreprocessedSample = preprocessor(samples)
 
-
             input_atomic_embeddings = (
                 preprocessed_samples.preprocessed_atomic_embeddings.clone()
             )
@@ -231,9 +228,17 @@ with TrainingTelemetry(
             molecular_descriptor = encoder(preprocessed_samples)
             molecular_descriptor.register_hook(telemetry.get_track_grad_norm_fn())
 
+            noised_preprocessing_sample = PreprocessedSample(
+                    preprocessed_atomic_embeddings=noised_embeddings,
+                    initial_pair_representation=preprocessed_samples.initial_pair_representation.detach(),
+                    geometrical_encoding=preprocessed_samples.geometrical_encoding.detach(),
+                    padding_mask= preprocessed_samples.padding_mask,
+                    pair_mask= preprocessed_samples.pair_mask
+                )
+
             denoised_embeddings = decoder(
-                noised_embeddings, molecular_descriptor, samples.padding_mask
-            )
+                    noised_preprocessing_sample, molecular_descriptor)
+            
 
             noise_level = noise_scheduler.value
             denoising_loss = atom_denoising_loss(
@@ -246,8 +251,8 @@ with TrainingTelemetry(
             denoising_loss.backward()
 
             torch.nn.utils.clip_grad_norm_(
-                    all_params, max_norm=training_config.max_grad_norm
-                )
+                all_params, max_norm=training_config.max_grad_norm
+            )
 
             optimizer.step()
             lr_scheduler.step()
@@ -281,9 +286,16 @@ with TrainingTelemetry(
 
                 molecular_descriptor = encoder(preprocessed_val_samples)
 
-                denoised_embeddings = decoder(
-                    noised_embeddings, molecular_descriptor, val_samples.padding_mask
+                noised_preprocessing_sample = PreprocessedSample(
+                    preprocessed_atomic_embeddings=noised_embeddings,
+                    initial_pair_representation=preprocessed_val_samples.initial_pair_representation.detach(),
+                    geometrical_encoding=preprocessed_val_samples.geometrical_encoding.detach(),
+                    padding_mask= preprocessed_val_samples.padding_mask,
+                    pair_mask= preprocessed_val_samples.pair_mask
                 )
+
+                denoised_embeddings = decoder(
+                    noised_preprocessing_sample, molecular_descriptor)
 
                 noise_level = noise_scheduler.value
                 denoising_loss = atom_denoising_loss(
@@ -305,19 +317,47 @@ with TrainingTelemetry(
 
 # package everything into a remedi model
 
+architecture_config.encoder_config.reload_state_dict = (
+    f"{training_config.training_data_dir}/encoder.pth"
+)
 torch.save(encoder.state_dict(), f"{training_config.training_data_dir}/encoder.pth")
-torch.save(preprocessor.atomic_preprocessor.state_dict(), f"{training_config.training_data_dir}/atomic_preprocessor.pth")
-torch.save(preprocessor.geometric_preprocessor.state_dict(), f"{training_config.training_data_dir}/geometric_preprocessor.pth")
+
+architecture_config.embedding_preprocess_config.reload_state_dict = (
+    f"{training_config.training_data_dir}/atomic_preprocessor.pth"
+)
+torch.save(
+    preprocessor.atomic_preprocessor.state_dict(),
+    f"{training_config.training_data_dir}/atomic_preprocessor.pth",
+)
+
+
+architecture_config.positional_encoding_config.reload_state_dict = (
+    f"{training_config.training_data_dir}/geometric_preprocessor.pth"
+)
+torch.save(
+    preprocessor.geometric_preprocessor.state_dict(),
+    f"{training_config.training_data_dir}/geometric_preprocessor.pth",
+)
+
+
+pyaml.to_yaml_file(
+    f"{training_config.training_data_dir}/architecture_config.yaml", architecture_config
+)
 
 model = REM3DIModel(preprocessor=preprocessor, encoder=encoder)
 
 
-
 umap_clustering_calculator = UMAPCalculator()
-umap_task_train = DescriptorPCATask(train_dataset, umap_clustering_calculator)
-umap_task_val = DescriptorPCATask(valid_dataset, umap_clustering_calculator)
-eval_train = EvalPipelineRunner([umap_task_train], "pcqmc", DatasetSplit.TRAIN)
-eval_validation = EvalPipelineRunner([umap_task_val], "pcqm", DatasetSplit.VALIDATION)
+umap_task_train = DescriptorClusteringTask(train_dataset, umap_clustering_calculator)
+umap_task_val = DescriptorClusteringTask(valid_dataset, umap_clustering_calculator)
+capacity_diagnostic_train = DescriptorElementAnalysis(train_dataset)
+capacity_diagnostic_val = DescriptorElementAnalysis(valid_dataset)
+eval_train = EvalPipelineRunner(
+    [umap_task_train, capacity_diagnostic_train], "pcqmc", DatasetSplit.TRAIN
+)
+eval_validation = EvalPipelineRunner(
+    [umap_task_val, capacity_diagnostic_val], "pcqm", DatasetSplit.VALIDATION
+)
 
 
 eval_train.evaluate(model)

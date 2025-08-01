@@ -4,7 +4,7 @@ from threedscriptors.model.multihead_self_attention import (
     MultiHeadCrossAttention,
     MultiHeadSelfAttention,
 )
-
+from threedscriptors.data_handling.sample import PreprocessedSample
 
 from threedscriptors.model.pair_biased_attention import (
     PairBiasedSelfAttention,
@@ -20,13 +20,12 @@ class DecoderPairBlock(nn.Module):
     def __init__(
         self,
         embedding_dim: int,
-        d_descriptor,
         num_heads: int,
-        d_pair: int,
         dim_feedforward,
+        d_pair: int,
+        d_descriptor,
         d_geo,
         dropout=0.1,
-        pair_ffn: bool = True,
     ):
         super().__init__()
 
@@ -66,6 +65,38 @@ class DecoderPairBlock(nn.Module):
         return S, P
 
 
+class TransformerPairDecoder(nn.Module):
+    def __init__(self, decoder_config: DecoderConfig):
+
+        super().__init__()
+
+        self.config = decoder_config
+        self.layers = nn.ModuleList(
+            [
+                DecoderPairBlock(**decoder_config.attention_layer_config.model_dump(), d_descriptor=self.config.d_descriptor,d_pair=decoder_config.d_pair, d_geo=decoder_config.d_geo)
+                for _ in range(decoder_config.N_layers)
+            ]
+        )
+
+    def forward(self, preprocessed_sample: PreprocessedSample, molecular_descriptor):
+        
+
+        S = preprocessed_sample.preprocessed_atomic_embeddings
+        P = preprocessed_sample.initial_pair_representation
+
+        for layer in self.layers:
+            S, P = layer(
+                S,
+                P,
+                molecular_descriptor,
+                preprocessed_sample.geometrical_encoding,
+                preprocessed_sample.padding_mask,
+                preprocessed_sample.pair_mask,
+            )
+        
+        return S
+
+
 class DecoderBlock(nn.Module):
     def __init__(
         self,
@@ -73,7 +104,7 @@ class DecoderBlock(nn.Module):
         d_descriptor,
         num_heads: int,
         dim_feedforward,
-        dropout=0.1,
+        dropout=0.3,
     ):
         super().__init__()
 
@@ -123,8 +154,14 @@ class TransformerDecoder(nn.Module):
             ]
         )
 
-    def forward(self, S, M, padding_mask=None):
+    def forward(self, prepocessed_sample : PreprocessedSample, molecular_descriptor):
+
+        S = prepocessed_sample.preprocessed_atomic_embeddings
+        
+
         for layer in self.layers:
-            S = layer(S, M , padding_mask)
+            S = layer(S, molecular_descriptor, prepocessed_sample.padding_mask)
         return S
+
+
 
