@@ -61,9 +61,11 @@ class DatasetSplitting:
 
         validation_structure_ids = self.dataset.get_structure_ids_for_mol(val_mol_ids)
 
-        print(f"lables per class Train set{self.dataset.regression_masks[train_structure_ids,:].sum(dim= 0)}")
 
-        print(f"lables per class Vals set{self.dataset.regression_masks[validation_structure_ids,:].sum(dim= 0)}")
+        if self.dataset.regression_targets is not None:
+            print(f"lables per class Train set{self.dataset.regression_masks[train_structure_ids,:].sum(dim= 0)}")
+
+            print(f"lables per class Vals set{self.dataset.regression_masks[validation_structure_ids,:].sum(dim= 0)}")
 
 
         return train_structure_ids, validation_structure_ids, "Train"

@@ -67,7 +67,7 @@ torch.manual_seed(0)
 np.random.seed(0)
 
 training_run_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
+    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs"
 )
 training_idx = len(list(training_run_dir.glob("*/")))
 now = datetime.now()
@@ -82,18 +82,18 @@ split_config = SplitConfig(
 )
 
 training_config = TrainingConfig(
-    batch_size=128,
-    epochs=20,
-    learning_rate=1e-4,
+    batch_size=256,
+    epochs=35,
+    learning_rate=5e-4,
     weight_decay=1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm",
+    dataset_path="/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/geom100k",
     noise_level=0.3,
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/tmqm",
+    model_dir="/home/snw30/rds/hpc-work/3DMolecularDescriptors/transformer_model/geom100k",
     normalized_targets=True,
 )
 
@@ -182,6 +182,23 @@ lr_scheduler = OneCycleLR(
 )
 
 best_model_path = f"{training_config.training_data_dir}/best_model.pth"
+
+architecture_config.encoder_config.reload_state_dict = (
+    f"{training_config.training_data_dir}/encoder.pth"
+)
+architecture_config.embedding_preprocess_config.reload_state_dict = (
+    f"{training_config.training_data_dir}/atomic_preprocessor.pth"
+)
+architecture_config.positional_encoding_config.reload_state_dict = (
+    f"{training_config.training_data_dir}/geometric_preprocessor.pth"
+)
+
+pyaml.to_yaml_file(
+    f"{training_config.training_data_dir}/architecture_config.yaml", architecture_config
+)
+
+
+
 
 
 with TrainingTelemetry(
@@ -314,35 +331,24 @@ with TrainingTelemetry(
 
             telemetry.log_pretraining_epoch(epoch, avg_train_loss, avg_validation_loss)
 
-
-# package everything into a remedi model
-
-architecture_config.encoder_config.reload_state_dict = (
-    f"{training_config.training_data_dir}/encoder.pth"
-)
-torch.save(encoder.state_dict(), f"{training_config.training_data_dir}/encoder.pth")
-
-architecture_config.embedding_preprocess_config.reload_state_dict = (
-    f"{training_config.training_data_dir}/atomic_preprocessor.pth"
-)
-torch.save(
+            if telemetry.best_epoch:
+                    
+                torch.save(encoder.state_dict(), f"{training_config.training_data_dir}/encoder.pth")
+                torch.save(
     preprocessor.atomic_preprocessor.state_dict(),
     f"{training_config.training_data_dir}/atomic_preprocessor.pth",
-)
-
-
-architecture_config.positional_encoding_config.reload_state_dict = (
-    f"{training_config.training_data_dir}/geometric_preprocessor.pth"
-)
-torch.save(
+)               
+                torch.save(
     preprocessor.geometric_preprocessor.state_dict(),
     f"{training_config.training_data_dir}/geometric_preprocessor.pth",
 )
 
 
-pyaml.to_yaml_file(
-    f"{training_config.training_data_dir}/architecture_config.yaml", architecture_config
-)
+
+# package everything into a remedi model
+
+
+
 
 model = REM3DIModel(preprocessor=preprocessor, encoder=encoder)
 

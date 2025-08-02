@@ -78,6 +78,16 @@ class TrainingTelemetry:
 
         return zipped
 
+    def check_best_val_epoch(self, validation_loss_current_epoch):
+        
+        
+        if validation_loss_current_epoch < self.best_validation_loss:
+            self.best_validation_loss = validation_loss_current_epoch
+            self.best_epoch = True
+        else:
+            self.best_epoch = False
+
+
     def log_epoch(
         self,
         epoch,
@@ -88,11 +98,7 @@ class TrainingTelemetry:
         current_lr,
     ):
 
-        if avg_validation_loss < self.best_validation_loss:
-            self.best_validation_loss = avg_validation_loss
-            self.best_epoch = True
-        else:
-            self.best_epoch = False
+        self.check_best_val_epoch(avg_validation_loss)
 
         training_task_loss = self.zip_task_losses(avg_train_loss_per_task)
             
@@ -119,6 +125,10 @@ class TrainingTelemetry:
 
 
     def log_pretraining_epoch(self, epoch, train_loss, validation_loss):
+        
+
+        self.check_best_val_epoch(validation_loss)
+
 
         print(
             f"Epoch {epoch} Training Loss: {train_loss} Validation Loss: {validation_loss}"
