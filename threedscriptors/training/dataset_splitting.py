@@ -1,13 +1,13 @@
-from threedscriptors.data_handling.dataset import BaseDataset
-from threedscriptors.data_handling.data_utils import compute_splits
-import numpy as np
-from dataclasses import asdict
-
-from itertools import chain
-import matplotlib.pyplot as plt
+from collections.abc import Iterator
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Iterator, List, Tuple
-from dataclasses import dataclass
+from itertools import chain
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+from threedscriptors.data_handling.data_utils import compute_splits
+from threedscriptors.data_handling.dataset import BaseDataset
 
 
 class SplitStrategy(str, Enum):
@@ -20,7 +20,7 @@ class SplitConfig:
     """Configure *one* of the two supported splitting strategies."""
 
     strategy: SplitStrategy
-    train_val_ratios: Tuple[float, float] = (0.8, 0.2)
+    train_val_ratios: tuple[float, float] = (0.8, 0.2)
     N_folds: int | None = None
     N_repeats: int | None = None
     shuffle: bool = True
@@ -145,7 +145,7 @@ class DatasetSplitting:
 
     def get_split(
         self, split_config: SplitConfig
-    ) -> Iterator[Tuple[List[int], List[int], str]]:
+    ) -> Iterator[tuple[list[int], list[int], str]]:
         """
         Unified entry‑point.  Yields (train_ids, val_ids) tuples according to
         the strategy described by *split_config*.
@@ -221,8 +221,8 @@ class DatasetSplitting:
         index_per_slice = []
 
         for splitting_slice in splitting_indices:
-            
-            
+
+
             split_perm = perm[splitting_slice.start : splitting_slice.stop]
 
             split_mol_ids = [mol_ids[i] for i in split_perm]
@@ -246,4 +246,4 @@ class DatasetSplitting:
         new_dataset = BaseDataset(config, **asdict(data), structure_ids= structure_ids, smiles_list=smiles_list, molecules= molecules)
 
 
-        return new_dataset 
+        return new_dataset

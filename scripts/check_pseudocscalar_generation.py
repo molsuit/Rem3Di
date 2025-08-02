@@ -1,11 +1,10 @@
-import torch 
-
-from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import RMSLayerNorm, PseudoscalarGenerator
+import numpy as np
+import torch
 
 from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
-
-from e3nn.o3 import Irreps
-import numpy as np 
+from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
+    PseudoscalarGenerator,
+)
 
 data = torch.from_numpy(np.load("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt_train/embeddings.npy")).float()
 

@@ -1,4 +1,5 @@
 import pytest
+
 from threedscriptors.data_handling.mol_id import StructureID
 
 

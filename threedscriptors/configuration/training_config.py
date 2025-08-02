@@ -1,8 +1,10 @@
 from datetime import datetime
 from pathlib import Path
-from threedscriptors.training.dataset_splitting import SplitConfig
+
 from pydantic import BaseModel
-from enum import Enum
+
+from threedscriptors.training.dataset_splitting import SplitConfig
+
 
 class TrainingConfig(BaseModel):
     batch_size: int

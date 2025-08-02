@@ -1,29 +1,24 @@
-from math import ceil
-from threedscriptors.configuration.data_config import LabelScalingType
-
 import numpy as np
 import torch
 from ase import Atoms
 from mace.calculators import MACECalculator
+from rdkit import Chem
+from rdkit.Chem import rdmolops
 from tqdm import tqdm
 
+from threedscriptors.configuration.data_config import LabelScalingType
 from threedscriptors.data_handling.data_utils import (
+    count_atoms_from_ase,
     get_ase_atoms_with_conformers,
     get_mirrored_molecules,
-    get_unique_smiles_id_from_smiles_list,
     relax_atoms,
 )
-from rdkit import Chem
-
 from threedscriptors.data_handling.dataset import (
     BaseDataset,
 )
+from threedscriptors.data_handling.mol_id import StructureID
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 from threedscriptors.utils.model_utils import get_mace_calculator_embedding_dimension
-from rdkit.Chem import rdmolops
-
-from threedscriptors.data_handling.data_utils import count_atoms_from_ase
-from threedscriptors.data_handling.mol_id import StructureID
 
 
 class DatasetBuilder:
@@ -181,7 +176,7 @@ class DatasetBuilder:
 
         # Somewhere there should be an assert that odd features change sign...
 
-        
+
 
         with tqdm(total=target_num_pairs) as pbar:
             while molecule_id < target_num_pairs:
@@ -191,7 +186,7 @@ class DatasetBuilder:
                     smiles_1 = next(smiles_iterator)
                     can_smi_0 = Chem.CanonSmiles(smiles_0)
                     can_smi_1 = Chem.CanonSmiles(smiles_1)
-                    
+
                     # pairwise iterator returns enantiomer pairs
                 except StopIteration:
                     tqdm.write(
@@ -204,7 +199,7 @@ class DatasetBuilder:
                     embedded_molecules_0 = get_ase_atoms_with_conformers(
                         can_smi_0, dataset_config.N_conformers
                     )
-                    
+
                     if len(embedded_molecules_0) == 0:
                         raise ValueError(
                             f"Error Embedding Smiles {smiles_0}, No. {smiles_counter}"
@@ -227,7 +222,7 @@ class DatasetBuilder:
                     )
                     smiles_counter += 2
                     continue
-                
+
 
                 for conf_id, mol in enumerate(embedded_molecules_0):
                     molecules.append(mol)
@@ -276,7 +271,7 @@ class DatasetBuilder:
         self.dataset.structure_ids = structure_ids
 
         self.dataset.N_structures = len(structure_ids)
-        
+
         # For backward compatibility, if the rest of your pipeline still expects
         # cfg.N_molecules to mean "how many 3D structures we have", switch the line below
         # to: cfg.N_molecules = len(molecules)
@@ -496,5 +491,5 @@ class DatasetBuilder:
             bad = (valid & lm & (x <= 0))
             print(f"Masked {bad.sum()} negative lables for log masking")
             msk[bad] = 0
-            
+
         self.dataset.regression_masks = msk

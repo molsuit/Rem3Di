@@ -1,8 +1,14 @@
-import pytest
-from threedscriptors.data_handling.pipelines import regression_training_with_transition_probs_pipeline
 import torch
-from threedscriptors.configuration.data_config import DatasetConfig, MaceCalculatorConfig, DatasetTypes
 from mace.calculators import mace_mp
+
+from threedscriptors.configuration.data_config import (
+    DatasetConfig,
+    DatasetTypes,
+    MaceCalculatorConfig,
+)
+from threedscriptors.data_handling.pipelines import (
+    regression_training_with_transition_probs_pipeline,
+)
 
 
 def test_random_walk_probabilities(regression_targets, regression_masks):
@@ -25,9 +31,9 @@ def test_random_walk_probabilities(regression_targets, regression_masks):
 
     dataset = regression_training_with_transition_probs_pipeline(dataset_config, smiles, regression_targets, regression_masks).build()
 
-    assert torch.isfinite(dataset.random_walk_transition_matrix).all() 
+    assert torch.isfinite(dataset.random_walk_transition_matrix).all()
 
     for T in dataset.random_walk_transition_matrix:
         print(T)
-   
+
 

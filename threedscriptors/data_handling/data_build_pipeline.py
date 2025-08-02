@@ -75,7 +75,7 @@ class InsertSmilesStage(BuildStage):
 class InsertMoleculeStage(BuildStage):
     def __init__(self, molecules, structure_ids):
         self.molecules = molecules
-        self.structure_ids = structure_ids 
+        self.structure_ids = structure_ids
 
     def _run(self, builder):
         builder.add_molecules(self.molecules, self.structure_ids)
@@ -203,7 +203,7 @@ class SimilarityLabelingStage(BuildStage):
 
 
 class CanonicalizeStructureIDStage(BuildStage):
-    
+
     def _run(self, builder: DatasetBuilder):
         builder.canonicalize_structure_ids()
         return builder

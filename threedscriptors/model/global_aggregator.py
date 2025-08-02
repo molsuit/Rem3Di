@@ -1,12 +1,11 @@
 from torch import nn
 
 from threedscriptors.configuration.architecture_config import (
-    GlobalAggregatorConfig,
     AttentionAggregatorConfig,
+    GlobalAggregatorConfig,
     MeanAggregatorConfig,
 )
-
-from threedscriptors.model.pooling import MeanPool, AttnPool
+from threedscriptors.model.pooling import AttnPool, MeanPool
 
 
 class GlobalAggregator(nn.Module):

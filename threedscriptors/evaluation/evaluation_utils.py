@@ -1,8 +1,5 @@
 from collections.abc import Iterable
 
-
-from threedscriptors.model.remedi_model import REM3DIModel
-
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -12,14 +9,15 @@ from threedscriptors.data_handling.dataset import (
     RegressionDataset,
     RegressionWithAuxDataset,
 )
+from threedscriptors.data_handling.mol_id import StructureID
 from threedscriptors.data_handling.sample import Sample, sample_collate_fn
+from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.model.model_output import ModelOutput
 from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
-from threedscriptors.model.encoder import TransformerEncoder
-from typing import List
-from threedscriptors.data_handling.mol_id import StructureID
+from threedscriptors.model.remedi_model import REM3DIModel
+
 
 def evaluate_regression_model_on_dataset(
     model: MultiTaskRegressionModel,
@@ -179,9 +177,9 @@ def compute_class_std(data, class_ids):
     return class_mean, class_std_dev
 
 
-def average_over_conformers(structure_ids: List[StructureID], predictions: torch.Tensor):
+def average_over_conformers(structure_ids: list[StructureID], predictions: torch.Tensor):
 
-    
+
     classes  = [(sid.molecule_id, sid.enantiomer_id) for sid in structure_ids]
     class_ids = {mol_e_id : i for i, mol_e_id in enumerate(set(classes))}
 
@@ -193,7 +191,7 @@ def average_over_conformers(structure_ids: List[StructureID], predictions: torch
 
     class_id_per_mol = torch.as_tensor(class_id_per_mol).reshape(
         -1,
-    )    
+    )
 
     print(class_id_per_mol)
     for class_id in class_ids.values():
@@ -203,7 +201,7 @@ def average_over_conformers(structure_ids: List[StructureID], predictions: torch
         print(class_mean)
 
         predictions[mask] = class_mean
-    
+
     return predictions
 
 

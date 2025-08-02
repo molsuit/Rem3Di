@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from threedscriptors.configuration.architecture_config import EncoderConfig
 from threedscriptors.model.pair_biased_attention import (
     PairBiasedSelfAttention,
     PairOuterProdUpdate,
@@ -69,7 +68,7 @@ class PairBlock(nn.Module):
     def forward(self, S, mask, P, p_geo, mask_pair):
 
         # Atom Representation Attention Update
-        
+
         S = S + self.attn(self.ln_s1(S), P, mask)
 
         S = S + self.ffn_s(self.ln_s2(S))  # FFN Update

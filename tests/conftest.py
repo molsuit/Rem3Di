@@ -3,7 +3,10 @@ import torch
 from ase import Atoms
 from mace.calculators import mace_mp
 
-from threedscriptors.configuration.architecture_config import RelativeDistancePositionalEncodingConfig, RadialBasisFunctionType
+from threedscriptors.configuration.architecture_config import (
+    RadialBasisFunctionType,
+    RelativeDistancePositionalEncodingConfig,
+)
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     DatasetTypes,

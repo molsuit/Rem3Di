@@ -4,12 +4,13 @@ import pydantic_yaml as pyaml
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
     AttentionLayerConfig,
+    DecoderConfig,
     EmbeddingPreprocessConfig,
     EncoderConfig,
     GlobalAggregatorConfig,
-    RelativeDistancePositionalEncodingConfig, 
     RandomWalkPositionalEncoding,
-    RegressionHeadConfig,DecoderConfig
+    RegressionHeadConfig,
+    RelativeDistancePositionalEncodingConfig,
 )
 from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.utils.model_utils import (
@@ -25,7 +26,7 @@ class ConfigFactory:
         attention_layer_config: AttentionLayerConfig,
         encoder_config: EncoderConfig,
         global_aggregator_config: GlobalAggregatorConfig,
-        positional_encoding_config: RelativeDistancePositionalEncodingConfig |  RandomWalkPositionalEncoding | None = None, 
+        positional_encoding_config: RelativeDistancePositionalEncodingConfig |  RandomWalkPositionalEncoding | None = None,
         decoder_config : DecoderConfig | None = None
 
     ):
@@ -61,7 +62,7 @@ class ConfigFactory:
         self.global_aggregator_config.output_dim = (
                 self.global_aggregator_config.input_dim
             )
-        
+
 
     def process_regression_heads_config(
         self, head_config_template: RegressionHeadConfig

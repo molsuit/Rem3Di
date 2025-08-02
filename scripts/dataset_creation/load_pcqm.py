@@ -1,24 +1,15 @@
-from threedscriptors.data_handling.source_preprocessing.pcqm_preprocessing import load_pcqm
-
-
-from threedscriptors.data_handling.dataset_builder import DatasetBuilder
-
-from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset
-from threedscriptors.data_handling.dataset_io import store_data_to_disk
-
-from threedscriptors.data_handling.pipelines import (
-   pretraining_pipeline_from_structures
-)
-
 from mace.calculators import MACECalculator
 
 from threedscriptors.configuration.data_config import (
-    DatasetConfig,
-    MaceCalculatorConfig,
-    DatasetSplit,
+   DatasetConfig,
+   MaceCalculatorConfig,
 )
-
-
+from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset
+from threedscriptors.data_handling.dataset_io import store_data_to_disk
+from threedscriptors.data_handling.pipelines import pretraining_pipeline_from_structures
+from threedscriptors.data_handling.source_preprocessing.pcqm_preprocessing import (
+   load_pcqm,
+)
 
 pcqm_file = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/pcqm4m-v2-train.sdf"
 
@@ -31,7 +22,7 @@ smiles, molecules, structure_ids = load_pcqm(pcqm_file=pcqm_file, N_molecules = 
 
 
 dataset_directory = (
-    f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/pcqm"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/pcqm"
 )
 
 MACE_PATH = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"

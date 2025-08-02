@@ -15,7 +15,7 @@
 #
 #
 #
-            
+
 
 
 
@@ -42,7 +42,7 @@
     #
     #
     #    task_pair_data= full_training_grad_alignment[:,i,:].squeeze()
-    #    
+    #
     #
     #    print(task_pair_data.shape)
     #    print(times)
@@ -61,6 +61,6 @@
     #
     #    print(task_pair)
     #    ratio_0 = (task_pair_data < 0.0).float().mean()
-    #    ratio_0_1 = (task_pair_data < -0.1).float().mean() 
+    #    ratio_0_1 = (task_pair_data < -0.1).float().mean()
     #    print(f"Smaller 0.0  {ratio_0}")
     #    print(f"Smaller -0.1  {ratio_0_1}")

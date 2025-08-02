@@ -2,8 +2,8 @@ import torch.nn as nn
 from torch.nn import MultiheadAttention
 
 from threedscriptors.configuration.architecture_config import EncoderConfig
-from threedscriptors.model.global_aggregator import GlobalAggregator
 from threedscriptors.data_handling.sample import PreprocessedSample
+from threedscriptors.model.global_aggregator import GlobalAggregator
 
 
 class EncoderBlock(nn.Module):

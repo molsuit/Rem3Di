@@ -1,18 +1,15 @@
+from threedscriptors.configuration.data_config import DatasetSplit
+from threedscriptors.data_handling.dataset import BaseDataset
 from threedscriptors.evaluation.clustering import (
-    PCACalculator,
     UMAPCalculator,
 )
 from threedscriptors.evaluation.evaluation_pipeline import (
     ChiralPredictionTask,
-    DescriptorElementAnalysis,
     DescriptorClusteringTask,
+    DescriptorElementAnalysis,
     EvalPipelineRunner,
     RegressionTestTask,
 )
-
-from threedscriptors.configuration.data_config import DatasetSplit
-
-from threedscriptors.data_handling.dataset import BaseDataset
 
 
 def regression_pipeline(dataset: BaseDataset, dataset_split: DatasetSplit | None = None):

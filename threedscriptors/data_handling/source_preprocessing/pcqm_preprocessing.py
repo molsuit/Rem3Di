@@ -1,17 +1,14 @@
 from pathlib import Path
 
-from rdkit import Chem
-from rdkit.Chem import AllChem
-from threedscriptors.data_handling.mol_id import StructureID
-
 from ase import Atoms
-
+from rdkit import Chem
 from rdkit.Chem import Mol
-from typing import List, Tuple
+
+from threedscriptors.data_handling.mol_id import StructureID
 
 MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 
-def load_pcqm(pcqm_file: Path, N_molecules:int) -> Tuple[List[str], List[Atoms], List[StructureID]]:
+def load_pcqm(pcqm_file: Path, N_molecules:int) -> tuple[list[str], list[Atoms], list[StructureID]]:
 
     mols = filter_mols(pcqm_file, N_molecules)
 
@@ -19,16 +16,16 @@ def load_pcqm(pcqm_file: Path, N_molecules:int) -> Tuple[List[str], List[Atoms],
 
     molecules = convert_to_ase(mols)
 
-    
+
     smiles = get_canon_smiles(mols)
-    
+
     structure_ids = [StructureID(sid, canonical_smiles=smi, molecule_id =  sid, conformer_id= 0) for sid, smi in enumerate(smiles)]
-    
+
 
     return smiles, molecules, structure_ids
 
 
-def get_canon_smiles(mols : List[Mol]):
+def get_canon_smiles(mols : list[Mol]):
     return [Chem.MolToSmiles(mol) for mol in mols ]
 
 
@@ -56,14 +53,14 @@ def filter_mols(pcqm_file: Path, N_max: int):
     mols = []
     suppl = Chem.SDMolSupplier(pcqm_file)
     for idx, mol in enumerate(suppl):
-        
+
         try:
             if mol is None:
                 continue
 
             if len(Chem.GetMolFrags(mol, asMols=True)) > 1:
                 continue
-            
+
             if any(a.GetSymbol() not in MACE_OFF_ELEMENTS for a in mol.GetAtoms()):
                     continue
 

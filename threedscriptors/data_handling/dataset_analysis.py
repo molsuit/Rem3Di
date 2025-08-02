@@ -1,18 +1,25 @@
-import numpy as np
-from threedscriptors.data_handling.dataset import BaseDataset
-import matplotlib.pyplot as plt
 import os
-import torch 
-from itertools import groupby, combinations, chain 
-from threedscriptors.data_handling.data_utils import rmsd
+from itertools import chain, combinations, groupby
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
 from ase.visualize.plot import plot_atoms
-from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature, get_invariant_indices
-from threedscriptors.data_handling.data_utils import get_atom_species_in_smiles, get_all_atom_counts
+
+from threedscriptors.data_handling.data_utils import (
+    get_all_atom_counts,
+    get_atom_species_in_smiles,
+    rmsd,
+)
+from threedscriptors.data_handling.dataset import BaseDataset
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
+from threedscriptors.utils.model_utils import (
+    get_invariant_indices,
+    get_mace_calculator_irrep_signature,
+)
 
 
-
-class DatasetPostLoadAnalysis():
+class DatasetPostLoadAnalysis:
 
 
     def __init__(self, dataset : BaseDataset, output_dir):
@@ -24,7 +31,7 @@ class DatasetPostLoadAnalysis():
     def calculate_atomic_descriptor_norms(atomic_descriptors, padding_masks):
         norms = np.linalg.norm(atomic_descriptors, axis = (0,1), where = ~padding_masks)
         return norms
-    
+
     def plot_molecule_size_distribution(self):
         counts = get_all_atom_counts(self.dataset.molecules, heavy_atoms_only= self.dataset.dataset_config.only_heavy_atoms)
 
@@ -34,7 +41,7 @@ class DatasetPostLoadAnalysis():
         plt.ylabel("Frequency")
         fig.savefig(f"{self.output_dir}/histogram_molecule_size.png")
         plt.close(fig)
-              
+
     def get_dataset_size(self):
 
         size = self.dataset.embeddings.element_size() * self.dataset.embeddings.nelement()
@@ -66,19 +73,19 @@ class DatasetPostLoadAnalysis():
 
     def count_samples_per_task(self):
         num_samples = self.dataset.regression_masks.sum(0).tolist()
-        samples_per_task = dict(zip(self.dataset.dataset_config.get_task_names(),num_samples))
+        samples_per_task = dict(zip(self.dataset.dataset_config.get_task_names(),num_samples, strict=False))
         return samples_per_task
 
     def mean_and_std(self):
         task_names = self.dataset.dataset_config.get_task_names()
-        
+
         rt = self.dataset.regression_targets.cpu().numpy()
         rm = self.dataset.regression_masks.bool().cpu().numpy()
 
         means = np.mean(rt, axis = 0, where = rm)
         stds = np.std(rt, axis = 0, where = rm)
 
-        return dict(zip(task_names, means)), dict(zip(task_names, stds))
+        return dict(zip(task_names, means, strict=False)), dict(zip(task_names, stds, strict=False))
 
 
     def get_atom_species(self):
@@ -86,12 +93,12 @@ class DatasetPostLoadAnalysis():
         return get_atom_species_in_smiles(smiles_iterator)
 
     def plot_relaxed_atoms(self):
-        
+
         N_horizontal = 3
         N_vertical = (len(self.dataset.molecules) // 3 )+1
 
         fig, axarr = plt.subplots(N_vertical, N_horizontal)
-        
+
         fig.set_figheight(4*N_vertical)
         fig.set_figwidth(4*N_horizontal)
 
@@ -103,11 +110,11 @@ class DatasetPostLoadAnalysis():
 
 
     def plot_regression_target_distribution(self):
-        
+
         for idx, task in enumerate(self.dataset.dataset_config.tasks):
             regression_targets = self.dataset.regression_targets[:,idx]
             regression_masks = self.dataset.regression_masks[:,idx]
-            
+
             y = regression_targets[regression_masks.bool()]
 
             fig = plt.figure()
@@ -128,24 +135,24 @@ class DatasetPostLoadAnalysis():
         assert self.dataset.embeddings.shape[0] == N_samples
         assert N_samples == self.dataset.padding_mask.shape[0]
 
- 
+
         assert N_samples == self.dataset.regression_targets.shape[0]
         assert N_samples == self.dataset.regression_masks.shape[0]
 
         if self.dataset.atomic_positions is not None:
             assert N_samples == self.dataset.atomic_positions.shape[0]
-        
+
         assert N_samples == len(self.dataset.molecules)
 
 
         assert (self.dataset.embeddings[self.dataset.padding_mask.unsqueeze(-1).expand_as(self.dataset.embeddings)] == 0).all()
 
-        
+
     def check_conformer_distance(self):
 
         if self.dataset.dataset_config.N_conformers == 1:
             return
-        
+
         mol_id_chunks = [list(g) for _, g in groupby(range(len(self.dataset.mol_ids)), key = lambda i : self.dataset.mol_ids[i])]
 
         global_rmsds = []
@@ -153,7 +160,7 @@ class DatasetPostLoadAnalysis():
         for mol_indices in mol_id_chunks:
             mols =[ self.dataset.molecules[i] for i in mol_indices]
             positions = [m.get_positions() for m in mols]
-            
+
 
             rmsds = []
 
@@ -162,7 +169,7 @@ class DatasetPostLoadAnalysis():
 
             global_rmsds.append(rmsds)
 
-        
+
 
         flattend_rmsds = list(chain.from_iterable(global_rmsds))
         rmsd_fig = plt.figure()

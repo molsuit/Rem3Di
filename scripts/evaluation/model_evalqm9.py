@@ -1,12 +1,12 @@
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+import os
 
-from threedscriptors.model.model_builder import ModelBuilder
+from threedscriptors.configuration.data_config import DatasetSplit
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.evaluation.evaluation_pipeline import (
     EvalPipelineRunner,
     RegressionTestTask,
 )
-import os 
-from threedscriptors.configuration.data_config import DatasetSplit
+from threedscriptors.model.model_builder import ModelBuilder
 
 dataset_name = "qm9_test"
 # load model

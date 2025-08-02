@@ -1,12 +1,13 @@
-import torch
-from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.configuration.data_config import DatasetConfig
 import math
-import yaml
-import wandb
-import matplotlib.pyplot as plt
-import numpy as np 
 
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import yaml
+
+import wandb
+from threedscriptors.configuration.data_config import DatasetConfig
+from threedscriptors.configuration.training_config import TrainingConfig
 
 
 class TrainingTelemetry:
@@ -47,14 +48,14 @@ class TrainingTelemetry:
     def __enter__(self) -> "TrainingTelemetry":
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):  # noqa: D401 – pep257
+    def __exit__(self, exc_type, exc_value, traceback):
         self.finish()
 
     def finish(self):
 
         self.dump_loss_history()
 
-        # plot all the plots 
+        # plot all the plots
 
         self.plot_grad_norm()
 
@@ -63,10 +64,10 @@ class TrainingTelemetry:
             wandb.finish()
 
     def zip_task_losses(self, task_losses: torch.Tensor):
-        
+
         if task_losses is None:
             return None
-        
+
         task_losses = task_losses.cpu().detach().numpy()
         zipped = dict(
             zip(
@@ -79,8 +80,8 @@ class TrainingTelemetry:
         return zipped
 
     def check_best_val_epoch(self, validation_loss_current_epoch):
-        
-        
+
+
         if validation_loss_current_epoch < self.best_validation_loss:
             self.best_validation_loss = validation_loss_current_epoch
             self.best_epoch = True
@@ -101,7 +102,7 @@ class TrainingTelemetry:
         self.check_best_val_epoch(avg_validation_loss)
 
         training_task_loss = self.zip_task_losses(avg_train_loss_per_task)
-            
+
         validation_task_loss = self.zip_task_losses(avg_validation_loss_per_task)
 
         epoch_train_data = {
@@ -125,7 +126,7 @@ class TrainingTelemetry:
 
 
     def log_pretraining_epoch(self, epoch, train_loss, validation_loss):
-        
+
 
         self.check_best_val_epoch(validation_loss)
 
@@ -152,7 +153,7 @@ class TrainingTelemetry:
             yaml.safe_dump(self.loss_data, f)
 
 
-    
+
     def get_track_grad_norm_fn(self):
         def capture_grad(grad):             # grad has same shape as M
             # L2 norm over all non‑batch dims, then mean over batch
@@ -160,10 +161,10 @@ class TrainingTelemetry:
             self.grad_norm_data.append(norm.item())
 
         return capture_grad
-    
+
 
     def plot_grad_norm(self):
         fig = plt.figure()
         plt.scatter(np.arange(len(self.grad_norm_data)), self.grad_norm_data)
         fig.savefig(f"{self.training_config.training_data_dir}/dL_dM_grad_norm.png")
-        
+

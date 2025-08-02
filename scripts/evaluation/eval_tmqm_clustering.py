@@ -1,17 +1,23 @@
 
-from threedscriptors.evaluation.clustering import PCACalculator, UMAPCalculator
+from threedscriptors.configuration.data_config import DatasetSplit
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from threedscriptors.evaluation.clustering import (
+    UMAPCalculator,
+    plot_reduced_dimension,
+    plot_reduced_dimension_3d,
+)
+from threedscriptors.evaluation.clustering.tmqm_clustering_utils import (
+    get_atomic_num_colors,
+    get_block_colors,
+    get_coordination_numbers,
+    get_metal_center_type,
+    get_tm_colormap,
+)
 from threedscriptors.evaluation.evaluation_pipeline import (
-    EnolThiolEvalTask,
     DescriptorClusteringTask,
     EvalPipelineRunner,
 )
-from threedscriptors.configuration.data_config import DatasetSplit
 from threedscriptors.model.model_builder import ModelBuilder
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-from threedscriptors.evaluation.clustering import plot_reduced_dimension, plot_reduced_dimension_3d
-
-
-from threedscriptors.evaluation.clustering.tmqm_clustering_utils import get_coordination_numbers, get_metal_center_type, get_tm_colormap, get_atomic_num_colors, get_block_colors
 
 model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/139-2025_08_01_17_27_47-pretraintmqmwithpos_hto"
 

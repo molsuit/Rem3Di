@@ -3,32 +3,29 @@ from collections.abc import Sequence
 import pydantic_yaml as pyaml
 import torch
 
-from threedscriptors.model.remedi_model import REM3DIModel
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
     RandomWalkPositionalEncoding,
     RelativeDistancePositionalEncodingConfig,
 )
+from threedscriptors.configuration.data_config import TaskConfig
+from threedscriptors.model.decoder import TransformerDecoder, TransformerPairDecoder
+from threedscriptors.model.encoder import TransformerEncoder
+from threedscriptors.model.global_aggregator import GlobalAggregator
+from threedscriptors.model.pair_encoder import TransformerPairEncoder
 from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
     AtomicDescriptorPreprocessor,
 )
-from threedscriptors.model.preprocessing.preprocessing import Preprocessor
-from threedscriptors.configuration.data_config import TaskConfig
-from threedscriptors.model.decoder import TransformerDecoder, TransformerPairDecoder
-from threedscriptors.model.global_aggregator import GlobalAggregator
-from threedscriptors.model.regression_models import (
-    MultitaskHeads,
-    MultiTaskRegressionModel,
-)
-
 from threedscriptors.model.preprocessing.geometric_preprocessor import (
     PairDistanceMatrixGeometricPreprocessor,
     RandomWalkGeometricPreprocessor,
 )
-from threedscriptors.model.encoder import TransformerEncoder
-from threedscriptors.model.pair_encoder import TransformerPairEncoder
-
-
+from threedscriptors.model.preprocessing.preprocessing import Preprocessor
+from threedscriptors.model.regression_models import (
+    MultitaskHeads,
+    MultiTaskRegressionModel,
+)
+from threedscriptors.model.remedi_model import REM3DIModel
 from threedscriptors.utils.model_utils import get_invariant_indices
 
 
@@ -59,7 +56,7 @@ class ModelBuilder:
     def insert_task_configs_into_regression_heads(self, task_configs: list[TaskConfig]):
 
         for task_cfg, head_cfg in zip(
-            task_configs, self.architecture_config.regression_head_config
+            task_configs, self.architecture_config.regression_head_config, strict=False
         ):
 
             assert head_cfg.task_name == task_cfg.task_name
@@ -157,7 +154,7 @@ class ModelBuilder:
             invariant_dim = invariant_irreps.dim
 
             assert mean_atomic_embedding.shape[-1] == invariant_dim
-            
+
             atomic_preprocessor.invariant_normalization.set_stats(mean = mean_atomic_embedding, std= std_atomic_embedding)
 
 
@@ -166,7 +163,7 @@ class ModelBuilder:
             atomic_preprocessor.load_state_dict(
                 torch.load(preprocess_config.reload_state_dict)
             )
-        
+
 
         return atomic_preprocessor
 

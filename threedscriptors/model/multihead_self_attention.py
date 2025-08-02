@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn as nn
 from torch import Tensor
-from threedscriptors.model.preprocessing.geometric_preprocessor import RadialFilter
+
 
 class MultiHeadSelfAttention(nn.Module):
     """
@@ -76,7 +76,7 @@ class MultiHeadSelfAttention(nn.Module):
         # 7) output projection
         S_out = self.W_o(S_head)                       # (B, N, d_model)
         return S_out
-    
+
 
 
 class MultiHeadCrossAttention(nn.Module):
@@ -93,7 +93,7 @@ class MultiHeadCrossAttention(nn.Module):
     ------
     S_out : (B, N, d_model)
     """
-        
+
     def __init__(self, d_model=256, d_descriptor=256, n_heads=8, dropout=0.1):
         super().__init__()
         assert d_model % n_heads == 0
@@ -129,5 +129,5 @@ class MultiHeadCrossAttention(nn.Module):
         S_head = torch.matmul(attn, V)     # (B, H, N, d_k)
         S_head = S_head.transpose(1, 2).contiguous().view(S.size(0), S.size(1), -1)
 
-        
+
         return self.W_o(S_head)

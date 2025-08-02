@@ -1,35 +1,16 @@
-from threedscriptors.configuration.data_config import (
-    DatasetConfig,
-    DatasetTypes,
-    MaceCalculatorConfig,
-)
-from pathlib import Path
-from threedscriptors.data_handling.source_preprocessing.qm9_preprocessing import (
-    load_qm9,QM9PropertyNames
-)
-from threedscriptors.data_handling.dataset_builder import DatasetBuilder
-import numpy as np
-from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions, AtomicEmbeddingWithPositionsDataset
-from threedscriptors.data_handling.dataset_io import store_data_to_disk
-
-from threedscriptors.data_handling.pipelines import (
-    regression_training_from_structures_pipeline,
-)
-
 from mace.calculators import MACECalculator
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     MaceCalculatorConfig,
-    DatasetSplit,
 )
-
+from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset
 from threedscriptors.data_handling.dataset_io import store_data_to_disk
 from threedscriptors.data_handling.pipelines import pretraining_pipeline_with_positions
 from threedscriptors.data_handling.smiles_iterator import FileSmilesIterator
 
 directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/functional_group_dataset"
-smiles_file = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/functional_group_smiles_list"
+smiles_file = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/functional_group_smiles_list"
 
 smiles_list = list(FileSmilesIterator(smiles_file))
 

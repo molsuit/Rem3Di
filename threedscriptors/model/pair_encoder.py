@@ -1,17 +1,9 @@
-import torch
-import torch.nn.functional as F
-from torch import Tensor, nn
-from threedscriptors.model.model_output import ModelOutput
+from torch import nn
 
 from threedscriptors.configuration.architecture_config import EncoderConfig
-from threedscriptors.model.pair_biased_attention import (
-    PairBiasedSelfAttention,
-    PairOuterProdUpdate,
-)
 from threedscriptors.data_handling.sample import PreprocessedSample
-
 from threedscriptors.model.global_aggregator import GlobalAggregator
-
+from threedscriptors.model.model_output import ModelOutput
 from threedscriptors.model.pair_block import PairBlock
 
 
@@ -36,7 +28,7 @@ class TransformerPairEncoder(nn.Module):
 
         self.aggregator = global_aggregator
 
-    def forward(self, preprocessed_sample: PreprocessedSample)-> ModelOutput: 
+    def forward(self, preprocessed_sample: PreprocessedSample)-> ModelOutput:
 
         S = preprocessed_sample.preprocessed_atomic_embeddings
         P = preprocessed_sample.initial_pair_representation

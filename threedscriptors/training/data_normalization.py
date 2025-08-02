@@ -1,29 +1,16 @@
-from threedscriptors.data_handling.dataset import BaseDataset
-from threedscriptors.configuration.data_config import DatasetTypes
-from threedscriptors.data_handling.data_utils import compute_splits
-import numpy as np
-from threedscriptors.data_handling.sample import sample_collate_fn, Sample
-import torch
-from threedscriptors.utils.model_utils import (
-    get_mace_calculator_irrep_signature,
-    get_invariant_indices,
-    split_invariants_equivariants,
-)
-import math
-from typing import Optional, Tuple, Iterable, Union
-import torch
-from torch.utils.data import DataLoader, TensorDataset
-
-from torch.utils.data import Subset, Dataset
-from threedscriptors.data_handling.dataset import BaseDataset
-from threedscriptors.data_handling.indexed_subset import IndexedSubset
-from torch import nn
-
-
 from dataclasses import dataclass
 
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
+
 from threedscriptors.configuration.data_config import LabelScalingType
-from typing import Optional, Tuple
+from threedscriptors.data_handling.sample import Sample
+from threedscriptors.utils.model_utils import (
+    get_invariant_indices,
+    get_mace_calculator_irrep_signature,
+    split_invariants_equivariants,
+)
 
 
 @dataclass
@@ -62,7 +49,7 @@ class DataNormalizationModule(nn.Module):
         self.eps = eps
         self.dataset = dataset  # BaseDataset or IndexedSubset
 
-        self.stats: Optional[NormalizationStats] = None
+        self.stats: NormalizationStats | None = None
         if getattr(self.dataset, "regression_targets", None) is not None:
             self.stats = self._compute_regression_stats()
 
@@ -92,7 +79,7 @@ class DataNormalizationModule(nn.Module):
         if log_mask.any():
             lm = log_mask.view(*(1,) * (y.dim() - 1), -1)
             valid = (mask > 0) & lm
-            y = torch.where(valid, torch.log(y.clamp_min(self.eps)), y) # maybe this should be log (x +1 )?? 
+            y = torch.where(valid, torch.log(y.clamp_min(self.eps)), y) # maybe this should be log (x +1 )??
 
         y = (y - mean) / std
         return y * mask
@@ -111,7 +98,7 @@ class DataNormalizationModule(nn.Module):
 
     # ---------------- invariants (input irreps) ------------------------ #
 
-    def get_atomic_embedding_normalization_constants(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_atomic_embedding_normalization_constants(self) -> tuple[torch.Tensor, torch.Tensor]:
         padding_mask = self.dataset.padding_mask  # True = padding, False = real
         embeddings = self.dataset.embeddings
 
@@ -134,7 +121,7 @@ class DataNormalizationModule(nn.Module):
         invariant_embeddings: torch.Tensor,
         masks: torch.Tensor,
         eps: float = 1e-12,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         x, m = invariant_embeddings, masks
 
         count = m.sum(dim=(0, 1), keepdim=True).clamp(min=1)
@@ -142,7 +129,7 @@ class DataNormalizationModule(nn.Module):
         var = ((x - mean_per_dim) ** 2 * m).sum(dim=(0, 1), keepdim=True) / count
         std_per_dim = torch.sqrt(var).clamp_min(eps)
         return mean_per_dim, std_per_dim
-    
+
 
     @staticmethod
     @torch.no_grad()
@@ -153,7 +140,7 @@ class DataNormalizationModule(nn.Module):
         accumulate_on_cpu: bool = True,
         accum_dtype: torch.dtype = torch.float64,
         eps: float = 1e-12,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute per-dimension mean/std for invariant embeddings with a mask,
         streaming over a DataLoader to avoid OOM.
@@ -290,7 +277,7 @@ class DataNormalizationModule(nn.Module):
         )
 
         # optionally persist to TaskConfig
-        for t, m, s in zip(tasks, stats.mean.squeeze(0).tolist(), stats.std.squeeze(0).tolist()):
+        for t, m, s in zip(tasks, stats.mean.squeeze(0).tolist(), stats.std.squeeze(0).tolist(), strict=False):
             t.mean = m
             t.std = s
 

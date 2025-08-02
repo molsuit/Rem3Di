@@ -1,14 +1,11 @@
 
-from threedscriptors.evaluation.clustering import PCACalculator, UMAPCalculator
-from threedscriptors.evaluation.evaluation_pipeline import (
-    RegressionTestTask,
-    EvalPipelineRunner,
-)
 from threedscriptors.configuration.data_config import DatasetSplit
-from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-
-from threedscriptors.evaluation.clustering.tmqm_clustering_utils import get_coordination_numbers, get_metal_center_type, get_tm_colormap, get_atomic_num_colors, get_block_colors
+from threedscriptors.evaluation.evaluation_pipeline import (
+    EvalPipelineRunner,
+    RegressionTestTask,
+)
+from threedscriptors.model.model_builder import ModelBuilder
 
 model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/149-2025_07_31_12_53_12-TMQMRegressionTraining"
 

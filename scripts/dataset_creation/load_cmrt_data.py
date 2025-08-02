@@ -4,19 +4,16 @@ from threedscriptors.configuration.data_config import (
     DatasetConfig,
     MaceCalculatorConfig,
 )
-from threedscriptors.data_handling.dataset_analysis import DatasetPostLoadAnalysis
-
 from threedscriptors.data_handling.dataset import (
-    RegressionWithAuxAndPositionsDataset,PairedRegressionWithAuxAndPositionDataset
+    RegressionWithAuxAndPositionsDataset,
 )
+from threedscriptors.data_handling.dataset_builder import DatasetBuilder
 from threedscriptors.data_handling.dataset_io import store_data_to_disk
 from threedscriptors.data_handling.pipelines import chiral_regression_training_pipeline
 from threedscriptors.data_handling.source_preprocessing.cmrt_preprocessing import (
     load_cmrt_data,
 )
 from threedscriptors.training.dataset_splitting import DatasetSplitting
-from threedscriptors.data_handling.dataset_builder import DatasetBuilder
-
 
 dataset_directory = (
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt"
@@ -71,7 +68,7 @@ split_ratios = [0.8, 0.2]
 split_dataset_indices = ds.general_split(split_ratios, True)
 
 
-for ids, name in zip(split_dataset_indices, names):
+for ids, name in zip(split_dataset_indices, names, strict=False):
     new_dataset = ds.materialise_dataset_split(dataset, ids)
 
     db = DatasetBuilder(new_dataset)

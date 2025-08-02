@@ -8,15 +8,13 @@ from threedscriptors.configuration.architecture_config import (
     HeadType,
     RegressionHeadConfig,
 )
-
 from threedscriptors.configuration.data_config import LabelScalingType
 from threedscriptors.data_handling.sample import Sample
-
-
-from threedscriptors.model.model_output import ModelOutput
-from threedscriptors.model.preprocessing.preprocessing import Preprocessor
 from threedscriptors.model.encoder import TransformerEncoder
+from threedscriptors.model.model_output import ModelOutput
 from threedscriptors.model.pair_encoder import TransformerPairEncoder
+from threedscriptors.model.preprocessing.preprocessing import Preprocessor
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, activation_fn: nn.Module):
@@ -108,14 +106,14 @@ class RegressionHead(nn.Module):
         )
 
         self.head = head
-        
-        
+
+
         mean = self.task_config.mean
         std = self.task_config.std
         if type(self.task_config.mean ) is float:
             mean = torch.Tensor([mean])
 
-        if type(self.task_config.std) is float: 
+        if type(self.task_config.std) is float:
             std = torch.Tensor([std])
 
 
@@ -125,21 +123,21 @@ class RegressionHead(nn.Module):
 
     def forward(self, molecular_descriptor):
         return self.head(molecular_descriptor)
-        
+
 
     def inference(self, molecular_descriptor):
         standardized_prediction = self.head(molecular_descriptor)
-        
-        
+
+
         standardized_prediction = (standardized_prediction * self.task_std) + self.task_mean
 
         if self.task_config.scaling == LabelScalingType.LOG_Z:
             standardized_prediction = torch.exp(standardized_prediction)
-            
+
 
         return standardized_prediction
             # undo the standardization:
-        
+
 
 
 
@@ -156,7 +154,7 @@ class MultitaskHeads(nn.Module):
             conf.task_name: RegressionHead(conf)
             for conf in regression_head_configs
         })
-   
+
 
     def forward(self, descriptor, auxillary_data: dict | None = None):
         preds = []
@@ -216,10 +214,10 @@ class MultiTaskRegressionModel(nn.Module):
         return ModelOutput(
             molecular_descriptor=molecular_descriptor, regression_predictions=preds
         )
-    
+
     def inference(self, sample: Sample):
         # Calls the multitask inference method that returns the prediction in the original unit system
-        
+
         molecular_descriptor = self.get_molecular_descriptor(sample)
 
         preds = self.multitask_heads.inference(molecular_descriptor, sample.auxillary_data)

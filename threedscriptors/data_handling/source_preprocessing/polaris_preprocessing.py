@@ -33,7 +33,7 @@ def pretreat_polaris_dataset(smiles: list[str], regression_targets):
     # Pretreat polaris benchmark data for regression. Creates the Masks required for multitask training and removes nans. Also removes the smiles from the subset that do not have any data for the required target.
 
     regression_masks = np.where(np.isnan(regression_targets), False, True)
-    
+
     if regression_masks.ndim == 1:
         regression_masks = regression_masks[:, np.newaxis]
     if regression_targets.ndim == 1:
@@ -82,7 +82,7 @@ def load_polaris_dataset(dataset_name: str, smiles_column, non_task_columns, dat
 
     target_cols = [c for c in columns if c not in non_task_columns]
     target_cols = ["LogD"]
-    
+
     if isinstance(dataset, DatasetV1):
         data_dict = dataset.table[:]
 
@@ -90,7 +90,7 @@ def load_polaris_dataset(dataset_name: str, smiles_column, non_task_columns, dat
         # if "Set" in non_task_columns and datasplit is not None:
         #    data_dict = dataset[dataset["Set"] == datasplit]
         # else:
-        
+
 
         set_col = dataset.zarr_data["Set"][:]
 

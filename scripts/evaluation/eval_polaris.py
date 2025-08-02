@@ -1,10 +1,10 @@
-from threedscriptors.evaluation.evaluation_pipeline import (
-    RegressionTestTask,
-    EvalPipelineRunner,
-)
 from threedscriptors.configuration.data_config import DatasetSplit
-from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from threedscriptors.evaluation.evaluation_pipeline import (
+    EvalPipelineRunner,
+    RegressionTestTask,
+)
+from threedscriptors.model.model_builder import ModelBuilder
 
 model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/169-2025_08_01_16_14_31-SingleTaskAdmetlogdPretrained"
 

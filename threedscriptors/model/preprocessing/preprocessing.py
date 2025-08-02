@@ -1,15 +1,13 @@
-import torch
 from torch import nn
 
+from threedscriptors.data_handling.sample import PreprocessedSample, Sample
 from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
     AtomicDescriptorPreprocessor,
 )
 from threedscriptors.model.preprocessing.geometric_preprocessor import (
-    RandomWalkGeometricPreprocessor,
     PairDistanceMatrixGeometricPreprocessor,
+    RandomWalkGeometricPreprocessor,
 )
-
-from threedscriptors.data_handling.sample import Sample, PreprocessedSample
 
 
 class Preprocessor(nn.Module):
@@ -39,7 +37,7 @@ class Preprocessor(nn.Module):
 
         # Now we convert the sample to a PreprocessedSample dataclass instance.
         preprocessed_sample.padding_mask = sample.padding_mask
-        
+
 
         if self.geometric_preprocessor is not None:
 
@@ -49,5 +47,5 @@ class Preprocessor(nn.Module):
                 preprocessed_sample.pair_mask,
             ) = self.geometric_preprocessor(sample)
 
-        
+
         return preprocessed_sample

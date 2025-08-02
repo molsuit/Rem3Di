@@ -5,11 +5,6 @@ import torch
 import umap
 
 from threedscriptors.data_handling.data_utils import get_functional_group_label
-from threedscriptors.evaluation.regression_analysis import get_colors_for_predictions
-import matplotlib.patches as mpatches
-from matplotlib.colors import ListedColormap
-import numpy as np
-
 
 
 class ClusteringCalculator(ABC):
@@ -37,8 +32,8 @@ class UMAPCalculator(ClusteringCalculator):
         umap_projection = fit.fit_transform(data_matrix)
         if return_fit:
             return umap_projection, fit
-        
-        
+
+
         return umap_projection
 
 

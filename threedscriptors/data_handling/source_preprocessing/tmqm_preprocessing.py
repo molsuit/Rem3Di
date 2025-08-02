@@ -1,15 +1,15 @@
 import glob
 import os
-from typing import List
+from enum import Enum
+
 import numpy as np
 import pandas as pd
 from ase import Atoms
 from ase.io import read
 
 from threedscriptors.configuration.data_config import TaskConfig
-from enum import Enum
-
 from threedscriptors.data_handling.mol_id import StructureID
+
 
 class TmqmTask(Enum):
         ELECTRONIC_E = "Electronic_E"
@@ -24,7 +24,7 @@ class TmqmTask(Enum):
 
 def load_tmqm_dataset(
     directory: str, tasks: list[str], N_structures = 50000, max_atoms = 80
-) -> tuple[List[StructureID], list[int], list[Atoms], np.ndarray, np.ndarray, List[TaskConfig]]:
+) -> tuple[list[StructureID], list[int], list[Atoms], np.ndarray, np.ndarray, list[TaskConfig]]:
     """
     Load the tmQM dataset.
 
@@ -73,7 +73,7 @@ def load_tmqm_dataset(
     return csd_ids_to_structure_id(csd_ids), molecules, regression_targets, regression_masks, tasks
 
 
-def csd_ids_to_structure_id(csd_ids) -> List[StructureID]:
+def csd_ids_to_structure_id(csd_ids) -> list[StructureID]:
     assert len(csd_ids) == len(set(csd_ids)) # uniqueness check
 
     structure_ids = []
@@ -102,9 +102,9 @@ def load_molecules(file: str,  max_atoms : int) -> tuple[list[Atoms], list[str]]
 
     filter = [m.info["q"] == 0 and m.info["S"] == 0 and len(m) < max_atoms for m in mol]
 
-    filtered_csd_ids = [id for id, keep in zip(csd_ids, filter) if keep]
-    filtered_mols = [m for m, keep in zip(mol, filter) if keep]
-    
+    filtered_csd_ids = [id for id, keep in zip(csd_ids, filter, strict=False) if keep]
+    filtered_mols = [m for m, keep in zip(mol, filter, strict=False) if keep]
+
     return filtered_mols, filtered_csd_ids
 
 
@@ -126,7 +126,7 @@ def load_regression_targets(
     df = pd.read_csv(regression_target_file, sep=";")
 
     task_names = [t.value for t in tasks]
-   
+
     missing_cols = set(task_names) - set(df.columns)
 
     if missing_cols:
@@ -145,4 +145,4 @@ def load_regression_targets(
     targets = sub.fillna(0).to_numpy(dtype=float)
 
     return targets, masks
-    
+

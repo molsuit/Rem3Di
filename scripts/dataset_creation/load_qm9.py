@@ -1,22 +1,20 @@
 from pathlib import Path
-from threedscriptors.data_handling.source_preprocessing.qm9_preprocessing import (
-    load_qm9,QM9PropertyNames
-)
-from threedscriptors.data_handling.dataset_builder import DatasetBuilder
-import numpy as np
-from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions
-from threedscriptors.data_handling.dataset_io import store_data_to_disk
-
-from threedscriptors.data_handling.pipelines import (
-    regression_training_from_structures_pipeline,
-)
 
 from mace.calculators import MACECalculator
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     MaceCalculatorConfig,
-    DatasetSplit,
+)
+from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions
+from threedscriptors.data_handling.dataset_builder import DatasetBuilder
+from threedscriptors.data_handling.dataset_io import store_data_to_disk
+from threedscriptors.data_handling.pipelines import (
+    regression_training_from_structures_pipeline,
+)
+from threedscriptors.data_handling.source_preprocessing.qm9_preprocessing import (
+    QM9PropertyNames,
+    load_qm9,
 )
 
 qm9_dir = Path(
@@ -35,7 +33,7 @@ smiles, molecules, structure_ids, regression_targets, regression_masks, task_con
 assert regression_targets.shape[1] == len(tasks_to_load)
 
 dataset_directory = (
-    f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9"
 )
 
 MACE_PATH = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
@@ -74,14 +72,13 @@ store_data_to_disk(dataset, dataset_directory +"full")
 
 from threedscriptors.training.dataset_splitting import DatasetSplitting
 
-
 ds = DatasetSplitting(dataset)
-names = ["training", "test"] 
+names = ["training", "test"]
 split_ratios = [0.9, 0.1]
 split_dataset_indices = ds.general_split(split_ratios, True)
 
 
-for ids, name in zip(split_dataset_indices,names):
+for ids, name in zip(split_dataset_indices,names, strict=False):
     new_dataset = ds.materialise_dataset_split(dataset, ids)
 
 

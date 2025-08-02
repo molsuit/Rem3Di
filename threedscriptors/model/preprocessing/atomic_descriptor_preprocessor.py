@@ -1,14 +1,12 @@
-import numpy as np
-import torch
-from e3nn import o3
-from torch import from_numpy, nn
-from typing import Optional
-from threedscriptors.model.preprocessing.chiral_embedding_model import ChiralEmbeddingModel
 
-from threedscriptors.data_handling.sample import Sample, PreprocessedSample
+import torch
+from torch import nn
 
 from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
-
+from threedscriptors.data_handling.sample import PreprocessedSample
+from threedscriptors.model.preprocessing.chiral_embedding_model import (
+    ChiralEmbeddingModel,
+)
 from threedscriptors.utils.model_utils import (
     get_equivariant_irreps,
     get_invariant_indices,
@@ -91,8 +89,8 @@ class InvariantNormalization(nn.Module):
         std: torch.Tensor,
         *,
         overwrite: bool = False,
-        device: Optional[torch.device] = None,
-        dtype: Optional[torch.dtype] = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
     ) -> None:
         """
         Safely register normalization statistics without replacing buffers.
@@ -139,14 +137,14 @@ class InvariantNormalization(nn.Module):
         self.std.data.copy_(std)
         self._stats_set.fill_(True)
 
-    def forward(self, x: torch.Tensor, padding_mask: Optional[torch.Tensor]) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, padding_mask: torch.Tensor | None) -> torch.Tensor:
         # x: (B, N, dim), padding_mask: (B, N) with True = pad
         x = (x - self.mean) / (self.std + self.eps)
 
         if padding_mask is not None:
             x = x.masked_fill(padding_mask[..., None], 0.0)
 
-        
+
         return x
 
 
@@ -185,13 +183,13 @@ class AtomicDescriptorPreprocessor(nn.Module):
 
         if self.has_chiral_embedding:
             normalized_equivariants = self.equivariant_rms_norm(equivariants, padding_mask)
-            
+
             chiral_embedding = self.chiral_embedding_model(normalized_invariants, normalized_equivariants, padding_mask)
 
 
             normalized_invariants = normalized_invariants.to(dtype = torch.float32)
             return PreprocessedSample(preprocessed_atomic_embeddings=torch.cat((normalized_invariants, chiral_embedding), dim = -1), chiral_embeddings=chiral_embedding)
-        
+
         else:
             normalized_invariants = normalized_invariants.to(dtype = torch.float32)
 

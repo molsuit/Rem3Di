@@ -1,18 +1,15 @@
-from ase import Atoms
-import numpy as np
-import os
 import json
-import random
+import os
 import pickle
-from rdkit import Chem
 from pathlib import Path
-from threedscriptors.data_handling.mol_id import StructureID
-import yaml
 
-from typing import Tuple, List
-
-
+import numpy as np
+from ase import Atoms
+from rdkit import Chem
 from tqdm import tqdm
+
+from threedscriptors.data_handling.mol_id import StructureID
+
 MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 
 
@@ -20,7 +17,7 @@ MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 def get_all_mol_paths(geom_dir):
 
     drugs_file = os.path.join(geom_dir, "rdkit_folder/summary_drugs.json")
-    with open(drugs_file, "r") as f:
+    with open(drugs_file) as f:
         drugs_summ = json.load(f)
 
 
@@ -43,7 +40,7 @@ def load_geom(
     boltzmann_weight_threshold: float,
     N_molecules: int,
     max_atoms: int = 100,
-) -> Tuple[List[str], List[Atoms], List[StructureID]]:
+) -> tuple[list[str], list[Atoms], list[StructureID]]:
 
     mol_paths = get_all_mol_paths(geom_dir)
 
@@ -130,13 +127,10 @@ def mol_to_ase(mol: Chem.Mol, can_smi: str):
     return atoms
 
 
-import os, json, pickle
-from typing import List, Tuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-import numpy as np
-from rdkit import Chem
 from ase import Atoms
+from rdkit import Chem
 
 # assume these exist in your module
 # from your_module import StructureID, MACE_OFF_ELEMENTS
@@ -200,12 +194,12 @@ def load_geom_parallel(
     N_structures: int | None,
     max_atoms: int = 100,
     max_workers: int | None = None,
-) -> Tuple[List[str], List[Atoms], List["StructureID"]]:
+) -> tuple[list[str], list[Atoms], list["StructureID"]]:
 
     # 1) read summary and collect existing pickle paths (single-threaded)
 
     mol_paths = get_all_mol_paths(geom_dir)
-    
+
     print("All mol paths")
     # 2) dispatch work
     args = [
@@ -234,9 +228,9 @@ def load_geom_parallel(
     # 3) make output deterministic and build final objects
     raw_results.sort(key=lambda t: (t[0], t[1]))  # (molecule_id, conformer_id)
 
-    smiles: List[str] = []
-    molecules: List[Atoms] = []
-    structure_ids: List["StructureID"] = []
+    smiles: list[str] = []
+    molecules: list[Atoms] = []
+    structure_ids: list[StructureID] = []
 
     for structure_idx, (mol_id, conf_id, can_smi, nums, pos) in enumerate(
         raw_results[:N_structures]

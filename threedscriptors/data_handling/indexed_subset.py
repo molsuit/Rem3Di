@@ -1,10 +1,10 @@
-from torch.utils.data import Subset
-from threedscriptors.data_handling.dataset import BaseDataset
-from typing import Generic, Sequence, TypeVar
+from collections.abc import Sequence
+from typing import Generic, TypeVar
+
 import torch
-import numpy as np
+from torch.utils.data import Subset
 
-
+from threedscriptors.data_handling.dataset import BaseDataset
 
 TBase = TypeVar("TBase", bound="BaseDataset")
 

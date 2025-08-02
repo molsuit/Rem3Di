@@ -1,7 +1,8 @@
+
 import torch
 from e3nn.o3 import Irreps
 from mace.calculators import MACECalculator
-from typing import Tuple
+
 
 def get_mace_calculator_irrep_signature(mace_calculator: MACECalculator) -> Irreps:
     signature = None
@@ -26,7 +27,7 @@ def remove_equivariants(atomic_embeddings, invariant_indices):
     return atomic_embeddings[:, :, ind]
 
 
-def split_invariants_equivariants(emb:torch.Tensor, invariant_indices) -> Tuple[torch.Tensor, torch.Tensor] :
+def split_invariants_equivariants(emb:torch.Tensor, invariant_indices) -> tuple[torch.Tensor, torch.Tensor] :
     # emb: [B, N, C]
     C = emb.shape[2]    # ensure tensor of long indices on the correct device
     if not torch.is_tensor(invariant_indices):

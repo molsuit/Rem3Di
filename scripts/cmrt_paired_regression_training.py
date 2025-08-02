@@ -2,32 +2,39 @@ import argparse
 import os
 from datetime import datetime
 from pathlib import Path
-import math
+
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
 from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import DataLoader, Subset
-from threedscriptors.data_handling.indexed_subset import IndexedSubset
-
-
-from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions, RegressionDatasetwithRandomWalks, RegressionWithAuxAndPositionsDataset, PairedRegressionWithAuxAndPositionDataset
-from threedscriptors.training.dataset_splitting import DatasetSplitting, SplitConfig, SplitStrategy
+from torch.utils.data import DataLoader
 
 import wandb
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
 )
 from threedscriptors.configuration.training_config import TrainingConfig
+from threedscriptors.data_handling.dataset import (
+    PairedRegressionWithAuxAndPositionDataset,
+)
+from threedscriptors.data_handling.indexed_subset import IndexedSubset
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-
-from threedscriptors.data_handling.sample import sample_collate_fn, paired_sample_collate_fn
-from threedscriptors.evaluation.training_evaluation import regression_pipeline, chiral_regression_pipeline
+from threedscriptors.data_handling.sample import (
+    paired_sample_collate_fn,
+)
+from threedscriptors.evaluation.training_evaluation import (
+    regression_pipeline,
+)
 from threedscriptors.model.model_builder import ModelBuilder
+from threedscriptors.training.data_normalization import DataNormalizationModule
+from threedscriptors.training.dataset_splitting import (
+    DatasetSplitting,
+    SplitConfig,
+    SplitStrategy,
+)
 from threedscriptors.training.regression_training import chiral_difference_loss
 from threedscriptors.training.telemetry import TrainingTelemetry
-from threedscriptors.training.data_normalization import DataNormalizationModule
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -72,7 +79,7 @@ split_config = SplitConfig(
 )
 
 training_config = TrainingConfig(
-    batch_size=8,
+    batch_size=64,
     epochs=50,
     learning_rate=1e-4,
     weight_decay=1e-3,
@@ -136,7 +143,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
 
     data_normalization = DataNormalizationModule(dataset = train_dataset)
-    
+
 
     task_configs = data_normalization.task_configs
 
@@ -160,7 +167,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
         "dataset_config": dataset.dataset_config.model_dump(),
     }
 
-        
+
     model.to(device)
     model.encoder.to(dtype=torch.float32)
     model.multitask_heads.to(dtype=torch.float32)
@@ -183,12 +190,12 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
     )
     best_model_path = f"{training_config.training_data_dir}/best_model.pth"
 
-    
+
     with TrainingTelemetry(training_config=training_config, dataset_config= dataset.dataset_config, run_name = run_name, split_name=split_name, config = config) as telemetry:
 
 
         print("Starting Training")
-        
+
         for epoch in range(training_config.epochs):
 
             # Initialize task and total train losses
@@ -223,9 +230,9 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
             avg_train_loss = accumulated_train_loss / (batch_idx+1)
 
             accumulated_validation_loss = 0.0
-          
-            
-        
+
+
+
             model.eval()
 
             with torch.no_grad():
@@ -236,8 +243,8 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
                     val_output = model(val_samples)
 
                     loss = chiral_difference_loss(val_output.regression_predictions, val_samples.regression_targets, regression_mask= val_samples.regression_masks)
-             
-                    
+
+
                     accumulated_validation_loss += loss.item()
 
                 avg_validation_loss = accumulated_validation_loss / (batch_idx + 1)
@@ -248,15 +255,15 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
                 telemetry.log_epoch(epoch, avg_train_loss, avg_train_loss_per_task= None, avg_validation_loss=avg_validation_loss, avg_validation_loss_per_task = None, current_lr= current_lr)
 
                 if telemetry.best_epoch:
-                    
+
                     torch.save(model.state_dict(), best_model_path)
                     print(f"  - New best model (val_loss {avg_validation_loss:.4f}), saving to {best_model_path}")
 
 
     lowest_val_losses.append(telemetry.best_validation_loss)
 
-   
-    
+
+
     print("Loading best model from", best_model_path)
     model.load_state_dict(torch.load(best_model_path, map_location=device))
     model.eval()
@@ -264,7 +271,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
 
     torch.save(model.state_dict(), f"{training_config.training_data_dir}/regression_model.pth")
-    
+
     torch.save(
         model.preprocessor.state_dict(), f"{training_config.training_data_dir}/preprocessor.pth"
     )
@@ -306,7 +313,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
         output_directory=f"{training_config.training_data_dir}/valset_results", model_name=run_name
     )
 
-    
+
     if training_config.wandb_active:
         for figname, figure in figs.items():
             wandb.log({figname: figure})

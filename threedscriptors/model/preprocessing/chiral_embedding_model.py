@@ -1,9 +1,8 @@
+
 import torch
-
 from e3nn import o3
-
 from e3nn.o3 import Irreps
-from typing import Optional
+
 
 class ChiGate(torch.nn.Module):
     """
@@ -121,10 +120,10 @@ class ChiralEmbeddingModel(torch.nn.Module):
     def forward(
         self,
         invariant_embeddings: torch.Tensor, equivariant_embeddings: torch.Tensor,   # (B, N, F) or (N, F)
-        padding: Optional[torch.BoolTensor] = None,  # (B, N), True => padded
+        padding: torch.BoolTensor | None = None,  # (B, N), True => padded
     ):
-        
-        
+
+
 
         x0, x1, x2 = self.lin0(equivariant_embeddings), self.lin1(equivariant_embeddings), self.lin2(equivariant_embeddings)
 

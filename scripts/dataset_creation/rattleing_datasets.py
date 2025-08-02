@@ -17,8 +17,11 @@ rattled_dataset = regression_training_from_structures_pipeline(
 
 
 import torch
-from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature , get_invariant_indices
 
+from threedscriptors.utils.model_utils import (
+    get_invariant_indices,
+    get_mace_calculator_irrep_signature,
+)
 
 inv_indices, _ = get_invariant_indices(get_mace_calculator_irrep_signature(embedding_model_config.mace_calc))
 
@@ -31,6 +34,7 @@ diff = torch.linalg.norm(relaxed_embeddings - rattled_embeddings, dim = (0,1))
 
 
 import matplotlib.pyplot as plt
+
 dist_fig = plt.figure()
 plt.hist(diff[torch.nonzero(diff)])
 dist_fig.savefig(f"{dataset_directory}/difference_histogram.png",dpi = 200)
@@ -38,7 +42,7 @@ dist_fig.savefig(f"{dataset_directory}/difference_histogram.png",dpi = 200)
 
 
 
-#Change in distribution 
+#Change in distribution
 
 
 std_per_channel_relaxed = torch.std(relaxed_embeddings,dim = (0,1))

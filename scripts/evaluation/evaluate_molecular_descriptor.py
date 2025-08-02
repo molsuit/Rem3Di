@@ -1,9 +1,9 @@
 from matplotlib.pyplot import Figure
 
-from threedscriptors.evaluation.clustering import PCACalculator, UMAPCalculator
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from threedscriptors.evaluation.clustering import PCACalculator
 from threedscriptors.evaluation.evaluation_pipeline import EnolThiolEvalTask
 from threedscriptors.model.model_builder import ModelBuilder
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 
 model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/139-2025_07_30_10_44_46-400kpcqm_hot_with_l1"
 model = ModelBuilder.from_directory(model_directory).build_remedi_model()

@@ -1,19 +1,16 @@
-import pytest
-import json
-from enum import Enum
-from pydantic import ValidationError, TypeAdapter
-from typing import Union
 
-# import your actual classes here!
-from threedscriptors.model.pooling import MeanPool, AttnPool
+import pytest
+from pydantic import TypeAdapter, ValidationError
+
 from threedscriptors.configuration.architecture_config import (
     Aggregations,
-    MeanAggregatorConfig,
     AttentionAggregatorConfig,
-    GlobalAggregatorConfig
+    GlobalAggregatorConfig,
+    MeanAggregatorConfig,
 )
 
-
+# import your actual classes here!
+from threedscriptors.model.pooling import AttnPool, MeanPool
 
 
 @pytest.mark.parametrize(

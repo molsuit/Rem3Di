@@ -1,7 +1,8 @@
 import torch
 from torch import nn
-from threedscriptors.model.model_output import ModelOutput
+
 from threedscriptors.data_handling.sample import Sample
+from threedscriptors.model.model_output import ModelOutput
 
 
 def multitask_masked_loss(predictions, labels, regression_mask):
@@ -27,11 +28,11 @@ def multitask_masked_loss(predictions, labels, regression_mask):
 
 def chiral_difference_loss(predictions, labels, regression_mask):
 
-    # predictions is stacked along the batch dimension, enantiomer 1 at the top, enantiomer2 at the bottom. We only want to penalize the difference of the predicted retention time. 
+    # predictions is stacked along the batch dimension, enantiomer 1 at the top, enantiomer2 at the bottom. We only want to penalize the difference of the predicted retention time.
 
     B = predictions.shape[0]
     if B % 2 != 0:
-        raise ValueError("Batch size must be even — got {}".format(B))
+        raise ValueError(f"Batch size must be even — got {B}")
     N = B // 2
 
     pred_e1, pred_e2 = predictions[:N], predictions[N:]
@@ -43,7 +44,7 @@ def chiral_difference_loss(predictions, labels, regression_mask):
     mask_e1 = regression_mask[:N].bool()
     mask_e2 = regression_mask[N:].bool()
 
-    valid = mask_e1 & mask_e2  
+    valid = mask_e1 & mask_e2
 
     diff_pred = pred_e1[valid] - pred_e2[valid]
     diff_lab  = lab_e1[valid]  - lab_e2[valid]
@@ -61,7 +62,7 @@ class BaseMultitaskLoss(nn.Module):
         super().__init__()
 
     def forward(self, sample: Sample, output : ModelOutput):
-        
+
         loss_per_task = multitask_masked_loss(predictions= output.regression_predictions, labels= sample.regression_targets, regression_mask= sample.regression_masks)
 
         loss = loss_per_task.mean()
@@ -84,7 +85,7 @@ class DynamicallyWeighedMultitaskLoss(nn.Module):
 
         loss = (precision * loss_per_task + self.log_vars).sum()
 
-        return loss, loss_per_task  
+        return loss, loss_per_task
 
 
 
@@ -95,5 +96,5 @@ class ChiralDifferenceLoss(nn.Module):
         super().__init__()
 
     def forward(self, sample: Sample, output : ModelOutput):
-        
-        return 
+
+        return

@@ -2,7 +2,9 @@ import numpy as np
 import torch
 from ase import Atoms
 
-from threedscriptors.model.preprocessing.geometric_preprocessor import PairDistanceMatrixEncodingBlock
+from threedscriptors.model.preprocessing.geometric_preprocessor import (
+    PairDistanceMatrixEncodingBlock,
+)
 
 
 def test_distance_loading(molecule: Atoms, positional_encoding_config):

@@ -1,24 +1,25 @@
-from abc import ABC, abstractmethod
 import os
+from abc import ABC, abstractmethod
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import yaml as vanilla_yaml
 from matplotlib.lines import Line2D
 from torchmetrics.functional import (
-    mean_squared_error,
-    r2_score,
-    pearson_corrcoef,
     kendall_rank_corrcoef,
-    spearman_corrcoef,
     mean_absolute_error,
+    mean_squared_error,
+    pearson_corrcoef,
+    r2_score,
+    spearman_corrcoef,
 )
 
+from threedscriptors.configuration.data_config import DatasetSplit
 from threedscriptors.data_handling.data_utils import (
-    get_molecular_weight,
     get_all_atom_counts,
+    get_molecular_weight,
 )
-
-
 from threedscriptors.data_handling.dataset import (
     BaseDataset,
     RegressionDataset,
@@ -40,12 +41,12 @@ from threedscriptors.evaluation.descriptor_similarity_metrics import (
     plot_similarity_matrix,
 )
 from threedscriptors.evaluation.evaluation_utils import (
+    average_over_conformers,
     capacity_diagnostics,
+    clip_and_log_transform,
     compute_class_std,
-    evaluate_atomic_descriptors,
     evaluate_molecular_descriptor_on_dataset,
     evaluate_regression_model_on_dataset,
-    clip_and_log_transform,
 )
 from threedscriptors.evaluation.regression_analysis import (
     add_regression_head_activations_hooks,
@@ -57,14 +58,7 @@ from threedscriptors.evaluation.similarity_screening import (
     plot_reference_vs_model_classification_metric,
     plot_roc,
 )
-
-
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
-from threedscriptors.training.regression_training import multitask_masked_loss
-from threedscriptors.configuration.data_config import DatasetSplit, LabelScalingType
-from threedscriptors.evaluation.evaluation_utils import average_over_conformers
-
-import yaml as vanilla_yaml
 
 
 class BaseEvalTask(ABC):
@@ -105,15 +99,15 @@ class DescriptorClusteringTask(BaseEvalTask):
     def plot(self):
         assert self.reduced_dimensions is not None
         figs = {}
-        figs[f"Descriptor_UMAP"] = plot_reduced_dimension(self.reduced_dimensions)
+        figs["Descriptor_UMAP"] = plot_reduced_dimension(self.reduced_dimensions)
 
         if self.dataset.regression_targets is not None:
             for i in range(self.dataset.regression_targets.shape[1]):
-                
+
                 mask = self.dataset.regression_masks[:,i].bool()
 
                 task_name = self.dataset.dataset_config.tasks[i].task_name
-                
+
                 fig_with_regression_coloring = plot_reduced_dimension(
                     self.reduced_dimensions[mask,:],
                     color=self.dataset.regression_targets[mask, i],
@@ -141,7 +135,7 @@ class DescriptorClusteringTask(BaseEvalTask):
                 get_all_atom_counts(self.dataset.molecules, heavy_atoms_only=True)
             )
 
-            figs[f"Descriptor_UMAP_with_molecular_weight"] = plot_reduced_dimension(
+            figs["Descriptor_UMAP_with_molecular_weight"] = plot_reduced_dimension(
                 self.reduced_dimensions,
                 num_heavy_atoms,
                 suptitle="UMAP projection c= N heavy atoms",
@@ -316,8 +310,8 @@ class RegressionTestTask(BaseEvalTask):
 
         plt.xlabel("Predictions")
         plt.ylabel("Reference Labels")
-        
-        
+
+
         ax.legend(
             # x=1.02 means just to the right of the axes
             bbox_to_anchor=(1.07, 1),
@@ -337,8 +331,8 @@ class RegressionTestTask(BaseEvalTask):
             # Average out the mean prediction around conformers
 
         preds = self.standardized_predictions
-        
-        
+
+
         targets = self.dataset.regression_targets
         masks = self.dataset.regression_masks.bool()
 
@@ -348,7 +342,7 @@ class RegressionTestTask(BaseEvalTask):
 
             sliced_preds = preds[masks[:, task_idx].squeeze(), task_idx]
 
-           
+
             sliced_targets = targets[masks[:, task_idx].squeeze(), task_idx]
 
             if self.polaris_eval_style:
@@ -571,7 +565,7 @@ class ChiralPredictionTask(BaseEvalTask):
     def reshape_by_enantiomers(self):
         # conf batch = 2 enationmers of the "same" molecule.
         # Slice only the predictions for which the full conformers are available
-       
+
         prediction_by_enantiomer_batch = self.predictions.view(
             -1, 2*self.dataset.dataset_config.N_conformers
         )
@@ -624,7 +618,7 @@ class ChiralPredictionTask(BaseEvalTask):
         enantiomer_targets = enantiomer_batched_targets.view(-1, 1)
         model_predictions = enantiomer_batched_predictions.view(-1, 1)
 
-        
+
         rmse_mean_prediction = ((mean_predictions - enantiomer_targets) ** 2).mean().sqrt()
         rmse_model_prediction = ((model_predictions - enantiomer_targets) ** 2).mean().sqrt()
 

@@ -1,28 +1,22 @@
-from threedscriptors.data_handling.source_preprocessing.geom_preprocessing import load_geom, load_geom_parallel
-
-
-from threedscriptors.data_handling.dataset_builder import DatasetBuilder
-
-from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset
-from threedscriptors.data_handling.dataset_io import store_data_to_disk
-
-from threedscriptors.data_handling.pipelines import (
-   pretraining_pipeline_from_structures
-)
-
 from mace.calculators import MACECalculator
 
 from threedscriptors.configuration.data_config import (
-    DatasetConfig,
-    MaceCalculatorConfig,
-    DatasetSplit,
+   DatasetConfig,
+   MaceCalculatorConfig,
 )
+from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset
+from threedscriptors.data_handling.dataset_io import store_data_to_disk
+from threedscriptors.data_handling.pipelines import pretraining_pipeline_from_structures
+from threedscriptors.data_handling.source_preprocessing.geom_preprocessing import (
+   load_geom_parallel,
+)
+
 # change to where you untarred the rdkit folder
 base_path = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data"
 
 # Where the dataset will be stored
 dataset_directory = (
-    f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/geom"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/geom"
 )
 
 # The mace embedded model

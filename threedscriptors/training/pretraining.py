@@ -1,5 +1,6 @@
 import torch
 
+
 def get_random_mask(padding_mask, masking_probability=0.15):
     # Padding mask denotes the padded atoms that should not be masked during pretraining
     random_numbers = torch.where(
@@ -38,11 +39,11 @@ def atom_denoising_loss(
     # Compute squared differences
     squared_diff = (denoised_embeddings - input_atomic_embeddings) ** 2
     # Apply the mask
-    
+
     masked_squared_diff = squared_diff * ~padding_mask[:,:,None]
 
     atoms_in_batch = torch.sum((~padding_mask).to(torch.float32))
-    
+
     loss =  1 / atoms_in_batch * torch.sum(masked_squared_diff)# * 1 / noise_level**2
     return loss
 

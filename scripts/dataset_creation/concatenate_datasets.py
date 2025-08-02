@@ -1,16 +1,12 @@
-from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.data_handling.data_build_pipeline import (
     AtomicPositionsStage,
     PipelineOrchestrator,
     ReloadFromDiskStage,
-
 )
-
 from threedscriptors.data_handling.dataset_concatenation import DatasetConcatenation
 from threedscriptors.data_handling.dataset_io import (
     store_data_to_disk,
 )
-
 
 
 def reload_fn(directory):

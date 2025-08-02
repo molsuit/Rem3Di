@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 import torch
 from mace.calculators import MACECalculator
@@ -20,10 +19,10 @@ from threedscriptors.data_handling.dataset import (
     BaseDataset,
     RegressionDataset,
     RegressionDatasetwithPositions,
+    RegressionDatasetwithRandomWalks,
     RegressionWithAuxAndPositionsDataset,
     RegressionWithAuxDataset,
     SimilarityScreeningDataset,
-    RegressionDatasetwithRandomWalks
 )
 
 
@@ -68,7 +67,7 @@ class LabelScalingType(str, Enum):
                 return cls.LOG_Z
         # Returning None lets Pydantic raise its usual validation error
         return None
-    
+
 
 
 
@@ -94,7 +93,7 @@ class TaskConfig(BaseModel):
         if isinstance(v, str):
             print(v.lower())
             return LabelScalingType(v.strip().lower())
-        
+
         raise TypeError("`dataset_type` must be a DatasetTypes, a BaseDataset subclass, or a registered name")
 
     @field_serializer("scaling")
@@ -182,14 +181,14 @@ class DatasetConfig(BaseModel):
     embedding_model_config: MaceCalculatorConfig | None = None
     tasks: Sequence[TaskConfig] | None = None
     only_heavy_atoms: bool = False
-    dataset_name: Optional[str] = None
-    dataset_split: Optional[DatasetSplit] = None
+    dataset_name: str | None = None
+    dataset_split: DatasetSplit | None = None
     max_atoms: int| None  = None
 
     def get_task_names(self):
         if self.tasks is None:
-            return None 
-        else: 
+            return None
+        else:
             return [tc.task_name for tc in self.tasks]
 
     def get_mean_std_per_task(self):
@@ -260,9 +259,9 @@ class DatasetConfig(BaseModel):
             f"must be None, one of {[(e.name, e.value) for e in DatasetSplit]}, "
             f"or their names/values"
         )
-    
+
     @field_serializer('dataset_split')
-    def _serialize_dataset_split(self, v: Optional[DatasetSplit], _info):
+    def _serialize_dataset_split(self, v: DatasetSplit | None, _info):
         """
         Convert the enum back to a JSON-friendly form.
         Here we output the lowercase name (e.g. "train", "validation", "test"),

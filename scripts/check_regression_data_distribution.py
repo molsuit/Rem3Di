@@ -13,13 +13,12 @@ print(dataset._zarr_data.keys())
 
 tasks= ['HLM', 'KSOL', 'LogD', 'MDR1-MDCKII', 'MLM']
 
-import numpy as np
 import matplotlib.pyplot as plt
-
+import numpy as np
 
 for task in tasks:
     a = dataset._zarr_data[task]
-    
+
     m = np.nanmean(a)
     s = np.nanstd(a)
     print(f"T {task} : mean {m}, std :{s}")

@@ -4,10 +4,8 @@ import torch
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
-    DatasetTypes,
 )
-from threedscriptors.data_handling.dataset import (
-    BaseDataset)
+from threedscriptors.data_handling.dataset import BaseDataset
 
 
 class DatasetConcatenation:
@@ -17,7 +15,7 @@ class DatasetConcatenation:
 
         new_dataset_config = self.get_new_dataset_config()
 
-    
+
         self.new_dataset = new_dataset_config.dataset_type.value(dataset_config=new_dataset_config)
 
     def get_new_dataset_config(self):
@@ -141,7 +139,7 @@ class DatasetConcatenation:
 
         new_pos = [d.atomic_positions for d in self.datasets]
         new_atomic_positions = torch.cat(new_pos)
-        
+
 
 
 
@@ -191,10 +189,10 @@ class DatasetConcatenation:
             new_aux_data[key] = new_values.float()
 
         self.new_dataset.auxillary_data = new_aux_data
-    
+
     def concatenate_structural_encodings(self):
 
         collected_transition_matrices = [d.random_walk_transition_matrix for d in self.datasets]
-        
+
         self.new_dataset.random_walk_transition_matrix = torch.cat(collected_transition_matrices)
 

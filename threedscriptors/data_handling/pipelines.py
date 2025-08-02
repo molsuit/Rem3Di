@@ -1,22 +1,21 @@
 from threedscriptors.configuration.data_config import DatasetConfig
 from threedscriptors.data_handling.data_build_pipeline import (
+    AddRandomWalkTransitionProbabilityMatrixStage,
     AtomicEmbeddingStage,
     AtomicPositionsStage,
     AuxillaryDataStage,
+    CanonicalizeStructureIDStage,
     ChiralConformalEmbeddingStage,
     ConformalEmbeddingStage,
     InitializeBuildPipeline,
     InsertMoleculeStage,
     InsertSmilesStage,
-    NormalizationStage,
     PipelineOrchestrator,
     RegressionLabelingStage,
     RelaxStage,
     ReloadFromDiskStage,
+    SanitizeLogLabels,
     SimilarityLabelingStage,
-    AddRandomWalkTransitionProbabilityMatrixStage,
-    CanonicalizeStructureIDStage,
-    SanitizeLogLabels
 )
 
 

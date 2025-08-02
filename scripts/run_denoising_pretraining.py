@@ -2,45 +2,38 @@ import argparse
 import os
 from datetime import datetime
 from pathlib import Path
-import math
+
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
-from threedscriptors.model.remedi_model import REM3DIModel
-from threedscriptors.data_handling.sample import PreprocessedSample
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
-from threedscriptors.data_handling.indexed_subset import IndexedSubset
 
+from threedscriptors.configuration.architecture_config import (
+    ArchitectureConfig,
+)
+from threedscriptors.configuration.data_config import DatasetSplit
+from threedscriptors.configuration.training_config import TrainingConfig
+from threedscriptors.data_handling.indexed_subset import IndexedSubset
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from threedscriptors.data_handling.sample import PreprocessedSample, sample_collate_fn
+from threedscriptors.evaluation.clustering import UMAPCalculator
+from threedscriptors.evaluation.evaluation_pipeline import (
+    DescriptorClusteringTask,
+    DescriptorElementAnalysis,
+    EvalPipelineRunner,
+)
+from threedscriptors.model.model_builder import ModelBuilder
+from threedscriptors.model.remedi_model import REM3DIModel
+from threedscriptors.training.data_normalization import DataNormalizationModule
 from threedscriptors.training.dataset_splitting import (
     DatasetSplitting,
     SplitConfig,
     SplitStrategy,
 )
-
-from threedscriptors.evaluation.evaluation_pipeline import (
-    DescriptorClusteringTask,
-    EvalPipelineRunner,
-    DescriptorElementAnalysis,
-)
-from threedscriptors.evaluation.clustering import UMAPCalculator
-from threedscriptors.configuration.data_config import DatasetSplit
-
-
-from threedscriptors.configuration.architecture_config import (
-    ArchitectureConfig,
-)
-from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-from threedscriptors.data_handling.dataset_io import load_data_from_disk
-from threedscriptors.data_handling.sample import sample_collate_fn
-from threedscriptors.model.model_builder import ModelBuilder
-from threedscriptors.training.pretraining import atom_denoising_loss
-
-from threedscriptors.training.telemetry import TrainingTelemetry
-from threedscriptors.training.data_normalization import DataNormalizationModule
 from threedscriptors.training.noise_scheduler import ConstantSchedule, NoiseModule
-
+from threedscriptors.training.pretraining import atom_denoising_loss
+from threedscriptors.training.telemetry import TrainingTelemetry
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -255,7 +248,7 @@ with TrainingTelemetry(
 
             denoised_embeddings = decoder(
                     noised_preprocessing_sample, molecular_descriptor)
-            
+
 
             noise_level = noise_scheduler.value
             denoising_loss = atom_denoising_loss(
@@ -332,12 +325,12 @@ with TrainingTelemetry(
             telemetry.log_pretraining_epoch(epoch, avg_train_loss, avg_validation_loss)
 
             if telemetry.best_epoch:
-                    
+
                 torch.save(encoder.state_dict(), f"{training_config.training_data_dir}/encoder.pth")
                 torch.save(
     preprocessor.atomic_preprocessor.state_dict(),
     f"{training_config.training_data_dir}/atomic_preprocessor.pth",
-)               
+)
                 torch.save(
     preprocessor.geometric_preprocessor.state_dict(),
     f"{training_config.training_data_dir}/geometric_preprocessor.pth",

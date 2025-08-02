@@ -1,7 +1,8 @@
 import importlib
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import Literal, Union
+from typing import Literal
+
 import torch.nn
 from e3nn.o3 import Irreps
 from pydantic import (
@@ -10,18 +11,20 @@ from pydantic import (
     computed_field,
     field_serializer,
     field_validator,
-    Field
 )
 
 from threedscriptors.configuration.config_utils import IrrepType
+from threedscriptors.configuration.data_config import TaskConfig
+from threedscriptors.model.pooling import AttnPool, MeanPool
+from threedscriptors.model.preprocessing.radial_basis_functions import (
+    BesselBasisFunctions,
+    GaussianBasisFunctions,
+)
 from threedscriptors.utils.model_utils import (
     get_equivariant_irreps,
     get_invariant_indices,
 )
 
-from threedscriptors.model.preprocessing.radial_basis_functions import GaussianBasisFunctions, BesselBasisFunctions
-from threedscriptors.configuration.data_config import TaskConfig
-from threedscriptors.model.pooling import MeanPool, AttnPool
 
 class HeadType(Enum):
     RESIDUAL = "residual"
@@ -215,7 +218,7 @@ class AttentionAggregatorConfig(BaseModel):
     @field_serializer("aggregator_type")
     def _serialize_aggregator_type(self, v: Aggregations, info):
         return v.name.lower()
-    
+
 
     @field_validator("aggregator_type", mode="before")
     @classmethod
@@ -266,7 +269,7 @@ class RelativeDistancePositionalEncodingConfig(BaseModel):
     @field_serializer("basis_function_type")
     def _serialize_aggregator_type(self, v: RadialBasisFunctionType, info):
         return v.name.lower()
-    
+
 
     @field_validator("basis_function_type", mode="before")
     @classmethod

@@ -4,21 +4,15 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import rdkit.Chem as Chem
-import torch
 from ase import Atoms
 from ase.optimize import LBFGS
 from mace.calculators import MACECalculator
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 
-
 if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
-
-
-
-
 
 
 def get_molecular_weight(molecules: list[Atoms]):
@@ -66,7 +60,7 @@ def get_ase_atoms(smiles) -> Atoms:
                 numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
                 info={"smiles": smiles}
             )
-    
+
     return atoms
 
 
@@ -142,7 +136,7 @@ def get_relaxed_conformers(
 
 def count_atoms_from_smiles(
     smiles_iterator: SmilesIterator, heavy_atoms_only = False, max_num_molecules = np.inf) -> int:
-    
+
     # Returns the max and sum of the atoms from smiles
 
     atom_count = []
@@ -152,9 +146,9 @@ def count_atoms_from_smiles(
 
         if not heavy_atoms_only:
             mol = Chem.AddHs(mol)
-        
+
         atom_count.append(mol.GetNumAtoms())
-        
+
 
         if i >= max_num_molecules:
             break
@@ -233,7 +227,7 @@ def get_functional_group_label(smiles: list[str]):
             case _:
                 print(f"Smi {smiles_string}")
                 raise ValueError("Non matching smiles in functional group dataset")
-            
+
 
     return functional_group_indices
 

@@ -1,5 +1,5 @@
 import torch
-import torch.nn.functional as F
+
 
 def flat_grad(grads, params):
     """
@@ -7,7 +7,7 @@ def flat_grad(grads, params):
     params : the parameter list we asked grad() for
     """
     pieces = []
-    for p, g in zip(params, grads):
+    for p, g in zip(params, grads, strict=False):
         if g is None:                 # <- happens when param unused by this task
             g = torch.zeros_like(p)   # treat as 0-gradient
         pieces.append(g.reshape(-1))

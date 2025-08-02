@@ -3,7 +3,6 @@ import torch.nn.functional as F
 from torch import nn
 
 
-
 class MeanPool(nn.Module):
     def __init__(self):
         super().__init__()
@@ -63,6 +62,6 @@ class AttnPool(nn.Module):
 
         # weighted sum in original feature space
         pooled = torch.einsum('bhn,bnd->bhd', attn, x) # (B, H, d_in)
-        return pooled.mean(dim=1)  
+        return pooled.mean(dim=1)
 
 

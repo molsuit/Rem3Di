@@ -1,29 +1,23 @@
-from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import torch.utils.data as data
 from ase import Atoms
-import torch.nn.functional as F
-from typing import Optional
 
 if TYPE_CHECKING:
     # only for mypy / IDE - never executed at runtime
     from threedscriptors.configuration.data_config import DatasetConfig
 
 from threedscriptors.data_handling.data_utils import (
+    count_atoms_from_ase,
     count_atoms_from_smiles,
-    count_atoms_from_ase
 )
+from threedscriptors.data_handling.mol_id import StructureID
 from threedscriptors.data_handling.sample import Sample
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
-from threedscriptors.utils.model_utils import (
-    get_invariant_indices,
-    split_invariants_equivariants,
-)
 
-from threedscriptors.data_handling.mol_id import StructureID
 type Molecules = list[Atoms]
 
 class BaseDataset(data.Dataset):
@@ -91,7 +85,7 @@ class BaseDataset(data.Dataset):
         if self.max_atoms is None:
             if self.dataset_config.max_atoms is not None:
                 self.max_atoms = self.dataset_config.max_atoms
-            
+
             elif self.molecules is not None:
                 self.max_atoms, _ = count_atoms_from_ase(self.molecules, heavy_atoms_only= self.dataset_config.only_heavy_atoms)
 
@@ -101,11 +95,11 @@ class BaseDataset(data.Dataset):
                 self.max_atoms, _ = count_atoms_from_smiles(
                     smiles_iterator, heavy_atoms_only= self.dataset_config.only_heavy_atoms
                 )
-            
+
             self.dataset_config.max_atoms = self.max_atoms
-           
+
         return self.max_atoms
-    
+
 
     def get_structure_ids_for_mol(self, mol_ids):
         mol_ids_set = set(mol_ids)
@@ -122,12 +116,12 @@ class BaseDataset(data.Dataset):
         return out
 
     def get_total_number_of_atoms(self):
-        
+
         if self.total_num_atoms is None:
 
             if self.molecules is not None:
                 _, self.total_num_atoms = count_atoms_from_ase(self.molecules, heavy_atoms_only= self.dataset_config.only_heavy_atoms)
-            
+
             else:
                 assert self.smiles_list is not None
 
@@ -203,7 +197,7 @@ class BaseDataset(data.Dataset):
         padding_width = new_max_num_atoms - self.max_atoms
 
         assert padding_width > 0
-        
+
         self.embeddings = F.pad(
             self.embeddings, pad=(0, 0, 0, padding_width), value=0
         )
@@ -211,12 +205,12 @@ class BaseDataset(data.Dataset):
         self.padding_mask = F.pad(
             self.padding_mask, pad=(0, padding_width), value=1
         )
-        
+
         if self.atomic_positions is not None:
 
             #self.atomic_positions is (B,N,3)
             self.atomic_positions = F.pad(self.atomic_positions, pad = (0, 0,0, padding_width), value = 0.0)
-            
+
 
         self.max_atoms = new_max_num_atoms
 
@@ -230,7 +224,7 @@ class BaseDataset(data.Dataset):
                     fields.update(base.required_fields)
             return fields
 
-       
+
         req = infer_required_fields(dataset_cls)
 
         filtered = {}
@@ -265,11 +259,11 @@ class EnantiomerPairMixin:
             super().__init__(*args, **kwargs)
             self._build_enantiomer_index()
 
-    def get_enantiomer_idx(self, idx: int) -> Optional[int]:
+    def get_enantiomer_idx(self, idx: int) -> int | None:
         """Return the partner dataset index for a given dataset index, or None if none exists."""
         return self._partner_of.get(idx, None)
 
-    def get_pair_indices(self, pair_idx: int) -> tuple[int, Optional[int]]:
+    def get_pair_indices(self, pair_idx: int) -> tuple[int, int | None]:
         """Return (idx_e1, idx_e2) for a pair index."""
         return self._pair_index[pair_idx]
 
@@ -277,23 +271,23 @@ class EnantiomerPairMixin:
     def __len__(self) -> int:
         # number of *pairs* exposed by this mixin
         return len(self._pair_index)
-    
+
     # ---------- internal ----------
     def _build_enantiomer_index(self):
 
         # Group dataset indices by key: (molecule_id, conformer_id) or molecule_id
-        groups: dict[tuple[int, Optional[int]], dict[int, int]] = {}
+        groups: dict[tuple[int, int | None], dict[int, int]] = {}
 
         for idx, sid in enumerate(self.structure_ids):
             assert idx == sid.structure_id
             # Skip entries with no enantiomer label
             if sid.enantiomer_id not in (1, 2):
                 continue
-            key = (sid.molecule_id, sid.conformer_id) 
+            key = (sid.molecule_id, sid.conformer_id)
             d = groups.setdefault(key, {})
             d[sid.enantiomer_id] = idx
 
-        
+
         self._pair_index: list[tuple[int, int]] = []
         self._partner_of: dict[int, int] = {}
 
@@ -309,8 +303,8 @@ class EnantiomerPairMixin:
                 self._partner_of[i2] = i1
             else:
                 raise ValueError
-            
-    
+
+
     def __getitem__(self,pair_idx):
         idx_e1, idx_e2 = self.get_pair_indices(pair_idx)
         # Always return first as enantiomer_id==1 if available (stable ordering)

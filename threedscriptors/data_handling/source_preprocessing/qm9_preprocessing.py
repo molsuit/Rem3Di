@@ -1,13 +1,16 @@
-import numpy as np
-from pathlib import Path
-from ase import Atoms
-from threedscriptors.configuration.data_config import TaskConfig
-from tqdm import tqdm
-from rdkit import Chem
-import re
-from threedscriptors.data_handling.mol_id import StructureID
 import random
+import re
 from enum import IntEnum
+from pathlib import Path
+
+import numpy as np
+from ase import Atoms
+from rdkit import Chem
+from tqdm import tqdm
+
+from threedscriptors.configuration.data_config import TaskConfig
+from threedscriptors.data_handling.mol_id import StructureID
+
 
 class QM9PropertyNames(IntEnum):
     A              = 0  # rotational constant [GHz]
@@ -69,8 +72,8 @@ def parse_qm9_xyz(path: Path):
         fh.readline()                   # vibrational frequencies
         smiles = fh.readline().split()[0]
         smiles = Chem.CanonSmiles(smiles, useChiral=False)
-        
-        
+
+
 
     atoms = Atoms(symbols=symbols, positions=np.asarray(coords), info = {"smiles" : smiles})
     atoms.info["gdb_index"] = int(gdb_idx)
@@ -81,10 +84,10 @@ def parse_qm9_xyz(path: Path):
 
 
 def load_qm9(qm9_dir: Path, N_molecules: int | None = None, tasks_to_load = list[QM9PropertyNames] | None, shuffle: bool = True):
-    
 
 
-    xyz_files = sorted(qm9_dir.glob("**/*.xyz"))  
+
+    xyz_files = sorted(qm9_dir.glob("**/*.xyz"))
 
     if shuffle:
         random.shuffle(xyz_files)
@@ -96,7 +99,7 @@ def load_qm9(qm9_dir: Path, N_molecules: int | None = None, tasks_to_load = list
     all_props = []
     all_smiles = []
     molecules : list[Atoms] = []
-    
+
 
     for f in tqdm(xyz_files):
         atoms, props, smiles = parse_qm9_xyz(f)
@@ -118,17 +121,17 @@ def load_qm9(qm9_dir: Path, N_molecules: int | None = None, tasks_to_load = list
         regression_targets= regression_targets[:,task_col_indices]
         task_names = [t.name for t in tasks_to_load]
 
-    else: 
+    else:
         task_names = [p.name for p in QM9PropertyNames]
 
     print(task_names)
 
     regression_masks = np.ones_like(regression_targets, dtype=bool)
 
-    
+
 
     task_configs = [TaskConfig(task_name=task_name) for task_name in task_names]
 
-    structure_ids = [StructureID(structure_id= idx, molecule_id=idx, smiles_id=idx, conformer_id=0, enantiomer_id= 0, canonical_smiles=smi) for idx, smi in enumerate(all_smiles)] 
+    structure_ids = [StructureID(structure_id= idx, molecule_id=idx, smiles_id=idx, conformer_id=0, enantiomer_id= 0, canonical_smiles=smi) for idx, smi in enumerate(all_smiles)]
 
     return all_smiles, molecules, structure_ids, regression_targets, regression_masks, task_configs

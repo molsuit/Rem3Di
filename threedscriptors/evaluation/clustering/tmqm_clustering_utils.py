@@ -1,15 +1,11 @@
-from typing import List
-from ase import Atoms
-from pymatgen.io.ase import AseAtomsAdaptor
-from pymatgen.analysis.local_env import MinimumDistanceNN
-from ase import Atoms
-import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
-
-
+import matplotlib.pyplot as plt
+import numpy as np
+from ase import Atoms
 from ase.data import atomic_numbers, chemical_symbols
 from ase.data.colors import jmol_colors
+from pymatgen.analysis.local_env import MinimumDistanceNN
+from pymatgen.io.ase import AseAtomsAdaptor
 
 TM = {
     # transition metals (d‑block)
@@ -88,7 +84,7 @@ TM = {
 TM_numbers = set([atomic_numbers[sym] for sym in TM])
 
 
-def get_coordination_numbers(molecules: List[Atoms]):
+def get_coordination_numbers(molecules: list[Atoms]):
 
     cns = []
 

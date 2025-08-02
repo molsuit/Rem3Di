@@ -1,16 +1,14 @@
 import os
 from pathlib import Path
-from threedscriptors.data_handling.mol_id import StructureID
+
 import numpy as np
 from ase import Atoms
 from torch import from_numpy
 
 from threedscriptors.configuration.config_utils import from_yaml, to_yaml
 from threedscriptors.configuration.data_config import DatasetConfig
-from threedscriptors.data_handling.data_utils import (
-    get_unique_smiles_id_from_smiles_list,
-)
 from threedscriptors.data_handling.dataset import BaseDataset
+from threedscriptors.data_handling.mol_id import StructureID
 
 
 def store_data_to_disk(dataset: BaseDataset, directory: str):
@@ -50,7 +48,7 @@ def store_data_to_disk(dataset: BaseDataset, directory: str):
         with open(f"{directory}/smiles", "w") as f:
 
             if dataset.smiles_list is not None:
-                for smi, structure_id in zip(dataset.smiles_list, dataset.structure_ids):
+                for smi, structure_id in zip(dataset.smiles_list, dataset.structure_ids, strict=False):
 
                     f.write(f"{structure_id.to_id_string()} {smi}" + "\n")
 
@@ -113,7 +111,7 @@ def load_data_from_disk(
                 id_str, smi = line.split(" ", 1)
 
                 id = StructureID.from_id_string(id_str, smiles=smi)
-                
+
                 smiles_list.append(smi)
                 structure_ids.append(id)
 

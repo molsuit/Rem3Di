@@ -1,19 +1,16 @@
-import torch
 import torch.nn as nn
+
+from threedscriptors.configuration.architecture_config import DecoderConfig
+from threedscriptors.data_handling.sample import PreprocessedSample
 from threedscriptors.model.multihead_self_attention import (
     MultiHeadCrossAttention,
     MultiHeadSelfAttention,
 )
-from threedscriptors.data_handling.sample import PreprocessedSample
-
 from threedscriptors.model.pair_biased_attention import (
     PairBiasedSelfAttention,
     PairOuterProdUpdate,
 )
 from threedscriptors.model.pair_block import FeedForward, PairFFN
-
-from threedscriptors.configuration.architecture_config import DecoderConfig
-from threedscriptors.model.global_aggregator import GlobalAggregator
 
 
 class DecoderPairBlock(nn.Module):
@@ -79,7 +76,7 @@ class TransformerPairDecoder(nn.Module):
         )
 
     def forward(self, preprocessed_sample: PreprocessedSample, molecular_descriptor):
-        
+
 
         S = preprocessed_sample.preprocessed_atomic_embeddings
         P = preprocessed_sample.initial_pair_representation
@@ -93,7 +90,7 @@ class TransformerPairDecoder(nn.Module):
                 preprocessed_sample.padding_mask,
                 preprocessed_sample.pair_mask,
             )
-        
+
         return S
 
 
@@ -126,17 +123,17 @@ class DecoderBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, S, M, padding_mask):
-        
+
         # Self Attention based update
         S = S + self.dropout(self.attn(self.layer_norm_0(S), padding_mask))
-        
+
         S = S + self.dropout(
             self.cross_attention(self.layer_norm_1(S), M, padding_mask)
         )
-        
+
 
         S = S + self.dropout(self.ffn(self.layer_norm_2(S)))
-        
+
 
         return S
 
@@ -157,7 +154,7 @@ class TransformerDecoder(nn.Module):
     def forward(self, prepocessed_sample : PreprocessedSample, molecular_descriptor):
 
         S = prepocessed_sample.preprocessed_atomic_embeddings
-        
+
 
         for layer in self.layers:
             S = layer(S, molecular_descriptor, prepocessed_sample.padding_mask)

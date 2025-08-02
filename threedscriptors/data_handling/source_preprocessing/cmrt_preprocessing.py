@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from threedscriptors.configuration.data_config import TaskConfig, LabelScalingType
+from threedscriptors.configuration.data_config import LabelScalingType, TaskConfig
 
 
 def get_one_hot_columns_encodings(columns: list):
@@ -61,7 +61,7 @@ def load_cmrt_data(dataset_filepath: str, single_column_type=False):
     classes_appearing_twice = unique_pair_indices[counts == 2]
     df = df[df["pair_index"].isin(classes_appearing_twice)]
 
-    
+
 
     aux_data = build_auxillary_data(
         column_type=df["Column"].tolist(),

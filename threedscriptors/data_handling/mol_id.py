@@ -1,10 +1,6 @@
 from dataclasses import dataclass
 
 
-
-
-
-
 @dataclass(frozen=True, slots=True)
 class StructureID:
     structure_id: int  # This is a global and uniqe id of a 3D configuration
@@ -17,7 +13,7 @@ class StructureID:
 
 
     def to_id_string(self) -> str:
-    
+
         """Human-readable, self-contained ID string *without* smiles_id."""
         string =  (
             f"{self.structure_id}"
@@ -28,7 +24,7 @@ class StructureID:
             string = string + f"-{self.enantiomer_id}"
 
         return string
-    
+
     @classmethod
     def from_id_string(cls, id_string : str, smiles : str):
         parts =  id_string.split("-", 4)
@@ -44,7 +40,7 @@ class StructureID:
         else:
             raise ValueError("Malformed StructureID string")
 
-        
+
         return cls(
             structure_id=int(structure_id),
             canonical_smiles=smiles,

@@ -4,19 +4,16 @@ from mace.calculators import MACECalculator
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     MaceCalculatorConfig,
-    DatasetSplit
 )
 from threedscriptors.data_handling.dataset import (
-    RegressionDatasetwithPositions,RegressionDatasetwithRandomWalks
+    RegressionDatasetwithPositions,
 )
 from threedscriptors.data_handling.dataset_analysis import DatasetPostLoadAnalysis
-
-from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
 from threedscriptors.data_handling.dataset_io import (
     store_data_to_disk,
 )
 from threedscriptors.data_handling.pipelines import (
-    regression_training_with_pos_pipeline
+    regression_training_with_pos_pipeline,
 )
 from threedscriptors.data_handling.source_preprocessing.polaris_preprocessing import (
     load_polaris_dataset,
@@ -81,7 +78,7 @@ dataset_config = DatasetConfig(
 
 pipeline = regression_training_with_pos_pipeline(
     dataset_config, smiles, regression_targets, regression_masks
-) 
+)
 
 dataset = pipeline.build()
 

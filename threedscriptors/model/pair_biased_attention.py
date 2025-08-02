@@ -3,7 +3,9 @@ import math
 import torch
 import torch.nn as nn
 from torch import Tensor
+
 from threedscriptors.model.preprocessing.geometric_preprocessor import RadialFilter
+
 
 class PairBiasedSelfAttention(nn.Module):
     """
@@ -110,14 +112,14 @@ class PairOuterProdUpdate(nn.Module):
 
 
     def forward(self, S, P, p_geo, mask_pair):
-        
-        
-        # The outer product of atomic descriptors thats gated by the rbf 
+
+
+        # The outer product of atomic descriptors thats gated by the rbf
         L = self.W_L(S)
         R = self.W_R(S)
 
         delta_outer_product = torch.sigmoid(self.p_geo_filter(p_geo)) * (L.unsqueeze(2) * R.unsqueeze(1))   # (B,N,N,d_pair)
-        
+
 
         P = P + 0.5 * (delta_outer_product+delta_outer_product.transpose(1,2))
 

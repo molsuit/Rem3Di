@@ -1,29 +1,20 @@
+from mace.calculators import MACECalculator
+
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
-    DatasetTypes,
     MaceCalculatorConfig,
 )
+from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions
+from threedscriptors.data_handling.dataset_builder import DatasetBuilder
+from threedscriptors.data_handling.dataset_io import store_data_to_disk
 from threedscriptors.data_handling.pipelines import (
     regression_training_from_structures_pipeline,
 )
 from threedscriptors.data_handling.source_preprocessing.tmqm_preprocessing import (
+    TmqmTask,
     load_tmqm_dataset,
 )
-
-from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset, RegressionDatasetwithPositions
-from threedscriptors.data_handling.dataset_io import store_data_to_disk
-
-from threedscriptors.data_handling.pipelines import pretraining_pipeline_from_structures
-
-from mace.calculators import MACECalculator
-from threedscriptors.data_handling.source_preprocessing.tmqm_preprocessing import TmqmTask
-from threedscriptors.configuration.data_config import (
-    DatasetConfig,
-    MaceCalculatorConfig,
-    DatasetSplit,
-)
 from threedscriptors.training.dataset_splitting import DatasetSplitting
-from threedscriptors.data_handling.dataset_builder import DatasetBuilder
 
 dataset_directory = (
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm/"
@@ -33,9 +24,8 @@ tasks = [TmqmTask.HL_GAP]
 
 
 structure_ids, molecules, regression_targets, regression_masks, tasks = load_tmqm_dataset(
-    f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/tmqm", tasks)
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/tmqm", tasks)
 
-import matplotlib.pyplot as plt
 
 MACE_PATH = (
     "/share/snw30/projects/mace_model/mace_agnesi_medium.model"
@@ -80,14 +70,14 @@ store_data_to_disk(dataset, dataset_directory)
 
 
 ds = DatasetSplitting(dataset)
-names = ["training", "test"] 
+names = ["training", "test"]
 split_ratios = [0.9, 0.1]
 split_dataset_indices = ds.general_split(split_ratios, True)
 
 
-for ids, name in zip(split_dataset_indices,names):
+for ids, name in zip(split_dataset_indices,names, strict=False):
     new_dataset = ds.materialise_dataset_split(dataset, ids)
-    
+
     db = DatasetBuilder(new_dataset)
     db.canonicalize_structure_ids()
     store_data_to_disk(new_dataset, dataset_directory+"_" + name)
