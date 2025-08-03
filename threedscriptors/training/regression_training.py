@@ -38,9 +38,6 @@ def chiral_difference_loss(predictions, labels, regression_mask):
     pred_e1, pred_e2 = predictions[:N], predictions[N:]
     lab_e1,  lab_e2  = labels[:N],        labels[N:]
 
-    print(predictions)
-    print(labels)
-
     mask_e1 = regression_mask[:N].bool()
     mask_e2 = regression_mask[N:].bool()
 
@@ -51,9 +48,10 @@ def chiral_difference_loss(predictions, labels, regression_mask):
 
     real_loss = (predictions-labels).pow(2).mean()
 
-    loss = (diff_pred - diff_lab).pow(2).mean()
+    #loss = (diff_pred - diff_lab).pow(2).mean()
 
-    return loss
+    return real_loss
+
 
 class BaseMultitaskLoss(nn.Module):
 

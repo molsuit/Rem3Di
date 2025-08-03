@@ -56,49 +56,63 @@ dataset_directory = (
 
 smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/cmrt_raw_data.csv",
-    single_column_type=False,
+    single_column_type=True,single_speed= True
 )
 
 atom_counts = []
 rmsds = []
 
+#
+#def process_smile(smi):
+#    atom_count = 0
+#    rmsd_list = []
+#    mol = Chem.MolFromSmiles(smi)
+#    if mol is None:
+#        return atom_count, rmsd_list
+#    mol = Chem.AddHs(mol)
+#    cids = AllChem.EmbedMultipleConfs(mol, numConfs=5, randomSeed=42, )
+#    mol_noH = Chem.RemoveHs(mol)
+#    for i in range(len(cids)):
+#        for j in range(i + 1, len(cids)):
+#            rmsd = AllChem.GetConformerRMS(mol_noH, i, j)
+#            rmsd_list.append(rmsd)
+#    atom_count = mol.GetNumAtoms()
+#    return atom_count, rmsd_list
+#
+#with ProcessPoolExecutor() as executor:
+#ä    results = list(tqdm(executor.map(process_smile, smiles,chunksize=1), ttal=len(smiles)))
+#
+#for atom_count, rmsd_list in results:
+#    atom_counts.append(atom_count)
+#    rmsds.extend(rmsd_list)
+#
+#
+#print(np.mean(np.array(atom_counts)))
+#print(np.std(np.array(atom_counts)))
+#print(np.max(np.array(atom_counts)))
+#fig = plt.figure()
+#plt.hist(atom_counts)
+#plt.savefig("atom_count_hist.png")
+#
+#
+#fig = plt.figure()
+#plt.hist(rmsds, bins=50)
+#plt.xlabel("RMSD")
+#plt.ylabel("Frequency")
+#plt.title("RMSD Distribution")
+#plt.savefig("rmsd_hist_w_H.png")
 
 
-def process_smile(smi):
-    atom_count = 0
-    rmsd_list = []
-    mol = Chem.MolFromSmiles(smi)
-    if mol is None:
-        return atom_count, rmsd_list
-    mol = Chem.AddHs(mol)
-    cids = AllChem.EmbedMultipleConfs(mol, numConfs=5, randomSeed=42, )
-    mol_noH = Chem.RemoveHs(mol)
-    for i in range(len(cids)):
-        for j in range(i + 1, len(cids)):
-            rmsd = AllChem.GetConformerRMS(mol_noH, i, j)
-            rmsd_list.append(rmsd)
-    atom_count = mol.GetNumAtoms()
-    return atom_count, rmsd_list
-
-with ProcessPoolExecutor() as executor:
-    results = list(tqdm(executor.map(process_smile, smiles,chunksize=1), total=len(smiles)))
-
-for atom_count, rmsd_list in results:
-    atom_counts.append(atom_count)
-    rmsds.extend(rmsd_list)
+print(np.unique(aux_data["cmrt"][:,-2],return_counts=True))
+print(np.unique(aux_data["cmrt"][:,-1],return_counts=True))
+print(aux_data["cmrt"][:20])
 
 
-print(np.mean(np.array(atom_counts)))
-print(np.std(np.array(atom_counts)))
-print(np.max(np.array(atom_counts)))
-fig = plt.figure()
-plt.hist(atom_counts)
-plt.savefig("atom_count_hist.png")
+vals, counts = np.unique(aux_data["cmrt"][:,-2],return_counts=True)
+plt.figure(figsize=(10, 6))
+plt.bar(np.log(vals),counts,width= 0.5)
+plt.xlabel('Values')
+plt.ylabel('Counts')
+plt.title('Distribution of Values')
+plt.savefig('distribution.png')
 
-
-fig = plt.figure()
-plt.hist(rmsds, bins=50)
-plt.xlabel("RMSD")
-plt.ylabel("Frequency")
-plt.title("RMSD Distribution")
-plt.savefig("rmsd_hist_w_H.png")

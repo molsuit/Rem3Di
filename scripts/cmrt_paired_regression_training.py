@@ -14,6 +14,7 @@ import wandb
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
 )
+from threedscriptors.configuration.data_config import DatasetSplit
 from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.dataset import (
     PairedRegressionWithAuxAndPositionDataset,
@@ -24,7 +25,7 @@ from threedscriptors.data_handling.sample import (
     paired_sample_collate_fn,
 )
 from threedscriptors.evaluation.training_evaluation import (
-    regression_pipeline,
+    chiral_regression_pipeline,
 )
 from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.training.data_normalization import DataNormalizationModule
@@ -57,8 +58,8 @@ def parse_args():
 
 
 run_name = parse_args()
-torch.manual_seed(0)
-np.random.seed(0)
+torch.manual_seed(1)
+np.random.seed(1)
 
 training_run_dir = Path(
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
@@ -158,6 +159,9 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
     )
 
 
+    difference_regressor = 
+
+
     print(f"Trainable Parameters: {mb.N_trainable_parameters}")
 
 
@@ -173,12 +177,14 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
     model.multitask_heads.to(dtype=torch.float32)
 
 
-    all_params = (
-    list(model.encoder.parameters())
-    + list(model.preprocessor.geometric_preprocessor.parameters())+list(model.multitask_heads.parameters())
-)
-    #all_params = model.parameters()
+    #all_params = (
+    #list(model.encoder.parameters())
+    #+ list(model.preprocessor.geometric_preprocessor.parameters())+list(model.multitask_heads.parameters())
+#)
+    all_params = model.parameters()
+    
 
+    #all_params = model.multitask_heads.parameters()
     optimizer = optim.AdamW(
         [{"params" : all_params, "lr" : training_config.learning_rate, "weight_decay" : training_config.weight_decay},
         ]
@@ -297,8 +303,9 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
     figs = {}
 
-    from threedscriptors.configuration.data_config import DatasetSplit
-    training_evaluation_pipeline = regression_pipeline(train_dataset, dataset_split=DatasetSplit.TRAIN)
+
+
+    training_evaluation_pipeline = chiral_regression_pipeline(train_dataset, dataset_split=DatasetSplit.TRAIN)
     training_evaluation_pipeline.evaluate(model)
     train_figs, train_result_report = training_evaluation_pipeline.output_results(
         output_directory=f"{training_config.training_data_dir}/trainset_results", model_name=run_name
@@ -307,7 +314,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
 
 
-    validation_evaluation_pipeline = regression_pipeline(valid_dataset, dataset_split=DatasetSplit.TRAIN)
+    validation_evaluation_pipeline = chiral_regression_pipeline(valid_dataset, dataset_split=DatasetSplit.VALIDATION)
     validation_evaluation_pipeline.evaluate(model)
     train_figs, train_result_report =validation_evaluation_pipeline.output_results(
         output_directory=f"{training_config.training_data_dir}/valset_results", model_name=run_name

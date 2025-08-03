@@ -81,7 +81,7 @@ def load_polaris_dataset(dataset_name: str, smiles_column, non_task_columns, dat
     columns = dataset.columns
 
     target_cols = [c for c in columns if c not in non_task_columns]
-    target_cols = ["LogD"]
+    #target_cols = ["LogD"]
 
     if isinstance(dataset, DatasetV1):
         data_dict = dataset.table[:]

@@ -53,6 +53,7 @@ class FullyConnectedBlock(nn.Module):
                     ("linear_layer", nn.Linear(in_dim, out_dim)),
                     ("layer_norm", nn.LayerNorm(out_dim)),
                     ("activation", nn.SiLU()),
+                    ("dropout", nn.Dropout(0.1))
                 ]
             )
         )
@@ -82,6 +83,9 @@ class RegressionHead(nn.Module):
 
         self.head_config = head_config
         self.task_config = head_config.task_config
+
+
+
 
         head = nn.Sequential()
 

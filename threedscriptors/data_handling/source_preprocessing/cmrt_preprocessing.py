@@ -41,7 +41,7 @@ def get_task_configs(aux_data: dict) -> TaskConfig:
     return [task]
 
 
-def load_cmrt_data(dataset_filepath: str, single_column_type=False):
+def load_cmrt_data(dataset_filepath: str, single_column_type=False, single_speed=False):
     # Load the CSV data. Replace 'data.csv' with your CSV file path.
     df = pd.read_csv(
         dataset_filepath,
@@ -54,6 +54,11 @@ def load_cmrt_data(dataset_filepath: str, single_column_type=False):
 
     if single_column_type:
         df = df[df["Column"] == "ADH"]
+
+
+    if single_speed:
+        most_frequent_speed = df["Speed"].mode()[0]
+        df = df[df["Speed"] == most_frequent_speed]
 
     pair_indices = df["pair_index"].to_numpy()
 

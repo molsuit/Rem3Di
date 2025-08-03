@@ -34,7 +34,7 @@ def regression_pipeline(dataset: BaseDataset, dataset_split: DatasetSplit | None
     )
 
 
-def chiral_regression_pipeline(dataset : BaseDataset):
+def chiral_regression_pipeline(dataset : BaseDataset, dataset_split: DatasetSplit | None = None):
 
     tasks = [ChiralPredictionTask(dataset)]  # , PreprocessorVisualizationTask(dataset)]
 

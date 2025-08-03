@@ -8,9 +8,9 @@ from threedscriptors.evaluation.evaluation_pipeline import (
 )
 from threedscriptors.model.model_builder import ModelBuilder
 
-dataset_name = "cmrt_test"
+dataset_name = "cmrt_training"
 # load model
-model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/130-2025_07_29_18_21_25-CMRT_paired_train_diffin_lin"
+model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/171-2025_08_02_18_47_22-SingleSpeedAbsVals"
 
 evaluation_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/"
 

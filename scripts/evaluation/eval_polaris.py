@@ -6,7 +6,7 @@ from threedscriptors.evaluation.evaluation_pipeline import (
 )
 from threedscriptors.model.model_builder import ModelBuilder
 
-model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/169-2025_08_01_16_14_31-SingleTaskAdmetlogdPretrained"
+model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/177-2025_08_02_23_57_42-PretrainADMET"
 
 
 #model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/161-2025_08_01_11_32_06-AVAdmetGeomPretraining_batch128"

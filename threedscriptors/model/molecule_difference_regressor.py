@@ -1,0 +1,48 @@
+from torch import nn
+
+
+class MolecularDifferenceRegressor(nn.Module):
+
+    def __init__(self, descriptor_input_dim, aux_input_dim, aux_embedding_dim):
+
+        self.descriptor_input_dim = descriptor_input_dim
+
+        self.diff_layer = nn.Sequential(
+            nn.Linear(descriptor_input_dim, 256),
+            nn.LayerNorm(256),
+            nn.SiLU(),
+            nn.Linear(256, 128),
+            nn.LayerNorm(128),
+            nn.SiLU(),
+            nn.Linear(128, aux_embedding_dim),
+        )
+
+        self.experimental_cond_gate = nn.Sequential(
+            nn.Linear(aux_input_dim, aux_embedding_dim), nn.SiLU(), nn.Linear(aux_embedding_dim, aux_embedding_dim)
+        )
+
+        self.output_mlp = nn.Sequential(nn.LayerNorm(aux_embedding_dim),nn.Linear(aux_embedding_dim,1))
+
+    def forward(self, descriptors, auxillary_data):
+
+        B = descriptors.shape[0]
+        if B % 2 != 0:
+            raise ValueError(f"Batch size must be even — got {B}")
+        N = B // 2
+
+        descriptors_e1 = descriptors[:N, :]
+        descriptors_e2 = descriptors[N:, :]
+
+        diff_descriptor = descriptors_e1 - descriptors_e2
+
+        embedded_difference = self.diff_layer(diff_descriptor)
+
+        auxillary_data_per_pair = auxillary_data[:N, :]
+        experimental_cond = self.experimental_cond_gate(auxillary_data_per_pair)
+
+
+        gated_embedding = embedded_difference * experimental_cond
+
+        out = self.output_mlp(gated_embedding)
+
+        return out

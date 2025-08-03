@@ -610,9 +610,9 @@ class ChiralPredictionTask(BaseEvalTask):
             self.get_enantiomer_predictions_and_mean()
         )
 
-        print(enantiomer_batched_predictions[:3,:])
-        print(enantiomer_batched_targets[:3,:])
-        print(mean_predictions[:3,:])
+        print(enantiomer_batched_predictions[:10,:])
+        print(enantiomer_batched_targets[:10,:])
+        print(mean_predictions[:10,:])
 
         mean_predictions = mean_predictions.view(-1, 1)
         enantiomer_targets = enantiomer_batched_targets.view(-1, 1)

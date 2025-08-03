@@ -6,11 +6,16 @@ from torch.utils.data import DataLoader
 
 from threedscriptors.data_handling.dataset import (
     AtomicEmbeddingDataset,
+    PairedRegressionWithAuxAndPositionDataset,
     RegressionDataset,
     RegressionWithAuxDataset,
 )
 from threedscriptors.data_handling.mol_id import StructureID
-from threedscriptors.data_handling.sample import Sample, sample_collate_fn
+from threedscriptors.data_handling.sample import (
+    Sample,
+    paired_sample_collate_fn,
+    sample_collate_fn,
+)
 from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.model.model_output import ModelOutput
 from threedscriptors.model.regression_models import (
@@ -23,7 +28,7 @@ def evaluate_regression_model_on_dataset(
     model: MultiTaskRegressionModel,
     dataset: RegressionWithAuxDataset | RegressionDataset,
     device="cuda",
-    undo_standardization = False
+    undo_standardization=False,
 ):
 
     # returns the predictions of the model on dataset in standardized units
@@ -35,14 +40,20 @@ def evaluate_regression_model_on_dataset(
     model.eval()
 
     batch_size = 256
+
+    collate_fn = (
+        paired_sample_collate_fn
+        if isinstance(dataset, PairedRegressionWithAuxAndPositionDataset)
+        else sample_collate_fn
+    )
     dataloader: Iterable[Sample] = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
-        collate_fn=sample_collate_fn,
+        collate_fn=collate_fn,
     )
-
+    
     regression_predictions = torch.zeros_like(dataset.regression_targets)
 
     with torch.no_grad():
@@ -50,9 +61,9 @@ def evaluate_regression_model_on_dataset(
             samples.to_(device)
 
             if undo_standardization:
-                output : ModelOutput = model.inference(samples)
+                output: ModelOutput = model.inference(samples)
             else:
-                output : ModelOutput = model(samples)
+                output: ModelOutput = model(samples)
 
             regression_predictions[
                 batch_idx * batch_size : (batch_idx + 1) * batch_size, :
@@ -86,11 +97,11 @@ def evaluate_molecular_descriptor_on_dataset(
 
             model_output = model(samples)
 
-            descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = model_output.molecular_descriptor
-
+            descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
+                model_output.molecular_descriptor
+            )
 
     return descriptors
-
 
 
 def evaluate_atomic_descriptors(
@@ -111,7 +122,11 @@ def evaluate_atomic_descriptors(
         collate_fn=sample_collate_fn,
     )
 
-    regression_predictions = torch.zeros(dataset.dataset_config.N_molecules, dataset.dataset_config.max_atoms, model.preprocessor.config.output_irreps_dim)
+    regression_predictions = torch.zeros(
+        dataset.dataset_config.N_molecules,
+        dataset.dataset_config.max_atoms,
+        model.preprocessor.config.output_irreps_dim,
+    )
 
     print(regression_predictions.shape)
 
@@ -126,9 +141,6 @@ def evaluate_atomic_descriptors(
             ] = model.preprocessor(embeddings)
 
     return regression_predictions
-
-
-
 
 
 def calculate_fingerprint_uncertainty(
@@ -177,12 +189,12 @@ def compute_class_std(data, class_ids):
     return class_mean, class_std_dev
 
 
-def average_over_conformers(structure_ids: list[StructureID], predictions: torch.Tensor):
+def average_over_conformers(
+    structure_ids: list[StructureID], predictions: torch.Tensor
+):
 
-
-    classes  = [(sid.molecule_id, sid.enantiomer_id) for sid in structure_ids]
-    class_ids = {mol_e_id : i for i, mol_e_id in enumerate(set(classes))}
-
+    classes = [(sid.molecule_id, sid.enantiomer_id) for sid in structure_ids]
+    class_ids = {mol_e_id: i for i, mol_e_id in enumerate(set(classes))}
 
     class_id_per_mol = []
 
@@ -197,13 +209,12 @@ def average_over_conformers(structure_ids: list[StructureID], predictions: torch
     for class_id in class_ids.values():
 
         mask = torch.where(class_id_per_mol == class_id)
-        class_mean = torch.mean(predictions[mask],dim = 0)
+        class_mean = torch.mean(predictions[mask], dim=0)
         print(class_mean)
 
         predictions[mask] = class_mean
 
     return predictions
-
 
 
 def capacity_diagnostics(Z, bins=128, dead_thr=0.2, eps=1e-12):
@@ -231,10 +242,8 @@ def capacity_diagnostics(Z, bins=128, dead_thr=0.2, eps=1e-12):
         Count of low-entropy ('dead') coordinates.
     """
 
-
-
     Z = np.asarray(Z, dtype=np.float64)
-    Z = Z - np.mean(Z, axis = 0)
+    Z = Z - np.mean(Z, axis=0)
 
     N, d = Z.shape
 
@@ -248,21 +257,19 @@ def capacity_diagnostics(Z, bins=128, dead_thr=0.2, eps=1e-12):
     H_tot = H_i.sum()
 
     # --- capacity proxy -----------------------------------------------------
-    max_bits_per_dim = np.log2(bins)                # guaranteed float
+    max_bits_per_dim = np.log2(bins)  # guaranteed float
     cov = np.cov(Z, rowvar=False)
     eigvals = np.linalg.eigvalsh(cov)
-    d_eff = (eigvals.sum()**2) / (np.square(eigvals).sum() + eps)
-
+    d_eff = (eigvals.sum() ** 2) / (np.square(eigvals).sum() + eps)
 
     C_eff = d_eff * max_bits_per_dim
 
     utilisation = H_tot / (C_eff + eps)
     dead_dims = int((H_i < dead_thr * max_bits_per_dim).sum())
 
-    eig = np.sort(eigvals)[::-1]           # descending
+    eig = np.sort(eigvals)[::-1]  # descending
 
     return H_tot, utilisation, dead_dims, eig, d_eff
-
 
 
 def clip_and_log_transform(y: torch.Tensor) -> torch.Tensor:

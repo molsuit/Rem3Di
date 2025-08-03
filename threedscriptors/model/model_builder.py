@@ -179,10 +179,12 @@ class ModelBuilder:
 
             geometric_preprocessor = self.build_geometric_preprocessing()
 
-        return Preprocessor(
-            atomic_preprocessor=atomic_preprocessor,
-            geometric_preprocessor=geometric_preprocessor,
-        )
+            return Preprocessor(
+                atomic_preprocessor=atomic_preprocessor,
+                geometric_preprocessor=geometric_preprocessor,
+            )
+        
+        return Preprocessor(atomic_preprocessor=atomic_preprocessor, geometric_preprocessor=None)
 
     def build_decoder(self) -> TransformerDecoder:
         return TransformerPairDecoder(self.architecture_config.decoder_config)

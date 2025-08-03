@@ -84,15 +84,15 @@ split_config = SplitConfig(
 training_config = TrainingConfig(
     batch_size=64,
     epochs=50,
-    learning_rate=2e-4,
+    learning_rate=5e-5,
     weight_decay=1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_logd",
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_admet_logd",
+    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_10conf",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_admet_10conf",
     normalized_targets=True,
 )
 
@@ -171,13 +171,13 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
     loss_fn = BaseMultitaskLoss()
 
-    #all_params = model.parameters()
+    all_params = model.parameters()
 
 #    all_params = (
 #    list(model.encoder.parameters())
 #    + list(model.preprocessor.geometric_preprocessor.parameters())
 #)
-    all_params= model.multitask_heads.parameters()
+    #all_params= model.multitask_heads.parameters()
 
     optimizer = optim.AdamW(
         [{"params" : all_params, "lr" : training_config.learning_rate, "weight_decay" : training_config.weight_decay},
