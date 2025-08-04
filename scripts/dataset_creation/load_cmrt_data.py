@@ -21,7 +21,7 @@ dataset_directory = (
 
 smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/cmrt_raw_data.csv",
-    single_column_type=False,single_speed=False
+    single_column_type=True,single_speed=True
 )
 
 
@@ -39,11 +39,11 @@ embedding_model_config = MaceCalculatorConfig(
 )
 dataset_config = DatasetConfig(
     dataset_name="cmrt",
-    N_molecules=20000,
+    N_molecules=1000,
     dataset_type=RegressionWithAuxAndPositionsDataset,
     BFGS_tol=0.2,
     BFGS_max_steps=500,
-    N_conformers=2,
+    N_conformers=1,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,

@@ -5,23 +5,43 @@ class MolecularDifferenceRegressor(nn.Module):
 
     def __init__(self, descriptor_input_dim, aux_input_dim, aux_embedding_dim):
 
+        super().__init__()
         self.descriptor_input_dim = descriptor_input_dim
 
         self.diff_layer = nn.Sequential(
             nn.Linear(descriptor_input_dim, 256),
             nn.LayerNorm(256),
             nn.SiLU(),
-            nn.Linear(256, 128),
-            nn.LayerNorm(128),
-            nn.SiLU(),
-            nn.Linear(128, aux_embedding_dim),
+            nn.Dropout(0.2),
+            nn.Linear(256, 64),
+            #nn.LayerNorm(256),
+            #nn.SiLU(),
+            #nn.Dropout(0.2),
+            #nn.Linear(256, 256),
+            #nn.LayerNorm(256),
+            #nn.SiLU(),
+            #nn.Dropout(0.2),
+            #nn.Linear(256, 128),
+            #nn.LayerNorm(128),
+            #nn.SiLU(),
+            #nn.Dropout(0.2),
+            #nn.Linear(128, aux_embedding_dim),
         )
 
         self.experimental_cond_gate = nn.Sequential(
-            nn.Linear(aux_input_dim, aux_embedding_dim), nn.SiLU(), nn.Linear(aux_embedding_dim, aux_embedding_dim)
+            nn.Linear(aux_input_dim, aux_embedding_dim),
+            nn.LayerNorm(aux_embedding_dim),
+            nn.SiLU(),
+            nn.Linear(aux_embedding_dim, aux_embedding_dim),
+            nn.Sigmoid()
         )
 
-        self.output_mlp = nn.Sequential(nn.LayerNorm(aux_embedding_dim),nn.Linear(aux_embedding_dim,1))
+        self.output_mlp = nn.Sequential(
+            nn.Linear(aux_embedding_dim, aux_embedding_dim),
+            nn.LayerNorm(aux_embedding_dim),
+            nn.SiLU(),
+            nn.Linear(aux_embedding_dim, 1),
+        )
 
     def forward(self, descriptors, auxillary_data):
 
@@ -39,7 +59,6 @@ class MolecularDifferenceRegressor(nn.Module):
 
         auxillary_data_per_pair = auxillary_data[:N, :]
         experimental_cond = self.experimental_cond_gate(auxillary_data_per_pair)
-
 
         gated_embedding = embedded_difference * experimental_cond
 

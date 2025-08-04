@@ -139,9 +139,9 @@ class ModelBuilder:
         return structure_encoding
 
     def build_atomic_preprocessor(
-        self, mean_atomic_embedding, std_atomic_embedding
-    ) -> AtomicDescriptorPreprocessor:
-        preprocess_config = self.architecture_config.embedding_preprocess_config
+        self,embedding_preprocess_config, mean_atomic_embedding= None, std_atomic_embedding = None
+    ,) -> AtomicDescriptorPreprocessor:
+        preprocess_config = embedding_preprocess_config
 
         atomic_preprocessor = AtomicDescriptorPreprocessor(preprocess_config=preprocess_config)
 
@@ -149,7 +149,7 @@ class ModelBuilder:
         if (mean_atomic_embedding is not None) and (std_atomic_embedding is not None):
 
             _, invariant_irreps = get_invariant_indices(
-                self.architecture_config.embedding_preprocess_config.input_irreps
+                embedding_preprocess_config.input_irreps
             )
             invariant_dim = invariant_irreps.dim
 
@@ -172,7 +172,7 @@ class ModelBuilder:
     ) -> Preprocessor:
 
         atomic_preprocessor = self.build_atomic_preprocessor(
-            mean_atomic_embedding, std_atomic_embedding
+            self.architecture_config.embedding_preprocess_config, mean_atomic_embedding, std_atomic_embedding
         )
 
         if self.architecture_config.positional_encoding_config is not None:

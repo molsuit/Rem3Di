@@ -285,3 +285,17 @@ class DataNormalizationModule(nn.Module):
         self.task_configs = tasks
 
         return stats
+
+    def get_pairwise_differences(self,dataset):
+
+        targets  = torch.log(dataset.regression_targets.reshape(-1,2))
+        diffs = targets[:,0] - targets[:,1]
+
+        mean_diff_log = diffs.mean()
+        std_diff_logs = diffs.std()
+
+        print(mean_diff_log)
+        print(std_diff_logs)
+        
+
+        return mean_diff_log, std_diff_logs

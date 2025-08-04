@@ -46,6 +46,7 @@ from threedscriptors.evaluation.evaluation_utils import (
     clip_and_log_transform,
     compute_class_std,
     evaluate_molecular_descriptor_on_dataset,
+    evaluate_molecule_difference_on_dataset,
     evaluate_regression_model_on_dataset,
 )
 from threedscriptors.evaluation.regression_analysis import (
@@ -57,6 +58,9 @@ from threedscriptors.evaluation.similarity_screening import (
     SimilarityScreening,
     plot_reference_vs_model_classification_metric,
     plot_roc,
+)
+from threedscriptors.model.molecule_difference_regressor import (
+    MolecularDifferenceRegressor,
 )
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
 
@@ -104,12 +108,12 @@ class DescriptorClusteringTask(BaseEvalTask):
         if self.dataset.regression_targets is not None:
             for i in range(self.dataset.regression_targets.shape[1]):
 
-                mask = self.dataset.regression_masks[:,i].bool()
+                mask = self.dataset.regression_masks[:, i].bool()
 
                 task_name = self.dataset.dataset_config.tasks[i].task_name
 
                 fig_with_regression_coloring = plot_reduced_dimension(
-                    self.reduced_dimensions[mask,:],
+                    self.reduced_dimensions[mask, :],
                     color=self.dataset.regression_targets[mask, i],
                     suptitle=f"Molecular Descriptor Clustering color = {task_name} Labels",
                 )
@@ -118,16 +122,15 @@ class DescriptorClusteringTask(BaseEvalTask):
                     fig_with_regression_coloring
                 )
 
-
                 fig_with_regression_coloring_preds = plot_reduced_dimension(
-                    self.reduced_dimensions[mask,:],
+                    self.reduced_dimensions[mask, :],
                     color=self.dataset.regression_targets[mask, i],
                     suptitle=f"Molecular Descriptor Clustering color = {task_name} Predictions",
                 )
 
-
-                figs[f"Descriptor_UMAP_with_regression_predictions_{task_name}"] = fig_with_regression_coloring_preds
-
+                figs[f"Descriptor_UMAP_with_regression_predictions_{task_name}"] = (
+                    fig_with_regression_coloring_preds
+                )
 
         if self.dataset.molecules is not None:
             molecular_weights = get_molecular_weight(self.dataset.molecules)
@@ -250,13 +253,16 @@ class RegressionHeadPCATask(BaseEvalTask):
 
 
 class RegressionTestTask(BaseEvalTask):
-    def __init__(self, dataset: RegressionDataset | RegressionWithAuxDataset, polaris_eval_style = False):
+    def __init__(
+        self,
+        dataset: RegressionDataset | RegressionWithAuxDataset,
+        polaris_eval_style=False,
+    ):
         super().__init__()
 
         self.dataset = dataset
         self.labels = self.dataset.regression_targets
         self.polaris_eval_style = polaris_eval_style
-
 
     def run(self, model):
         assert set([tc.task_name for tc in self.dataset.dataset_config.tasks]).issubset(
@@ -266,10 +272,11 @@ class RegressionTestTask(BaseEvalTask):
 
         self.predictions = evaluate_regression_model_on_dataset(model, self.dataset)
 
-        self.standardized_predictions = evaluate_regression_model_on_dataset(model, self.dataset, undo_standardization= True)
+        self.standardized_predictions = evaluate_regression_model_on_dataset(
+            model, self.dataset, undo_standardization=True
+        )
 
         self.calculate_model_loss()
-
 
     def plot(self):
         figs = {}
@@ -277,7 +284,6 @@ class RegressionTestTask(BaseEvalTask):
         figs.update(self._plot_prediction_vs_reference())
 
         self.figs = figs
-
 
     def get_labeled_task_data(self, task_idx):
 
@@ -297,7 +303,6 @@ class RegressionTestTask(BaseEvalTask):
 
         return mol_ids_with_labels, predictions_with_labels, labels
 
-
     def _plot_prediction_vs_reference(self) -> dict[str : plt.Figure]:
         fig, ax = plt.subplots()
 
@@ -310,7 +315,6 @@ class RegressionTestTask(BaseEvalTask):
 
         plt.xlabel("Predictions")
         plt.ylabel("Reference Labels")
-
 
         ax.legend(
             # x=1.02 means just to the right of the axes
@@ -327,11 +331,12 @@ class RegressionTestTask(BaseEvalTask):
         # Get the model predictions for all tasks.
 
         if self.dataset.dataset_config.N_conformers > 1:
-            self.standardized_predictions = average_over_conformers(self.dataset.structure_ids, self.standardized_predictions)
+            self.standardized_predictions = average_over_conformers(
+                self.dataset.structure_ids, self.standardized_predictions
+            )
             # Average out the mean prediction around conformers
 
         preds = self.standardized_predictions
-
 
         targets = self.dataset.regression_targets
         masks = self.dataset.regression_masks.bool()
@@ -341,7 +346,6 @@ class RegressionTestTask(BaseEvalTask):
         for task_idx, task in enumerate(self.dataset.dataset_config.tasks):
 
             sliced_preds = preds[masks[:, task_idx].squeeze(), task_idx]
-
 
             sliced_targets = targets[masks[:, task_idx].squeeze(), task_idx]
 
@@ -545,6 +549,45 @@ class SimilarityScreeningTask(BaseEvalTask):
         self.figs = figs
 
 
+class ChiralDifferencePredictionTask(BaseEvalTask):
+
+    def __init__(self, chiral_dataset: RegressionWithAuxDataset):
+        super().__init__()
+
+        self.dataset = chiral_dataset
+
+    def run(
+        self,
+        model: MultiTaskRegressionModel,
+        difference_prediction_model: MolecularDifferenceRegressor,mean, std
+    ):
+
+        pred_differences = evaluate_molecule_difference_on_dataset(model,self.dataset, difference_prediction_model)
+
+        pred_differences = (pred_differences * std) + mean
+        print(pred_differences[:10])
+        
+        
+        N_pairs = len(self.dataset)
+        
+        targets = self.dataset.regression_targets.reshape(-1,2)
+        labeled_differences = torch.log(targets[:,0])- torch.log(targets[:,1])
+
+        print(labeled_differences[:10])
+
+        
+        model_loss = (labeled_differences-pred_differences).abs().mean()
+
+
+        mean_loss = (labeled_differences).abs().mean()
+
+        print(f"Mean Predicted Loss {mean_loss}, Model Loss = {model_loss}")
+
+
+
+    def plot():
+        pass
+
 class ChiralPredictionTask(BaseEvalTask):
 
     def __init__(self, chiral_dataset: RegressionWithAuxDataset):
@@ -556,32 +599,34 @@ class ChiralPredictionTask(BaseEvalTask):
 
         assert "cmrt" in model.multitask_heads.task_heads.keys()
 
-        self.predictions = evaluate_regression_model_on_dataset(model, self.dataset, undo_standardization=True)
+        self.predictions = evaluate_regression_model_on_dataset(
+            model, self.dataset, undo_standardization=True
+        )
 
         # predictions_per_conf_batch = self.reshape_by_enantiomers()
         self.calculate_mean_prediction_loss()
-
 
     def reshape_by_enantiomers(self):
         # conf batch = 2 enationmers of the "same" molecule.
         # Slice only the predictions for which the full conformers are available
 
         prediction_by_enantiomer_batch = self.predictions.view(
-            -1, 2*self.dataset.dataset_config.N_conformers
+            -1, 2 * self.dataset.dataset_config.N_conformers
         )
-
 
         targets_by_enantiomer_batch = self.dataset.regression_targets.view(
-            -1, 2*self.dataset.dataset_config.N_conformers
+            -1, 2 * self.dataset.dataset_config.N_conformers
         )
 
-
-        molecule_ids = torch.Tensor([sid.molecule_id for sid in self.dataset.structure_ids]).reshape(-1,2* self.dataset.dataset_config.N_conformers)
+        molecule_ids = torch.Tensor(
+            [sid.molecule_id for sid in self.dataset.structure_ids]
+        ).reshape(-1, 2 * self.dataset.dataset_config.N_conformers)
 
         row_uniform = (molecule_ids == molecule_ids[:, [0]]).all(dim=1)
 
-        assert row_uniform.all().item(), "Found a row with multiple distinct molecule_ids"
-
+        assert (
+            row_uniform.all().item()
+        ), "Found a row with multiple distinct molecule_ids"
 
         return prediction_by_enantiomer_batch, targets_by_enantiomer_batch
 
@@ -595,9 +640,6 @@ class ChiralPredictionTask(BaseEvalTask):
             dim=1, keepdim=True
         ).repeat(1, regression_targets_by_enantiomer_batch.size(1))
 
-
-
-
         return (
             prediction_by_enantiomer_batch,
             regression_targets_by_enantiomer_batch,
@@ -610,24 +652,23 @@ class ChiralPredictionTask(BaseEvalTask):
             self.get_enantiomer_predictions_and_mean()
         )
 
-        print(enantiomer_batched_predictions[:10,:])
-        print(enantiomer_batched_targets[:10,:])
-        print(mean_predictions[:10,:])
+        print(enantiomer_batched_predictions[:10, :])
+        print(enantiomer_batched_targets[:10, :])
+        print(mean_predictions[:10, :])
 
         mean_predictions = mean_predictions.view(-1, 1)
         enantiomer_targets = enantiomer_batched_targets.view(-1, 1)
         model_predictions = enantiomer_batched_predictions.view(-1, 1)
 
-
-        rmse_mean_prediction = ((mean_predictions - enantiomer_targets) ** 2).mean().sqrt()
-        rmse_model_prediction = ((model_predictions - enantiomer_targets) ** 2).mean().sqrt()
-
+        rmse_mean_prediction = (
+            ((mean_predictions - enantiomer_targets) ** 2).mean().sqrt()
+        )
+        rmse_model_prediction = (
+            ((model_predictions - enantiomer_targets) ** 2).mean().sqrt()
+        )
 
         print(f"Mean Prediction of Enantiomer RMSE {rmse_mean_prediction} ")
         print(f"MOdel Prediction of Enantiomer RMSE {rmse_model_prediction}")
-
-
-
 
     def calculate_unstandardized_predictions(self):
         # Remove the log normalization and compare to the
@@ -808,9 +849,6 @@ class ChiralPredictionTask(BaseEvalTask):
         return fig
 
 
-
-
-
 class DescriptorSimilarityAnalysisTask(BaseEvalTask):
     def __init__(self, dataset: BaseDataset):
         super().__init__()
@@ -871,8 +909,7 @@ class EvalPipelineRunner:
     def visualize(self, output_directory: str, model_name: str):
         figs: dict[str : plt.Figure] = {}  # taskname : Figure
 
-
-        os.makedirs(output_directory, exist_ok= True)
+        os.makedirs(output_directory, exist_ok=True)
         for task in self.tasks:
             task.plot()
             figs.update(task.figs)

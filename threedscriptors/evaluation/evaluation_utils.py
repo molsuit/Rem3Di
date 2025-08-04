@@ -22,6 +22,9 @@ from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
 from threedscriptors.model.remedi_model import REM3DIModel
+from threedscriptors.model.molecule_difference_regressor import (
+    MolecularDifferenceRegressor,
+)
 
 
 def evaluate_regression_model_on_dataset(
@@ -53,7 +56,7 @@ def evaluate_regression_model_on_dataset(
         drop_last=False,
         collate_fn=collate_fn,
     )
-    
+
     regression_predictions = torch.zeros_like(dataset.regression_targets)
 
     with torch.no_grad():
@@ -73,9 +76,10 @@ def evaluate_regression_model_on_dataset(
 
 
 def evaluate_molecular_descriptor_on_dataset(
-    model: REM3DIModel, dataset: AtomicEmbeddingDataset, device="cuda"
+    model: REM3DIModel, dataset, device="cuda"
 ):
     batch_size = min(64, len(dataset))
+
     dataloader: Iterable[Sample] = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -96,12 +100,53 @@ def evaluate_molecular_descriptor_on_dataset(
             samples.to_(device)
 
             model_output = model(samples)
-
             descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
                 model_output.molecular_descriptor
             )
 
     return descriptors
+
+
+def evaluate_molecule_difference_on_dataset(
+    model: REM3DIModel,
+    dataset,
+    molecular_difference_regressor: MolecularDifferenceRegressor,
+    device="cuda",
+):
+    batch_size = min(64, len(dataset))
+
+    collate_fn = paired_sample_collate_fn
+
+    dataloader: Iterable[Sample] = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=False,
+        collate_fn=collate_fn,
+    )
+
+    model.to(device)
+    model.eval()
+    molecular_difference_regressor.eval()
+
+    differences = torch.zeros(size=(len(dataset), 1))
+    print(differences.shape)
+
+    
+    with torch.no_grad():
+        for batch_idx, samples in enumerate(dataloader):
+
+            samples.to_(device)
+
+            descriptors = model(samples).molecular_descriptor
+
+            differences[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
+                molecular_difference_regressor(
+                    descriptors, samples.auxillary_data["cmrt"]
+                )
+            )
+
+    return differences
 
 
 def evaluate_atomic_descriptors(

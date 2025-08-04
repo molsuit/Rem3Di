@@ -53,6 +53,21 @@ def chiral_difference_loss(predictions, labels, regression_mask):
     return real_loss
 
 
+
+
+
+
+
+def direct_difference_loss(diff_predicted, diff_labels):
+
+
+
+    loss = (diff_predicted - diff_labels).pow(2).mean()
+
+    return loss
+
+
+
 class BaseMultitaskLoss(nn.Module):
 
     def __init__(self):
