@@ -36,12 +36,23 @@ class REM3DIModel(nn.Module):
 
         preprocessed_sample = self.preprocessor(sample)
         molecular_descriptor = self.encoder(preprocessed_sample)
+
         return ModelOutput(molecular_descriptor=molecular_descriptor)
 
 
 
-    def get_remedi_descriptor(self, atoms : Atoms | list[Atoms]):
+    def get_remedi_descriptor(self, atoms : Atoms):
 
         assert self.mace_calculator is not None
-            #    if isinstance(atoms, List):
-    #        self.
+
+        descriptors = self.mace_calculator.get_descriptors(atoms, invariants_only=False)
+
+        positions = atoms.get_positions()
+
+        padding_mask = torch.zeros((1,positions.shape[0]))
+
+        sample = Sample(embeddings = descriptors, padding_mask= padding_mask, atomic_positions=positions)
+
+        print(sample)
+
+        return self(sample).molecular_descriptor
