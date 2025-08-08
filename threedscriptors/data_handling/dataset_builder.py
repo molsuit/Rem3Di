@@ -176,8 +176,6 @@ class DatasetBuilder:
 
         # Somewhere there should be an assert that odd features change sign...
 
-
-
         with tqdm(total=target_num_pairs) as pbar:
             while molecule_id < target_num_pairs:
 
@@ -214,7 +212,9 @@ class DatasetBuilder:
                             max_steps=dataset_config.BFGS_max_steps,
                         )
 
-                    embedded_molecules_1 = get_mirrored_molecules(embedded_molecules_0, can_smi_1)
+                    embedded_molecules_1 = get_mirrored_molecules(
+                        embedded_molecules_0, can_smi_1
+                    )
 
                 except ValueError as ve:
                     tqdm.write(
@@ -222,7 +222,6 @@ class DatasetBuilder:
                     )
                     smiles_counter += 2
                     continue
-
 
                 for conf_id, mol in enumerate(embedded_molecules_0):
                     molecules.append(mol)
@@ -240,7 +239,6 @@ class DatasetBuilder:
                     )
                     running_structure_id += 1
 
-
                 # RIGHT enantiomer
                 for conf_id, mol in enumerate(embedded_molecules_1):
                     molecules.append(mol)
@@ -257,7 +255,6 @@ class DatasetBuilder:
                         )
                     )
                     running_structure_id += 1
-
 
                 # Book-keeping
                 smiles_counter += 2
@@ -319,8 +316,6 @@ class DatasetBuilder:
         self.dataset.structure_ids = [
             self.dataset.structure_ids[i] for i in sucessfull_relaxations
         ]
-
-
 
     def calculate_atomic_embeddings(self, calculator: MACECalculator):
 
@@ -406,9 +401,10 @@ class DatasetBuilder:
         self.dataset.molecular_descriptors = descriptor_calculator(self.dataset)
 
     def add_similarity_screening_data(self, class_label_data, activity_data):
-        assert self.dataset.mol_ids is not None
-        self.dataset.active_decoy_labels = activity_data[self.dataset.mol_ids]
-        self.dataset.target_class_labels = class_label_data[self.dataset.mol_ids]
+
+        structure_ids = [sid.smiles_id for sid in self.dataset.structure_ids]
+        self.dataset.active_decoy_labels = activity_data[structure_ids]
+        self.dataset.target_class_labels = class_label_data[structure_ids]
 
     def add_auxillary_data(self, auxillary_data: dict[str : np.ndarray]):
         expanded_aux_dict = {}
@@ -468,27 +464,24 @@ class DatasetBuilder:
 
         self.dataset.random_walk_transition_matrix = torch.stack(transition_mats, dim=0)
 
-
-
-
     def sanitize_log_scaled_regression_targets(self):
 
-        x   = torch.as_tensor(self.dataset.regression_targets, dtype=torch.float32)
+        x = torch.as_tensor(self.dataset.regression_targets, dtype=torch.float32)
 
-        msk = torch.as_tensor(self.dataset.regression_masks,   dtype=torch.float32)  # [N, T]
+        msk = torch.as_tensor(
+            self.dataset.regression_masks, dtype=torch.float32
+        )  # [N, T]
         valid = msk > 0
 
-        tasks   = self.dataset.dataset_config.tasks
+        tasks = self.dataset.dataset_config.tasks
         scaling = [t.scaling or LabelScalingType.Z for t in tasks]
         log_mask = torch.tensor(
-            [s == LabelScalingType.LOG_Z for s in scaling],
-            dtype=torch.bool
+            [s == LabelScalingType.LOG_Z for s in scaling], dtype=torch.bool
         )
-
 
         if log_mask.any():
             lm = log_mask.unsqueeze(0)
-            bad = (valid & lm & (x <= 0))
+            bad = valid & lm & (x <= 0)
             print(f"Masked {bad.sum()} negative lables for log masking")
             msk[bad] = 0
 

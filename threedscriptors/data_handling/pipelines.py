@@ -131,6 +131,8 @@ def similarity_screening_pipeline(
         RelaxStage(dataset_config.embedding_model_config.mace_calc),
         AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
         SimilarityLabelingStage(target_class_labels, active_decoy_labels),
+        AtomicPositionsStage(),
+        AddRandomWalkTransitionProbabilityMatrixStage(),
     ]
 
     return PipelineOrchestrator(stages)

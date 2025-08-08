@@ -102,12 +102,6 @@ class PairOuterProdUpdate(nn.Module):
 
         self.p_geo_filter = RadialFilter(d_geo, d_pair)
 
-        self.pair_ffn = nn.Sequential(
-                nn.Linear(d_pair, d_pair),
-                nn.SiLU(),                     # non-linearity
-                nn.Linear(d_pair, d_pair)
-            )
-
         self.layer_norm = nn.LayerNorm(d_pair) # Unused
 
 

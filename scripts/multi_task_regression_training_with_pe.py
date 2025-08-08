@@ -91,8 +91,8 @@ training_config = TrainingConfig(
     split_config=split_config,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_10conf",
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_admet_10conf",
+    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_training",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/qm9_training",
     normalized_targets=True,
 )
 

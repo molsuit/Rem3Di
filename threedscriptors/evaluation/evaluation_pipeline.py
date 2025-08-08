@@ -94,10 +94,10 @@ class DescriptorClusteringTask(BaseEvalTask):
     def run(self, model: MultiTaskRegressionModel):
         # evaluate model to get descriptors
 
-        descriptors = evaluate_molecular_descriptor_on_dataset(model, self.dataset)
+        self.descriptors = evaluate_molecular_descriptor_on_dataset(model, self.dataset)
 
         self.reduced_dimensions = (
-            self.clustering_calculator.get_dimensionality_reduction(descriptors, k=3)
+            self.clustering_calculator.get_dimensionality_reduction(self.descriptors, k=3)
         )
 
     def plot(self):

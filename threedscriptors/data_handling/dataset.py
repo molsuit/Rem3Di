@@ -385,6 +385,7 @@ class SimilarityScreeningMixin:
 
         sample.active_decoy_labels = self.active_decoy_labels[idx]
         sample.target_class_labels = self.target_class_labels[idx]
+
         return sample
 
 
@@ -448,10 +449,9 @@ class RegressionWithAuxDataset(
 
 
 class SimilarityScreeningDataset(
-    SimilarityScreeningMixin, MolecularDescriptorMixin, BaseDataset
+    SimilarityScreeningMixin, AtomicPositionMixin, AtomicEmbeddingMixin, BaseDataset
 ):
     pass
-
 
 
 class RegressionDatasetwithRandomWalks(RandomWalkMixin,RegressionTargetMixin, AtomicEmbeddingMixin, BaseDataset):

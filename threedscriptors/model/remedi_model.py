@@ -55,4 +55,4 @@ class REM3DIModel(nn.Module):
 
         print(sample)
 
-        return self(sample).molecular_descriptor
+        return self.forward(sample).molecular_descriptor

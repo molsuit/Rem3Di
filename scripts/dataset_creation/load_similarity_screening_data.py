@@ -1,5 +1,5 @@
 from mace.calculators import MACECalculator
-
+from threedscriptors.data_handling.dataset import SimilarityScreeningDataset
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     DatasetTypes,
@@ -12,13 +12,17 @@ from threedscriptors.data_handling.source_preprocessing.similarity_screening_pre
     load_similarity_screening_data,
 )
 
-directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/virtual_screening/raw"
+directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/virtual_screening"
 
 N_classes = 1
 
 smiles, class_labels, activity_labels, target_class_dict = (
     load_similarity_screening_data(dir_path=directory, N_target_classes=N_classes)
 )
+
+
+print(set(activity_labels))
+print(target_class_dict)
 
 iterator = ListSmilesIterator(smiles)
 
@@ -39,7 +43,7 @@ print(len(smiles))
 
 dataset_config = DatasetConfig(
     N_molecules=None,
-    dataset_type=DatasetTypes.REGRESSION,
+    dataset_type=SimilarityScreeningDataset,
     BFGS_tol=0.5,
     BFGS_max_steps=100,
     N_conformers=1,

@@ -16,7 +16,7 @@ class TrainingMetadata:
 
     @classmethod
     def from_dir(cls, training_data_dir: Path):
-        with open(f"{training_data_dir}/training_losses.yaml") as f:
+        with open(f"{training_data_dir}/train/training_losses.yaml") as f:
             training_loss_data = yaml.safe_load(f)
 
         dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, f"{training_data_dir}/dataset_config.yaml")
@@ -30,7 +30,7 @@ class TrainingMetadata:
 
         epochs = []
 
-        for epochal_data in self.training_loss_data:
+        for epochal_data in self.loss_data:
             epochs.append(epochal_data["epoch"])
             validation_loss.append(epochal_data["validation_loss"])
 

@@ -12,6 +12,7 @@ from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 
 if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
+
 from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 
 
@@ -279,3 +280,4 @@ def rmsd(A, B):
     # rotated A and RMSD
     A_rot = A_cent @ U
     return np.sqrt(((A_rot - B_cent)**2).sum() / A.shape[0])
+

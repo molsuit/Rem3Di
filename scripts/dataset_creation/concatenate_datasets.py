@@ -16,9 +16,6 @@ def reload_fn(directory):
     return PipelineOrchestrator(stages)
 
 
-
-
-
 admet_antiviral = reload_fn(
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_valid",
 ).build()

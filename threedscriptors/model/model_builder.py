@@ -159,7 +159,7 @@ class ModelBuilder:
 
 
         if preprocess_config.reload_state_dict is not None:
-
+            print(preprocess_config.reload_state_dict)
             atomic_preprocessor.load_state_dict(
                 torch.load(preprocess_config.reload_state_dict)
             )
