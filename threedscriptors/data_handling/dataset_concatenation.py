@@ -1,11 +1,16 @@
 from collections.abc import Sequence
+from typing import List
+
+from threedscriptors.data_handling.mol_id import StructureID
 
 import torch
 
-from threedscriptors.configuration.data_config import (
-    DatasetConfig,DatasetSplit
+from threedscriptors.configuration.data_config import DatasetConfig, DatasetSplit
+from threedscriptors.data_handling.dataset import (
+    AtomicEmbeddingWithPositionsDataset,
+    BaseDataset,
 )
-from threedscriptors.data_handling.dataset import BaseDataset,AtomicEmbeddingWithPositionsDataset
+from threedscriptors.data_handling.dataset_builder import DatasetBuilder
 
 
 class DatasetConcatenation:
@@ -15,15 +20,15 @@ class DatasetConcatenation:
 
         new_dataset_config = self.get_new_dataset_config()
 
-
-        self.new_dataset = new_dataset_config.dataset_type.value(dataset_config=new_dataset_config)
+        self.new_dataset = new_dataset_config.dataset_type.value(
+            dataset_config=new_dataset_config
+        )
 
     def get_new_dataset_config(self):
         embedding_models = set(
             [d.dataset_config.embedding_model_config.model_name for d in self.datasets]
         )
         assert len(embedding_models) == 1
-
 
         heavy_atoms_only = [d.dataset_config.only_heavy_atoms for d in self.datasets]
 
@@ -46,9 +51,11 @@ class DatasetConcatenation:
                 0
             ].dataset_config.embedding_model_config,
             tasks=[task for d in self.datasets for task in d.dataset_config.tasks],
-            dataset_name="+".join([d.dataset_config.dataset_name for d in self.datasets]),
-            dataset_split= dataset_split,
-            only_heavy_atoms= heavy_atoms_only[0]
+            dataset_name="+".join(
+                [d.dataset_config.dataset_name for d in self.datasets]
+            ),
+            dataset_split=dataset_split,
+            only_heavy_atoms=heavy_atoms_only[0],
         )
 
         task_names = [task.task_name for task in new_dataset_config.tasks]
@@ -61,25 +68,46 @@ class DatasetConcatenation:
     def concatenate(self):
         self.concatenate_molecules()
         self.concatenate_atomic_embeddings()
-        #self.concatenate_regression_targets()
-        #self.concatenate_auxillary_data()
-        #self.concatenate_structural_encodings()
-
+        self.concatenate_regression_targets()
+        # self.concatenate_auxillary_data()
+        # self.concatenate_structural_encodings()
 
         return self.new_dataset
 
     def concatenate_molecules(self):
         # Adds mol_ids and smiles
-        mol_ids = [d.mol_ids for d in self.datasets]
-        self.new_dataset.mol_ids = self.recanonicalize_mol_ids(mol_ids)
+
+        structure_id_start = 0
+        molecule_id_start = 0
+
+        new_structure_ids : list[StructureID] = []
+
+        for d in self.datasets:
+
+            dataset_builder = DatasetBuilder(d)
+
+            new_structure_ids.extend(
+                dataset_builder.canonicalize_structure_ids(
+                    structure_id_start, molecule_id_start
+                )
+            )
+            structure_id_start = len(new_structure_ids)
+            molecule_id_start = new_structure_ids[-1].molecule_id + 1
+
+
+        self.new_dataset.structure_ids = new_structure_ids
 
         if all([d.smiles_list is not None for d in self.datasets]):
             new_smiles_list = [smi for d in self.datasets for smi in d.smiles_list]
             self.new_dataset.smiles_list = new_smiles_list
+        else:
+            raise ValueError
 
         if all([d.molecules is not None for d in self.datasets]):
             new_molecules = [mol for d in self.datasets for mol in d.molecules]
             self.new_dataset.molecules = new_molecules
+        else: 
+            raise ValueError
 
     def recanonicalize_mol_ids(self, mol_ids=list[list[int]]):
         mol_ids_sets = [set(ids) for ids in mol_ids]
@@ -120,17 +148,12 @@ class DatasetConcatenation:
         new_embeddings = torch.cat([d.embeddings for d in self.datasets])
         new_padding_masks = torch.cat([d.padding_mask for d in self.datasets])
 
-
         new_pos = [d.atomic_positions for d in self.datasets]
         new_atomic_positions = torch.cat(new_pos)
-
-
-
 
         self.new_dataset.embeddings = new_embeddings
         self.new_dataset.padding_mask = new_padding_masks
         self.new_dataset.atomic_positions = new_atomic_positions
-
 
     def concatenate_regression_targets(self):
         # Creates the Block matrices of regression targets, and regression masks.
@@ -142,7 +165,6 @@ class DatasetConcatenation:
         new_regression_masks = torch.block_diag(*collected_regression_masks)
         self.new_dataset.regression_targets = new_regression_targets
         self.new_dataset.regression_masks = new_regression_masks
-
 
     def concatenate_auxillary_data(self):
         auxillary_data_keys = {}
@@ -176,7 +198,10 @@ class DatasetConcatenation:
 
     def concatenate_structural_encodings(self):
 
-        collected_transition_matrices = [d.random_walk_transition_matrix for d in self.datasets]
+        collected_transition_matrices = [
+            d.random_walk_transition_matrix for d in self.datasets
+        ]
 
-        self.new_dataset.random_walk_transition_matrix = torch.cat(collected_transition_matrices)
-
+        self.new_dataset.random_walk_transition_matrix = torch.cat(
+            collected_transition_matrices
+        )

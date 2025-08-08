@@ -202,7 +202,7 @@ class ModelBuilder:
 
         if encoder_config.reload_state_dict:
 
-            encoder.load_state_dict(torch.load(encoder_config.reload_state_dict))
+            encoder.load_state_dict(torch.load(encoder_config.reload_state_dict),strict=False)
 
         return encoder
 

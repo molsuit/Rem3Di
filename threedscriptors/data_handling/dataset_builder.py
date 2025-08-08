@@ -130,24 +130,31 @@ class DatasetBuilder:
         self.dataset.structure_ids = index_list
         self.dataset.N_structures = len(index_list)
 
-    def canonicalize_structure_ids(self):
+    def canonicalize_structure_ids(
+        self, structure_id_start: int = 0, molecule_id_start: int = 0
+    ):
 
         new_structure_ids = []
 
-        for new_unique_s_id, old_id in enumerate(self.dataset.structure_ids):
+        # TODO: It would probably make sense to ensure that conformer id and molecule ids form contigous indices
+
+        for new_unique_s_id, old_id in enumerate(
+            self.dataset.structure_ids, start=structure_id_start
+        ):
 
             new_structure_ids.append(
                 StructureID(
                     structure_id=new_unique_s_id,
                     smiles_id=old_id.smiles_id,
                     canonical_smiles=old_id.canonical_smiles,
-                    molecule_id=old_id.molecule_id,
+                    molecule_id=old_id.molecule_id + molecule_id_start,
                     enantiomer_id=old_id.enantiomer_id,
                     conformer_id=old_id.conformer_id,
                 )
             )
 
         self.dataset.structure_ids = new_structure_ids
+        return new_structure_ids
 
     def load_pairwise_chiral_structures_from_smiles(self):
         dataset_config = self.dataset.dataset_config
@@ -486,3 +493,59 @@ class DatasetBuilder:
             msk[bad] = 0
 
         self.dataset.regression_masks = msk
+
+    def drop_number_of_conformers(self, new_N_conformers):
+
+        self.canonicalize_structure_ids()
+
+        # Find all molecules which have a conformer id >= new_N_conformers
+        strcuture_ids_for_removal = [
+            sid.structure_id
+            for sid in self.dataset.structure_ids
+            if sid.conformer_id > new_N_conformers
+        ]
+
+        self.remove_molecules_by_structure_id(strcuture_ids_for_removal)
+
+    def drop_large_molecules(self, new_max_atoms: int):
+
+        self.canonicalize_structure_ids()
+
+        structure_ids_for_removal = [
+            i
+            for i, mol in enumerate(self.dataset.molecules)
+            if len(mol) > new_max_atoms
+        ]
+
+        self.remove_molecules_by_structure_id(structure_ids_for_removal)
+
+    def remove_molecules_by_structure_id(self, structure_ids_to_remove: list[int]):
+
+        mask = torch.ones(self.dataset.N_structures, dtype=torch.bool)
+        mask[structure_ids_to_remove] = False
+
+        if self.dataset.embeddings is not None:
+            self.dataset.embeddings = self.dataset.embeddings[mask]
+
+        if self.dataset.padding_mask is not None:
+            self.dataset.padding_mask = self.dataset.padding_mask[mask]
+
+        if self.dataset.regression_targets is not None:
+            self.dataset.regression_targets = self.dataset.regression_targets[mask]
+
+        if self.dataset.regression_masks is not None:
+            self.dataset.regression_masks = self.dataset.regression_masks[mask]
+
+        if self.dataset.atomic_positions is not None:
+            self.dataset.atomic_positions = self.dataset.atomic_positions[mask]
+
+        self.dataset.molecules = [
+            m for i, m in enumerate(self.dataset.molecules) if mask[i]
+        ]
+        self.dataset.structure_ids = [
+            s for i, s in enumerate(self.dataset.structure_ids) if mask[i]
+        ]
+
+        self.dataset.N_structures = len(self.dataset.structure_ids)
+
+        self.canonicalize_structure_ids()

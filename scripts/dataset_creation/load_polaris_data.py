@@ -44,11 +44,11 @@ load_dataset = "antiviral_admet"
 smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
     dataset_registry[load_dataset],
     smiles_column=smiles_column[load_dataset],
-    non_task_columns=non_task_columns[load_dataset],datasplit="Test"
+    non_task_columns=non_task_columns[load_dataset],datasplit="Train"
 )
 
 
-dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}_test"
+dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}"
 
 MACE_PATH = (
     "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"

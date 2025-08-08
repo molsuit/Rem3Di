@@ -216,6 +216,15 @@ class SanitizeLogLabels(BuildStage):
         return builder
 
 
+class ReduceMoleculeSize(BuildStage):
+
+    def __init__(self, max_atoms):
+        self.max_atoms = max_atoms
+
+    def _run(self, builder : DatasetBuilder):
+
+        builder.drop_large_molecules(self.max_atoms)
+        return builder
 
 
 class PipelineOrchestrator:

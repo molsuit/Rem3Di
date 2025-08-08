@@ -2,6 +2,7 @@ from threedscriptors.data_handling.data_build_pipeline import (
     AtomicPositionsStage,
     PipelineOrchestrator,
     ReloadFromDiskStage,
+    ReduceMoleculeSize
 )
 from threedscriptors.data_handling.dataset_concatenation import DatasetConcatenation
 from threedscriptors.data_handling.dataset_io import (
@@ -9,20 +10,25 @@ from threedscriptors.data_handling.dataset_io import (
 )
 
 
+
 def reload_fn(directory):
     stages = [
         ReloadFromDiskStage(directory),
-        AtomicPositionsStage()]
+        AtomicPositionsStage(),
+        ReduceMoleculeSize(max_atoms = 100)]
     return PipelineOrchestrator(stages)
 
 
+data_dir = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data"
+
+
 admet_antiviral = reload_fn(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet_valid",
+    f"{data_dir}/antiviral_admet_full",
 ).build()
 
+antiviral_potency = reload_fn(f"{data_dir}/antiviral_potency_full").build()
 
-
-antiviral_potency = reload_fn("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_valid").build()
+adme_fang = reload_fn(f"{data_dir}/adme_fang_full").build()
 
 
 concatenation = DatasetConcatenation(datasets=[admet_antiviral, antiviral_potency])

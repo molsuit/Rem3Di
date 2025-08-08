@@ -923,6 +923,8 @@ class EvalPipelineRunner:
 
     def write_results(self, output_directory, model_name):
 
+
+        os.makedirs(output_directory,exist_ok=True)
         result_dict = {}
 
         for task in self.tasks:
