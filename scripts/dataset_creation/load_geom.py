@@ -1,14 +1,14 @@
 from mace.calculators import MACECalculator
 
 from threedscriptors.configuration.data_config import (
-   DatasetConfig,
-   MaceCalculatorConfig,
+    DatasetConfig,
+    MaceCalculatorConfig,
 )
 from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset
 from threedscriptors.data_handling.dataset_io import store_data_to_disk
 from threedscriptors.data_handling.pipelines import pretraining_pipeline_from_structures
 from threedscriptors.data_handling.source_preprocessing.geom_preprocessing import (
-   load_geom_parallel,
+    load_geom_parallel,
 )
 
 # change to where you untarred the rdkit folder
@@ -23,7 +23,13 @@ dataset_directory = (
 MACE_PATH = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
 
 
-smiles_list, molecules, structure_ids = load_geom_parallel(base_path, boltzmann_weight_threshold=0.15, max_atoms= 100, N_structures=75000, max_workers=None, )
+smiles_list_geom, molecules, structure_ids = load_geom_parallel(
+    base_path,
+    boltzmann_weight_threshold=0.15,
+    max_atoms=100,
+    N_structures=150000,
+    max_workers=None,
+)
 
 
 embedding_model_config = MaceCalculatorConfig(
@@ -48,7 +54,8 @@ dataset_config = DatasetConfig(
 )
 
 dataset = pretraining_pipeline_from_structures(
-    dataset_config, molecules, structure_ids).build()
+    dataset_config, molecules, structure_ids
+).build()
 
 
-store_data_to_disk(dataset, dataset_directory +"full")
+store_data_to_disk(dataset, dataset_directory + "full")

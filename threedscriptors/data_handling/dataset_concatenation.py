@@ -3,9 +3,9 @@ from collections.abc import Sequence
 import torch
 
 from threedscriptors.configuration.data_config import (
-    DatasetConfig,
+    DatasetConfig,DatasetSplit
 )
-from threedscriptors.data_handling.dataset import BaseDataset
+from threedscriptors.data_handling.dataset import BaseDataset,AtomicEmbeddingWithPositionsDataset
 
 
 class DatasetConcatenation:
@@ -24,29 +24,16 @@ class DatasetConcatenation:
         )
         assert len(embedding_models) == 1
 
-        assert all(
-            [not d.dataset_config.regression_is_normalized for d in self.datasets]
-        )
-
-        dataset_classes = set([type(d) for d in self.datasets])
-        assert len(dataset_classes) == 1
-        (new_dataset_class,) = dataset_classes
-
 
         heavy_atoms_only = [d.dataset_config.only_heavy_atoms for d in self.datasets]
 
         assert all([heavy_atoms_only[0] == h for h in heavy_atoms_only])
 
-
-        splits = [d.dataset_config.dataset_split for d in self.datasets]
-
-        assert all([splits[0] == s for s in splits])
-
-        dataset_split = splits[0]
+        dataset_split = DatasetSplit.TRAIN
 
         new_dataset_config = DatasetConfig(
             N_molecules=sum([d.dataset_config.N_molecules for d in self.datasets]),
-            dataset_type=new_dataset_class,
+            dataset_type=AtomicEmbeddingWithPositionsDataset,
             BFGS_tol=max([d.dataset_config.BFGS_tol for d in self.datasets]),
             BFGS_max_steps=max(
                 [d.dataset_config.BFGS_max_steps for d in self.datasets]
@@ -55,9 +42,6 @@ class DatasetConcatenation:
                 [d.dataset_config.N_conformers for d in self.datasets]
             ),  # This does not really make sense. How should we treat different datasets with varying_ N_conformers?
             max_atoms=max([d.dataset_config.max_atoms for d in self.datasets]),
-            regression_is_normalized=all(
-                [d.dataset_config.regression_is_normalized for d in self.datasets]
-            ),
             embedding_model_config=self.datasets[
                 0
             ].dataset_config.embedding_model_config,
@@ -77,8 +61,8 @@ class DatasetConcatenation:
     def concatenate(self):
         self.concatenate_molecules()
         self.concatenate_atomic_embeddings()
-        self.concatenate_regression_targets()
-        self.concatenate_auxillary_data()
+        #self.concatenate_regression_targets()
+        #self.concatenate_auxillary_data()
         #self.concatenate_structural_encodings()
 
 
