@@ -19,7 +19,7 @@ def reload_fn(directory):
     return PipelineOrchestrator(stages)
 
 
-data_dir = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data"
+data_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data"
 
 
 admet_antiviral = reload_fn(
@@ -35,7 +35,7 @@ concatenation = DatasetConcatenation(datasets=[admet_antiviral, antiviral_potenc
 
 new_dataset = concatenation.concatenate()
 
-dataset_dir = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{new_dataset.dataset_config.dataset_name}"
+dataset_dir = f"{data_dir}/{new_dataset.dataset_config.dataset_name}"
 
 if new_dataset.dataset_config.dataset_split is not None:
     dataset_dir = dataset_dir + "_" +str(new_dataset.dataset_config.dataset_split.name).lower()
@@ -44,3 +44,6 @@ store_data_to_disk(
     new_dataset,
     dataset_dir
 )
+
+
+print(max([len(mol) for mol in new_dataset.molecules]))

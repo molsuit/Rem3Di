@@ -96,7 +96,7 @@ def load_data_from_disk(
             )
             molecules.append(atom)
         dataset.molecules = molecules
-        print("Read Pos")
+
 
     if "smiles" in files:
         smiles_list = []
@@ -117,7 +117,6 @@ def load_data_from_disk(
 
         dataset.smiles_list = smiles_list
         dataset.structure_ids = structure_ids
-        print("Read Smiles")
 
     if "regression_targets.npy" in files:
         assert "regression_masks.npy" in files
@@ -133,10 +132,7 @@ def load_data_from_disk(
         dataset.padding_mask = from_numpy(
             np.load(f"{directory}/padding_mask.npy")
         ).bool()
-        print("loaded mask")
 
-        print(f"embeddings shape {dataset.embeddings.shape}")
-        print(f"embeddings mmask {dataset.padding_mask.shape}")
 
     if "activity_labels.npy" in files:
         assert "target_class_labels.npy" in files

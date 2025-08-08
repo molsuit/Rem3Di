@@ -138,9 +138,8 @@ class BaseDataset(data.Dataset):
         atomic_numbers = [at.get_atomic_numbers() for at in self.molecules]
         padding_dim = np.array([len(an) for an in atomic_numbers]) # The dimension of the real atoms, required to reconstruct whcich element are padding and which ones are not.
 
-        print(f"Current Atom Count {self.max_atoms}")
+
         max_atoms= self.get_max_atoms()
-        print(f"Current Atom Count {max_atoms}")
 
 
         if self.dataset_config.only_heavy_atoms:
@@ -163,7 +162,7 @@ class BaseDataset(data.Dataset):
 
 
 
-        print(f"max an {max([len(an) for an in atomic_numbers])}")
+
         padded_atomic_numbers = np.array(
             [
                 np.pad(

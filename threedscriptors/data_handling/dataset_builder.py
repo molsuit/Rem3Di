@@ -516,12 +516,13 @@ class DatasetBuilder:
             for i, mol in enumerate(self.dataset.molecules)
             if len(mol) > new_max_atoms
         ]
-
+        print(f"Dropping {len(structure_ids_for_removal)} molecules for excessive size")
+        
         self.remove_molecules_by_structure_id(structure_ids_for_removal)
 
     def remove_molecules_by_structure_id(self, structure_ids_to_remove: list[int]):
 
-        mask = torch.ones(self.dataset.N_structures, dtype=torch.bool)
+        mask = torch.ones(len(self.dataset.structure_ids), dtype=torch.bool)
         mask[structure_ids_to_remove] = False
 
         if self.dataset.embeddings is not None:
