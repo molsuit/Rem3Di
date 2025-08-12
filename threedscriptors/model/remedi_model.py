@@ -1,4 +1,5 @@
 
+import numpy as np
 import torch
 from ase import Atoms
 from mace.calculators import MACECalculator
@@ -45,14 +46,14 @@ class REM3DIModel(nn.Module):
 
         assert self.mace_calculator is not None
 
-        descriptors = self.mace_calculator.get_descriptors(atoms, invariants_only=False)
+        descriptors = np.expand_dims(self.mace_calculator.get_descriptors(atoms, invariants_only=False),axis= 0)
 
-        positions = atoms.get_positions()
+        positions = np.expand_dims(atoms.get_positions(),axis = 0)
 
-        padding_mask = torch.zeros((1,positions.shape[0]))
+        padding_mask = torch.zeros((1,positions.shape[0])).bool()
 
-        sample = Sample(embeddings = descriptors, padding_mask= padding_mask, atomic_positions=positions)
+        sample = Sample(embeddings = torch.from_numpy(descriptors), padding_mask= padding_mask, atomic_positions=torch.from_numpy(positions).float())
 
-        print(sample)
+
 
         return self.forward(sample).molecular_descriptor

@@ -22,7 +22,7 @@ smiles, molecules, structure_ids = load_pcqm(pcqm_file=pcqm_file, N_molecules = 
 
 
 dataset_directory = (
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/pcqm"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/pcqm800k"
 )
 
 MACE_PATH = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
@@ -33,6 +33,7 @@ embedding_model_config = MaceCalculatorConfig(
     model_path=MACE_PATH,
     enable_cueq=True,
     device="cuda",
+    default_dtype="float32",
 )
 
 dataset_config = DatasetConfig(
@@ -46,6 +47,7 @@ dataset_config = DatasetConfig(
     tasks=None,
     only_heavy_atoms=False,
     dataset_name="pcqm4m",
+    rw_transition_matrix_from_3D=False,
 )
 
 dataset = pretraining_pipeline_from_structures(

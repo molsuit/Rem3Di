@@ -106,7 +106,7 @@ class TrainingTelemetry:
         validation_task_loss = self.zip_task_losses(avg_validation_loss_per_task)
 
         epoch_train_data = {
-            "epoch": epoch,
+            "epoch": epoch+1,
             "validation_loss": avg_validation_loss,
             "train_loss": avg_train_loss,
             "task_validation_loss": validation_task_loss,

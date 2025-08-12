@@ -9,6 +9,12 @@ from ase.optimize import LBFGS
 from mace.calculators import MACECalculator
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
+from rdkit.Chem.rdchem import Conformer
+from rdkit.Geometry import Point3D  
+from rdkit.Chem import rdDetermineBonds
+from rdkit.Chem import rdmolops
+
+
 
 if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
@@ -281,3 +287,75 @@ def rmsd(A, B):
     A_rot = A_cent @ U
     return np.sqrt(((A_rot - B_cent)**2).sum() / A.shape[0])
 
+
+
+def get_rdkit_mol_from_ase(
+    atoms: Atoms,
+    *,
+    assign_bonds: bool = False,
+    charge: int = 0,
+    cov_factor: float = 1.3,
+    use_hueckel: bool = True,
+) -> Chem.Mol:
+    """
+    Build an RDKit Mol from ASE Atoms using only atomic numbers + 3D coordinates.
+
+    Parameters
+    ----------
+    atoms : ASE Atoms
+        Source object. Positions must be (N, 3).
+    assign_bonds : bool
+        If True, use RDKit's distance/valence heuristic to infer connectivity.
+    charge : int
+        Total molecular charge to use when inferring bonds.
+    cov_factor : float
+        Distance cutoff scaling for bond inference (default 1.3).
+    use_hueckel : bool
+        Use Hückel test during bond inference (helps aromatics).
+
+    Returns
+    -------
+    rdkit.Chem.Mol
+        Molecule with one 3D conformer attached. Not sanitized.
+    """
+    n = len(atoms)
+    if n == 0:
+        return Chem.Mol()
+
+    coords = np.asarray(atoms.get_positions(), dtype=float)
+    zs: Sequence[int] = np.asarray(atoms.get_atomic_numbers(), dtype=int).tolist()
+
+    if coords.shape != (n, 3):
+        raise ValueError(f"positions must be shape ({n}, 3), got {coords.shape}")
+
+    rw = Chem.RWMol()
+    for Z in zs:
+        rw.AddAtom(Chem.Atom(int(Z)))
+
+    conf = Conformer(n)
+    conf.Set3D(True)
+    for i, (x, y, z) in enumerate(coords):
+        conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
+    rw.AddConformer(conf, assignId=True)
+
+    mol = rw.GetMol()
+
+    if assign_bonds:
+        rdDetermineBonds.DetermineBonds(
+            mol,
+            charge=charge,
+            covFactor=cov_factor,
+            useHueckel=use_hueckel,
+        )
+        # Optional: sanitize if you want strict valence checks
+        # Chem.SanitizeMol(mol)
+
+    return mol
+
+
+
+def mol_is_fragmented(mol, *, ignore_hs=True) -> bool:
+    m = Chem.RemoveHs(mol) if ignore_hs else mol
+    # tuple of tuples of atom indices per fragment
+    frags = rdmolops.GetMolFrags(m, asMols=False)
+    return len(frags) > 1

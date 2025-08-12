@@ -6,7 +6,7 @@ from threedscriptors.configuration.data_config import (
     DatasetConfig,
     MaceCalculatorConfig,
 )
-from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions
+from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions, RegressionDatasetwithRandomWalks
 from threedscriptors.data_handling.dataset_builder import DatasetBuilder
 from threedscriptors.data_handling.dataset_io import store_data_to_disk
 from threedscriptors.data_handling.pipelines import (
@@ -33,7 +33,7 @@ smiles, molecules, structure_ids, regression_targets, regression_masks, task_con
 assert regression_targets.shape[1] == len(tasks_to_load)
 
 dataset_directory = (
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_rw"
 )
 
 MACE_PATH = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
@@ -48,7 +48,7 @@ embedding_model_config = MaceCalculatorConfig(
 
 dataset_config = DatasetConfig(
     N_molecules=N_molecules,
-    dataset_type=RegressionDatasetwithPositions,
+    dataset_type=RegressionDatasetwithRandomWalks,
     BFGS_tol=0.1,
     BFGS_max_steps=500,
     N_conformers=1,
@@ -57,6 +57,7 @@ dataset_config = DatasetConfig(
     tasks=task_configs,
     only_heavy_atoms=False,
     dataset_name="qm9",
+    rw_transition_matrix_from_3D= True,
 )
 
 
@@ -67,7 +68,7 @@ dataset = regression_training_from_structures_pipeline(
 ).build()
 
 
-store_data_to_disk(dataset, dataset_directory +"full")
+store_data_to_disk(dataset, dataset_directory +"_full")
 
 
 from threedscriptors.training.dataset_splitting import DatasetSplitting

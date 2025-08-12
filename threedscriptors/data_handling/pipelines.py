@@ -112,7 +112,7 @@ def pretraining_pipeline_from_structures(dataset_config: DatasetConfig, molecule
         InsertMoleculeStage(molecules=molecules, structure_ids=structure_ids),
         AtomicEmbeddingStage(dataset_config.embedding_model_config.mace_calc),
         AtomicPositionsStage(),
-        AddRandomWalkTransitionProbabilityMatrixStage(),
+        #AddRandomWalkTransitionProbabilityMatrixStage(dataset_config.rw_transition_matrix_from_3D),
     ]
 
     return PipelineOrchestrator(stages)
@@ -151,7 +151,7 @@ def regression_training_from_structures_pipeline(
         RegressionLabelingStage(
             regression_targets=regression_targets, regression_masks=regression_masks
         ),AtomicPositionsStage(),
-        #AddRandomWalkTransitionProbabilityMatrixStage(),
+        AddRandomWalkTransitionProbabilityMatrixStage(dataset_config.rw_transition_matrix_from_3D),
     ]
 
     return PipelineOrchestrator(stages)

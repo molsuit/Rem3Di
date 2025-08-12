@@ -133,12 +133,8 @@ class AtomicEmbeddingStage(BuildStage):
 
     def _run(self, builder: DatasetBuilder):
 
-        builder.calculate_atomic_embeddings(
-            calculator=self.mace_calculator
-        )
+        builder.calculate_atomic_embeddings(calculator=self.mace_calculator)
         return builder
-
-
 
 
 class MolecularDescriptorStage(BuildStage):
@@ -167,18 +163,22 @@ class RegressionLabelingStage(BuildStage):
 
 class AtomicPositionsStage(BuildStage):
 
-    def _run(self, builder : DatasetBuilder):
+    def _run(self, builder: DatasetBuilder):
         builder.add_atomic_positions()
         return builder
 
 
 class AddRandomWalkTransitionProbabilityMatrixStage(BuildStage):
 
-    def _run(self,builder: DatasetBuilder):
+    def __init__(self, infer_bonds_from_3D):
+        self.infer_bonds_from_3D = infer_bonds_from_3D
 
-        builder.add_random_walk_matrices()
+    def _run(self, builder: DatasetBuilder):
+
+        builder.add_random_walk_matrices(self.infer_bonds_from_3D)
 
         return builder
+
 
 class AuxillaryDataStage(BuildStage):
     def __init__(self, auxillary_data):
@@ -211,7 +211,7 @@ class CanonicalizeStructureIDStage(BuildStage):
 
 class SanitizeLogLabels(BuildStage):
 
-    def _run(self,builder: DatasetBuilder):
+    def _run(self, builder: DatasetBuilder):
         builder.sanitize_log_scaled_regression_targets()
         return builder
 
@@ -221,10 +221,32 @@ class ReduceMoleculeSize(BuildStage):
     def __init__(self, max_atoms):
         self.max_atoms = max_atoms
 
-    def _run(self, builder : DatasetBuilder):
-
+    def _run(self, builder: DatasetBuilder):
         builder.drop_large_molecules(self.max_atoms)
         return builder
+
+
+class ReduceConformerStage(BuildStage):
+    
+    def __init__(self, new_N_conformers):
+        self.N_conformers = new_N_conformers
+
+    def _run(self, builder):
+        builder.drop_number_of_conformers(self.N_conformers)
+        return builder
+
+class ReduceMoleculesStage(BuildStage):
+
+    def __init__(self, new_N_structures):
+
+        self.N_structures = new_N_structures
+
+    def _run(self, builder):
+
+        builder.drop_number_of_molecules(self.N_structures)
+
+        return builder
+
 
 
 class PipelineOrchestrator:

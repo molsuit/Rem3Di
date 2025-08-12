@@ -16,6 +16,7 @@ from threedscriptors.configuration.architecture_config import (
     RadialBasisFunctionType,
     RegressionHeadConfig,
     RelativeDistancePositionalEncodingConfig,
+    RandomWalkPositionalEncoding
 )
 from threedscriptors.configuration.config_factory import ConfigFactory
 from threedscriptors.configuration.data_config import DatasetConfig
@@ -30,12 +31,12 @@ model_dir = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transf
 
 pos_encoding_config = None
 
-pos_encoding_config = RelativeDistancePositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=24, d_projection=64,basis_function_type=RadialBasisFunctionType.BESSEL)
+pos_encoding_config = RelativeDistancePositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=32, d_projection=64,basis_function_type=RadialBasisFunctionType.BESSEL)
 
 #pos_encoding_config = RandomWalkPositionalEncoding(k_hop_random_walk=16, d_projection=64)
 
 embedding_preprocessor_config = EmbeddingPreprocessConfig(
-    pseudoscalars=True, pseudoscalar_dimension=64,chiral_embedding_dimension=32
+    pseudoscalars=False, pseudoscalar_dimension=0,chiral_embedding_dimension=0
 )
 
 attention_layer_config = AttentionLayerConfig(
@@ -45,17 +46,17 @@ attention_layer_config = AttentionLayerConfig(
 )
 
 encoder_config = EncoderConfig(
-    N_layers=1, attention_layer_config=attention_layer_config
+    N_layers=3, attention_layer_config=attention_layer_config
 )
 
 decoder_config = None
-#decoder_config = DecoderConfig(N_layers=3, attention_layer_config=attention_layer_config)
+#decoder_config = DecoderConfig(N_layers=4, attention_layer_config=attention_layer_config)
 
 
 
 mean_aggregator_config = MeanAggregatorConfig(aggregator_type= Aggregations.MEAN)
 
-attention_aggregator_config = AttentionAggregatorConfig(aggregator_type= Aggregations.ATTENTION, num_heads = 16, attn_dropout= 0.3)
+attention_aggregator_config = AttentionAggregatorConfig(aggregator_type= Aggregations.ATTENTION, num_heads = 8, attn_dropout= 0.3)
 
 global_aggregator_config = GlobalAggregatorConfig(
     aggregator_type_config= attention_aggregator_config,
@@ -78,7 +79,7 @@ cf = ConfigFactory(
 
 head_config_template = RegressionHeadConfig(
     activation_fn=torch.nn.SiLU(),
-    hidden_dimensions=[512,256,256,256,128],
+    hidden_dimensions=[512,256,128],
     head_type=HeadType.FULLY_CONNECTED,
 )
 

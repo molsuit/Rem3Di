@@ -6,12 +6,17 @@ from rdkit import Chem
 from rdkit.Chem import rdmolops
 from tqdm import tqdm
 
+from rdkit.Chem import rdDetermineBonds
+
+
 from threedscriptors.configuration.data_config import LabelScalingType
 from threedscriptors.data_handling.data_utils import (
     count_atoms_from_ase,
     get_ase_atoms_with_conformers,
     get_mirrored_molecules,
     relax_atoms,
+    get_rdkit_mol_from_ase,
+    mol_is_fragmented,
 )
 from threedscriptors.data_handling.dataset import (
     BaseDataset,
@@ -433,19 +438,60 @@ class DatasetBuilder:
 
         self.dataset.atomic_positions = padded_pos
 
-    def add_random_walk_matrices(self):
+    def add_random_walk_matrices(self, infer_bonds_from_3D_structure: bool = False):
 
         transition_mats = []
 
         max_atoms = self.dataset.get_max_atoms()
         assert not self.dataset.dataset_config.only_heavy_atoms
 
-        for molecule in self.dataset.molecules:
-            assert "smiles" in molecule.info.keys()
+        incorrect_structures = []
 
-            smiles = molecule.info["smiles"]
+        for i, molecule in enumerate(self.dataset.molecules):
 
-            mol = Chem.MolFromSmiles(smiles)
+            if infer_bonds_from_3D_structure:
+                try:
+                    mol = get_rdkit_mol_from_ase(
+                        molecule, assign_bonds=True, cov_factor=1.3
+                    )
+
+                    smi_back = Chem.MolToSmiles(mol, isomericSmiles=False)
+
+                    smi_original = self.dataset.smiles_list[i]
+                    mol_or = Chem.MolFromSmiles(smi_original)
+                    mol_or = Chem.AddHs(mol_or)
+                    canon_smi = Chem.MolToSmiles(mol_or, isomericSmiles=False)
+
+                    if (not smi_back == canon_smi) or mol_is_fragmented(
+                        mol, ignore_hs=False
+                    ):
+                        raise ValueError
+
+                except Exception as e:
+
+                    incorrect_structures.append(self.dataset.structure_ids[i].structure_id)
+                    print(f"dropping {smi_back} for {e}")
+                    continue
+
+            else:
+                try:
+                    assert "smiles" in molecule.info.keys()
+                    smiles = molecule.info["smiles"]
+                    mol = Chem.MolFromSmiles(smiles)
+                    mol = Chem.AddHs(mol)
+
+                    rdkit_species = np.array(
+                        [atom.GetAtomicNum() for atom in mol.GetAtoms()]
+                    )
+
+                    print(f"rdkit {rdkit_species}, ase {molecule.get_atomic_numbers()}")
+                    assert (rdkit_species == molecule.get_atomic_numbers()).all()
+                except Exception as e:
+
+                    incorrect_structures.append(self.dataset.structure_ids[i].structure_id)
+                    print(f"dropping {smiles} for {e}")
+                    continue
+
             A = rdmolops.GetAdjacencyMatrix(mol)
             # Get the adjacency matrix,
 
@@ -469,7 +515,14 @@ class DatasetBuilder:
 
             transition_mats.append(T_padded)
 
+        self.remove_molecules_by_structure_id(incorrect_structures)
+
         self.dataset.random_walk_transition_matrix = torch.stack(transition_mats, dim=0)
+
+        assert (
+            self.dataset.random_walk_transition_matrix.shape[0]
+            == self.dataset.embeddings.shape[0]
+        )
 
     def sanitize_log_scaled_regression_targets(self):
 
@@ -507,6 +560,19 @@ class DatasetBuilder:
 
         self.remove_molecules_by_structure_id(strcuture_ids_for_removal)
 
+    def drop_number_of_molecules(self, N_structures):
+
+        self.canonicalize_structure_ids()
+
+        structure_ids_for_removal = [
+            sid.structure_id
+            for sid in self.dataset.structure_ids
+            if sid.structure_id >= N_structures
+        ]
+
+        self.remove_molecules_by_structure_id(structure_ids_for_removal)
+
+
     def drop_large_molecules(self, new_max_atoms: int):
 
         self.canonicalize_structure_ids()
@@ -517,8 +583,14 @@ class DatasetBuilder:
             if len(mol) > new_max_atoms
         ]
         print(f"Dropping {len(structure_ids_for_removal)} molecules for excessive size")
-        
+
         self.remove_molecules_by_structure_id(structure_ids_for_removal)
+
+        if self.dataset.embeddings is not None:
+            self.dataset.embeddings = self.dataset.embeddings[:,:new_max_atoms,:]
+
+        if self.dataset.padding_mask is not None:
+            self.dataset.padding_mask = self.dataset.padding_mask[:,:new_max_atoms]
 
     def remove_molecules_by_structure_id(self, structure_ids_to_remove: list[int]):
 

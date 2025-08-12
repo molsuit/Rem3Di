@@ -247,6 +247,8 @@ class DataNormalizationModule(nn.Module):
             device=x.device,
         )
 
+        print(scaling)
+
         if log_mask.any():
             lm = log_mask.unsqueeze(0)
             bad = (valid & lm & (x <= 0)).any()

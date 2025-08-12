@@ -39,7 +39,7 @@ non_task_columns = {
 }
 
 
-load_dataset = "antiviral_admet"
+load_dataset = "antiviral_potency"
 # Load the benchmark from polarishub
 smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
     dataset_registry[load_dataset],
@@ -48,7 +48,7 @@ smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
 )
 
 
-dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}"
+dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}_64_conf"
 
 MACE_PATH = (
     "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
@@ -63,11 +63,11 @@ embedding_model_config = MaceCalculatorConfig(
 )
 
 dataset_config = DatasetConfig(
-    N_molecules=5000,
+    N_molecules=60000,
     dataset_type=RegressionDatasetwithPositions,
     BFGS_tol=0.1,
     BFGS_max_steps=500,
-    N_conformers=1,
+    N_conformers=64,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,

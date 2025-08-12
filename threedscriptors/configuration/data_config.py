@@ -45,10 +45,9 @@ class DatasetTypes(Enum):
         raise ValueError(f"{value!r} is not a valid {cls.__name__}")
 
 
-
 class LabelScalingType(str, Enum):
-    NONE  = "none"
-    Z     = "z"
+    NONE = "none"
+    Z = "z"
     LOG_Z = "log_z"
 
     @classmethod
@@ -69,8 +68,6 @@ class LabelScalingType(str, Enum):
         return None
 
 
-
-
 class TaskConfig(BaseModel):
     task_name: str
     mean: float | None = None
@@ -78,7 +75,6 @@ class TaskConfig(BaseModel):
     scaling: LabelScalingType | None = None
     has_auxillary_data: bool = False
     auxillary_data_dimension: int | None = None
-
 
     @field_validator("scaling", mode="before")
     @classmethod
@@ -94,12 +90,13 @@ class TaskConfig(BaseModel):
             print(v.lower())
             return LabelScalingType(v.strip().lower())
 
-        raise TypeError("`dataset_type` must be a DatasetTypes, a BaseDataset subclass, or a registered name")
+        raise TypeError(
+            "`dataset_type` must be a DatasetTypes, a BaseDataset subclass, or a registered name"
+        )
 
     @field_serializer("scaling")
     def _serialize_scaling(self, v: LabelScalingType | None, _info):
         return None if v is None else v.name
-
 
 
 class MaceCalculatorConfig(BaseModel):
@@ -170,7 +167,6 @@ class DatasetSplit(Enum):
     TEST = 2
 
 
-
 class DatasetConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     N_molecules: int | None
@@ -183,7 +179,8 @@ class DatasetConfig(BaseModel):
     only_heavy_atoms: bool = False
     dataset_name: str | None = None
     dataset_split: DatasetSplit | None = None
-    max_atoms: int| None  = None
+    max_atoms: int | None = None
+    rw_transition_matrix_from_3D: bool = False
 
     def get_task_names(self):
         if self.tasks is None:
@@ -193,12 +190,11 @@ class DatasetConfig(BaseModel):
 
     def get_mean_std_per_task(self):
 
-        mean = {tc.task_name : tc.mean for tc in self.tasks}
-        std =  {tc.task_name : tc.std for tc in self.tasks}
+        mean = {tc.task_name: tc.mean for tc in self.tasks}
+        std = {tc.task_name: tc.std for tc in self.tasks}
 
         assert None not in set(mean.values())
         assert None not in set(std.values())
-
 
         return mean, std
 
@@ -214,15 +210,16 @@ class DatasetConfig(BaseModel):
         # string → enum by name (or via _missing_)
         if isinstance(v, str):
             return DatasetTypes(v)
-        raise TypeError("`dataset_type` must be a DatasetTypes, a BaseDataset subclass, or a registered name")
+        raise TypeError(
+            "`dataset_type` must be a DatasetTypes, a BaseDataset subclass, or a registered name"
+        )
 
     @field_serializer("dataset_type")
     def _serialize_dataset_type(self, v: DatasetTypes, info):
         # turn DatasetTypes.atomic → "atomic"
         return v.name
 
-
-    @field_validator('dataset_split', mode='before')
+    @field_validator("dataset_split", mode="before")
     @classmethod
     def _validate_dataset_split(cls, v):
         # allow None
@@ -260,7 +257,7 @@ class DatasetConfig(BaseModel):
             f"or their names/values"
         )
 
-    @field_serializer('dataset_split')
+    @field_serializer("dataset_split")
     def _serialize_dataset_split(self, v: DatasetSplit | None, _info):
         """
         Convert the enum back to a JSON-friendly form.

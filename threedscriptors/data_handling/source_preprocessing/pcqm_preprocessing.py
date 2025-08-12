@@ -37,6 +37,7 @@ def convert_to_ase(mols):
     for mol in mols:
         try:
             symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
+            print(set(symbols))
             positions = mol.GetConformer().GetPositions()
 
             all_atoms.append(Atoms(symbols = symbols, positions=positions, info = {"smiles" : Chem.MolToSmiles(mol)}))
@@ -51,7 +52,7 @@ def convert_to_ase(mols):
 def filter_mols(pcqm_file: Path, N_max: int):
 
     mols = []
-    suppl = Chem.SDMolSupplier(pcqm_file)
+    suppl = Chem.SDMolSupplier(pcqm_file,removeHs=False)
     for idx, mol in enumerate(suppl):
 
         try:

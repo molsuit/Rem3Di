@@ -10,3 +10,5 @@ wandb
 eval_runs/
 training_runs/
 notebooks/
+backed_up_models/
+*.log

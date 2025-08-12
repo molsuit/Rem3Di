@@ -10,12 +10,19 @@ from threedscriptors.model.model_builder import ModelBuilder
 
 dataset_name = "qm9_test"
 # load model
-model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/97-2025_07_28_15_21_43-QM9_frompretrained_PCQM"
 
-evaluation_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/"
+model_dirs = {
+    "pretrained": "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/212-2025_08_12_17_10_43-QM9fromPCQM",
+    "scratch": "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/211-2025_08_12_16_49_11-QM9fromscratch",
+}
 
 
-os.makedirs(evaluation_dir + dataset_name, exist_ok= True)
+evaluation_dir = (
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/"
+)
+
+os.makedirs(evaluation_dir + dataset_name, exist_ok=True)
+
 
 # load datasets
 dataset_directory = (
@@ -36,10 +43,13 @@ runner = EvalPipelineRunner(
 )
 
 
-model = ModelBuilder.from_directory(model_directory).build_model()
+for model_name, model_directory in model_dirs.items():
 
+    model = ModelBuilder.from_directory(model_directory).build_model()
 
-runner.evaluate(model)
+    runner.evaluate(model)
 
-
-runner.output_results(output_directory= evaluation_dir + dataset_name + "from_scratch", model_name=dataset_name)
+    runner.output_results(
+        output_directory=evaluation_dir + dataset_name + model_name,
+        model_name=dataset_name,
+    )

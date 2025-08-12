@@ -91,12 +91,12 @@ class ModelBuilder:
         return self.model
 
 
-    def build_remedi_model(self):
+    def build_remedi_model(self, mace_calc = None) -> REM3DIModel:
 
         preprocessor = self.build_preprocessor(None,None)
         encoder = self.build_encoder()
 
-        model = REM3DIModel(preprocessor=preprocessor, encoder=encoder)
+        model = REM3DIModel(preprocessor=preprocessor, encoder=encoder, mace_calculator= mace_calc)
         self.model = model.float()
         self.model.preprocessor.atomic_preprocessor.double()
 

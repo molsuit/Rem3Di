@@ -67,7 +67,7 @@ class RandomWalkGeometricPreprocessor(nn.Module):
         self.d_projection = d_projection
 
 
-        self.proj = nn.Linear(k_hop+1, d_projection, bias=False)
+        self.proj = nn.Linear(k_hop, d_projection, bias=False)
 
 
     def forward(self, sample: Sample):
@@ -91,7 +91,7 @@ class RandomWalkGeometricPreprocessor(nn.Module):
         powers.append(T_k)
 
         # 2…k-hop
-        for _ in range(2, self.k_hop + 1):
+        for _ in range(2, self.k_hop):
             T_k = torch.matmul(T_k, transition_matrix)
             T_k = T_k * mask_pair
             powers.append(T_k)
@@ -100,5 +100,6 @@ class RandomWalkGeometricPreprocessor(nn.Module):
         #TODO: This should probably be symmetrized?
 
         T_stack = torch.stack(powers, dim=-1)
+
         P0 = self.proj(T_stack)
         return P0, T_stack, mask_pair

@@ -111,9 +111,8 @@ def load_qm9(qm9_dir: Path, N_molecules: int | None = None, tasks_to_load = list
         all_smiles.append(smiles)
 
 
-    print(all_props)
+
     regression_targets  = np.stack(all_props)
-    print(regression_targets.shape)
 
     if tasks_to_load is not None:
         task_col_indices = [t.value for t in tasks_to_load]
@@ -123,8 +122,6 @@ def load_qm9(qm9_dir: Path, N_molecules: int | None = None, tasks_to_load = list
 
     else:
         task_names = [p.name for p in QM9PropertyNames]
-
-    print(task_names)
 
     regression_masks = np.ones_like(regression_targets, dtype=bool)
 

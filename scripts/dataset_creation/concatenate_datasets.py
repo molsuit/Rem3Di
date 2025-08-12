@@ -45,5 +45,4 @@ store_data_to_disk(
     dataset_dir
 )
 
-
 print(max([len(mol) for mol in new_dataset.molecules]))

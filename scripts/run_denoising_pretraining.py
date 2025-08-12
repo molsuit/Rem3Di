@@ -14,6 +14,12 @@ from threedscriptors.configuration.architecture_config import (
 )
 from threedscriptors.configuration.data_config import DatasetSplit
 from threedscriptors.configuration.training_config import TrainingConfig
+from threedscriptors.data_handling.data_build_pipeline import (
+    AtomicPositionsStage,
+    PipelineOrchestrator,
+    ReloadFromDiskStage,
+    ReduceMoleculesStage
+)
 from threedscriptors.data_handling.indexed_subset import IndexedSubset
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.data_handling.sample import PreprocessedSample, sample_collate_fn
@@ -59,9 +65,14 @@ run_name = parse_args()
 torch.manual_seed(0)
 np.random.seed(0)
 
+#training_run_dir = Path(
+#    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs"
+#)
+
 training_run_dir = Path(
-    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
 )
+
 training_idx = len(list(training_run_dir.glob("*/")))
 now = datetime.now()
 training_data_dir = training_run_dir / Path(
@@ -75,7 +86,7 @@ split_config = SplitConfig(
 )
 
 training_config = TrainingConfig(
-    batch_size=256,
+    batch_size=512,
     epochs=35,
     learning_rate=5e-4,
     weight_decay=1e-3,
@@ -95,8 +106,15 @@ architecture_config = pyaml.parse_yaml_file_as(
     f"{training_config.model_dir}/architecture_config.yaml",
 )
 
-dataset = reload_dataset_pipeline(training_config.dataset_path).build()
+stages = [
+        ReloadFromDiskStage(training_config.dataset_path),
+        AtomicPositionsStage(),
+        ReduceMoleculesStage(200_000)
+    ]
+po =  PipelineOrchestrator(stages)
+#dataset = reload_dataset_pipeline(training_config.dataset_path).build()
 
+dataset = po.build()
 # dataset = dataset.convert_to_dataset_type(AtomicEmbeddingWithPositionsDataset)
 
 dataset_splitting = DatasetSplitting(dataset)
