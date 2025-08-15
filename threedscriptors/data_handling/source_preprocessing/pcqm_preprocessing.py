@@ -5,6 +5,7 @@ from rdkit import Chem
 from rdkit.Chem import Mol
 
 from threedscriptors.data_handling.mol_id import StructureID
+from random import shuffle
 
 MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 
@@ -53,8 +54,12 @@ def filter_mols(pcqm_file: Path, N_max: int):
 
     mols = []
     suppl = Chem.SDMolSupplier(pcqm_file,removeHs=False)
-    for idx, mol in enumerate(suppl):
 
+
+    indices = list(range(len(suppl)))
+    shuffle(indices)
+    for idx in indices:
+        mol = suppl[idx]
         try:
             if mol is None:
                 continue

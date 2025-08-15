@@ -167,6 +167,7 @@ def reload_dataset_pipeline(
     stages = [
         ReloadFromDiskStage(directory),
         AtomicPositionsStage(),
+        CanonicalizeStructureIDStage(),
     ]
     return PipelineOrchestrator(stages)
 

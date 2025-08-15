@@ -12,8 +12,9 @@ dataset_name = "qm9_test"
 # load model
 
 model_dirs = {
-    "pretrained": "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/212-2025_08_12_17_10_43-QM9fromPCQM",
+    "pretrained400k": "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/212-2025_08_12_17_10_43-QM9fromPCQM",
     "scratch": "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/211-2025_08_12_16_49_11-QM9fromscratch",
+    "pretrained200k": "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/216-2025_08_12_20_12_52-QM9fromPCQM_200k"
 }
 
 

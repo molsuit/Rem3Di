@@ -86,8 +86,8 @@ split_config = SplitConfig(
 )
 
 training_config = TrainingConfig(
-    batch_size=512,
-    epochs=35,
+    batch_size=64,
+    epochs=50,
     learning_rate=5e-4,
     weight_decay=1e-3,
     max_grad_norm=1.0,
@@ -95,9 +95,9 @@ training_config = TrainingConfig(
     split_config=split_config,
     training_data_dir=training_data_dir,
     mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/pcqmfull",
+    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/pcqm",
     noise_level=0.3,
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/pcqmfull",
+    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/pcqm",
     normalized_targets=True,
 )
 
@@ -109,7 +109,7 @@ architecture_config = pyaml.parse_yaml_file_as(
 stages = [
         ReloadFromDiskStage(training_config.dataset_path),
         AtomicPositionsStage(),
-        ReduceMoleculesStage(200_000)
+        ReduceMoleculesStage(200000)
     ]
 po =  PipelineOrchestrator(stages)
 #dataset = reload_dataset_pipeline(training_config.dataset_path).build()

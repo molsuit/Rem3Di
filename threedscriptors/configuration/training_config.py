@@ -23,7 +23,7 @@ class TrainingConfig(BaseModel):
     wandb_active: bool = False
     normalized_targets: bool = True
     normalized_atomic_descriptors: bool = False
-
+    frozen_stem: bool = False
 
 class TrainingMetadata(BaseModel):
     dataset_dir: str

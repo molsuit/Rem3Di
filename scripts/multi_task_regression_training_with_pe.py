@@ -82,9 +82,9 @@ split_config = SplitConfig(
 )
 
 training_config = TrainingConfig(
-    batch_size=128,
-    epochs=75,
-    learning_rate=3e-4,
+    batch_size= 128,
+    epochs=300,
+    learning_rate=2e-4,
     weight_decay=1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
@@ -94,6 +94,7 @@ training_config = TrainingConfig(
     dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_training",
     model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/qm9_training",
     normalized_targets=True,
+    frozen_stem = False
 )
 
 architecture_config = pyaml.parse_yaml_file_as(
@@ -171,13 +172,13 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(training_confi
 
     loss_fn = BaseMultitaskLoss()
 
-    all_params = model.parameters()
 
-#    all_params = (
-#    list(model.encoder.parameters())
-#    + list(model.preprocessor.geometric_preprocessor.parameters())
-#)
-    #all_params= model.multitask_heads.parameters()
+    if training_config.frozen_stem:
+        all_params= model.multitask_heads.parameters()
+
+    else:
+        all_params = model.parameters()
+
 
     optimizer = optim.AdamW(
         [{"params" : all_params, "lr" : training_config.learning_rate, "weight_decay" : training_config.weight_decay},

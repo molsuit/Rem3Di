@@ -44,7 +44,7 @@ print(len(smiles))
 dataset_config = DatasetConfig(
     N_molecules=None,
     dataset_type=SimilarityScreeningDataset,
-    BFGS_tol=0.5,
+    BFGS_tol=0.01,
     BFGS_max_steps=100,
     N_conformers=1,
     embedding_model_config=embedding_model_config,
