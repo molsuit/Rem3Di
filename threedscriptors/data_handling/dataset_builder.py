@@ -592,6 +592,12 @@ class DatasetBuilder:
         if self.dataset.padding_mask is not None:
             self.dataset.padding_mask = self.dataset.padding_mask[:,:new_max_atoms]
 
+        if self.dataset.atomic_positions is not None:
+            print(self.dataset.atomic_positions.shape)
+            self.dataset.atomic_positions = self.dataset.atomic_positions[:,:new_max_atoms,:]
+
+        self.dataset.dataset_config.max_atoms = new_max_atoms
+
     def remove_molecules_by_structure_id(self, structure_ids_to_remove: list[int]):
 
         mask = torch.ones(len(self.dataset.structure_ids), dtype=torch.bool)

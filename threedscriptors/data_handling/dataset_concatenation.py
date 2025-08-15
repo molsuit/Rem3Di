@@ -50,7 +50,7 @@ class DatasetConcatenation:
             embedding_model_config=self.datasets[
                 0
             ].dataset_config.embedding_model_config,
-            tasks=[task for d in self.datasets for task in d.dataset_config.tasks],
+            tasks= None, #[task for d in self.datasets for task in d.dataset_config.tasks],
             dataset_name="+".join(
                 [d.dataset_config.dataset_name for d in self.datasets]
             ),
@@ -58,21 +58,29 @@ class DatasetConcatenation:
             only_heavy_atoms=heavy_atoms_only[0],
         )
 
-        task_names = [task.task_name for task in new_dataset_config.tasks]
+        task_names = None #[task.task_name for task in new_dataset_config.tasks]
         # Append the dataset configs. assert no tasks have the same name
 
-        assert len(task_names) == len(set(task_names)), "Found duplicate task_names"
+        #assert len(task_names) == len(set(task_names)), "Found duplicate task_names"
 
         return new_dataset_config
 
     def concatenate(self):
         self.concatenate_molecules()
         self.concatenate_atomic_embeddings()
-        self.concatenate_regression_targets()
+        #self.concatenate_regression_targets()
+        #self.concatenate_atomic_positions()
         # self.concatenate_auxillary_data()
         # self.concatenate_structural_encodings()
 
         return self.new_dataset
+
+
+    
+
+
+    
+
 
     def concatenate_molecules(self):
         # Adds mol_ids and smiles

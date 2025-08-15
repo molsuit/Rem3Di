@@ -8,7 +8,7 @@ from threedscriptors.data_handling.dataset_concatenation import DatasetConcatena
 from threedscriptors.data_handling.dataset_io import (
     store_data_to_disk,
 )
-
+from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset
 
 
 def reload_fn(directory):
@@ -16,22 +16,28 @@ def reload_fn(directory):
         ReloadFromDiskStage(directory),
         AtomicPositionsStage(),
         ReduceMoleculeSize(max_atoms = 100)]
-    return PipelineOrchestrator(stages)
+    
+    dataset = PipelineOrchestrator(stages).build()
+    dataset.convert_to_dataset_type(AtomicEmbeddingWithPositionsDataset)
+    return dataset
 
 
-data_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data"
+data_dir = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data"
 
 
 admet_antiviral = reload_fn(
     f"{data_dir}/antiviral_admet_full",
-).build()
+)
 
-antiviral_potency = reload_fn(f"{data_dir}/antiviral_potency_full").build()
+antiviral_potency = reload_fn(f"{data_dir}/antiviral_potency_full")
 
-adme_fang = reload_fn(f"{data_dir}/adme_fang_full").build()
+adme_fang = reload_fn(f"{data_dir}/adme_fang_full")
+#
+geom_200k = reload_fn(f"{data_dir}/geom_200k")
 
 
-concatenation = DatasetConcatenation(datasets=[admet_antiviral, antiviral_potency])
+
+concatenation = DatasetConcatenation(datasets=[admet_antiviral, antiviral_potency, adme_fang, geom_200k])
 
 new_dataset = concatenation.concatenate()
 
