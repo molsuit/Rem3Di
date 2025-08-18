@@ -11,7 +11,7 @@ from threedscriptors.data_handling.source_preprocessing.pcqm_preprocessing impor
    load_pcqm,
 )
 
-pcqm_file = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/pcqm4m-v2-train.sdf"
+pcqm_file = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/raw_data/pcqm4m-v2-train.sdf"
 
 
 N_molecules = 400_000
@@ -22,10 +22,10 @@ smiles, molecules, structure_ids = load_pcqm(pcqm_file=pcqm_file, N_molecules = 
 
 
 dataset_directory = (
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/pcqm800k"
+    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/pcqm"
 )
 
-MACE_PATH = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
+MACE_PATH = "/home/snw30/rds/hpc-work/models/MACE-OFF24_medium.model"
 
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
@@ -54,4 +54,4 @@ dataset = pretraining_pipeline_from_structures(
     dataset_config, molecules, structure_ids).build()
 
 
-store_data_to_disk(dataset, dataset_directory +"full")
+store_data_to_disk(dataset, dataset_directory)

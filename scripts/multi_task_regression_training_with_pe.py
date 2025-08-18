@@ -38,6 +38,27 @@ from threedscriptors.training.regression_training import (
     BaseMultitaskLoss,
 )
 from threedscriptors.training.telemetry import TrainingTelemetry
+from threedscriptors.configuration.data_config import DatasetConfig
+from threedscriptors.data_handling.data_build_pipeline import (
+    AddRandomWalkTransitionProbabilityMatrixStage,
+    AtomicEmbeddingStage,
+    AtomicPositionsStage,
+    AuxillaryDataStage,
+    CanonicalizeStructureIDStage,
+    ChiralConformalEmbeddingStage,
+    ConformalEmbeddingStage,
+    InitializeBuildPipeline,
+    InsertMoleculeStage,
+    InsertSmilesStage,
+    PipelineOrchestrator,
+    RegressionLabelingStage,
+    RelaxStage,
+    ReloadFromDiskStage,
+    SanitizeLogLabels,
+    SimilarityLabelingStage,ReduceMoleculesStage
+)
+
+
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -63,9 +84,12 @@ run_name = parse_args()
 torch.manual_seed(0)
 np.random.seed(0)
 
-training_run_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
-)
+#training_run_dir = Path(
+#    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
+#)
+
+training_run_dir = Path("/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs")
+
 training_idx = len(list(training_run_dir.glob("*/")))
 now = datetime.now()
 training_data_dir = training_run_dir / Path(
@@ -83,16 +107,16 @@ split_config = SplitConfig(
 
 training_config = TrainingConfig(
     batch_size= 128,
-    epochs=300,
-    learning_rate=2e-4,
+    epochs=200,
+    learning_rate=1e-4,
     weight_decay=1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
-    mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_training",
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/qm9_training",
+    mace_model_path="/home/snw30/rds/hpc-work/models/MACE-OFF24_medium.model",
+    dataset_path="/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/qm9_training",
+    model_dir="/home/snw30/rds/hpc-work/3DMolecularDescriptors/transformer_model/qm9_training",
     normalized_targets=True,
     frozen_stem = False
 )
@@ -102,8 +126,19 @@ architecture_config = pyaml.parse_yaml_file_as(
     f"{training_config.model_dir}/architecture_config.yaml",
 )
 
+
+print(architecture_config)
+
 print("Start Dataloading")
-dataset = reload_dataset_pipeline(training_config.dataset_path).build()
+
+stages = [
+        ReloadFromDiskStage(training_config.dataset_path),
+        AtomicPositionsStage(),
+    ]
+po = PipelineOrchestrator(stages)
+dataset = po.build()
+
+#dataset = reload_dataset_pipeline(training_config.dataset_path).build()
 #dataset.expand_embedding_num_atoms(29)
 dataset = dataset.convert_to_dataset_type(RegressionDatasetwithPositions)
 

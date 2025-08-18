@@ -21,19 +21,22 @@ from threedscriptors.configuration.architecture_config import (
 from threedscriptors.configuration.config_factory import ConfigFactory
 from threedscriptors.configuration.data_config import DatasetConfig
 
-run = "pcqm"
+run = "qm9_training"
 
-config_file = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{run}/dataset_config.yaml"
+#base_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/"
+base_dir = "/home/snw30/rds/hpc-work/3DMolecularDescriptors"
+
+config_file = f"{base_dir}/data/{run}/dataset_config.yaml"
 dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, config_file)
 
 
-model_dir = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/{run}/"
+model_dir = f"{base_dir}/transformer_model/{run}/"
 
 pos_encoding_config = None
 
-pos_encoding_config = RelativeDistancePositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=32, d_projection=64,basis_function_type=RadialBasisFunctionType.BESSEL)
+#pos_encoding_config = RelativeDistancePositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=32, d_projection=64,basis_function_type=RadialBasisFunctionType.BESSEL)
 
-#pos_encoding_config = RandomWalkPositionalEncoding(k_hop_random_walk=16, d_projection=64)
+pos_encoding_config = RandomWalkPositionalEncoding(k_hop_random_walk=16, d_projection=64)
 
 embedding_preprocessor_config = EmbeddingPreprocessConfig(
     pseudoscalars=False, pseudoscalar_dimension=0,chiral_embedding_dimension=0
@@ -46,11 +49,11 @@ attention_layer_config = AttentionLayerConfig(
 )
 
 encoder_config = EncoderConfig(
-    N_layers=5, attention_layer_config=attention_layer_config
+    N_layers=3, attention_layer_config=attention_layer_config
 )
 
 decoder_config = None
-decoder_config = DecoderConfig(N_layers=5, attention_layer_config=attention_layer_config)
+#decoder_config = DecoderConfig(N_layers=3, attention_layer_config=attention_layer_config)
 
 
 

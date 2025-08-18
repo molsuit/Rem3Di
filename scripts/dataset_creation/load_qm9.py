@@ -18,13 +18,19 @@ from threedscriptors.data_handling.source_preprocessing.qm9_preprocessing import
 )
 
 qm9_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/qm9_raw"
+    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/raw_data/qm9_raw"
 )
 
 
 N_molecules = 134000
 
-tasks_to_load = [QM9PropertyNames.gap]
+tasks_to_load = [
+    QM9PropertyNames.mu,
+    QM9PropertyNames.gap, 
+    QM9PropertyNames.alpha,
+    QM9PropertyNames.r2,
+    QM9PropertyNames.zpve,
+    QM9PropertyNames.Cv]
 
 smiles, molecules, structure_ids, regression_targets, regression_masks, task_configs = (
     load_qm9(qm9_dir, N_molecules, tasks_to_load= tasks_to_load)
@@ -33,10 +39,10 @@ smiles, molecules, structure_ids, regression_targets, regression_masks, task_con
 assert regression_targets.shape[1] == len(tasks_to_load)
 
 dataset_directory = (
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_rw"
+    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/qm9_full"
 )
 
-MACE_PATH = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
+MACE_PATH = "/home/snw30/rds/hpc-work/models/MACE-OFF24_medium.model"
 
 embedding_model_config = MaceCalculatorConfig(
     mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),

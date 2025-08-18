@@ -3,7 +3,7 @@ from pathlib import Path
 from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import Mol
-
+from tqdm import tqdm
 from threedscriptors.data_handling.mol_id import StructureID
 from random import shuffle
 
@@ -38,7 +38,6 @@ def convert_to_ase(mols):
     for mol in mols:
         try:
             symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
-            print(set(symbols))
             positions = mol.GetConformer().GetPositions()
 
             all_atoms.append(Atoms(symbols = symbols, positions=positions, info = {"smiles" : Chem.MolToSmiles(mol)}))
@@ -58,7 +57,7 @@ def filter_mols(pcqm_file: Path, N_max: int):
 
     indices = list(range(len(suppl)))
     shuffle(indices)
-    for idx in indices:
+    for idx in tqdm(indices):
         mol = suppl[idx]
         try:
             if mol is None:

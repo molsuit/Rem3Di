@@ -20,6 +20,8 @@ from threedscriptors.data_handling.data_build_pipeline import (
     ReloadFromDiskStage,
     ReduceMoleculesStage
 )
+
+from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset
 from threedscriptors.data_handling.indexed_subset import IndexedSubset
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.data_handling.sample import PreprocessedSample, sample_collate_fn
@@ -57,21 +59,28 @@ def parse_args():
         required=True,
         help="Name of the run (e.g., experiment identifier)",
     )
+
+    parser.add_argument(
+        "--N_samples",
+        type=int,
+        required=False,
+        help="Name of the run (e.g., experiment identifier)",
+    )
     args = parser.parse_args()
-    return args.run_name
+    return args.run_name, args.N_samples
 
 
-run_name = parse_args()
+run_name, N_samples = parse_args()
 torch.manual_seed(0)
 np.random.seed(0)
 
-#training_run_dir = Path(
-#    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs"
-#)
-
 training_run_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
+    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs"
 )
+
+#training_run_dir = Path(
+#    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
+#)
 
 training_idx = len(list(training_run_dir.glob("*/")))
 now = datetime.now()
@@ -86,18 +95,18 @@ split_config = SplitConfig(
 )
 
 training_config = TrainingConfig(
-    batch_size=64,
-    epochs=50,
+    batch_size=128,
+    epochs=20,
     learning_rate=5e-4,
     weight_decay=1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
-    mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
-    dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/pcqm",
+    mace_model_path="/home/snw30/rds/hpc-work/models/MACE-OFF24_medium.model",
+    dataset_path="/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/antiviral_admet+antiviral_potency+adme_fang+geom_train",
     noise_level=0.3,
-    model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/pcqm",
+    model_dir="/home/snw30/rds/hpc-work/3DMolecularDescriptors/transformer_model/antiviral_admet+antiviral_potency+adme_fang+geom_train/",
     normalized_targets=True,
 )
 
@@ -109,13 +118,12 @@ architecture_config = pyaml.parse_yaml_file_as(
 stages = [
         ReloadFromDiskStage(training_config.dataset_path),
         AtomicPositionsStage(),
-        ReduceMoleculesStage(200000)
     ]
 po =  PipelineOrchestrator(stages)
 #dataset = reload_dataset_pipeline(training_config.dataset_path).build()
 
 dataset = po.build()
-# dataset = dataset.convert_to_dataset_type(AtomicEmbeddingWithPositionsDataset)
+dataset = dataset.convert_to_dataset_type(AtomicEmbeddingWithPositionsDataset)
 
 dataset_splitting = DatasetSplitting(dataset)
 

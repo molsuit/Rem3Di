@@ -135,7 +135,7 @@ class TrainingTelemetry:
             f"Epoch {epoch} Training Loss: {train_loss} Validation Loss: {validation_loss}"
         )
 
-        epoch_data = {"denoising_train_loss" : train_loss, "denoising_val_loss" : validation_loss, "epoch": epoch}
+        epoch_data = {"denoising_train_loss" : train_loss, "denoising_val_loss" : validation_loss, "epoch": epoch+1}
 
         self.loss_data.append(epoch_data)
 

@@ -186,6 +186,7 @@ class DescriptorElementAnalysis(BaseEvalTask):
                 torch.min(self.descriptors), torch.max(self.descriptors), 50
             ),
         )
+        plt.yscale("log")
 
         fig_eigval = plt.figure()
         plt.semilogy(self.eig)
@@ -199,6 +200,7 @@ class DescriptorElementAnalysis(BaseEvalTask):
                 torch.min(self.descriptor_norms), torch.max(self.descriptor_norms), 50
             ),
         )
+        plt.yscale("log")
         plt.title("Distribution of Descriptor L2 Norms")
 
         self.figs = {
