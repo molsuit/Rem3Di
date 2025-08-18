@@ -50,7 +50,7 @@ def regression_training_with_pos_pipeline(
             regression_targets=regression_targets, regression_masks=regression_masks
         ),
         AtomicPositionsStage(),
-        AddRandomWalkTransitionProbabilityMatrixStage(),
+        AddRandomWalkTransitionProbabilityMatrixStage(infer_bonds_from_3D=dataset_config.rw_transition_matrix_from_3D),
         CanonicalizeStructureIDStage(),
 
     ]

@@ -44,11 +44,11 @@ load_dataset = "antiviral_potency"
 smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
     dataset_registry[load_dataset],
     smiles_column=smiles_column[load_dataset],
-    non_task_columns=non_task_columns[load_dataset],datasplit="Train"
+    non_task_columns=non_task_columns[load_dataset],datasplit="Test"
 )
 
 
-dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}_64_conf"
+dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}_test"
 
 MACE_PATH = (
     "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
@@ -67,12 +67,14 @@ dataset_config = DatasetConfig(
     dataset_type=RegressionDatasetwithPositions,
     BFGS_tol=0.1,
     BFGS_max_steps=500,
-    N_conformers=64,
+    N_conformers=1,
     embedding_model_config=embedding_model_config,
     max_atoms=None,
     tasks=tasks,
     only_heavy_atoms=False,
     dataset_name= load_dataset,
+    rw_transition_matrix_from_3D=  False
+
 )
 
 
