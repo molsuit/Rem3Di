@@ -111,11 +111,11 @@ class ChiralEmbeddingModel(torch.nn.Module):
             pseudoscalar_dimension, chiral_embedding_dim, bias=False
         )
 
-        # self.mlp_out = OddMLP(
-        #    pseudoscalar_dim = pseudoscalar_dimension,
-        #    hidden_dim = pseudoscalar_dimension * 2,
-        #    chiral_embedding_dim = chiral_embedding_dim
-        # )
+        self.mlp_out = OddMLP(
+            pseudoscalar_dim = pseudoscalar_dimension,
+            hidden_dim = pseudoscalar_dimension * 2,
+            chiral_embedding_dim = chiral_embedding_dim
+        )
 
     def forward(
         self,
@@ -135,8 +135,10 @@ class ChiralEmbeddingModel(torch.nn.Module):
         if self.gated:
             out = self.chi_gate(invariant_embeddings) * out
 
-        out = self.linear_out(out).to(torch.float32)  # (B*N, C) or (N, C)
-
+        out = self.linear_out(out)  # (B*N, C) or (N, C)
+        
+        #out = self.mlp_out(out)
+        out = out.to(torch.float32)
         if padding is not None:
             out = out.masked_fill(padding.unsqueeze(-1), 0.0)
         return out
