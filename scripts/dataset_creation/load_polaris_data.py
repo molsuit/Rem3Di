@@ -39,16 +39,16 @@ non_task_columns = {
 }
 
 
-load_dataset = "antiviral_potency"
+load_dataset = "adme_fang"
 # Load the benchmark from polarishub
 smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
     dataset_registry[load_dataset],
     smiles_column=smiles_column[load_dataset],
-    non_task_columns=non_task_columns[load_dataset],datasplit="Test"
+    non_task_columns=non_task_columns[load_dataset],datasplit="Train"
 )
 
 
-dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}_test"
+dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}"
 
 MACE_PATH = (
     "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
@@ -63,7 +63,7 @@ embedding_model_config = MaceCalculatorConfig(
 )
 
 dataset_config = DatasetConfig(
-    N_molecules=60000,
+    N_molecules=4000,
     dataset_type=RegressionDatasetwithPositions,
     BFGS_tol=0.1,
     BFGS_max_steps=500,
@@ -87,3 +87,22 @@ dataset = pipeline.build()
 store_data_to_disk(dataset, f"{dataset_directory}_full")
 
 DatasetPostLoadAnalysis(dataset, f"{dataset_directory}_full").run()
+
+
+from threedscriptors.training.dataset_splitting import DatasetSplitting
+from threedscriptors.data_handling.dataset_builder import DatasetBuilder
+
+
+ds = DatasetSplitting(dataset)
+names = ["training", "test"]
+split_ratios = [0.9, 0.1]
+split_dataset_indices = ds.general_split(split_ratios, True)
+
+
+for ids, name in zip(split_dataset_indices,names, strict=False):
+    new_dataset = ds.materialise_dataset_split(dataset, ids)
+
+
+    db = DatasetBuilder(new_dataset)
+    db.canonicalize_structure_ids()
+    store_data_to_disk(new_dataset, dataset_directory+"_" + name)

@@ -574,6 +574,10 @@ class DatasetBuilder:
 
 
     def drop_large_molecules(self, new_max_atoms: int):
+        
+
+        if new_max_atoms > self.dataset.dataset_config.max_atoms:
+            return
 
         self.canonicalize_structure_ids()
 
@@ -593,8 +597,8 @@ class DatasetBuilder:
             self.dataset.padding_mask = self.dataset.padding_mask[:,:new_max_atoms]
 
         if self.dataset.atomic_positions is not None:
-            print(self.dataset.atomic_positions.shape)
             self.dataset.atomic_positions = self.dataset.atomic_positions[:,:new_max_atoms,:]
+
 
         self.dataset.dataset_config.max_atoms = new_max_atoms
 

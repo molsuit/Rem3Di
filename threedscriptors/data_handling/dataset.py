@@ -192,7 +192,7 @@ class BaseDataset(data.Dataset):
     def expand_embedding_num_atoms(self, new_max_num_atoms: int):
         # Method can be used to increase the "Sequence length" i.e the number of atoms in a molecule. So that the embeddings do not have to be recalculated.
         # Expand the padding mask and the atomic embeddings to the max dimension.
-
+        
         padding_width = new_max_num_atoms - self.max_atoms
 
         assert padding_width > 0

@@ -84,11 +84,11 @@ run_name = parse_args()
 torch.manual_seed(0)
 np.random.seed(0)
 
-#training_run_dir = Path(
-#    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
-#)
+training_run_dir = Path(
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
+)
 
-training_run_dir = Path("/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs")
+#training_run_dir = Path("/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs")
 
 training_idx = len(list(training_run_dir.glob("*/")))
 now = datetime.now()
@@ -105,18 +105,24 @@ split_config = SplitConfig(
     shuffle = True
 )
 
+#dataset_path = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/qm9_training"
+#model_dir = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/transformer_model/qm9_training"
+model_dir ="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/tmqm_training"
+dataset_path = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm_training"
+#mace_model_path = "/home/snw30/rds/hpc-work/models/MACE-OFF24_medium.model"
+mace_model_path = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
 training_config = TrainingConfig(
-    batch_size= 128,
-    epochs=200,
+    batch_size= 64,
+    epochs=100,
     learning_rate=1e-4,
     weight_decay=1e-3,
     max_grad_norm=1.0,
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
-    mace_model_path="/home/snw30/rds/hpc-work/models/MACE-OFF24_medium.model",
-    dataset_path="/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/qm9_training",
-    model_dir="/home/snw30/rds/hpc-work/3DMolecularDescriptors/transformer_model/qm9_training",
+    mace_model_path=mace_model_path,
+    dataset_path=dataset_path,
+    model_dir=model_dir,
     normalized_targets=True,
     frozen_stem = False
 )

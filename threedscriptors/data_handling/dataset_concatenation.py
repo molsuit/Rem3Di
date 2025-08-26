@@ -50,7 +50,7 @@ class DatasetConcatenation:
             embedding_model_config=self.datasets[
                 0
             ].dataset_config.embedding_model_config,
-            tasks= None, #[task for d in self.datasets for task in d.dataset_config.tasks],
+            tasks= [task for d in self.datasets for task in d.dataset_config.tasks],
             dataset_name="+".join(
                 [d.dataset_config.dataset_name for d in self.datasets]
             ),
@@ -58,28 +58,21 @@ class DatasetConcatenation:
             only_heavy_atoms=heavy_atoms_only[0],
         )
 
-        task_names = None #[task.task_name for task in new_dataset_config.tasks]
+        task_names = [task.task_name for task in new_dataset_config.tasks]
         # Append the dataset configs. assert no tasks have the same name
 
-        #assert len(task_names) == len(set(task_names)), "Found duplicate task_names"
+        assert len(task_names) == len(set(task_names)), "Found duplicate task_names"
 
         return new_dataset_config
 
     def concatenate(self):
         self.concatenate_molecules()
         self.concatenate_atomic_embeddings()
-        #self.concatenate_regression_targets()
-        #self.concatenate_atomic_positions()
+        self.concatenate_regression_targets()
         # self.concatenate_auxillary_data()
         # self.concatenate_structural_encodings()
 
         return self.new_dataset
-
-
-    
-
-
-    
 
 
     def concatenate_molecules(self):
@@ -145,6 +138,9 @@ class DatasetConcatenation:
         # expand the padding mask and atomic embdding mask to max dimension
 
         for dataset in self.datasets:
+            print(dataset.dataset_config.max_atoms)
+            print(self.new_dataset.dataset_config.max_atoms)
+
             if (
                 dataset.dataset_config.max_atoms
                 != self.new_dataset.dataset_config.max_atoms
@@ -152,6 +148,8 @@ class DatasetConcatenation:
                 dataset.expand_embedding_num_atoms(
                     new_max_num_atoms=self.new_dataset.dataset_config.max_atoms
                 )
+
+                print(dataset.embeddings.shape)
 
         new_embeddings = torch.cat([d.embeddings for d in self.datasets])
         new_padding_masks = torch.cat([d.padding_mask for d in self.datasets])

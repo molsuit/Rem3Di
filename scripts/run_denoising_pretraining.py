@@ -74,13 +74,13 @@ run_name, N_samples = parse_args()
 torch.manual_seed(0)
 np.random.seed(0)
 
-training_run_dir = Path(
-    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs"
-)
-
 #training_run_dir = Path(
-#    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
+#    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs"
 #)
+
+training_run_dir = Path(
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
+)
 
 training_idx = len(list(training_run_dir.glob("*/")))
 now = datetime.now()
@@ -93,6 +93,13 @@ os.makedirs(training_data_dir)
 split_config = SplitConfig(
     strategy=SplitStrategy.SINGLE, N_folds=None, N_repeats=None, shuffle=True
 )
+#dataset_path = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/qm9_training"
+#model_dir = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/transformer_model/qm9_training"
+model_dir ="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/tmqm_training"
+dataset_path = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm_training"
+#mace_model_path = "/home/snw30/rds/hpc-work/models/MACE-OFF24_medium.model"
+mace_model_path = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
+
 
 training_config = TrainingConfig(
     batch_size=128,
@@ -103,10 +110,10 @@ training_config = TrainingConfig(
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
-    mace_model_path="/home/snw30/rds/hpc-work/models/MACE-OFF24_medium.model",
-    dataset_path="/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/antiviral_admet+antiviral_potency+adme_fang+geom_train",
+    mace_model_path=mace_model_path,
+    dataset_path=dataset_path,
     noise_level=0.3,
-    model_dir="/home/snw30/rds/hpc-work/3DMolecularDescriptors/transformer_model/antiviral_admet+antiviral_potency+adme_fang+geom_train/",
+    model_dir=model_dir,
     normalized_targets=True,
 )
 

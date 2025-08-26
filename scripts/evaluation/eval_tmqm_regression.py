@@ -7,7 +7,7 @@ from threedscriptors.evaluation.evaluation_pipeline import (
 )
 from threedscriptors.model.model_builder import ModelBuilder
 
-model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/149-2025_07_31_12_53_12-TMQMRegressionTraining"
+model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/158-2025_08_19_12_30_46-tmqm_no_pos"
 
 
 #model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/144-2025_07_30_14_47_16-TMQM First Run"
@@ -20,7 +20,7 @@ train_dataset_directory = (
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm_training"
 )
 
-out_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/tmqm_training"
+out_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/tmqm_training_nppos"
 
 #dataset = reload_dataset_pipeline(train_dataset_directory).build()
 #

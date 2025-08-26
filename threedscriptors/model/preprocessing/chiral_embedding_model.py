@@ -111,11 +111,11 @@ class ChiralEmbeddingModel(torch.nn.Module):
             pseudoscalar_dimension, chiral_embedding_dim, bias=False
         )
 
-        self.mlp_out = OddMLP(
-            pseudoscalar_dim = pseudoscalar_dimension,
-            hidden_dim = pseudoscalar_dimension * 2,
-            chiral_embedding_dim = chiral_embedding_dim
-        )
+        #self.mlp_out = OddMLP(
+        #    pseudoscalar_dim = pseudoscalar_dimension,
+        #    hidden_dim = pseudoscalar_dimension * 2,
+        #    chiral_embedding_dim = chiral_embedding_dim
+        #)
 
     def forward(
         self,

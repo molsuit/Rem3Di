@@ -99,7 +99,7 @@ def get_coordination_numbers(molecules: list[Atoms]):
 def get_tm_colormap():
     # 1. Define your “zones”
     Z_green = np.arange(21, 31)  # 21–30
-    Z_blue = np.arange(39, 48)  # 29 only
+    Z_blue = np.arange(39, 49)  # 29 only
     Z_red = np.r_[57, np.arange(72, 81)]  # 57 and 72–80
 
     # 2. Sample each gradient from a built‑in cmap
