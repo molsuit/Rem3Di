@@ -6,48 +6,69 @@ import numpy as np
 import torch
 from ase.visualize.plot import plot_atoms
 
-from threedscriptors.data_handling.data_utils import (
-    get_all_atom_counts,
-    get_atom_species_in_smiles,
-    rmsd,
-)
-from threedscriptors.data_handling.dataset import BaseDataset
-from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
-from threedscriptors.utils.model_utils import (
-    get_invariant_indices,
-    get_mace_calculator_irrep_signature,
-)
+from matplotlib.figure import Figure
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+
+from pathlib import Path
+
+
+class MoleculeDatasetAnalysis:
+
+    def __init__(self, dataset: MoleculeDataset, output_dir: Path):
+
+        self.dataset = dataset
+
+        os.makedirs(output_dir, exist_ok=True)
+        self.dir = output_dir
+
+
+    def molecule_sizes(self) -> np.ndarray:
+        """Per-structure atom counts from the ragged pointer."""
+        # Only take the active part of ptr (up to sentinel)
+        ptr = np.asarray(self.dataset.ptr[: self.dataset.N_structures + 1])
+        return np.diff(ptr)  # shape: (n_structures,)
+    
+    def atom_species(self) -> np.ndarray:
+
+        atomic_numbers, counts = np.unique_counts(self.dataset.atomic_numbers[:self.dataset.N_atoms])
+
+        return {n: c for n, c in zip(atomic_numbers, counts)}
+
+    def plot_atom_species_histogram(self):
+        
+        print(self.atom_species())
+
+
+    def plot_molecule_size_distribution(self) -> Figure:
+        sizes = self.molecule_sizes()
+        fig = plt.figure()
+        plt.hist(sizes, bins="auto")
+        plt.xlabel("Atoms per structure")
+        plt.ylabel("Frequency")
+        return fig
+    
+
+    def run(self):
+
+        fig_molecule_size = self.plot_molecule_size_distribution()
+        fig_molecule_size.savefig(self.dir / "molecule_size.png")
+
+
+    def calculate_mean_std_descriptors(self):
+        pass
 
 
 class DatasetPostLoadAnalysis:
 
 
-    def __init__(self, dataset : BaseDataset, output_dir):
+    def __init__(self, dataset, output_dir):
         self.dataset = dataset
         self.output_dir = output_dir
 
         os.makedirs(output_dir, exist_ok=True)
 
     def calculate_atomic_descriptor_norms(atomic_descriptors, padding_masks):
-        norms = np.linalg.norm(atomic_descriptors, axis = (0,1), where = ~padding_masks)
-        return norms
-
-    def plot_molecule_size_distribution(self):
-        counts = get_all_atom_counts(self.dataset.molecules, heavy_atoms_only= self.dataset.dataset_config.only_heavy_atoms)
-
-        fig = plt.figure()
-        plt.hist(np.array(list(counts)))
-        plt.xlabel("Molecule Size")
-        plt.ylabel("Frequency")
-        fig.savefig(f"{self.output_dir}/histogram_molecule_size.png")
-        plt.close(fig)
-
-    def get_dataset_size(self):
-
-        size = self.dataset.embeddings.element_size() * self.dataset.embeddings.nelement()
-
-        return size
-
+        pass
 
     def get_invariants_std(self):
 

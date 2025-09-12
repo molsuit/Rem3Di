@@ -13,38 +13,6 @@ from pydantic import (
     model_validator,
 )
 
-from threedscriptors.data_handling.dataset import (
-    AtomicEmbeddingDataset,
-    AtomicEmbeddingWithPositionsDataset,
-    BaseDataset,
-    RegressionDataset,
-    RegressionDatasetwithPositions,
-    RegressionDatasetwithRandomWalks,
-    RegressionWithAuxAndPositionsDataset,
-    RegressionWithAuxDataset,
-    SimilarityScreeningDataset,
-)
-
-
-class DatasetTypes(Enum):
-    ATOMICEMBEDDING_DATASET = AtomicEmbeddingDataset
-    REGRESSION_DATASET = RegressionDataset
-    REGRESSION_WITH_AUX_DATASET = RegressionWithAuxDataset
-    REGRESSION_WITH_POSITIONS_DATASET = RegressionDatasetwithPositions
-    SIMILARITY_SCREENING_DATASET = SimilarityScreeningDataset
-    ATOMICEMBEDDING_WITHPOSITIONS_DATASET = AtomicEmbeddingWithPositionsDataset
-    REGRESSION_WITH_AUX_AND_POS = RegressionWithAuxAndPositionsDataset
-    REGRESSION_DATATSET_WITH_RANDOMWALK = RegressionDatasetwithRandomWalks
-
-    @classmethod
-    def _missing_(cls, value: object) -> "DatasetTypes":
-        if isinstance(value, str):
-            for member in cls:
-                if member.name.lower() == value.lower():
-                    return member
-        raise ValueError(f"{value!r} is not a valid {cls.__name__}")
-
-
 class LabelScalingType(str, Enum):
     NONE = "none"
     Z = "z"
@@ -67,36 +35,6 @@ class LabelScalingType(str, Enum):
         # Returning None lets Pydantic raise its usual validation error
         return None
 
-
-class TaskConfig(BaseModel):
-    task_name: str
-    mean: float | None = None
-    std: float | None = None
-    scaling: LabelScalingType | None = None
-    has_auxillary_data: bool = False
-    auxillary_data_dimension: int | None = None
-
-    @field_validator("scaling", mode="before")
-    @classmethod
-    def _coerce_scaling(cls, v):
-
-        if v is None:
-            return None
-
-        if isinstance(v, LabelScalingType):
-            return v
-        # string → enum by name (or via _missing_)
-        if isinstance(v, str):
-            print(v.lower())
-            return LabelScalingType(v.strip().lower())
-
-        raise TypeError(
-            "`dataset_type` must be a DatasetTypes, a BaseDataset subclass, or a registered name"
-        )
-
-    @field_serializer("scaling")
-    def _serialize_scaling(self, v: LabelScalingType | None, _info):
-        return None if v is None else v.name
 
 
 class MaceCalculatorConfig(BaseModel):
@@ -161,10 +99,41 @@ class MaceCalculatorConfig(BaseModel):
         }
 
 
-class DatasetSplit(Enum):
-    TRAIN = 0
-    VALIDATION = 1
-    TEST = 2
+
+
+
+class TaskConfig(BaseModel):
+    task_name: str
+    mean: float | None = None
+    std: float | None = None
+    scaling: LabelScalingType | None = None
+    has_auxillary_data: bool = False
+    auxillary_data_dimension: int | None = None
+
+    @field_validator("scaling", mode="before")
+    @classmethod
+    def _coerce_scaling(cls, v):
+
+        if v is None:
+            return None
+
+        if isinstance(v, LabelScalingType):
+            return v
+        # string → enum by name (or via _missing_)
+        if isinstance(v, str):
+            print(v.lower())
+            return LabelScalingType(v.strip().lower())
+
+        raise TypeError(
+            "`dataset_type` must be a DatasetTypes, a BaseDataset subclass, or a registered name"
+        )
+
+    @field_serializer("scaling")
+    def _serialize_scaling(self, v: LabelScalingType | None, _info):
+        return None if v is None else v.name
+
+
+
 
 
 class DatasetConfig(BaseModel):
@@ -175,7 +144,7 @@ class DatasetConfig(BaseModel):
     BFGS_max_steps: int
     N_conformers: int = 1
     embedding_model_config: MaceCalculatorConfig | None = None
-    tasks: Sequence[TaskConfig] | None = None
+  
     only_heavy_atoms: bool = False
     dataset_name: str | None = None
     dataset_split: DatasetSplit | None = None

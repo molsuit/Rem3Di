@@ -1,6 +1,7 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
 from typing import Any
+from torch.nn.utils.rnn import pad_sequence
 
 import torch
 from torch.utils.data._utils.collate import default_collate
@@ -19,16 +20,12 @@ def _move_to(x: Any, device: torch.device, non_blocking: bool) -> Any:
 
 @dataclass
 class Sample:
-    embeddings:            torch.Tensor | None = None
-    padding_mask:          torch.Tensor | None = None
-    regression_targets:    torch.Tensor | None = None
-    regression_masks:      torch.Tensor | None = None
-    auxillary_data:        dict[str, Any] | None = None
-    target_class_labels:   torch.Tensor | None = None
-    active_decoy_labels:   torch.Tensor | None = None
-    molecular_descriptors: torch.Tensor | None = None
-    atomic_positions:      torch.Tensor | None = None
-    random_walk_transition_matrix: torch.Tensor | None = None
+    embeddings: torch.Tensor | None = None
+    padding_mask: torch.Tensor | None = None
+    regression_targets: torch.Tensor | None = None
+    regression_masks: torch.Tensor | None = None
+    auxillary_data: dict[str, Any] | None = None
+    atomic_positions: torch.Tensor | None = None
 
     def to(self, device: torch.device, non_blocking: bool = True) -> "Sample":
         moved_fields = {
@@ -44,8 +41,49 @@ class Sample:
             self.__dict__[name] = _move_to(value, device, non_blocking)
         return self
 
+    def __len__(self):
+        return self.embeddings.shape[0]
+
+    def pin_memory(self):
+        def _pin(x): return None if x is None else x.pin_memory()
+        return Sample(
+            embeddings=_pin(self.embeddings),
+            padding_mask=_pin(self.padding_mask),
+            regression_targets=_pin(self.regression_targets),
+            regression_masks=_pin(self.regression_masks),
+            auxillary_data=self.auxillary_data,
+            atomic_positions=_pin(self.atomic_positions),
+        )
+
+
+
+
+def pretraining_padded_collate_fn(batch: list[Sample]) -> Sample:
+
+    Ns = [len(s) for s in batch]
+    #B = len(batch)
+    Nmax = max(Ns)
+
+    #D = int(batch[0].embeddings.shape[1])
+
+    #e_dtype = batch[0].embeddings.dtype
+    #p_dtype = batch[0].atomic_positions.dtype
+
+    E_pad = pad_sequence([s.embeddings for s in batch], batch_first=True)  # (B,Nmax,D)
+    P_pad = pad_sequence([s.atomic_positions for s in batch], batch_first=True)  # (B,Nmax,3)
+    Nmax  = E_pad.size(1)
+    lengths = torch.tensor([len(s) for s in batch])
+    mask = torch.arange(Nmax).expand(len(batch), Nmax) < lengths.unsqueeze(1)
+
+    return Sample(embeddings=E_pad, padding_mask=mask, atomic_positions=P_pad)
+
 
 def sample_collate_fn(batch: list[Sample]) -> Sample:
+
+    max_atoms = max([len(s) for s in batch])
+
+    # Pad all samples to the same max atoms
+
     batched = {}
     for f in fields(Sample):
         vals = [getattr(s, f.name) for s in batch]
@@ -55,22 +93,23 @@ def sample_collate_fn(batch: list[Sample]) -> Sample:
         else:
             # for auxillary_data this will batch each dict key automatically,
             # and for tensors it will stack them
+
             batched[f.name] = default_collate(vals)
     return Sample(**batched)
 
 
-
 def paired_sample_collate_fn(batch: list[tuple["Sample", "Sample"]]):
-    left, right = zip(*batch, strict=False)  # two lists of Samples (right may include None)
-    batch = sample_collate_fn(list(left)+list(right))
+    left, right = zip(
+        *batch, strict=False
+    )  # two lists of Samples (right may include None)
+    batch = sample_collate_fn(list(left) + list(right))
     return batch
-
 
 
 @dataclass
 class PreprocessedSample:
-    preprocessed_atomic_embeddings : torch.Tensor | None = None
-    padding_mask:          torch.Tensor | None = None
+    preprocessed_atomic_embeddings: torch.Tensor | None = None
+    padding_mask: torch.Tensor | None = None
     initial_pair_representation: torch.Tensor | None = None
     geometrical_encoding: torch.Tensor | None = None
     pair_mask: torch.Tensor | None = None

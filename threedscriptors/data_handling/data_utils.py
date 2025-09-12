@@ -10,21 +10,19 @@ from mace.calculators import MACECalculator
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 from rdkit.Chem.rdchem import Conformer
-from rdkit.Geometry import Point3D  
+from rdkit.Geometry import Point3D
 from rdkit.Chem import rdDetermineBonds
 from rdkit.Chem import rdmolops
-
 
 
 if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
 
-from threedscriptors.data_handling.smiles_iterator import SmilesIterator
 
 
 def get_molecular_weight(molecules: list[Atoms]):
 
-    return [ sum(m.get_masses()) for m in molecules]
+    return [sum(m.get_masses()) for m in molecules]
 
 
 def get_mirrored_molecules(molecules: list[Atoms], new_smiles: str):
@@ -63,18 +61,18 @@ def get_ase_atoms(smiles) -> Atoms:
 
     conf = mol.GetConformer()
     atoms = Atoms(
-                positions=conf.GetPositions(),
-                numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
-                info={"smiles": smiles}
-            )
+        positions=conf.GetPositions(),
+        numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
+        info={"smiles": smiles},
+    )
 
     return atoms
-
 
 
 def contains_ionic_atom(mol: Chem.Mol) -> bool:
     """Return True if *any* atom in `mol` has non-zero formal charge."""
     return any(atom.GetFormalCharge() != 0 for atom in mol.GetAtoms())
+
 
 def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
     # print(smiles)
@@ -86,7 +84,6 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
     mol = Chem.AddHs(mol)
     charged = contains_ionic_atom(mol)
 
-
     if charged:
         raise ValueError(f"Smiles {smiles} is a charged molecule")
 
@@ -94,17 +91,16 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
         mol, numConfs=N_conformers, numThreads=N_conformers, maxAttempts=500
     )
 
-
     AllChem.MMFFOptimizeMoleculeConfs(mol, maxIters=500, nonBondedThresh=500.0)
 
     ase_confs = [
-            Atoms(
-                positions=conf.GetPositions(),
-                numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
-                info={"smiles": smiles}
-            )
-            for conf in mol.GetConformers()
-        ]
+        Atoms(
+            positions=conf.GetPositions(),
+            numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
+            info={"smiles": smiles},
+        )
+        for conf in mol.GetConformers()
+    ]
 
     if len(ase_confs) == 0:
         raise ValueError
@@ -142,7 +138,8 @@ def get_relaxed_conformers(
 
 
 def count_atoms_from_smiles(
-    smiles_iterator: SmilesIterator, heavy_atoms_only = False, max_num_molecules = np.inf) -> int:
+    smiles_iterator, heavy_atoms_only=False, max_num_molecules=np.inf
+) -> int:
 
     # Returns the max and sum of the atoms from smiles
 
@@ -156,15 +153,13 @@ def count_atoms_from_smiles(
 
         atom_count.append(mol.GetNumAtoms())
 
-
         if i >= max_num_molecules:
             break
 
-    return max(atom_count, default = 0), sum(atom_count)
+    return max(atom_count, default=0), sum(atom_count)
 
 
-
-def get_all_atom_counts(atoms: list[Atoms], heavy_atoms_only= False):
+def get_all_atom_counts(atoms: list[Atoms], heavy_atoms_only=False):
     if heavy_atoms_only:
         counts = ((mol.get_atomic_numbers() != 1).sum() for mol in atoms)
     else:
@@ -172,22 +167,20 @@ def get_all_atom_counts(atoms: list[Atoms], heavy_atoms_only= False):
 
     return counts
 
-def count_atoms_from_ase(atoms : list[Atoms], heavy_atoms_only= False):
+
+def count_atoms_from_ase(atoms: list[Atoms], heavy_atoms_only=False):
     # Returns the max and the sum of the numbers of atoms inside a list of ase atoms
     counts = get_all_atom_counts(atoms, heavy_atoms_only)
 
     return max(counts, default=0), sum(counts)
 
 
-def get_atom_species_in_smiles(smiles_iterator: SmilesIterator):
+def get_atom_species_in_smiles(smiles_iterator):
     atom_species_set = set("H")
     for smiles in smiles_iterator:
         mol = Chem.MolFromSmiles(smiles)
         atom_species_set.update([atom.GetSymbol() for atom in mol.GetAtoms()])
     return atom_species_set
-
-
-
 
 
 def has_task_with_auxillary_data(tasks: Sequence["TaskConfig"]) -> bool:
@@ -215,9 +208,6 @@ def get_unique_smiles_id_from_smiles_list(smiles_list: list[str]):
     return result_ids
 
 
-
-
-
 def get_functional_group_label(smiles: list[str]):
     # This function is specific to the test functional group dataset, and is not meaningful in any other context.
     print(smiles)
@@ -235,7 +225,6 @@ def get_functional_group_label(smiles: list[str]):
                 print(f"Smi {smiles_string}")
                 raise ValueError("Non matching smiles in functional group dataset")
 
-
     return functional_group_indices
 
 
@@ -247,13 +236,11 @@ def validate_ratios(ratios: Sequence[float]) -> None:
         raise ValueError("All ratios must be strictly positive")
 
 
-
-
 def compute_splits(size: int, ratios: Sequence[float]) -> list[slice]:
     """Return slice objects for each split boundary."""
     raw_counts = (np.asarray(ratios) * size).astype(int)
 
-    leftover = (size - raw_counts.sum())
+    leftover = size - raw_counts.sum()
 
     raw_counts[0] += leftover
 
@@ -281,12 +268,11 @@ def rmsd(A, B):
 
     # ensure right‐handed coordinate system
     d = np.sign(np.linalg.det(V @ Wt))
-    U = V @ np.diag([1,1,d]) @ Wt
+    U = V @ np.diag([1, 1, d]) @ Wt
 
     # rotated A and RMSD
     A_rot = A_cent @ U
-    return np.sqrt(((A_rot - B_cent)**2).sum() / A.shape[0])
-
+    return np.sqrt(((A_rot - B_cent) ** 2).sum() / A.shape[0])
 
 
 def get_rdkit_mol_from_ase(
@@ -353,9 +339,21 @@ def get_rdkit_mol_from_ase(
     return mol
 
 
-
 def mol_is_fragmented(mol, *, ignore_hs=True) -> bool:
     m = Chem.RemoveHs(mol) if ignore_hs else mol
     # tuple of tuples of atom indices per fragment
     frags = rdmolops.GetMolFrags(m, asMols=False)
     return len(frags) > 1
+
+
+def get_transition_matrix(mol):
+    A = rdmolops.GetAdjacencyMatrix(mol)
+    # Get the adjacency matrix,
+
+    A_self = A + np.eye(A.shape[0])
+
+    deg = A_self.sum(axis=1)
+    D_inv = np.diag(1.0 / deg)
+    T = D_inv @ A_self
+
+    return T
