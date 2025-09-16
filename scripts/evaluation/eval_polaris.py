@@ -1,5 +1,6 @@
-from threedscriptors.configuration.data_config import DatasetSplit
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+
+from threedscriptors.configuration.data_config import DatasetSplit
 from threedscriptors.evaluation.evaluation_pipeline import (
     EvalPipelineRunner,
     RegressionTestTask,

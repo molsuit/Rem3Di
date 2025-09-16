@@ -12,38 +12,34 @@ from torch.utils.data import DataLoader
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
 )
-from threedscriptors.configuration.data_config import DatasetSplit
-from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.data_handling.data_build_pipeline import (
-    AtomicPositionsStage,
-    PipelineOrchestrator,
-    ReloadFromDiskStage,
-    ReduceMoleculesStage
+from threedscriptors.configuration.training_config import (
+    TrainingConfig,
 )
-
-from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset
-from threedscriptors.data_handling.indexed_subset import IndexedSubset
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-from threedscriptors.data_handling.sample import PreprocessedSample, sample_collate_fn
-from threedscriptors.evaluation.clustering import UMAPCalculator
-from threedscriptors.evaluation.evaluation_pipeline import (
-    DescriptorClusteringTask,
-    DescriptorElementAnalysis,
-    EvalPipelineRunner,
+from threedscriptors.data_handling.sample import (
+    PreprocessedSample,
+    pretraining_padded_collate_fn,
 )
 from threedscriptors.model.model_builder import ModelBuilder
-from threedscriptors.model.remedi_model import REM3DIModel
-from threedscriptors.training.data_normalization import DataNormalizationModule
-from threedscriptors.training.dataset_splitting import (
-    DatasetSplitting,
-    SplitConfig,
-    SplitStrategy,
-)
 from threedscriptors.training.noise_scheduler import ConstantSchedule, NoiseModule
 from threedscriptors.training.pretraining import atom_denoising_loss
 from threedscriptors.training.telemetry import TrainingTelemetry
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+import torch
+from torch.utils.data import Subset
+
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+from threedscriptors.data_handling.dataset.training_dataset import (
+    TrainingMoleculeDataset,
+    pos_emb_getitem,
+)
+from threedscriptors.training.data import (
+    DatasetSplitting,
+    worker_init_fn,
+)
+from threedscriptors.training.data.data_normalization import DataNormalizationModule
 
 
 def parse_args():
@@ -54,98 +50,47 @@ def parse_args():
         description="Parse the --run_name argument for naming runs"
     )
     parser.add_argument(
-        "--run_name",
+        "--train_dir",
         type=str,
         required=True,
-        help="Name of the run (e.g., experiment identifier)",
+        help="Directory containing the training config and architecture config file.",
     )
 
-    parser.add_argument(
-        "--N_samples",
-        type=int,
-        required=False,
-        help="Name of the run (e.g., experiment identifier)",
-    )
     args = parser.parse_args()
-    return args.run_name, args.N_samples
+    return args.train_dir
 
 
-run_name, N_samples = parse_args()
+training_dir = parse_args()
+training_dir = Path(training_dir)
+
 torch.manual_seed(0)
 np.random.seed(0)
 
-#training_run_dir = Path(
-#    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs"
-#)
 
-training_run_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs"
+training_config = pyaml.parse_yaml_file_as(
+    TrainingConfig, f"{training_dir}/training_config.yaml"
 )
-
-training_idx = len(list(training_run_dir.glob("*/")))
-now = datetime.now()
-training_data_dir = training_run_dir / Path(
-    f"{training_idx}-{now.strftime("%Y_%m_%d_%H_%M_%S")}-{run_name}"
-)
-
-os.makedirs(training_data_dir)
-
-split_config = SplitConfig(
-    strategy=SplitStrategy.SINGLE, N_folds=None, N_repeats=None, shuffle=True
-)
-#dataset_path = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/qm9_training"
-#model_dir = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/transformer_model/qm9_training"
-model_dir ="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/tmqm_training"
-dataset_path = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm_training"
-#mace_model_path = "/home/snw30/rds/hpc-work/models/MACE-OFF24_medium.model"
-mace_model_path = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
-
-
-training_config = TrainingConfig(
-    batch_size=128,
-    epochs=20,
-    learning_rate=5e-4,
-    weight_decay=1e-3,
-    max_grad_norm=1.0,
-    wandb_active=True,
-    split_config=split_config,
-    training_data_dir=training_data_dir,
-    mace_model_path=mace_model_path,
-    dataset_path=dataset_path,
-    noise_level=0.3,
-    model_dir=model_dir,
-    normalized_targets=True,
-)
-
 architecture_config = pyaml.parse_yaml_file_as(
     ArchitectureConfig,
-    f"{training_config.model_dir}/architecture_config.yaml",
+    f"{training_dir}/architecture_config.yaml",
 )
 
-stages = [
-        ReloadFromDiskStage(training_config.dataset_path),
-        AtomicPositionsStage(),
-    ]
-po =  PipelineOrchestrator(stages)
-#dataset = reload_dataset_pipeline(training_config.dataset_path).build()
-
-dataset = po.build()
-dataset = dataset.convert_to_dataset_type(AtomicEmbeddingWithPositionsDataset)
-
-dataset_splitting = DatasetSplitting(dataset)
-
-lowest_val_losses = []
-
-train_idx, val_idx, split_name = next(
-    dataset_splitting.get_split(training_config.split_config)
+full_dataset = MoleculeDataset.open_existing_dataset_from_dir(
+    training_config.dataset_path
 )
-print("Split")
+ds = TrainingMoleculeDataset(training_config.dataset_path, get_item=pos_emb_getitem)
 
-os.makedirs(f"{training_config.training_data_dir}/{split_name.lower()}")
 
-train_dataset = IndexedSubset(dataset, train_idx)
-valid_dataset = IndexedSubset(dataset, val_idx)
+splitting = DatasetSplitting(full_dataset)
+train_idx, val_idx, split_name = next(splitting.get_split(training_config.split_config))
+train_dataset = Subset(ds, train_idx)
+valid_dataset = Subset(ds, val_idx)
 
+training_idx = len(list(training_dir.glob("*/")))
+now = datetime.now()
+training_identifier = f"{training_idx}-{now.strftime("%Y_%m_%d_%H_%M_%S")}-{split_name}"
+training_data_dir = training_dir / Path(training_identifier)
+os.makedirs(training_data_dir)
 
 noise_scheduler = ConstantSchedule(training_config.noise_level)
 noise_module = NoiseModule(noise_scheduler)
@@ -153,26 +98,34 @@ noise_module = NoiseModule(noise_scheduler)
 training_loader = DataLoader(
     train_dataset,
     batch_size=training_config.batch_size,
-    shuffle=True,
-    drop_last=True,
+    worker_init_fn=worker_init_fn,
+    prefetch_factor=8,
+    persistent_workers=True,
     pin_memory=True,
-    collate_fn=sample_collate_fn,
+    num_workers=32,
+    shuffle=True,
+    collate_fn=pretraining_padded_collate_fn,
 )
+
 validation_loader = DataLoader(
     valid_dataset,
-    batch_size=training_config.batch_size,
-    shuffle=False,
-    drop_last=False,
+    batch_size=64,
+    worker_init_fn=worker_init_fn,
+    prefetch_factor=8,
+    persistent_workers=True,
     pin_memory=True,
-    collate_fn=sample_collate_fn,
+    num_workers=32,
+    shuffle=True,
+    collate_fn=pretraining_padded_collate_fn,
 )
 
 
-data_normalization = DataNormalizationModule(dataset=train_dataset)
-print("Starting Normalization ")
-inv_mean_per_dim, inv_std_per_dim = (
-    data_normalization.get_atomic_embedding_normalization_constants()
+dn = DataNormalizationModule(train_dataset)
+
+inv_mean_per_dim, inv_std_per_dim = dn.get_atomic_embedding_normalization_constants(
+    irreps=full_dataset.config.irreps
 )
+
 
 mb = ModelBuilder(architecture_config=architecture_config)
 preprocessor = mb.build_preprocessor(inv_mean_per_dim, inv_std_per_dim)
@@ -180,14 +133,6 @@ encoder = mb.build_encoder()
 decoder = mb.build_decoder()
 
 preprocessor.to(dtype=torch.float64)
-
-config = {
-    "architecture_config": architecture_config.model_dump(),
-    "training_config": training_config.model_dump(),
-    "dataset_config": dataset.dataset_config.model_dump(),
-}
-print("Model built")
-
 
 all_params = (
     list(encoder.parameters())
@@ -207,40 +152,31 @@ lr_scheduler = OneCycleLR(
     total_steps=training_config.epochs * len(training_loader),
 )
 
-best_model_path = f"{training_config.training_data_dir}/best_model.pth"
+best_model_path = f"{training_data_dir}/best_model.pth"
 
 architecture_config.encoder_config.reload_state_dict = (
-    f"{training_config.training_data_dir}/encoder.pth"
+    f"{training_data_dir}/encoder.pth"
 )
 architecture_config.embedding_preprocess_config.reload_state_dict = (
-    f"{training_config.training_data_dir}/atomic_preprocessor.pth"
+    f"{training_data_dir}/atomic_preprocessor.pth"
 )
 architecture_config.positional_encoding_config.reload_state_dict = (
-    f"{training_config.training_data_dir}/geometric_preprocessor.pth"
+    f"{training_data_dir}/geometric_preprocessor.pth"
 )
-
-pyaml.to_yaml_file(
-    f"{training_config.training_data_dir}/architecture_config.yaml", architecture_config
-)
-
-
-
 
 
 with TrainingTelemetry(
-    training_config=training_config,
-    dataset_config=dataset.dataset_config,
-    run_name=run_name,
-    split_name=split_name,
-    config=config,
+    wandb_active=training_config.wandb_active,
+    run_name=training_config.training_name,
+    group_name=training_config.run_group,
+    out_dir=training_data_dir,
 ) as telemetry:
 
     encoder.to(device)
     decoder.to(device)
     preprocessor.to(device)
 
-    print("Starting Training")
-
+    print("Training Start")
     for epoch in range(training_config.epochs):
         # Initialize task and total train losses
 
@@ -272,16 +208,16 @@ with TrainingTelemetry(
             molecular_descriptor.register_hook(telemetry.get_track_grad_norm_fn())
 
             noised_preprocessing_sample = PreprocessedSample(
-                    preprocessed_atomic_embeddings=noised_embeddings,
-                    initial_pair_representation=preprocessed_samples.initial_pair_representation.detach(),
-                    geometrical_encoding=preprocessed_samples.geometrical_encoding.detach(),
-                    padding_mask= preprocessed_samples.padding_mask,
-                    pair_mask= preprocessed_samples.pair_mask
-                )
+                preprocessed_atomic_embeddings=noised_embeddings,
+                initial_pair_representation=preprocessed_samples.initial_pair_representation.detach(),
+                geometrical_encoding=preprocessed_samples.geometrical_encoding.detach(),
+                padding_mask=preprocessed_samples.padding_mask,
+                pair_mask=preprocessed_samples.pair_mask,
+            )
 
             denoised_embeddings = decoder(
-                    noised_preprocessing_sample, molecular_descriptor)
-
+                noised_preprocessing_sample, molecular_descriptor
+            )
 
             noise_level = noise_scheduler.value
             denoising_loss = atom_denoising_loss(
@@ -333,12 +269,13 @@ with TrainingTelemetry(
                     preprocessed_atomic_embeddings=noised_embeddings,
                     initial_pair_representation=preprocessed_val_samples.initial_pair_representation.detach(),
                     geometrical_encoding=preprocessed_val_samples.geometrical_encoding.detach(),
-                    padding_mask= preprocessed_val_samples.padding_mask,
-                    pair_mask= preprocessed_val_samples.pair_mask
+                    padding_mask=preprocessed_val_samples.padding_mask,
+                    pair_mask=preprocessed_val_samples.pair_mask,
                 )
 
                 denoised_embeddings = decoder(
-                    noised_preprocessing_sample, molecular_descriptor)
+                    noised_preprocessing_sample, molecular_descriptor
+                )
 
                 noise_level = noise_scheduler.value
                 denoising_loss = atom_denoising_loss(
@@ -359,47 +296,15 @@ with TrainingTelemetry(
 
             if telemetry.best_epoch:
 
-                torch.save(encoder.state_dict(), f"{training_config.training_data_dir}/encoder.pth")
+                torch.save(encoder.state_dict(), f"{training_data_dir}/encoder.pth")
                 torch.save(
-    preprocessor.atomic_preprocessor.state_dict(),
-    f"{training_config.training_data_dir}/atomic_preprocessor.pth",
-)
+                    preprocessor.atomic_preprocessor.state_dict(),
+                    f"{training_data_dir}/atomic_preprocessor.pth",
+                )
                 torch.save(
-    preprocessor.geometric_preprocessor.state_dict(),
-    f"{training_config.training_data_dir}/geometric_preprocessor.pth",
-)
+                    preprocessor.geometric_preprocessor.state_dict(),
+                    f"{training_data_dir}/geometric_preprocessor.pth",
+                )
 
 
-
-# package everything into a remedi model
-
-
-
-
-model = REM3DIModel(preprocessor=preprocessor, encoder=encoder)
-
-
-umap_clustering_calculator = UMAPCalculator()
-umap_task_train = DescriptorClusteringTask(train_dataset, umap_clustering_calculator)
-umap_task_val = DescriptorClusteringTask(valid_dataset, umap_clustering_calculator)
-capacity_diagnostic_train = DescriptorElementAnalysis(train_dataset)
-capacity_diagnostic_val = DescriptorElementAnalysis(valid_dataset)
-eval_train = EvalPipelineRunner(
-    [umap_task_train, capacity_diagnostic_train], "pcqmc", DatasetSplit.TRAIN
-)
-eval_validation = EvalPipelineRunner(
-    [umap_task_val, capacity_diagnostic_val], "pcqm", DatasetSplit.VALIDATION
-)
-
-
-eval_train.evaluate(model)
-eval_validation.evaluate(model)
-train_figs, train_result_report = eval_train.output_results(
-    output_directory=f"{training_config.training_data_dir}/trainset_results",
-    model_name=run_name,
-)
-
-validation_figs, validation_result_report = eval_validation.output_results(
-    output_directory=f"{training_config.training_data_dir}/valset_results",
-    model_name=run_name,
-)
+pyaml.to_yaml_file(training_data_dir / "post_training_architecture_config.yaml", architecture_config)

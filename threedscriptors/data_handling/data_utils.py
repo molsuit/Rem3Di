@@ -7,13 +7,10 @@ import rdkit.Chem as Chem
 from ase import Atoms
 from ase.optimize import LBFGS
 from mace.calculators import MACECalculator
-from rdkit.Chem import AllChem
-from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
+from rdkit.Chem import AllChem, rdDetermineBonds, rdmolops
 from rdkit.Chem.rdchem import Conformer
+from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 from rdkit.Geometry import Point3D
-from rdkit.Chem import rdDetermineBonds
-from rdkit.Chem import rdmolops
-
 
 if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig

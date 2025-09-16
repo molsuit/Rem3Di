@@ -1,15 +1,14 @@
 import os
 from itertools import chain, combinations, groupby
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from ase.visualize.plot import plot_atoms
-
 from matplotlib.figure import Figure
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 
-from pathlib import Path
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 
 
 class MoleculeDatasetAnalysis:
@@ -27,15 +26,15 @@ class MoleculeDatasetAnalysis:
         # Only take the active part of ptr (up to sentinel)
         ptr = np.asarray(self.dataset.ptr[: self.dataset.N_structures + 1])
         return np.diff(ptr)  # shape: (n_structures,)
-    
+
     def atom_species(self) -> np.ndarray:
 
         atomic_numbers, counts = np.unique_counts(self.dataset.atomic_numbers[:self.dataset.N_atoms])
 
-        return {n: c for n, c in zip(atomic_numbers, counts)}
+        return {n: c for n, c in zip(atomic_numbers, counts, strict=False)}
 
     def plot_atom_species_histogram(self):
-        
+
         print(self.atom_species())
 
 
@@ -46,7 +45,7 @@ class MoleculeDatasetAnalysis:
         plt.xlabel("Atoms per structure")
         plt.ylabel("Frequency")
         return fig
-    
+
 
     def run(self):
 

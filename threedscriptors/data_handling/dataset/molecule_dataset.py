@@ -6,7 +6,7 @@ import pydantic_yaml as pyd_yaml
 import zarr
 from numcodecs import Blosc
 from zarr import Array
-from typing import Tuple
+
 from threedscriptors.configuration.dataset_config import DatasetConfig
 from threedscriptors.data_handling.dataset.smiles_storage import SmilesStorage
 
@@ -98,9 +98,8 @@ class MoleculeDataset:
             isomeric_smiles=isomeric_smiles,
             config=config,
         )
-    
 
-    def _structure_atom_span(self, i: int) -> Tuple[int, int]:
+    def _structure_atom_span(self, i: int) -> tuple[int, int]:
         """Return [a0, a1) atom indices for structure i."""
         a0 = int(self._ptr[i])
         a1 = int(self._ptr[i + 1])
@@ -110,7 +109,7 @@ class MoleculeDataset:
     def create_empty_dataset(cls, path: Path, config: DatasetConfig):
 
         # Configure compressor
-        os.makedirs(path, exist_ok= True)
+        os.makedirs(path, exist_ok=True)
 
         compressor = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE)
 
@@ -324,7 +323,6 @@ class MoleculeDataset:
 
         print(retrieved_structure_ids)
         return retrieved_structure_ids
-
 
     def shrink_to_fit(self):
 

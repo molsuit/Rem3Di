@@ -1,8 +1,8 @@
-from mace.calculators import MACECalculator
 import torch
+from mace.calculators import MACECalculator
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 
 from threedscriptors.data_handling.data_utils import get_ase_atoms, relax_atoms
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.evaluation.clustering import (
     UMAPCalculator,
 )
@@ -76,7 +76,9 @@ descriptors = torch.cat( [descriptors, desc_0, desc_1 , desc_2 , desc_3], dim=0)
 
 
 import math
+
 import torch
+
 
 @torch.no_grad()
 def mean_euclidean_distance_mc(
@@ -134,8 +136,6 @@ print(mean)
 
 
 import matplotlib.pyplot as plt
-
-
 
 projection = clustering_calculator.get_dimensionality_reduction(descriptors)
 plt.figure(figsize=(10, 10))

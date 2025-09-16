@@ -9,7 +9,6 @@ import torch
 from torchmetrics.classification import AUROC, BinaryROC
 from tqdm import tqdm
 
-from threedscriptors.data_handling.dataset import SimilarityScreeningDataset
 from threedscriptors.evaluation.descriptor_calculators import DescriptorCalculator
 
 
@@ -39,7 +38,7 @@ class SimilarityScreening:
     def __init__(
         self,
         descriptor_calculator: DescriptorCalculator,
-        similarity_screening_dataset: SimilarityScreeningDataset,
+        similarity_screening_dataset,
     ):
         self.descriptor_calculator = descriptor_calculator
         self.dataset = similarity_screening_dataset

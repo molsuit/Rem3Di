@@ -1,4 +1,8 @@
 from mace.calculators import MACECalculator
+from threedscriptors.data_handling.dataset_builder import DatasetBuilder
+from threedscriptors.data_handling.dataset_io import store_data_to_disk
+from threedscriptors.data_handling.pipelines import chiral_regression_training_pipeline
+from threedscriptors.training.dataset_splitting import DatasetSplitting
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
@@ -7,13 +11,9 @@ from threedscriptors.configuration.data_config import (
 from threedscriptors.data_handling.dataset import (
     RegressionWithAuxAndPositionsDataset,
 )
-from threedscriptors.data_handling.dataset_builder import DatasetBuilder
-from threedscriptors.data_handling.dataset_io import store_data_to_disk
-from threedscriptors.data_handling.pipelines import chiral_regression_training_pipeline
 from threedscriptors.data_handling.source_preprocessing.cmrt_preprocessing import (
     load_cmrt_data,
 )
-from threedscriptors.training.dataset_splitting import DatasetSplitting
 
 dataset_directory = (
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt"

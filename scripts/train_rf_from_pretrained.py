@@ -6,8 +6,8 @@ import torch
 from rdkit import RDLogger
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
-
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+
 from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
 )
@@ -280,10 +280,9 @@ for task_idx, task in enumerate(dataset.dataset_config.tasks):
     print(task_test_performance)
 
     test_performances.update({task.task_name:task_test_performance})
-    
+
 
 import yaml
-
 
 
 def dump_yaml(obj, path: str, sort_keys: bool = False):
@@ -295,5 +294,5 @@ def dump_yaml(obj, path: str, sort_keys: bool = False):
 # --- usage inside your loop (per task) ---
 # results_rows = [...]  # as you already build it
 
-dump_yaml(test_performances, f"test_metrics.yaml")
-dump_yaml(val_performances, f"val_metrics.yaml")
+dump_yaml(test_performances, "test_metrics.yaml")
+dump_yaml(val_performances, "val_metrics.yaml")

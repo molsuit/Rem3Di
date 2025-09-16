@@ -1,12 +1,14 @@
+import os
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import os
+
 import numpy as np
 import torch
 import torch_sim as ts
 from ase import Atoms
 from mace.calculators import MACECalculator
 from torch_sim.models.mace import MaceModel
+from torch_sim.optimizers import fire
 from tqdm import tqdm
 
 from threedscriptors.configuration.dataset_config import DatasetCreationConfig
@@ -18,7 +20,7 @@ from threedscriptors.data_handling.dataset_creation.loading_batch import (
 )
 from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 from threedscriptors.data_handling.dataset_creation.utils import embed_one_smiles
-from torch_sim.optimizers import fire
+
 
 class PipelineStage(ABC):
     @abstractmethod
@@ -222,7 +224,7 @@ class ParallelRelaxStage(PipelineStage):
         state = init_fn(state)
 
         # Run optimization for a few steps
-        
+
         for step in range(self.N_steps):
 
             state = update_fn(state)
@@ -236,7 +238,7 @@ class ParallelRelaxStage(PipelineStage):
 class RandomWalkTransitionMatrix(PipelineStage):
     pass
 
-    # Implements calculation of the Transition matrix for 2D positional encodings, should be stored in sparse format. 
+    # Implements calculation of the Transition matrix for 2D positional encodings, should be stored in sparse format.
 
 
 class EnantiomaiPairConformalSamplingStage(PipelineStage):
@@ -244,5 +246,5 @@ class EnantiomaiPairConformalSamplingStage(PipelineStage):
 
 
 class MolecularDynamicsConformalSampling(PipelineStage):
-    # Sample Conformers from MD simulation 
+    # Sample Conformers from MD simulation
     pass

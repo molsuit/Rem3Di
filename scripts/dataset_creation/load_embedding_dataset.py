@@ -1,5 +1,11 @@
 
 from mace.calculators import MACECalculator
+from threedscriptors.data_handling.dataset_io import (
+    store_data_to_disk,
+)
+from threedscriptors.data_handling.pipelines import (
+    pretraining_pipeline_with_positions,
+)
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
@@ -7,12 +13,6 @@ from threedscriptors.configuration.data_config import (
 )
 from threedscriptors.data_handling.dataset import (
     AtomicEmbeddingWithPositionsDataset,
-)
-from threedscriptors.data_handling.dataset_io import (
-    store_data_to_disk,
-)
-from threedscriptors.data_handling.pipelines import (
-    pretraining_pipeline_with_positions,
 )
 from threedscriptors.data_handling.source_preprocessing.polaris_preprocessing import (
     load_polaris_dataset,

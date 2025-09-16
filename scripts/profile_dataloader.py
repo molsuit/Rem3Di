@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from time import perf_counter
 from pathlib import Path
-from typing import Iterable
+from time import perf_counter
 
 import numpy as np
 import torch
@@ -15,7 +14,7 @@ from threedscriptors.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     pos_emb_getitem,
 )
-from threedscriptors.data_handling.sample import pretraining_padded_collate_fn, Sample
+from threedscriptors.data_handling.sample import Sample, pretraining_padded_collate_fn
 from threedscriptors.training.data import worker_init_fn
 from threedscriptors.training.data.samplers import (
     BucketByLengthBatchSampler,

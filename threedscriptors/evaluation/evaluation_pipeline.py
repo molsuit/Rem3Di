@@ -15,17 +15,11 @@ from torchmetrics.functional import (
     spearman_corrcoef,
 )
 
-from threedscriptors.configuration.data_config import DatasetSplit
 from threedscriptors.data_handling.data_utils import (
     get_all_atom_counts,
     get_molecular_weight,
 )
-from threedscriptors.data_handling.dataset import (
-    BaseDataset,
-    RegressionDataset,
-    RegressionWithAuxDataset,
-    SimilarityScreeningDataset,
-)
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.evaluation.clustering import (
     ClusteringCalculator,
     plot_reduced_dimension,
@@ -84,7 +78,7 @@ class DescriptorClusteringTask(BaseEvalTask):
     "Plots the PCA results of the Molecular Descriptor"
 
     def __init__(
-        self, dataset: BaseDataset, clustering_calculator: ClusteringCalculator
+        self, dataset: MoleculeDataset, clustering_calculator: ClusteringCalculator
     ):
         super().__init__()
         self.dataset = dataset
@@ -257,7 +251,7 @@ class RegressionHeadPCATask(BaseEvalTask):
 class RegressionTestTask(BaseEvalTask):
     def __init__(
         self,
-        dataset: RegressionDataset | RegressionWithAuxDataset,
+        dataset,
         polaris_eval_style=False,
     ):
         super().__init__()
@@ -383,7 +377,7 @@ class RegressionTestTask(BaseEvalTask):
 
 
 class RegressionUncertaintyTask(BaseEvalTask):
-    def __init__(self, dataset: RegressionDataset | RegressionWithAuxDataset):
+    def __init__(self, dataset):
         super().__init__()
 
         self.dataset = dataset
@@ -516,7 +510,7 @@ class SimilarityScreeningTask(BaseEvalTask):
     def __init__(self, dataset):
         super().__init__()
 
-        self.dataset: SimilarityScreeningDataset = dataset
+        self.dataset = dataset
 
     def run(self, model: MultiTaskRegressionModel):
         threedscriptor = ThreedescriptorCalculator(
@@ -553,7 +547,7 @@ class SimilarityScreeningTask(BaseEvalTask):
 
 class ChiralDifferencePredictionTask(BaseEvalTask):
 
-    def __init__(self, chiral_dataset: RegressionWithAuxDataset):
+    def __init__(self, chiral_dataset):
         super().__init__()
 
         self.dataset = chiral_dataset
@@ -568,16 +562,16 @@ class ChiralDifferencePredictionTask(BaseEvalTask):
 
         pred_differences = (pred_differences * std) + mean
         print(pred_differences[:10])
-        
-        
+
+
         N_pairs = len(self.dataset)
-        
+
         targets = self.dataset.regression_targets.reshape(-1,2)
         labeled_differences = torch.log(targets[:,0])- torch.log(targets[:,1])
 
         print(labeled_differences[:10])
 
-        
+
         model_loss = (labeled_differences-pred_differences).abs().mean()
 
 
@@ -592,7 +586,7 @@ class ChiralDifferencePredictionTask(BaseEvalTask):
 
 class ChiralPredictionTask(BaseEvalTask):
 
-    def __init__(self, chiral_dataset: RegressionWithAuxDataset):
+    def __init__(self, chiral_dataset):
         super().__init__()
 
         self.dataset = chiral_dataset
@@ -852,7 +846,7 @@ class ChiralPredictionTask(BaseEvalTask):
 
 
 class DescriptorSimilarityAnalysisTask(BaseEvalTask):
-    def __init__(self, dataset: BaseDataset):
+    def __init__(self, dataset: MoleculeDataset):
         super().__init__()
 
         self.dataset = dataset
@@ -875,7 +869,7 @@ class DescriptorSimilarityAnalysisTask(BaseEvalTask):
 
 
 class EnolThiolEvalTask(DescriptorClusteringTask):
-    def __init__(self, dataset: BaseDataset, clustering_calculator):
+    def __init__(self, dataset: MoleculeDataset, clustering_calculator):
         super().__init__(dataset=dataset, clustering_calculator=clustering_calculator)
 
     def plot(self) -> plt.Figure:
@@ -887,7 +881,7 @@ class EnolThiolEvalTask(DescriptorClusteringTask):
 
 class EvalPipelineRunner:
     def __init__(
-        self, tasks: list[BaseEvalTask], dataset_name, dataset_split: DatasetSplit
+        self, tasks: list[BaseEvalTask], dataset_name, dataset_split
     ):
 
         self.tasks = tasks

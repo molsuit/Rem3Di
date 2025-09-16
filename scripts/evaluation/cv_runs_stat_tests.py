@@ -1,16 +1,14 @@
-import numpy as np
-import pandas as pd
-import pingouin as pg
 import os
 import re
 
+import numpy as np
+import pandas as pd
+import pingouin as pg
 
 top_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/0-av_potency_conformal_sampling"
 
 
 
-import os
-import re
 
 # capture the number at the end of the line after a colon
 LOSS_RE = re.compile(r':\s*([+-]?\d+(?:\.\d+)?)(?=\s*$)')
@@ -27,7 +25,7 @@ for item in os.listdir(top_dir):
     if os.path.isdir(item_path):
         val_loss_file = os.path.join(item_path, "lowest_val_losses.txt")
         if os.path.exists(val_loss_file):
-            with open(val_loss_file, 'r') as f:
+            with open(val_loss_file) as f:
                 losses = [v for line in f if (v := extract_loss_value(line)) is not None]
             if losses:
                 runs[item] = losses

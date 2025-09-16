@@ -1,13 +1,13 @@
 from mace.calculators import MACECalculator
+from threedscriptors.data_handling.dataset_io import store_data_to_disk
+from threedscriptors.data_handling.pipelines import pretraining_pipeline_with_positions
+from threedscriptors.data_handling.smiles_iterator import FileSmilesIterator
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     MaceCalculatorConfig,
 )
 from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset
-from threedscriptors.data_handling.dataset_io import store_data_to_disk
-from threedscriptors.data_handling.pipelines import pretraining_pipeline_with_positions
-from threedscriptors.data_handling.smiles_iterator import FileSmilesIterator
 
 directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/functional_group_dataset"
 smiles_file = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/functional_group_smiles_list"

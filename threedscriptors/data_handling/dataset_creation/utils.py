@@ -1,3 +1,4 @@
+
 import numpy as np
 import torch
 from ase import Atoms
@@ -5,7 +6,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 from torch import Tensor
-from typing import Tuple
+
 
 def system_idx_to_ragged_ptr(system_idx: Tensor) -> Tensor:
     """
@@ -38,7 +39,7 @@ def embed_one_smiles(
     n_confs: int,
     max_embed_attempts: int,
     max_opt_iters: int,
-) -> Tuple[str, str, np.ndarray, np.ndarray]:
+) -> tuple[str, str, np.ndarray, np.ndarray]:
     """
     Returns:
         isomeric_smiles,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from time import perf_counter
 
 import numpy as np
+import torch
 
 from threedscriptors.configuration.dataset_config import (
     DatasetConfig,
@@ -11,9 +12,10 @@ from threedscriptors.configuration.dataset_config import (
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.data_handling.dataset_creation import (
     DataBatch,
-    MoleculeGenerator,
     PipelineStage,
 )
+from threedscriptors.data_handling.dataset_creation.generators import     MoleculeGenerator
+
 from threedscriptors.data_handling.dataset_creation.loading_batch import SmilesData
 from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 from threedscriptors.data_handling.dataset_creation.utils import (
@@ -61,6 +63,9 @@ class DatasetConstructionOrchestrator:
 
             t0 = perf_counter()
 
+            if torch.isnan(output_data.embeddings).any():
+                breakpoint()
+
             self.append_batch_to_dataset(output_data)
             self._append_time += perf_counter() - t0
 
@@ -69,7 +74,7 @@ class DatasetConstructionOrchestrator:
             if self.dataset.N_structures > self.construction_config.N_structures:
                 break
 
-        
+
 
         self.finalize()
 
@@ -120,7 +125,7 @@ class DatasetConstructionOrchestrator:
 
             new_smiles = [sd.nonisomeric_smiles for sd in smiles_data]
             new_smiles_to_id_map = self.dataset.smiles.append_new_lines(new_smiles)
-            
+
             molecule_ids = np.array([new_smiles_to_id_map[s] for s in new_smiles])
 
             new_isomeric_smiles = [sd.isomeric_smiles for sd in smiles_data]

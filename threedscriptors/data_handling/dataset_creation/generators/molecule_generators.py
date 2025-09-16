@@ -1,13 +1,17 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
-from pathlib import Path
 from itertools import chain
+from pathlib import Path
+
 import polars as pl
 from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import Mol
 
-from threedscriptors.data_handling.dataset_creation.loading_batch import InputBatch, SmilesData
+from threedscriptors.data_handling.dataset_creation.loading_batch import (
+    InputBatch,
+    SmilesData,
+)
 from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 
 # Elements supported by your downstream MACE-OFF stack
@@ -99,6 +103,7 @@ class SDFMoleculeGenerator(MoleculeGenerator):
                 conf = mol.GetConformer()
                 pos = conf.GetPositions()  # returns Nx3 numpy array-like
                 symbols = [a.GetSymbol() for a in mol.GetAtoms()]
+
 
                 atoms = Atoms(symbols=symbols, positions=pos, info={"smiles": smiles})
 

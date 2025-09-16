@@ -1,13 +1,9 @@
 
-from threedscriptors.configuration.data_config import DatasetSplit
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-from threedscriptors.evaluation.clustering import (
-    UMAPCalculator,
-    plot_reduced_dimension,
-    plot_reduced_dimension_3d,
-)
 
-from threedscriptors.evaluation.evaluation_utils import evaluate_molecular_descriptor_on_dataset
+from threedscriptors.evaluation.clustering import (
+    plot_reduced_dimension,
+)
 from threedscriptors.evaluation.clustering.tmqm_clustering_utils import (
     get_atomic_num_colors,
     get_block_colors,
@@ -15,9 +11,8 @@ from threedscriptors.evaluation.clustering.tmqm_clustering_utils import (
     get_metal_center_type,
     get_tm_colormap,
 )
-from threedscriptors.evaluation.evaluation_pipeline import (
-    DescriptorClusteringTask,
-    EvalPipelineRunner,
+from threedscriptors.evaluation.evaluation_utils import (
+    evaluate_molecular_descriptor_on_dataset,
 )
 from threedscriptors.model.model_builder import ModelBuilder
 
@@ -36,6 +31,7 @@ out_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs
 dataset = reload_dataset_pipeline(dataset_directory).build()
 
 import numpy as np
+
 descriptors = evaluate_molecular_descriptor_on_dataset(model, dataset)
 descriptors = descriptors.numpy()
 

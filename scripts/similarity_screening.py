@@ -1,5 +1,6 @@
-from threedscriptors.data_handling.dataset import AtomicEmbeddingDataset
 from threedscriptors.data_handling.dataset_io import load_data_from_disk
+
+from threedscriptors.data_handling.dataset import AtomicEmbeddingDataset
 from threedscriptors.evaluation.evaluation_pipeline import (
     EvalPipelineRunner,
     SimilarityScreeningTask,

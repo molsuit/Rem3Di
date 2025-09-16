@@ -1,10 +1,10 @@
+import torch
+
+from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
+from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
     AtomicDescriptorPreprocessor,
 )
-from threedscriptors.model.model_builder import ModelBuilder
-from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
-
-import torch 
 
 path_to_load_model = "/share/snw30/projects/chiral_mols/training_runs/46-2025_07_26_12_47_35-PretrainingForCMRT/chiral_embedding_model.pth"
 config = EmbeddingPreprocessConfig(

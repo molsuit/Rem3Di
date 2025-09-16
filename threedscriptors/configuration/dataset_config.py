@@ -1,9 +1,8 @@
-from pydantic import BaseModel, ConfigDict
-from threedscriptors.configuration.config_utils import IrrepType
-
 from pathlib import Path
-from typing import Sequence
 
+from pydantic import BaseModel, ConfigDict
+
+from threedscriptors.configuration.config_utils import IrrepType
 
 
 class DatasetCreationConfig(BaseModel):
@@ -24,6 +23,6 @@ class DatasetConfig(BaseModel):
     atom_chunk: int = 8192
     molecule_chunk: int = 4_096
     contains_smiles: bool = True
-    irreps: IrrepType 
+    irreps: IrrepType
 
 

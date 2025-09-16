@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import umap
-import numpy as np
 
 from threedscriptors.data_handling.data_utils import get_functional_group_label
 
@@ -18,10 +18,10 @@ class ClusteringCalculator(ABC):
 class PCACalculator(ClusteringCalculator):
     @staticmethod
     def get_dimensionality_reduction(data_tensor: torch.Tensor, k=2):
-        
+
         if isinstance(data_tensor, np.ndarray):
             data_tensor = torch.from_numpy(data_tensor)
-            
+
         data_tensor = data_tensor.detach()
         (U, S, V) = torch.pca_lowrank(data_tensor)
         principal_components = torch.matmul(data_tensor, V[:, :k]).numpy()

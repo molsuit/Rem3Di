@@ -200,7 +200,11 @@ def load_geom_parallel(
 
     mol_paths = get_all_mol_paths(geom_dir)
 
-    print("All mol paths")
+
+
+
+
+
     # 2) dispatch work
     args = [
         (i, p, boltzmann_weight_threshold, max_atoms) for i, p in enumerate(mol_paths)

@@ -1,5 +1,11 @@
 
 from mace.calculators import MACECalculator
+from threedscriptors.data_handling.dataset_io import (
+    store_data_to_disk,
+)
+from threedscriptors.data_handling.pipelines import (
+    regression_training_with_pos_pipeline,
+)
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
@@ -9,12 +15,6 @@ from threedscriptors.data_handling.dataset import (
     RegressionDatasetwithPositions,
 )
 from threedscriptors.data_handling.dataset_analysis import DatasetPostLoadAnalysis
-from threedscriptors.data_handling.dataset_io import (
-    store_data_to_disk,
-)
-from threedscriptors.data_handling.pipelines import (
-    regression_training_with_pos_pipeline,
-)
 from threedscriptors.data_handling.source_preprocessing.polaris_preprocessing import (
     load_polaris_dataset,
 )
@@ -89,9 +89,8 @@ store_data_to_disk(dataset, f"{dataset_directory}_full")
 DatasetPostLoadAnalysis(dataset, f"{dataset_directory}_full").run()
 
 
-from threedscriptors.training.dataset_splitting import DatasetSplitting
 from threedscriptors.data_handling.dataset_builder import DatasetBuilder
-
+from threedscriptors.training.dataset_splitting import DatasetSplitting
 
 ds = DatasetSplitting(dataset)
 names = ["training", "test"]

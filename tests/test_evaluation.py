@@ -3,6 +3,7 @@ from importlib import resources
 import pydantic_yaml as pyaml
 import pytest
 from mace.calculators import mace_mp
+from threedscriptors.data_handling.pipelines import regression_training_pipeline
 
 from threedscriptors.configuration.architecture_config import ArchitectureConfig
 from threedscriptors.configuration.data_config import (
@@ -11,7 +12,6 @@ from threedscriptors.configuration.data_config import (
     MaceCalculatorConfig,
     TaskConfig,
 )
-from threedscriptors.data_handling.pipelines import regression_training_pipeline
 from threedscriptors.evaluation.clustering import UMAPCalculator
 from threedscriptors.evaluation.evaluation_pipeline import RegressionHeadPCATask
 from threedscriptors.evaluation.evaluation_utils import (

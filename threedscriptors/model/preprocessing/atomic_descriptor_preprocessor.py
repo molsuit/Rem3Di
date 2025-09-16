@@ -181,7 +181,7 @@ class AtomicDescriptorPreprocessor(nn.Module):
 
         normalized_invariants = self.invariant_normalization(invariants, padding_mask)
 
-        
+
         if self.has_chiral_embedding:
             normalized_equivariants = self.equivariant_rms_norm(equivariants, padding_mask)
 

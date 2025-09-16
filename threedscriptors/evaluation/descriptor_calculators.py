@@ -4,7 +4,7 @@ from collections.abc import Callable
 import numpy as np
 from molfeat.trans.fp import FPVecTransformer
 
-from threedscriptors.data_handling.dataset import BaseDataset
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.evaluation.descriptor_similarity_metrics import (
     cosine_similarity,
     tanimoto_similarity,
@@ -41,7 +41,7 @@ class MolfeatDescriptorCalculator(DescriptorCalculator):
         self.descriptor_name = descriptor_name
         self.featurizer = FPVecTransformer(kind=self.descriptor_name)
 
-    def calculate_descriptors(self, dataset: BaseDataset):
+    def calculate_descriptors(self, dataset: MoleculeDataset):
         return self.featurizer(dataset.smiles_list)
 
     def calculate_similarity(self, des0, des1):
@@ -60,7 +60,7 @@ class ThreedescriptorCalculator(DescriptorCalculator):
         self.similarity_fn = similarity_fn
         self.descriptor_name = "threedscriptor"
 
-    def calculate_descriptors(self, dataset: BaseDataset):
+    def calculate_descriptors(self, dataset: MoleculeDataset):
         dataset.embeddings = dataset.embeddings.float()
         dataset.padding_mask = dataset.padding_mask.float()
 

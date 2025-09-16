@@ -1,13 +1,12 @@
-from typing import Callable
-import os
-import numpy as np
-import torch
-import zarr
-from zarr import DirectoryStore, LRUStoreCache
-from torch.utils.data import Dataset
-from threedscriptors.data_handling.sample import Sample
+from collections.abc import Callable
 from pathlib import Path
 
+import torch
+import zarr
+from torch.utils.data import Dataset
+from zarr import DirectoryStore, LRUStoreCache
+
+from threedscriptors.data_handling.sample import Sample
 
 GetItemFn = Callable[["TrainingMoleculeDataset", int], Sample]
 

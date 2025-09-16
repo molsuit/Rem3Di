@@ -1,13 +1,13 @@
 from mace.calculators import MACECalculator
-from threedscriptors.data_handling.dataset import SimilarityScreeningDataset
-from threedscriptors.configuration.data_config import (
-    DatasetConfig,
-    DatasetTypes,
-    MaceCalculatorConfig,
-)
 from threedscriptors.data_handling.dataset_io import store_data_to_disk
 from threedscriptors.data_handling.pipelines import similarity_screening_pipeline
 from threedscriptors.data_handling.smiles_iterator import ListSmilesIterator
+
+from threedscriptors.configuration.data_config import (
+    DatasetConfig,
+    MaceCalculatorConfig,
+)
+from threedscriptors.data_handling.dataset import SimilarityScreeningDataset
 from threedscriptors.data_handling.source_preprocessing.similarity_screening_preprocessing import (
     load_similarity_screening_data,
 )

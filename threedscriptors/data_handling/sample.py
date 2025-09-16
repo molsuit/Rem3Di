@@ -1,9 +1,9 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
 from typing import Any
-from torch.nn.utils.rnn import pad_sequence
 
 import torch
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data._utils.collate import default_collate
 
 
@@ -76,6 +76,15 @@ def pretraining_padded_collate_fn(batch: list[Sample]) -> Sample:
     mask = torch.arange(Nmax).expand(len(batch), Nmax) < lengths.unsqueeze(1)
 
     return Sample(embeddings=E_pad, padding_mask=mask, atomic_positions=P_pad)
+
+def normalization_collate_fn(batch: list[Sample]) -> Sample:
+
+
+    E = torch.cat(tensors = [s.embeddings for s in batch])  # (B,Nmax,D)
+
+    return Sample(embeddings=E)
+
+
 
 
 def sample_collate_fn(batch: list[Sample]) -> Sample:

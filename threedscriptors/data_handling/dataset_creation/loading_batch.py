@@ -1,8 +1,10 @@
 from dataclasses import dataclass
-from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
+
 import numpy as np
 import torch
 from ase import Atoms
+
+from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 
 
 @dataclass(slots=True)

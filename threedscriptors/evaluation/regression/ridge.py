@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from scipy import sparse
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import (
@@ -13,7 +12,6 @@ from sklearn.model_selection import (
     RepeatedKFold,
 )
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import MaxAbsScaler, StandardScaler
 
 
 @dataclass

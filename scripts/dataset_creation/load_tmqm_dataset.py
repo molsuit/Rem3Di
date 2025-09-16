@@ -1,20 +1,20 @@
 from mace.calculators import MACECalculator
+from threedscriptors.data_handling.dataset_builder import DatasetBuilder
+from threedscriptors.data_handling.dataset_io import store_data_to_disk
+from threedscriptors.data_handling.pipelines import (
+    regression_training_from_structures_pipeline,
+)
+from threedscriptors.training.dataset_splitting import DatasetSplitting
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     MaceCalculatorConfig,
 )
 from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions
-from threedscriptors.data_handling.dataset_builder import DatasetBuilder
-from threedscriptors.data_handling.dataset_io import store_data_to_disk
-from threedscriptors.data_handling.pipelines import (
-    regression_training_from_structures_pipeline,
-)
 from threedscriptors.data_handling.source_preprocessing.tmqm_preprocessing import (
     TmqmTask,
     load_tmqm_dataset,
 )
-from threedscriptors.training.dataset_splitting import DatasetSplitting
 
 dataset_directory = (
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm/"

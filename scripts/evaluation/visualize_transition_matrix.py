@@ -1,16 +1,9 @@
+
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from rdkit import Chem
-from rdkit.Chem import rdmolops, AllChem
-
-import matplotlib.cm as cm
-import matplotlib.colors as mcolors
-from rdkit.Chem.Draw import rdMolDraw2D
-from PIL import Image
-import io
-
-import matplotlib.pyplot as plt
-
+from rdkit.Chem import rdmolops
 
 np.set_printoptions(linewidth=np.inf)
 

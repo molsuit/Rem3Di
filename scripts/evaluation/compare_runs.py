@@ -1,7 +1,8 @@
-from threedscriptors.evaluation.training_metadata import TrainingMetadata
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-import matplotlib as mpl
+
+from threedscriptors.evaluation.training_metadata import TrainingMetadata
 
 dirs = [
     "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs/10-2025_08_16_21_16_42-qm9_scratch_finetune10k",
@@ -34,7 +35,7 @@ fig = plt.figure(figsize=(5.5, 2.75))
 ax = plt.gca()
 
 max_epoch = 0
-for i, (size, run) in enumerate(zip(pretrain_size, runs)):
+for i, (size, run) in enumerate(zip(pretrain_size, runs, strict=False)):
     epochs, val_loss = run.get_validation_loss()
     epochs = np.asarray(epochs) + 1
     val_loss = np.asarray(val_loss, dtype=float)
@@ -85,12 +86,11 @@ plt.close()
 
 
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter
 
-
-sizes = np.array(sorted(min_val_loss.keys())) 
+sizes = np.array(sorted(min_val_loss.keys()))
 losses = np.array([min_val_loss[s] for s in sizes], dtype=float)
 scratch = float(min_val_loss[0])
 ratios = losses / scratch

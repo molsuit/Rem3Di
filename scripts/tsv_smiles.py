@@ -1,21 +1,18 @@
-import torch
-from mace.calculators.foundations_models import mace_mp
-from torch_sim.models.mace import MaceModel
 from pathlib import Path
-from dataset_prep.dataset_creation.molecule_generators import SDFMoleculeGenerator, TSVMoleculeGenerator
-from dataset_prep.dataset_creation.pipeline_stages import (
-    BatchedEmbeddingStage, ConformerGenerationStage, ParallelRelaxStage
+
+import torch
+from dataset_prep.configuration import DatasetConfig, DatasetCreationConfig
+from dataset_prep.dataset_creation.molecule_generators import (
+    TSVMoleculeGenerator,
 )
-
 from dataset_prep.dataset_creation.orchestrator import DatasetConstructionOrchestrator
-
-from dataset_prep.configuration import DatasetCreationConfig, DatasetConfig
-
-from mace.calculators import MACECalculator, mace_off, mace_omol
-
-
-
-
+from dataset_prep.dataset_creation.pipeline_stages import (
+    BatchedEmbeddingStage,
+    ConformerGenerationStage,
+    ParallelRelaxStage,
+)
+from mace.calculators import mace_off
+from torch_sim.models.mace import MaceModel
 
 tsv_path = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/BindingDB_All.tsv"
 

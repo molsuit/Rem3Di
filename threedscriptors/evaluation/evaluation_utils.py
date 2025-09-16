@@ -4,13 +4,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from threedscriptors.data_handling.dataset import (
-    AtomicEmbeddingDataset,
-    PairedRegressionWithAuxAndPositionDataset,
-    RegressionDataset,
-    RegressionWithAuxDataset,
+from threedscriptors.data_handling.dataset.training_dataset import (
+    TrainingMoleculeDataset,
 )
-from threedscriptors.data_handling.mol_id import StructureID
+from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 from threedscriptors.data_handling.sample import (
     Sample,
     paired_sample_collate_fn,
@@ -18,18 +15,18 @@ from threedscriptors.data_handling.sample import (
 )
 from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.model.model_output import ModelOutput
+from threedscriptors.model.molecule_difference_regressor import (
+    MolecularDifferenceRegressor,
+)
 from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
 from threedscriptors.model.remedi_model import REM3DIModel
-from threedscriptors.model.molecule_difference_regressor import (
-    MolecularDifferenceRegressor,
-)
 
 
 def evaluate_regression_model_on_dataset(
     model: MultiTaskRegressionModel,
-    dataset: RegressionWithAuxDataset | RegressionDataset,
+    dataset: TrainingMoleculeDataset,
     device="cuda",
     undo_standardization=False,
 ):
@@ -44,11 +41,7 @@ def evaluate_regression_model_on_dataset(
 
     batch_size = 256
 
-    collate_fn = (
-        paired_sample_collate_fn
-        if isinstance(dataset, PairedRegressionWithAuxAndPositionDataset)
-        else sample_collate_fn
-    )
+    collate_fn = sample_collate_fn
     dataloader: Iterable[Sample] = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -132,7 +125,7 @@ def evaluate_molecule_difference_on_dataset(
     differences = torch.zeros(size=(len(dataset), 1))
     print(differences.shape)
 
-    
+
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
 
@@ -151,7 +144,7 @@ def evaluate_molecule_difference_on_dataset(
 
 def evaluate_atomic_descriptors(
     model: MultiTaskRegressionModel,
-    dataset: RegressionWithAuxDataset | RegressionDataset,
+    dataset: TrainingMoleculeDataset,
     device="cuda",
 ):
 
@@ -189,7 +182,7 @@ def evaluate_atomic_descriptors(
 
 
 def calculate_fingerprint_uncertainty(
-    encoder: TransformerEncoder, dataset: RegressionDataset
+    encoder: TransformerEncoder, dataset: TrainingMoleculeDataset
 ):
     # for all smiles in the smiles list, get the corresponding unique dataset id
 

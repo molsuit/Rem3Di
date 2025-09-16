@@ -1,15 +1,20 @@
 from __future__ import annotations
+
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
-import numpy as np
-from sklearn.model_selection import RepeatedKFold, KFold, RandomizedSearchCV, train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from lightgbm import LGBMRegressor
 import lightgbm as lgb  # for callbacks. If you prefer, you can omit callbacks entirely.
+import numpy as np
+from lightgbm import LGBMRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import (
+    KFold,
+    RandomizedSearchCV,
+    RepeatedKFold,
+    train_test_split,
+)
 from tqdm import tqdm
-
-
 
 
 @dataclass
@@ -31,7 +36,7 @@ class LGBMParams:
     verbosity: int = -1
     importance_type: str = "gain"  # for feature_importances_
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = {
             "n_estimators": self.n_estimators,
             "learning_rate": self.learning_rate,
@@ -55,10 +60,10 @@ class LGBMParams:
 @dataclass
 class LGBMCVResult:
     fold_metrics: np.ndarray                     # shape: (n_outer_folds, 3) -> [MAE, RMSE, R2]
-    best_params_per_fold: List[Dict[str, Any]]   # tuned params (or fixed) per fold
-    final_params: Dict[str, Any]                 # aggregated params used for final refit
+    best_params_per_fold: list[dict[str, Any]]   # tuned params (or fixed) per fold
+    final_params: dict[str, Any]                 # aggregated params used for final refit
     final_model: LGBMRegressor                   # fitted on all data with final_params
-    info: Dict[str, Any] = field(default_factory=dict)
+    info: dict[str, Any] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         m = np.asarray(self.fold_metrics)
@@ -85,7 +90,7 @@ class LGBMCVResult:
     __str__ = __repr__
 
 
-def default_lgbm_param_distributions() -> Dict[str, Sequence[Any]]:
+def default_lgbm_param_distributions() -> dict[str, Sequence[Any]]:
     """
     Reasonable, compact distributions for RandomizedSearchCV (discrete choices; no SciPy required).
     """
@@ -108,7 +113,7 @@ def default_lgbm_param_distributions() -> Dict[str, Sequence[Any]]:
 # Aggregation utility
 # -------------------------
 
-def _aggregate_params(best_params_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _aggregate_params(best_params_list: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Aggregate per-fold best params into a single robust set:
     - numeric -> median
@@ -119,7 +124,7 @@ def _aggregate_params(best_params_list: List[Dict[str, Any]]) -> Dict[str, Any]:
         return {}
 
     keys = sorted({k for d in best_params_list for k in d.keys()})
-    agg: Dict[str, Any] = {}
+    agg: dict[str, Any] = {}
     for k in keys:
         vals = [d[k] for d in best_params_list if k in d]
         if not vals:
@@ -149,16 +154,16 @@ def lightgbm_repeated_kfold_cv(
     n_splits: int = 5,
     n_repeats: int = 3,
     random_state: int = 42,
-    lgbm_params: Optional[LGBMParams] = None,
+    lgbm_params: LGBMParams | None = None,
     tune: bool = False,
-    param_distributions: Optional[Dict[str, Sequence[Any]]] = None,
+    param_distributions: dict[str, Sequence[Any]] | None = None,
     n_iter: int = 25,
     inner_splits: int = 5,
     scoring: str = "neg_mean_absolute_error",
     use_early_stopping: bool = True,
     early_stopping_rounds: int = 100,
     val_size: float = 0.1,
-    n_jobs_search: Optional[int] = None,
+    n_jobs_search: int | None = None,
 ) -> LGBMCVResult:
     """
     Outer: RepeatedKFold for generalization estimate.
@@ -179,8 +184,8 @@ def lightgbm_repeated_kfold_cv(
         param_distributions = default_lgbm_param_distributions()
 
     outer = RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=random_state)
-    fold_metrics: List[List[float]] = []
-    best_params_per_fold: List[Dict[str, Any]] = []
+    fold_metrics: list[list[float]] = []
+    best_params_per_fold: list[dict[str, Any]] = []
 
     fold_id = 0
     for tr_idx, te_idx in tqdm(outer.split(X, y)):

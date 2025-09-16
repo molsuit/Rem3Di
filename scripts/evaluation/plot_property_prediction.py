@@ -1,15 +1,15 @@
 from __future__ import annotations
-from typing import Iterable, Mapping, Any, Tuple, Dict
-from pathlib import Path
+
 import re
 import textwrap
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
+from collections.abc import Iterable, Mapping
+from pathlib import Path
+from typing import Any
 
 import matplotlib as mpl
-
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 rc_params = {
     "text.usetex": True,
@@ -65,7 +65,7 @@ def _find_null_mae_for_task(df_task: pd.DataFrame) -> float | None:
             return float(row["MAE"])
     return None
 
-def _auto_family_colors(models: list[str]) -> Dict[str, Tuple[float, float, float, float]]:
+def _auto_family_colors(models: list[str]) -> dict[str, tuple[float, float, float, float]]:
     families = {
         "REM3DI": [m for m in models if "rem3di" in m.lower()],
         "ECFP":   [m for m in models if "ecfp" in m.lower()],
@@ -76,7 +76,7 @@ def _auto_family_colors(models: list[str]) -> Dict[str, Tuple[float, float, floa
         if not members:
             return
         t = np.linspace(lo, hi, num=len(members))
-        for name, ti in zip(members, t):
+        for name, ti in zip(members, t, strict=False):
             colors[name] = cmap(ti)
     assign_shades(families["REM3DI"], plt.cm.Blues)
     assign_shades(families["ECFP"],   plt.cm.Reds)
@@ -90,10 +90,10 @@ def plot_normalized_mae_bar_one_figure(
     *,
     title: str = "Normalized MAE vs Null (test mean)",
     save_path: str | Path | None = None,
-    colors: Dict[str, Tuple[float, float, float, float]] | None = None,
+    colors: dict[str, tuple[float, float, float, float]] | None = None,
     use_family_colors: bool = True,
 ) -> Path | None:
-    
+
     df = _flatten_results_any(results_any)
     missing = [(t, m) for t in tasks for m in models
                if not ((df["task"] == t) & (df["model"] == m)).any()]

@@ -1,8 +1,8 @@
 from __future__ import annotations
-from typing import Iterable, Dict, List, Optional
 
 import mmap
 import os
+from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
@@ -63,7 +63,7 @@ class SmilesStorage:
         self._offsets_memmap = np.memmap(self._index_path, dtype=np.uint64, mode="r")
         self._verify_integrity_or_raise()
 
-        self._str2id: Optional[Dict[str, int]] = None
+        self._str2id: dict[str, int] | None = None
 
         # Create text mmap if file is non-empty
         if self._text_path.stat().st_size > 0:
@@ -130,7 +130,7 @@ class SmilesStorage:
         Newlines inside strings are replaced with spaces.
         """
         # Normalize & collect
-        batch: List[str] = []
+        batch: list[str] = []
         for s in lines:
             s_norm = self._norm(s)
             batch.append(s_norm)
@@ -156,7 +156,7 @@ class SmilesStorage:
             # Prepare offsets and text bytes
             next_offset = current_end
             offsets = np.empty(len(batch), dtype=np.uint64)
-            text_chunks: List[bytes] = []
+            text_chunks: list[bytes] = []
 
             for i, s in enumerate(batch):
                 offsets[i] = next_offset
@@ -184,7 +184,7 @@ class SmilesStorage:
 
         return start_id
 
-    def append_new_lines(self, lines: Iterable[str]) -> Dict[str, int]:
+    def append_new_lines(self, lines: Iterable[str]) -> dict[str, int]:
         """
         Append only strings not already present. Returns {string: id}.
         Uses a cached string->id map (built lazily on first call) and
@@ -194,8 +194,8 @@ class SmilesStorage:
         if self._str2id is None:
             self._str2id = self.build_string_to_id_map()
 
-        new_unique: List[str] = []
-        out: Dict[str, int] = {}
+        new_unique: list[str] = []
+        out: dict[str, int] = {}
 
         for s in lines:
             s_norm = self._norm(s)
@@ -214,7 +214,7 @@ class SmilesStorage:
 
         return out
 
-    def build_string_to_id_map(self) -> Dict[str, int]:
+    def build_string_to_id_map(self) -> dict[str, int]:
         """Build a dict mapping each stored string to its 0-based id."""
         n = len(self)
         if n == 0:
@@ -228,7 +228,7 @@ class SmilesStorage:
                 self._text_file.fileno(), 0, access=mmap.ACCESS_READ
             )
 
-        result: Dict[str, int] = {}
+        result: dict[str, int] = {}
         starts = self._offsets_memmap[:-1]
         ends = self._offsets_memmap[1:]
         for i in range(n):
@@ -243,7 +243,7 @@ class SmilesStorage:
                 result[s] = i
         return result
 
-    def string_to_id(self, s: str) -> Optional[int]:
+    def string_to_id(self, s: str) -> int | None:
         """
         Look up the id for a given string. Returns None if not present.
         Lazily builds (and then reuses) a string->id cache. The cache is

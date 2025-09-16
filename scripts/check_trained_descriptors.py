@@ -1,17 +1,17 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from threedscriptors.evaluation.plotting import plot_similarity_matrix
 
 from threedscriptors.data_handling.dataset import (
     RegressionWithAuxDataset,
 )
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.evaluation.descriptor_calculators import (
     ThreedescriptorCalculator,
 )
 from threedscriptors.evaluation.descriptor_similarity_metrics import (
     cosine_similarity_matrix,
 )
-from threedscriptors.evaluation.plotting import plot_similarity_matrix
 from threedscriptors.model.model_builder import ModelBuilder
 
 directory = (

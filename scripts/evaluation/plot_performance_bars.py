@@ -1,8 +1,8 @@
+import glob
+
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import yaml
-import glob
-import matplotlib as mpl
-
 
 run_dict = {
     "No": "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/207-2025_08_09_17_21_01-qm9_no_pos",
@@ -26,7 +26,7 @@ mpl.rcParams.update(rc_params)
 def read_val_loss(dir):
 
     training_results_file = glob.glob(f"{dir}/valset_results/training_results*.yaml")[0]
-    with open(training_results_file, "r") as f:
+    with open(training_results_file) as f:
         results = yaml.safe_load(f)
 
     mae = results["Regression Eval Stats"]["gap"]["mean absolute error"]

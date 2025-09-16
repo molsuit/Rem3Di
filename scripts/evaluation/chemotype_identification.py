@@ -1,4 +1,25 @@
+import json
+import os
+from collections import defaultdict
+
+import hdbscan
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+# clustering + viz
+import umap
+
+# RDKit
+from rdkit import Chem
+from rdkit.Chem import AllChem, Descriptors, rdMolDescriptors
+from rdkit.Chem.Scaffolds import MurckoScaffold
+
+# stats
+from scipy.stats import fisher_exact, ks_2samp
+from statsmodels.stats.multitest import multipletests
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+
 from threedscriptors.evaluation.clustering import (
     UMAPCalculator,
 )
@@ -6,23 +27,7 @@ from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
 )
 from threedscriptors.model.model_builder import ModelBuilder
-import os, math, json, numpy as np, pandas as pd
-from collections import Counter, defaultdict
 
-# clustering + viz
-import umap
-import hdbscan
-import matplotlib.pyplot as plt
-
-# stats
-from scipy.stats import ks_2samp, fisher_exact
-from statsmodels.stats.multitest import multipletests
-
-# RDKit
-from rdkit import Chem
-from rdkit.Chem import Descriptors, rdMolDescriptors
-from rdkit.Chem.Scaffolds import MurckoScaffold
-from rdkit.Chem import AllChem
 model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/209-2025_08_12_15_25_09-FixedPCQM"
 
 
@@ -42,23 +47,12 @@ smiles = dataset.smiles_list
 
 
 # --- 0) Imports ---------------------------------------------------------------
-import os, math, json, numpy as np, pandas as pd
-from collections import Counter, defaultdict
 
 # clustering + viz
-import umap
-import hdbscan
-import matplotlib.pyplot as plt
 
 # stats
-from scipy.stats import ks_2samp, fisher_exact
-from statsmodels.stats.multitest import multipletests
 
 # RDKit
-from rdkit import Chem
-from rdkit.Chem import Descriptors, rdMolDescriptors
-from rdkit.Chem.Scaffolds import MurckoScaffold
-from rdkit.Chem import AllChem
 
 # --- 1) I/O setup -------------------------------------------------------------
 OUTDIR = "qm9_umap_audit"
@@ -74,9 +68,9 @@ mols = [Chem.MolFromSmiles(s) for s in smiles]
 valid = np.array([m is not None for m in mols])
 if not valid.all():
     print(f"Dropping {np.sum(~valid)} invalid SMILES")
-mols = [m for m,ok in zip(mols,valid) if ok]
+mols = [m for m,ok in zip(mols,valid, strict=False) if ok]
 X = descriptors[valid]
-SMI = [s for s,ok in zip(smiles,valid) if ok]
+SMI = [s for s,ok in zip(smiles,valid, strict=False) if ok]
 
 # --- 3) UMAP for visualization only ------------------------------------------
 reducer = umap.UMAP(
@@ -220,7 +214,7 @@ for c in sorted(set(labels) - {-1}):
     Xc = X[mask]
     centroid = Xc.mean(0)
     # cosine distance ~ 1 - cosine similarity (normalize)
-    def normalize(A): 
+    def normalize(A):
         n = np.linalg.norm(A, axis=1, keepdims=True) + 1e-9
         return A / n
     Z = normalize(Xc); zc = centroid / (np.linalg.norm(centroid)+1e-9)
