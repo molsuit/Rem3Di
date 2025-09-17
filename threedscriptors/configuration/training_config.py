@@ -42,8 +42,4 @@ class TrainingConfig(BaseModel):
     wandb_active: bool = False
 
 
-class TrainingMetadata(BaseModel):
-    dataset_dir: Path
-    model_dir: Path
-    timestamp: datetime
 

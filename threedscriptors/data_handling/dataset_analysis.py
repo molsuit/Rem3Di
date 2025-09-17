@@ -56,6 +56,10 @@ class MoleculeDatasetAnalysis:
     def calculate_mean_std_descriptors(self):
         pass
 
+    def plot_regression_task_distribution(self):
+        pass
+
+    
 
 class DatasetPostLoadAnalysis:
 

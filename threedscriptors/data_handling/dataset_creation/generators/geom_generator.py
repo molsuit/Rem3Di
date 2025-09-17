@@ -15,7 +15,9 @@ from threedscriptors.data_handling.dataset_creation.generators import MoleculeGe
 from threedscriptors.data_handling.dataset_creation.generators.molecule_generators import (
     filter_mol,
 )
+from collections import deque
 
+from random import shuffle
 
 from threedscriptors.data_handling.dataset_creation.loading_batch import (
     InputBatch,
@@ -34,6 +36,7 @@ class GeomGenerator(MoleculeGenerator):
         max_atoms: int | None = None,
         loading_batch_size: int = 100,
         max_workers: int = os.cpu_count(),
+        shuffle_mols: bool = True
     ):
         self.geom_dir = geom_dir
 
@@ -41,7 +44,9 @@ class GeomGenerator(MoleculeGenerator):
         self.boltzmann_weight_threshold = boltzman_weight_threshold
         self.loading_batch_size = loading_batch_size
         self.max_workers = max_workers
+        self.shuffle_mols = shuffle_mols
 
+        
     def get_all_mol_paths(self):
 
         drugs_file = self.geom_dir / "summary_drugs.json"
@@ -60,6 +65,9 @@ class GeomGenerator(MoleculeGenerator):
             for sub in drugs_summ.values()
             if (path := sub.get("pickle_path")) in existing
         ]
+
+        if self.shuffle_mols:
+            shuffle(mol_paths)
 
         return mol_paths
 
@@ -102,66 +110,69 @@ class GeomGenerator(MoleculeGenerator):
 
         return results
 
-    def __iter__(
-        self,
-    ):
-
-        # Get batch_size_mol_paths
+    def __iter__(self) -> Generator[InputBatch, None, None]:
         mol_paths = self.get_all_mol_paths()
         structure_idx = 0
 
-        for mol_path_batched in batched(mol_paths, self.loading_batch_size):
+        # Tune these two to control how aggressively you load ahead:
+        file_batch_size = max(self.loading_batch_size * 4, 64)  # how many files to process at once
+        # You can also add a target buffer size if you want; the while-loop below already enforces fixed yields.
 
-            # 2) dispatch work
+        # FIFO buffers so popping from the front is O(1)
+        buf_smiles: deque[SmilesData] = deque()
+        buf_mols: deque[Atoms] = deque()
+        buf_ids: deque[StructureID] = deque()
+
+        for mol_path_batched in batched(mol_paths, file_batch_size):
+            # Dispatch work across processes
             args = [
                 (i, p, self.boltzmann_weight_threshold, self.max_atoms)
                 for i, p in enumerate(mol_path_batched)
             ]
 
-            raw_results = []  # list of (mol_id, conf_id, can_smiles, nums, pos)
-            submitted = 0
+            raw_results: list[tuple[int, int, str, list[int], np.ndarray]] = []
 
             with ProcessPoolExecutor(max_workers=self.max_workers) as ex:
                 futures = [ex.submit(self._process_one_file, a) for a in args]
-                submitted = len(futures)
-
                 for fut in as_completed(futures):
                     chunk = fut.result()
                     if chunk:
                         raw_results.extend(chunk)
 
-                    # soft early stop once we have enough structures
-
-            # 3) make output deterministic and build final objects
+            # Deterministic order within this load step
             raw_results.sort(key=lambda t: (t[0], t[1]))  # (molecule_id, conformer_id)
 
-            smiles: list[SmilesData] = []
-            smiles: list[str] = []
-
-            molecules: list[Atoms] = []
-            structure_ids: list[StructureID] = []
-
+            # Push everything we just loaded into the buffer
             for (mol_id, conf_id, can_smi, nums, pos) in raw_results:
                 atoms = Atoms(numbers=nums, positions=pos, info={"smiles": can_smi})
-                molecules.append(atoms)
-                structure_ids.append(
+                buf_mols.append(atoms)
+                buf_ids.append(
                     StructureID(
                         structure_id=structure_idx,
                         molecule_id=mol_id,
-                        stereoisomer_id=mol_id
-
+                        stereoisomer_id=mol_id,
                     )
                 )
-                structure_idx += 1
-                smiles.append(
+                buf_smiles.append(
                     SmilesData(
                         isomeric_smiles=can_smi,
                         nonisomeric_smiles=Chem.CanonSmiles(can_smi, useChiral=0),
                     )
                 )
+                structure_idx += 1
 
-            input_batch = InputBatch(
-                smiles=smiles, molecules=molecules, structure_ids=structure_ids
+            # While we have enough in the buffer, yield fixed-size batches
+            while len(buf_mols) >= self.loading_batch_size:
+                batch_smiles = [buf_smiles.popleft() for _ in range(self.loading_batch_size)]
+                batch_mols   = [buf_mols.popleft()   for _ in range(self.loading_batch_size)]
+                batch_ids    = [buf_ids.popleft()    for _ in range(self.loading_batch_size)]
+
+                yield InputBatch(smiles=batch_smiles, molecules=batch_mols, structure_ids=batch_ids)
+
+        # Flush any remainder (set this to `if False` if you want only fixed-size batches)
+        if buf_mols:
+            yield InputBatch(
+                smiles=list(buf_smiles),
+                molecules=list(buf_mols),
+                structure_ids=list(buf_ids),
             )
-
-            yield input_batch

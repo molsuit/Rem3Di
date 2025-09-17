@@ -14,7 +14,7 @@ from threedscriptors.data_handling.dataset_creation import (
     DataBatch,
     PipelineStage,
 )
-from threedscriptors.data_handling.dataset_creation.generators import     MoleculeGenerator
+from threedscriptors.data_handling.dataset_creation.generators import MoleculeGenerator
 
 from threedscriptors.data_handling.dataset_creation.loading_batch import SmilesData
 from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
@@ -25,7 +25,6 @@ from threedscriptors.data_handling.dataset_creation.utils import (
 
 
 class DatasetConstructionOrchestrator:
-
     def __init__(
         self,
         pipeline: list[PipelineStage],
@@ -33,7 +32,6 @@ class DatasetConstructionOrchestrator:
         construction_config: DatasetCreationConfig,
         dataset_config: DatasetConfig,
     ):
-
         self.pipeline = pipeline
         self.batch_generator = batch_generator
         self.construction_config = construction_config
@@ -49,9 +47,9 @@ class DatasetConstructionOrchestrator:
         self._num_batches: int = 0
 
     def build_dataset(self):
-
         for input_batch in self.batch_generator:
-
+            if input_batch.molecules is [] and input_batch.smiles is []:
+                continue
             output_data = None
 
             for stage in self.pipeline:
@@ -74,12 +72,9 @@ class DatasetConstructionOrchestrator:
             if self.dataset.N_structures > self.construction_config.N_structures:
                 break
 
-
-
         self.finalize()
 
     def append_batch_to_dataset(self, output_data: DataBatch):
-
         embeddings = ensure_numpy_array(output_data.embeddings)
         positions = ensure_numpy_array(output_data.atomic_positions)
         atomic_numbers = ensure_numpy_array(output_data.atomic_numbers)
@@ -104,8 +99,9 @@ class DatasetConstructionOrchestrator:
         if output_data.systems_index.shape[0] != N_atoms_batch:
             raise ValueError("systems_index must have length N_atoms")
 
-
-        molecule_ids, stereoisomer_ids = self.get_mol_ids_for_batch(output_data.smiles_data, output_data.structure_ids)
+        molecule_ids, stereoisomer_ids = self.get_mol_ids_for_batch(
+            output_data.smiles_data, output_data.structure_ids
+        )
 
         self.dataset.append_batch(
             embeddings,
@@ -119,7 +115,6 @@ class DatasetConstructionOrchestrator:
     def get_mol_ids_for_batch(
         self, smiles_data: list[SmilesData], structure_ids: list[StructureID]
     ):
-
         if self.dataset.config.contains_smiles:
             assert len(smiles_data) == len(structure_ids)
 
@@ -143,10 +138,10 @@ class DatasetConstructionOrchestrator:
         return molecule_ids, stereoisomer_ids
 
     def finalize(self):
-
         # Close all the files, ensure that everything is stored correctly
-        self.dataset.smiles.close()
-        self.dataset.isomeric_smiles.close()
+        if self.dataset.config.contains_smiles:
+            self.dataset.smiles.close()
+            self.dataset.isomeric_smiles.close()
 
         self.dataset.shrink_to_fit()
 

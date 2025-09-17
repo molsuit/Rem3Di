@@ -14,37 +14,6 @@ from sklearn.model_selection import (
 from sklearn.pipeline import Pipeline
 
 
-@dataclass
-class RidgeCVResult:
-    fold_metrics: np.ndarray            # shape: (n_outer_folds, 3) -> [MAE, RMSE, R2]
-    fold_alphas: np.ndarray             # shape: (n_outer_folds,)
-    final_alpha: float
-    final_model: Pipeline               # pipeline: (scaler -> ridge) refit on all data
-    info: dict[str, Any]
-
-    def __repr__(self) -> str:
-        import numpy as np
-        metrics = np.asarray(self.fold_metrics)
-        n_folds = self.info.get("n_outer_folds", metrics.shape[0] if metrics.ndim == 2 else 0)
-
-        if metrics.size == 0 or metrics.ndim != 2 or metrics.shape[1] < 3:
-            return (f"Outer-CV (n={n_folds}) | MAE: nan±nan | RMSE: nan±nan | R²: nan±nan\n"
-                    f"Median best alpha: {getattr(self, 'final_alpha', float('nan')):.3e}")
-
-        # means & (sample) std across outer folds
-        means = np.nanmean(metrics, axis=0)
-        ddof = 1 if metrics.shape[0] > 1 else 0
-        stds = np.nanstd(metrics, axis=0, ddof=ddof)
-
-        return (
-            f"Outer-CV (n={n_folds}) | "
-            f"MAE: {means[0]:.4f}±{stds[0]:.4f} | "
-            f"RMSE: {means[1]:.4f}±{stds[1]:.4f} | "
-            f"R²: {means[2]:.4f}±{stds[2]:.4f}\n"
-            f"Median best alpha: {self.final_alpha:.3e}"
-        )
-
-    __str__ = __repr__
 
 
 

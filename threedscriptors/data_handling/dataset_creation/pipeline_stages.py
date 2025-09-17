@@ -46,7 +46,7 @@ class BatchedEmbeddingStage(PipelineStage):
         self._dtype = dtype
 
     def __call__(self, input_batch, data_batch):
-
+        
         state = ts.initialize_state(
             input_batch.molecules, device=self._device, dtype=self._dtype
         )
