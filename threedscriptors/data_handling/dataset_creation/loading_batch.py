@@ -9,8 +9,10 @@ from threedscriptors.data_handling.dataset_creation.structure_ids import Structu
 
 @dataclass(slots=True)
 class RegressionData:
-    regression_targets: np.ndarray
-    regression_masks: np.ndarray
+    targets_system: np.ndarray | None = None
+    mask_system: np.ndarray | None = None
+    targets_atom: np.ndarray | None = None
+    mask_atom: np.ndarray | None = None
 
 
 @dataclass
@@ -40,3 +42,5 @@ class DataBatch:
     atomic_numbers: torch.Tensor
     structure_ids: list[StructureID]
     smiles_data: list[SmilesData] | None
+    regression_data: RegressionData | None = None
+

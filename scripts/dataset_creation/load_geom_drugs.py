@@ -1,16 +1,15 @@
-from threedscriptors.data_handling.dataset_creation.generators.geom_generator import (
-    GeomGenerator,
-)
 from pathlib import Path
 
 import torch
 from mace.calculators.foundations_models import mace_off
-
 from torch_sim.models.mace import MaceModel
 
 from threedscriptors.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
+)
+from threedscriptors.data_handling.dataset_creation.generators.geom_generator import (
+    GeomGenerator,
 )
 from threedscriptors.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
@@ -19,7 +18,6 @@ from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
     BatchedEmbeddingStage,
 )
 from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
-
 
 geom_dir = Path("/share/snw30/projects/threedscriptor/raw_datasets/geom_drugs")
 

@@ -1,5 +1,3 @@
-from molfeat.trans.fp import FPVecTransformer
-
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
@@ -44,7 +42,7 @@ class MolfeatDescriptorCalculator(DescriptorCalculator):
         self.featurizer = FPVecTransformer(kind=self.descriptor_name)
 
     def calculate_descriptors(self, dataset: MoleculeDataset):
-        return self.featurizer(dataset.smiles_list)
+        return self.featurizer(dataset.get_smiles_per_structure())
 
     def calculate_similarity(self, des0, des1):
         return tanimoto_similarity(des0, des1)
@@ -67,7 +65,7 @@ class ThreedescriptorCalculator(DescriptorCalculator):
         descriptors = evaluate_molecular_descriptor_on_dataset(self.model, dataset)
 
         descriptors = descriptors.numpy()
-        
+
         return descriptors
 
     def calculate_similarity(self, des0, des1):

@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 import numpy as np
@@ -36,35 +37,28 @@ def cv_results_to_nested_dict(
     return {str(task_name) : task_block}
 
 
+# ---------- Utilities ----------
+def dc_to_dict(obj: Any) -> dict[str, Any]:
+    if is_dataclass(obj): return asdict(obj)
+    if isinstance(obj, dict): return dict(obj)
+    raise TypeError("Expected a dataclass or dict.")
 
-def _aggregate_params(best_params_list: list[dict]) -> dict:
-    if not best_params_list:
-        return {}
+def prefix(step: str, d: dict[str, Any]) -> dict[str, Any]:
+    return {f"{step}__{k}": v for k, v in d.items()}
 
-    keys = sorted({k for d in best_params_list for k in d.keys()})
-    agg = {}
-    for k in keys:
-        vals = [d[k] for d in best_params_list if k in d]
-        # drop None to avoid poisoning medians/modes (e.g., max_samples when bootstrap=False)
-        vals = [v for v in vals if v is not None]
-        if not vals:
-            continue
+def unprefix(step: str, d: dict[str, Any]) -> dict[str, Any]:
+    p = f"{step}__"
+    return {k[len(p):]: v for k, v in d.items() if k.startswith(p)}
 
-        v0 = vals[0]
-        # IMPORTANT: bool BEFORE int (bool is a subclass of int)
-        if isinstance(v0, (bool, np.bool_)):
-            true_frac = np.mean([bool(v) for v in vals])
-            agg[k] = bool(true_frac >= 0.5)   # majority vote
-        elif isinstance(v0, (float, np.floating)):
-            agg[k] = float(np.median(vals))
-        elif isinstance(v0, (int, np.integer)):
-            agg[k] = int(np.median(vals))
-        elif isinstance(v0, str):
-            uniq, counts = np.unique(vals, return_counts=True)
-            agg[k] = uniq[np.argmax(counts)]
-        else:
-            # fallback: first value
-            agg[k] = v0
+def is_bool(x) -> bool:
+    return isinstance(x, (bool, np.bool_))
 
-    return agg
+def is_numeric_ex_bool(x) -> bool:
+    return isinstance(x, (int, float, np.integer, np.floating)) and not is_bool(x)
 
+def mode(values):
+    counts, order = {}, {}
+    for i, v in enumerate(values):
+        counts[v] = counts.get(v, 0) + 1
+        order.setdefault(v, i)
+    return sorted(counts.items(), key=lambda kv: (-kv[1], order[kv[0]]))[0][0]

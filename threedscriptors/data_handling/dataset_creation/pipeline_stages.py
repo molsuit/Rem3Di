@@ -38,7 +38,6 @@ type Pipeline = list[PipelineStage]
 
 
 class BatchedEmbeddingStage(PipelineStage):
-
     def __init__(self, mace_model: MaceModel, device, dtype):
         self.mace_model = mace_model
 
@@ -46,7 +45,6 @@ class BatchedEmbeddingStage(PipelineStage):
         self._dtype = dtype
 
     def __call__(self, input_batch, data_batch):
-        
         state = ts.initialize_state(
             input_batch.molecules, device=self._device, dtype=self._dtype
         )
@@ -67,21 +65,19 @@ class BatchedEmbeddingStage(PipelineStage):
                 systems_index=state.system_idx,
                 smiles_data=input_batch.smiles,
                 structure_ids=input_batch.structure_ids,
+                regression_data=input_batch.regression_data
             )
 
         return input_batch, data_batch
 
 
 class SequentialEmbeddingStage(PipelineStage):
-
     def __init__(self, mace_calculator: MACECalculator, device, dtype):
-
         self.mace_calc = mace_calculator
         self._device = device
         self._dtype = dtype
 
     def __call__(self, input_batch, data_batch):
-
         embeddings = []
         positions = []
         atomic_numbers = []
@@ -116,13 +112,10 @@ class SequentialEmbeddingStage(PipelineStage):
 
 
 class ConformerGenerationStage(PipelineStage):
-
     def __init__(self, dataset_creation_config: DatasetCreationConfig):
-
         self.config = dataset_creation_config
 
         self.num_workers = os.cpu_count()
-
 
     def __call__(self, input_batch: InputBatch, data_batch: DataBatch):
         molecules: list[Atoms] = []
@@ -158,7 +151,11 @@ class ConformerGenerationStage(PipelineStage):
 
                     # Build ASE atoms in the parent process
                     for k in range(K):
-                        atoms = Atoms(positions=positions[k], numbers=atomic_numbers, pbc = [0,0,0])
+                        atoms = Atoms(
+                            positions=positions[k],
+                            numbers=atomic_numbers,
+                            pbc=[0, 0, 0],
+                        )
                         molecules.append(atoms)
                         smiles_list.append(
                             SmilesData(
@@ -186,22 +183,27 @@ class ConformerGenerationStage(PipelineStage):
         input_batch.structure_ids = structure_ids
 
         # Duplicate regression rows to match generated conformers
-        if input_batch.regression_data is not None and len(parent_idx_for_regression) > 0:
+        if (
+            input_batch.regression_data is not None
+            and len(parent_idx_for_regression) > 0
+        ):
             idx = np.asarray(parent_idx_for_regression, dtype=np.int64)
             rd = input_batch.regression_data
-            new_targets = rd.regression_targets[idx, :]
-            # NOTE: fix the tiny bug — remove the trailing comma so it's not a tuple
-            new_masks = rd.regression_masks[idx, :]
+            if rd.targets_system is not None:
+                new_targets = rd.targets_system[idx, :]
+                new_masks = rd.mask_system[idx, :]
+            if rd.targets_atom is not None:
+                raise NotImplementedError
+
             input_batch.regression_data = RegressionData(
-                regression_targets=new_targets,
-                regression_masks=new_masks,
+                targets_system=new_targets,
+                mask_system=new_masks,
             )
 
         return input_batch, data_batch
 
 
 class ParallelRelaxStage(PipelineStage):
-
     def __init__(self, mace_model: MaceModel, device, dtype, N_steps: int):
         self.mace_model = mace_model
 
@@ -211,7 +213,6 @@ class ParallelRelaxStage(PipelineStage):
         self.N_steps = N_steps
 
     def __call__(self, input_batch, data_batch):
-
         state = ts.initialize_state(
             input_batch.molecules, device=self._device, dtype=self._dtype
         )
@@ -226,14 +227,14 @@ class ParallelRelaxStage(PipelineStage):
         # Run optimization for a few steps
 
         for step in range(self.N_steps):
-
             state = update_fn(state)
 
-        print(f"Final max force: {torch.linalg.norm(state.forces, dim = 1)} eV")
+        print(f"Final max force: {torch.linalg.norm(state.forces, dim=1)} eV")
 
         input_batch.molecules = ts.io.state_to_atoms(state)
 
         return input_batch, data_batch
+
 
 class RandomWalkTransitionMatrix(PipelineStage):
     pass

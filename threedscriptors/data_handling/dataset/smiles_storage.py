@@ -71,6 +71,38 @@ class SmilesStorage:
                 self._text_file.fileno(), 0, access=mmap.ACCESS_READ
             )
 
+    def to_list(self):
+        n = len(self)
+        if n == 0:
+            return []
+
+        if self._text_mmap is None:
+            size = self._text_path.stat().st_size
+            if size == 0:
+                return []
+            self._text_mmap = mmap.mmap(
+                self._text_file.fileno(), 0, access=mmap.ACCESS_READ
+            )
+
+        mm = self._text_mmap
+        if mm is None:
+            return []
+
+        offsets = self._offsets_memmap
+        starts = offsets[:-1]
+        ends = offsets[1:]
+        result: list[str] = [""] * n
+
+        for i, (start, end) in enumerate(zip(starts, ends, strict=False)):
+            a = int(start)
+            b = int(end)
+            if b > a and mm[b - 1] == 10:  # strip trailing newline
+                result[i] = mm[a : b - 1].decode("utf-8")
+            else:
+                result[i] = mm[a:b].decode("utf-8")
+
+        return result
+
     def __len__(self) -> int:
         return max(0, self._offsets_memmap.shape[0] - 1)
 
@@ -309,6 +341,5 @@ class SmilesStorage:
         self._offsets_memmap = np.memmap(self._index_path, dtype=np.uint64, mode="r")
 
         self._verify_integrity_or_raise()
-
 
 

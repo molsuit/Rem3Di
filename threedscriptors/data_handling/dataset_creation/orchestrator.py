@@ -79,6 +79,7 @@ class DatasetConstructionOrchestrator:
         positions = ensure_numpy_array(output_data.atomic_positions)
         atomic_numbers = ensure_numpy_array(output_data.atomic_numbers)
 
+        
         # Ensure pointer length matches the number of structures in the batch.
         # If the last system produced zero atoms, `minlength` keeps a trailing 0 count
         # so the ptr length equals len(structure_ids).
@@ -103,6 +104,11 @@ class DatasetConstructionOrchestrator:
             output_data.smiles_data, output_data.structure_ids
         )
 
+        system_targets = output_data.regression_data.targets_system
+        system_masks = output_data.regression_data.mask_system
+        atom_target = output_data.regression_data.targets_atom
+        atom_mask = output_data.regression_data.mask_atom
+
         self.dataset.append_batch(
             embeddings,
             positions,
@@ -110,6 +116,10 @@ class DatasetConstructionOrchestrator:
             ptr,
             molecule_ids,
             stereoisomer_ids,
+            system_targets,
+            system_masks,
+            atom_target,
+            atom_mask
         )
 
     def get_mol_ids_for_batch(

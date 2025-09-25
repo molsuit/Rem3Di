@@ -28,7 +28,6 @@ MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 
 
 class GeomGenerator(MoleculeGenerator):
-
     def __init__(
         self,
         geom_dir: Path,
@@ -36,7 +35,7 @@ class GeomGenerator(MoleculeGenerator):
         max_atoms: int | None = None,
         loading_batch_size: int = 100,
         max_workers: int = os.cpu_count(),
-        shuffle_mols: bool = True
+        shuffle_mols: bool = True,
     ):
         self.geom_dir = geom_dir
 
@@ -46,9 +45,7 @@ class GeomGenerator(MoleculeGenerator):
         self.max_workers = max_workers
         self.shuffle_mols = shuffle_mols
 
-        
     def get_all_mol_paths(self):
-
         drugs_file = self.geom_dir / "summary_drugs.json"
         with open(drugs_file) as f:
             drugs_summ = json.load(f)
@@ -56,10 +53,9 @@ class GeomGenerator(MoleculeGenerator):
         rdkit_dir = Path(self.geom_dir)
         existing = {
             str(p.relative_to(rdkit_dir)): p  # key: "drug123/drug123.pkl"
-            for p in rdkit_dir.rglob("*.pickle")  # finds files in sub‑directories too
+            for p in rdkit_dir.rglob("*.pickle")  # finds files in sub-directories too
         }
-        
-        
+
         mol_paths = [
             existing[path]
             for sub in drugs_summ.values()
@@ -115,7 +111,9 @@ class GeomGenerator(MoleculeGenerator):
         structure_idx = 0
 
         # Tune these two to control how aggressively you load ahead:
-        file_batch_size = max(self.loading_batch_size * 4, 64)  # how many files to process at once
+        file_batch_size = max(
+            self.loading_batch_size * 4, 64
+        )  # how many files to process at once
         # You can also add a target buffer size if you want; the while-loop below already enforces fixed yields.
 
         # FIFO buffers so popping from the front is O(1)
@@ -143,7 +141,7 @@ class GeomGenerator(MoleculeGenerator):
             raw_results.sort(key=lambda t: (t[0], t[1]))  # (molecule_id, conformer_id)
 
             # Push everything we just loaded into the buffer
-            for (mol_id, conf_id, can_smi, nums, pos) in raw_results:
+            for mol_id, conf_id, can_smi, nums, pos in raw_results:
                 atoms = Atoms(numbers=nums, positions=pos, info={"smiles": can_smi})
                 buf_mols.append(atoms)
                 buf_ids.append(
@@ -163,11 +161,17 @@ class GeomGenerator(MoleculeGenerator):
 
             # While we have enough in the buffer, yield fixed-size batches
             while len(buf_mols) >= self.loading_batch_size:
-                batch_smiles = [buf_smiles.popleft() for _ in range(self.loading_batch_size)]
-                batch_mols   = [buf_mols.popleft()   for _ in range(self.loading_batch_size)]
-                batch_ids    = [buf_ids.popleft()    for _ in range(self.loading_batch_size)]
+                batch_smiles = [
+                    buf_smiles.popleft() for _ in range(self.loading_batch_size)
+                ]
+                batch_mols = [
+                    buf_mols.popleft() for _ in range(self.loading_batch_size)
+                ]
+                batch_ids = [buf_ids.popleft() for _ in range(self.loading_batch_size)]
 
-                yield InputBatch(smiles=batch_smiles, molecules=batch_mols, structure_ids=batch_ids)
+                yield InputBatch(
+                    smiles=batch_smiles, molecules=batch_mols, structure_ids=batch_ids
+                )
 
         # Flush any remainder (set this to `if False` if you want only fixed-size batches)
         if buf_mols:
