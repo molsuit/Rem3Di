@@ -21,7 +21,7 @@ MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 # ---------- worker-side helpers (must be top-level for pickling) ----------
 
 
-def filter_mol(mol: Mol, require_3D=False, max_atoms: int | None = None) -> bool:
+def filter_mol(mol: Mol, require_3D=False, max_atoms: int | None = None) -> bool:  # noqa: C901
     """Return True if mol passes all filters, otherwise False."""
     try:
         if mol is None:
@@ -41,14 +41,15 @@ def filter_mol(mol: Mol, require_3D=False, max_atoms: int | None = None) -> bool
         ):
             return False
 
+        if Chem.GetFormalCharge(mol) != 0:
+            return False
+
         for a in mol.GetAtoms():
             if a.GetSymbol() not in MACE_OFF_ELEMENTS:
                 return False
             if a.GetNumRadicalElectrons() != 0:
                 return False
             if a.GetIsotope() != 0:
-                return False
-            if a.GetFormalCharge() != 0:
                 return False
         return True
     except Exception:

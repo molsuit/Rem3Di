@@ -103,11 +103,19 @@ class DatasetConstructionOrchestrator:
         molecule_ids, stereoisomer_ids = self.get_mol_ids_for_batch(
             output_data.smiles_data, output_data.structure_ids
         )
+        
 
-        system_targets = output_data.regression_data.targets_system
-        system_masks = output_data.regression_data.mask_system
-        atom_target = output_data.regression_data.targets_atom
-        atom_mask = output_data.regression_data.mask_atom
+        if output_data.regression_data is not None:
+
+            system_targets = output_data.regression_data.targets_system
+            system_masks = output_data.regression_data.mask_system
+            atom_target = output_data.regression_data.targets_atom
+            atom_mask = output_data.regression_data.mask_atom
+        else:
+            system_targets = None
+            system_masks = None
+            atom_target = None
+            atom_mask = None
 
         self.dataset.append_batch(
             embeddings,
