@@ -59,9 +59,10 @@ class ConfigFactory:
             self.attention_layer_config.embedding_dim
         )
 
-        self.global_aggregator_config.output_dim = (
-            self.global_aggregator_config.input_dim
-        )
+        if self.global_aggregator_config.output_dim is None:
+            self.global_aggregator_config.output_dim = (
+                self.global_aggregator_config.input_dim
+            )
 
     def process_regression_heads_config(
         self, head_config_template: RegressionHeadConfig
@@ -86,7 +87,6 @@ class ConfigFactory:
         return regression_heads
 
     def process_encoder_config(self):
-
         if self.positional_encoding_config is not None:
             self.encoder_config.d_pair = self.positional_encoding_config.d_projection
 
@@ -106,7 +106,6 @@ class ConfigFactory:
                 )
 
     def process_decoder_config(self):
-
         if self.decoder_config is not None:
             self.decoder_config.d_descriptor = self.global_aggregator_config.output_dim
 

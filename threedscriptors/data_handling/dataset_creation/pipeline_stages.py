@@ -48,21 +48,23 @@ class BatchedEmbeddingStage(PipelineStage):
         state = ts.initialize_state(
             input_batch.molecules, device=self._device, dtype=self._dtype
         )
-        out = self.mace_model(state)
+
+        with torch.inference_mode():
+            out = self.mace_model(state)
 
         if data_batch is not None:
             # Databatch has already been initialized
-            data_batch.atomic_positions = state.positions
-            data_batch.atomic_numbers = state.atomic_numbers
-            data_batch.embeddings = out["descriptors"]
-            data_batch.systems_index = state.system_idx
+            data_batch.atomic_positions = state.positions.detach().cpu()
+            data_batch.atomic_numbers = state.atomic_numbers.detach().cpu()
+            data_batch.embeddings = out["descriptors"].detach().cpu()
+            data_batch.systems_index = state.system_idx.detach().cpu()
 
         else:
             data_batch = DataBatch(
-                atomic_positions=state.positions,
-                atomic_numbers=state.atomic_numbers,
-                embeddings=out["descriptors"],
-                systems_index=state.system_idx,
+                atomic_positions=state.positions.detach().cpu(),
+                atomic_numbers=state.atomic_numbers.detach().cpu(),
+                embeddings=out["descriptors"].detach().cpu(),
+                systems_index=state.system_idx.detach().cpu(),
                 smiles_data=input_batch.smiles,
                 structure_ids=input_batch.structure_ids,
                 regression_data=input_batch.regression_data

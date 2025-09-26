@@ -69,7 +69,7 @@ creation_config = DatasetCreationConfig(
     path=Path(
         "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pcqm"
     ),
-    N_structures=5_000,
+    N_structures=100_000,
 )
 dataset_config = DatasetConfig(
     embedding_dim=mace_irreps.dim, irreps=mace_irreps, atom_chunk=450, molecule_chunk=50

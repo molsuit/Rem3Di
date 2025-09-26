@@ -48,7 +48,7 @@ class DatasetConstructionOrchestrator:
 
     def build_dataset(self):
         for input_batch in self.batch_generator:
-            if input_batch.molecules is [] and input_batch.smiles is []:
+            if input_batch.molecules == [] and input_batch.smiles == []:
                 continue
             output_data = None
 
@@ -79,7 +79,6 @@ class DatasetConstructionOrchestrator:
         positions = ensure_numpy_array(output_data.atomic_positions)
         atomic_numbers = ensure_numpy_array(output_data.atomic_numbers)
 
-        
         # Ensure pointer length matches the number of structures in the batch.
         # If the last system produced zero atoms, `minlength` keeps a trailing 0 count
         # so the ptr length equals len(structure_ids).
@@ -103,10 +102,8 @@ class DatasetConstructionOrchestrator:
         molecule_ids, stereoisomer_ids = self.get_mol_ids_for_batch(
             output_data.smiles_data, output_data.structure_ids
         )
-        
 
         if output_data.regression_data is not None:
-
             system_targets = output_data.regression_data.targets_system
             system_masks = output_data.regression_data.mask_system
             atom_target = output_data.regression_data.targets_atom
@@ -127,7 +124,7 @@ class DatasetConstructionOrchestrator:
             system_targets,
             system_masks,
             atom_target,
-            atom_mask
+            atom_mask,
         )
 
     def get_mol_ids_for_batch(
