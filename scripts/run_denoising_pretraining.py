@@ -60,15 +60,12 @@ def parse_args():
     return args.train_dir
 
 
-
-
 def main():
     training_dir = parse_args()
     training_dir = Path(training_dir)
 
     torch.manual_seed(0)
     np.random.seed(0)
-
 
     training_config = pyaml.parse_yaml_file_as(
         TrainingConfig, f"{training_dir}/training_config.yaml"
@@ -83,15 +80,18 @@ def main():
     )
     ds = TrainingMoleculeDataset(training_config.dataset_path, get_item=pos_emb_getitem)
 
-
     splitting = DatasetSplitting(full_dataset)
-    train_idx, val_idx, split_name = next(splitting.get_split(training_config.split_config))
+    train_idx, val_idx, split_name = next(
+        splitting.get_split(training_config.split_config)
+    )
     train_dataset = Subset(ds, train_idx)
     valid_dataset = Subset(ds, val_idx)
 
     training_idx = len(list(training_dir.glob("*/")))
     now = datetime.now()
-    training_identifier = f"{training_idx}-{now.strftime("%Y_%m_%d_%H_%M_%S")}-{split_name}"
+    training_identifier = (
+        f"{training_idx}-{now.strftime('%Y_%m_%d_%H_%M_%S')}-{split_name}"
+    )
     training_data_dir = training_dir / Path(training_identifier)
     os.makedirs(training_data_dir)
 
@@ -122,13 +122,11 @@ def main():
         collate_fn=pretraining_padded_collate_fn,
     )
 
-
     dn = DataNormalizationModule(train_dataset)
 
     inv_mean_per_dim, inv_std_per_dim = dn.get_atomic_embedding_normalization_constants(
         irreps=full_dataset.config.irreps
     )
-
 
     mb = ModelBuilder(architecture_config=architecture_config)
     preprocessor = mb.build_preprocessor(inv_mean_per_dim, inv_std_per_dim)
@@ -167,14 +165,12 @@ def main():
         f"{training_data_dir}/geometric_preprocessor.pth"
     )
 
-
     with TrainingTelemetry(
         wandb_active=training_config.wandb_active,
         run_name=training_config.training_name,
         group_name=training_config.run_group,
         out_dir=training_data_dir,
     ) as telemetry:
-
         encoder.to(device)
         decoder.to(device)
         preprocessor.to(device)
@@ -192,7 +188,6 @@ def main():
             optimizer.zero_grad()
 
             for batch_index, samples in enumerate(training_loader):
-
                 samples.to_(device)
                 preprocessed_samples: PreprocessedSample = preprocessor(samples)
 
@@ -253,9 +248,10 @@ def main():
 
             with torch.no_grad():
                 for batch_idx, val_samples in enumerate(validation_loader):
-
                     val_samples.to_(device)
-                    preprocessed_val_samples: PreprocessedSample = preprocessor(val_samples)
+                    preprocessed_val_samples: PreprocessedSample = preprocessor(
+                        val_samples
+                    )
 
                     input_atomic_embeddings = (
                         preprocessed_val_samples.preprocessed_atomic_embeddings.clone()
@@ -295,10 +291,11 @@ def main():
                     * architecture_config.embedding_preprocess_config.output_irreps_dim
                 )
 
-                telemetry.log_pretraining_epoch(epoch, avg_train_loss, avg_validation_loss)
+                telemetry.log_pretraining_epoch(
+                    epoch, avg_train_loss, avg_validation_loss
+                )
 
                 if telemetry.best_epoch:
-
                     torch.save(encoder.state_dict(), f"{training_data_dir}/encoder.pth")
                     torch.save(
                         preprocessor.atomic_preprocessor.state_dict(),
@@ -309,8 +306,10 @@ def main():
                         f"{training_data_dir}/geometric_preprocessor.pth",
                     )
 
-
-    pyaml.to_yaml_file(training_data_dir / "post_training_architecture_config.yaml", architecture_config)
+    pyaml.to_yaml_file(
+        training_data_dir / "post_training_architecture_config.yaml",
+        architecture_config,
+    )
 
 
 if __name__ == "__main__":

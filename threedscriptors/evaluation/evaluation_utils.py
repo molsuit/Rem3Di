@@ -12,6 +12,7 @@ from threedscriptors.data_handling.sample import (
     Sample,
     paired_sample_collate_fn,
     sample_collate_fn,
+    pretraining_padded_collate_fn
 )
 from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.model.model_output import ModelOutput
@@ -78,7 +79,7 @@ def evaluate_molecular_descriptor_on_dataset(
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
-        collate_fn=sample_collate_fn,
+        collate_fn=pretraining_padded_collate_fn,
     )
 
     model.to(device)

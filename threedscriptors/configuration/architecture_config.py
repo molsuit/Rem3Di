@@ -14,7 +14,6 @@ from pydantic import (
 )
 
 from threedscriptors.configuration.config_utils import IrrepType
-from threedscriptors.configuration.data_config import TaskConfig
 from threedscriptors.model.pooling import AttnPool, MeanPool
 from threedscriptors.model.preprocessing.radial_basis_functions import (
     BesselBasisFunctions,
@@ -61,7 +60,8 @@ class EncoderConfig(BaseModel):
     attention_layer_config: AttentionLayerConfig
     reload_state_dict: str | None = None
     d_pair: int | None = None
-    d_geo: int| None = None
+    d_geo: int | None = None
+
 
 class DecoderConfig(BaseModel):
     N_layers: int
@@ -69,15 +69,14 @@ class DecoderConfig(BaseModel):
     attention_layer_config: AttentionLayerConfig
     reload_state_dict: str | None = None
     d_pair: int | None = None
-    d_geo: int| None = None
-
+    d_geo: int | None = None
 
 
 class RegressionHeadConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     task_name: str | None = None
-    task_config: TaskConfig | None = None
+    task_config: None = None
     activation_fn: Callable = torch.nn.SiLU()
     hidden_dimensions: list[int] = [256, 128]
     input_dimensions: int | None = None
@@ -107,18 +106,15 @@ class EmbeddingPreprocessConfig(BaseModel):
     reload_state_dict: str | None = None
     gated: bool = True
     pseudoscalars: bool = True
-    equivariant_rms_normalization : bool = True
+    equivariant_rms_normalization: bool = True
 
-
-    @computed_field(return_type=IrrepType, repr= True)
+    @computed_field(return_type=IrrepType, repr=True)
     @property
     def pseudoscalar_irrep(self):
-
         if self.pseudoscalars:
-            return Irreps([(self.pseudoscalar_dimension,(0,-1))])
+            return Irreps([(self.pseudoscalar_dimension, (0, -1))])
         else:
             return Irreps()
-
 
     @computed_field(return_type=int, repr=True)
     @property
@@ -134,31 +130,30 @@ class EmbeddingPreprocessConfig(BaseModel):
     @computed_field(return_type=int, repr=True)
     @property
     def input_invariant_dimension(self):
-        invariant_irreps = [Irreps([(m, (i.l, i.p))])  for m, i in self.input_irreps if i.l == 0]
+        invariant_irreps = [
+            Irreps([(m, (i.l, i.p))]) for m, i in self.input_irreps if i.l == 0
+        ]
 
         return sum([i_irrep.dim for i_irrep in invariant_irreps])
 
-
-    @computed_field(return_type= IrrepType, repr= True)
+    @computed_field(return_type=IrrepType, repr=True)
     @property
     def output_irreps(self):
-
         _, even_invariants = get_invariant_indices(self.input_irreps)
 
         if self.pseudoscalars:
-            odd_invariants_chiral_embedding = Irreps([(self.chiral_embedding_dimension,(0,-1))])
+            odd_invariants_chiral_embedding = Irreps(
+                [(self.chiral_embedding_dimension, (0, -1))]
+            )
         else:
-            odd_invariants_chiral_embedding =  Irreps()
+            odd_invariants_chiral_embedding = Irreps()
 
-        return even_invariants+odd_invariants_chiral_embedding
+        return even_invariants + odd_invariants_chiral_embedding
 
-    @computed_field(return_type=int, repr = True)
+    @computed_field(return_type=int, repr=True)
     @property
     def output_irreps_dim(self):
         return self.output_irreps.dim
-
-
-
 
 
 class Aggregations(Enum):
@@ -189,12 +184,8 @@ class Aggregations(Enum):
         return self.name.lower()
 
 
-
-
-
 class MeanAggregatorConfig(BaseModel):
     aggregator_type: Literal[Aggregations.MEAN]
-
 
     @field_serializer("aggregator_type")
     def _serialize_aggregator_type(self, v: Aggregations, info):
@@ -219,7 +210,6 @@ class AttentionAggregatorConfig(BaseModel):
     def _serialize_aggregator_type(self, v: Aggregations, info):
         return v.name.lower()
 
-
     @field_validator("aggregator_type", mode="before")
     @classmethod
     def check_aggregator_type(cls, v: str | Aggregations) -> Callable:
@@ -229,17 +219,32 @@ class AttentionAggregatorConfig(BaseModel):
             return Aggregations(v)
 
 
+class PMAAggregatorConfig(BaseModel):
+    # Q/K total dim (= num_heads * d_k)
+    head_dim: int | None = None
+    num_heads: int = 4
+    attn_dropout: float = 0.0
+    num_seeds: int = 16
+    reduction: Literal["mean", "sum", "max"] = "mean"
+    use_mlp: bool = False
+
+    # NEW: concatenated value dimension across heads (= num_heads * d_v)
+    d_v_out: int | None = None
+
+
 class GlobalAggregatorConfig(BaseModel):
-    aggregator_type_config:MeanAggregatorConfig | AttentionAggregatorConfig
+    aggregator_type_config: (
+        MeanAggregatorConfig | AttentionAggregatorConfig | PMAAggregatorConfig
+    )
     input_dim: int | None = None
     output_dim: int | None = None
-    global_molecular_descriptor_dropout : float | None = None
+    global_molecular_descriptor_dropout: float | None = None
+
 
 class RandomWalkPositionalEncoding(BaseModel):
-    k_hop_random_walk : int
+    k_hop_random_walk: int
     d_projection: int
     reload_state_dict: str | None = None
-
 
 
 class RadialBasisFunctionType(Enum):
@@ -257,19 +262,16 @@ class RadialBasisFunctionType(Enum):
                 raise
 
 
-
-
 class RelativeDistancePositionalEncodingConfig(BaseModel):
     N_radial_basis_functions: int
     distance_cutoff: float
     d_projection: int
     basis_function_type: RadialBasisFunctionType = RadialBasisFunctionType.GAUSSIAN
-    reload_state_dict: str| None = None
+    reload_state_dict: str | None = None
 
     @field_serializer("basis_function_type")
     def _serialize_aggregator_type(self, v: RadialBasisFunctionType, info):
         return v.name.lower()
-
 
     @field_validator("basis_function_type", mode="before")
     @classmethod
@@ -280,16 +282,13 @@ class RelativeDistancePositionalEncodingConfig(BaseModel):
             return RadialBasisFunctionType(v)
 
 
-
-
 class ArchitectureConfig(BaseModel):
     embedding_preprocess_config: EmbeddingPreprocessConfig
     encoder_config: EncoderConfig
     global_aggregator_config: GlobalAggregatorConfig
     regression_head_config: RegressionHeadConfig | Sequence[RegressionHeadConfig] | None
-    positional_encoding_config: RelativeDistancePositionalEncodingConfig | RandomWalkPositionalEncoding | None = None
+    positional_encoding_config: (
+        RelativeDistancePositionalEncodingConfig | RandomWalkPositionalEncoding | None
+    ) = None
     reload_full_model_weights: str | None = None
     decoder_config: DecoderConfig | None = None
-
-
-

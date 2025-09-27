@@ -311,6 +311,9 @@ class MoleculeDataset:
             return 0
         return int(np.asarray(self.molecule_ids[:]).max()) + 1
 
+    def __len__(self):
+        return self.N_structures
+
     def _ensure_capacity_atoms(
         self, extra_atoms: int, growth: float = 1.5, min_slack: int = 100_000
     ):

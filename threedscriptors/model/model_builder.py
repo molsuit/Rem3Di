@@ -8,7 +8,6 @@ from threedscriptors.configuration.architecture_config import (
     RandomWalkPositionalEncoding,
     RelativeDistancePositionalEncodingConfig,
 )
-from threedscriptors.configuration.data_config import TaskConfig
 from threedscriptors.model.decoder import TransformerDecoder, TransformerPairDecoder
 from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.model.global_aggregator import GlobalAggregator
@@ -53,7 +52,7 @@ class ModelBuilder:
     def N_trainable_parameters(self):
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
-    def insert_task_configs_into_regression_heads(self, task_configs: list[TaskConfig]):
+    def insert_task_configs_into_regression_heads(self, task_configs):
 
         for task_cfg, head_cfg in zip(
             task_configs, self.architecture_config.regression_head_config, strict=False

@@ -17,6 +17,7 @@ class TaskConfig(BaseModel):
     name: str
     task_type: TaskType
     scope: TaskScope
+    auxillary_dim: int | None = None
 
 
 class TaskSet(BaseModel):

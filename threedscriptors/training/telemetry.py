@@ -134,7 +134,7 @@ class TrainingTelemetry:
         self.loss_data.append(epoch_data)
 
         if self.wandb_active:
-            wandb.log(data = epoch_data)
+            wandb.log(data = epoch_data, step = epoch)
 
 
 

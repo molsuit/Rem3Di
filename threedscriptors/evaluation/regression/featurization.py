@@ -51,7 +51,7 @@ class MolfeatDescriptorCalculator(DescriptorCalculator):
 class ThreedescriptorCalculator(DescriptorCalculator):
     def __init__(
         self,
-        threedescriptor_model: MultiTaskRegressionModel,
+        threedescriptor_model,
         similarity_fn: Callable = cosine_similarity,
     ):
         super().__init__()
