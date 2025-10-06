@@ -1,1 +1,1 @@
-from .molecule_generators import MoleculeGenerator
+from .geom_generator import Geom

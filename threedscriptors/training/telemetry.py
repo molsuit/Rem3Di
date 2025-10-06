@@ -119,7 +119,7 @@ class TrainingTelemetry:
             wandb.log(epoch_train_data)
 
 
-    def log_pretraining_epoch(self, epoch, train_loss, validation_loss):
+    def log_pretraining_epoch(self, epoch, train_loss, validation_loss, current_lr):
 
 
         self.check_best_val_epoch(validation_loss)
@@ -129,7 +129,7 @@ class TrainingTelemetry:
             f"Epoch {epoch} Training Loss: {train_loss} Validation Loss: {validation_loss}"
         )
 
-        epoch_data = {"denoising_train_loss" : train_loss, "denoising_val_loss" : validation_loss, "epoch": epoch+1}
+        epoch_data = {"denoising_train_loss" : train_loss, "denoising_val_loss" : validation_loss, "epoch": epoch+1, "learning_rate": current_lr}
 
         self.loss_data.append(epoch_data)
 

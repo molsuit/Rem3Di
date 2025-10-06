@@ -1,71 +1,16 @@
-from abc import ABC, abstractmethod
-from collections.abc import Iterable, Iterator
-from itertools import chain
-from pathlib import Path
 
 import polars as pl
-from ase import Atoms
 from rdkit import Chem
-from rdkit.Chem import Mol
 
+from threedscriptors.data_handling.dataset_creation.generators.molecule_generator import (
+    MoleculeGenerator,
+)
+from threedscriptors.data_handling.dataset_creation.generators.utils import filter_mol
 from threedscriptors.data_handling.dataset_creation.loading_batch import (
     InputBatch,
     SmilesData,
 )
 from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
-
-# Elements supported by your downstream MACE-OFF stack
-MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
-
-
-# ---------- worker-side helpers (must be top-level for pickling) ----------
-
-
-def filter_mol(mol: Mol, require_3D=False, max_atoms: int | None = None) -> bool:  # noqa: C901
-    """Return True if mol passes all filters, otherwise False."""
-    try:
-        if mol is None:
-            return False
-        # must have a 3D conformer
-        if require_3D and (mol.GetNumConformers() == 0):
-            return False
-        # single fragment only
-        num_atoms = mol.GetNumAtoms()
-        if num_atoms < 3:
-            return False
-        if max_atoms is not None and num_atoms > max_atoms:
-            return False
-        if (
-            Chem.GetMolFrags(mol, asMols=False, sanitizeFrags=False)
-            and len(Chem.GetMolFrags(mol, asMols=True)) > 1
-        ):
-            return False
-
-        if Chem.GetFormalCharge(mol) != 0:
-            return False
-
-        for a in mol.GetAtoms():
-            if a.GetSymbol() not in MACE_OFF_ELEMENTS:
-                return False
-            if a.GetNumRadicalElectrons() != 0:
-                return False
-            if a.GetIsotope() != 0:
-                return False
-        return True
-    except Exception:
-        return False
-
-
-class MoleculeGenerator(Iterable[InputBatch], ABC):
-    """Base class for molecule generators yielding InputBatch instances.
-    Subclasses must implement an efficient ``__iter__`` that yields
-    ``InputBatch`` objects, ideally streaming to minimize memory usage.
-    """
-
-    @abstractmethod
-    def __iter__(self) -> Iterator[InputBatch]:  # pragma: no cover - interface only
-        """Return an iterator over ``InputBatch`` items."""
-        raise NotImplementedError
 
 
 class TSVMoleculeGenerator(MoleculeGenerator):

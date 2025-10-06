@@ -37,10 +37,14 @@ class ModelBuilder:
         self._N_trainable_parameters = None
 
     @classmethod
-    def from_directory(cls, directory: str):
+    def from_directory(cls, directory: str, trained: bool = True):
+        if trained:
+            path = f"{directory}/post_training_architecture_config.yaml"
+        else:
+            path = f"{directory}/architecture_config.yaml"
         architecture_config = pyaml.parse_yaml_file_as(
             ArchitectureConfig,
-            f"{directory}/architecture_config.yaml",
+            path,
         )
         return cls(architecture_config)
 

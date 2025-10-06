@@ -147,6 +147,7 @@ def run_component_microbenches(dataset_dir: Path, n_iters: int = 1024, batch_siz
     """Quick micro-benchmarks for dataset getitem and collate cost without workers."""
     root = Path(dataset_dir)
     full = MoleculeDataset.open_existing_dataset_from_dir(root)
+
     ptr = np.asarray(full.ptr[:])
     lengths = lengths_from_ptr(ptr)
     n_struct = int(lengths.shape[0])

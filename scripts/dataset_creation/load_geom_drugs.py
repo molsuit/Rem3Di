@@ -67,7 +67,7 @@ creation_config = DatasetCreationConfig(
     path=Path(
         "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/geom_drugs"
     ),
-    N_structures=50000,
+    N_structures=2_000_000,
 )
 dataset_config = DatasetConfig(
     embedding_dim=mace_irreps.dim, irreps=mace_irreps, atom_chunk=450, molecule_chunk=50

@@ -39,7 +39,7 @@ creation_config = DatasetCreationConfig(
 )
 
 
-gen = MoleculeNetGenerator(file, 8, mol_column="smiles", tasks=["lipophilicity"], max_atoms=100)
+gen = MoleculeNetGenerator(file, 500, mol_column="smiles", tasks=["lipophilicity"], max_atoms=100)
 
 
 # Use CUDA if available

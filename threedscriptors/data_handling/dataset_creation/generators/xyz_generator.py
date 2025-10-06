@@ -4,7 +4,7 @@ from pathlib import Path
 from ase import Atoms
 from ase.io import iread
 
-from threedscriptors.data_handling.dataset_creation.generators.molecule_generators import (
+from threedscriptors.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
 )
 from threedscriptors.data_handling.dataset_creation.loading_batch import (

@@ -4,10 +4,10 @@ from pathlib import Path
 from ase import Atoms
 from rdkit import Chem
 
-from threedscriptors.data_handling.dataset_creation.generators.molecule_generators import (
+from threedscriptors.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
-    filter_mol,
 )
+from threedscriptors.data_handling.dataset_creation.generators.utils import filter_mol
 from threedscriptors.data_handling.dataset_creation.loading_batch import (
     InputBatch,
     SmilesData,

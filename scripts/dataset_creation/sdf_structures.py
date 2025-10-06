@@ -67,12 +67,12 @@ pipeline = [batched_embedding]
 
 creation_config = DatasetCreationConfig(
     path=Path(
-        "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pcqm"
+        "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pcqm_benchmark"
     ),
-    N_structures=100_000,
+    N_structures=10_000,
 )
 dataset_config = DatasetConfig(
-    embedding_dim=mace_irreps.dim, irreps=mace_irreps, atom_chunk=450, molecule_chunk=50
+    embedding_dim=mace_irreps.dim, irreps=mace_irreps, atom_chunk=4000, molecule_chunk=300
 )
 
 orchestrator = DatasetConstructionOrchestrator(

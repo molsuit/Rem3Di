@@ -1,24 +1,22 @@
 import json
 import os
 import pickle
+from collections import deque
+from collections.abc import Generator
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import batched
 from pathlib import Path
+from random import shuffle
 
-from typing import Generator
 import numpy as np
 from ase import Atoms
 from rdkit import Chem
 
 from threedscriptors.data_handling.dataset_creation import StructureID
-from threedscriptors.data_handling.dataset_creation.generators import MoleculeGenerator
-from threedscriptors.data_handling.dataset_creation.generators.molecule_generators import (
-    filter_mol,
+from threedscriptors.data_handling.dataset_creation.generators.molecule_generator import (
+    MoleculeGenerator,
 )
-from collections import deque
-
-from random import shuffle
-
+from threedscriptors.data_handling.dataset_creation.generators.utils import filter_mol
 from threedscriptors.data_handling.dataset_creation.loading_batch import (
     InputBatch,
     SmilesData,
@@ -31,7 +29,7 @@ class GeomGenerator(MoleculeGenerator):
     def __init__(
         self,
         geom_dir: Path,
-        boltzman_weight_threshold: float,
+        boltzman_weight_threshold: float, # The minimum boltzman weight that a conf needs to have to be accepted
         max_atoms: int | None = None,
         loading_batch_size: int = 100,
         max_workers: int = os.cpu_count(),

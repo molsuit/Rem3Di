@@ -1,29 +1,20 @@
-from threedscriptors.data_handling.dataset_creation.generators.molecule_generators import (
-    MoleculeGenerator,
-    filter_mol,
-)
-from abc import ABC, abstractmethod
-from collections.abc import Iterable, Iterator
-from itertools import chain
-from pathlib import Path
-
-import polars as pl
-from ase import Atoms
-from rdkit import Chem
-from rdkit.Chem import Mol
-
-from threedscriptors.data_handling.dataset_creation.loading_batch import (
-    InputBatch,
-    SmilesData,
-    RegressionData,
-)
-from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 
 import numpy as np
-from collections import deque
+import polars as pl
+from rdkit import Chem
 
-# Elements supported by your downstream MACE-OFF stack
-MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
+from threedscriptors.data_handling.dataset_creation.generators.molecule_generator import (
+    MoleculeGenerator,
+)
+from threedscriptors.data_handling.dataset_creation.generators.utils import (
+    filter_mol,
+)
+from threedscriptors.data_handling.dataset_creation.loading_batch import (
+    InputBatch,
+    RegressionData,
+    SmilesData,
+)
+from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 
 
 class MoleculeNetGenerator(MoleculeGenerator):
@@ -75,7 +66,7 @@ class MoleculeNetGenerator(MoleculeGenerator):
                             isomeric_smiles=smiles,
                         )
                     )
-                    
+
                     batch_structure_ids.append(
                         StructureID(
                             structure_id=idx, molecule_id=idx, stereoisomer_id=idx
@@ -87,6 +78,7 @@ class MoleculeNetGenerator(MoleculeGenerator):
 
 
             if accept_indices:
+
                 accept_indices = np.array(accept_indices)
                 sub = batch_df.select(self.target_cols)
                 sub = sub.with_columns(pl.all().cast(pl.Float32))
@@ -100,7 +92,7 @@ class MoleculeNetGenerator(MoleculeGenerator):
 
                 regression_targets = np.vstack(targets_buffer)
                 regression_masks = np.vstack(masks_buffer)
-                
+
 
                 yield InputBatch(
                     molecules=None,

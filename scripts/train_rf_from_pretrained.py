@@ -7,11 +7,6 @@ from rdkit import RDLogger
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
 from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-
-from threedscriptors.evaluation.evaluation_utils import (
-    evaluate_molecular_descriptor_on_dataset,
-)
-from threedscriptors.evaluation.regression.featurization import calculate_mol_features
 from threedscriptors.evaluation.regression.lgbm import (
     LGBMParams,
 )
@@ -20,6 +15,11 @@ from threedscriptors.evaluation.regression.random_forest import (
     rf_repeated_kfold_cv,
 )
 from threedscriptors.evaluation.regression.ridge import ridge_repeated_kfold_cv
+
+from threedscriptors.evaluation.evaluation_utils import (
+    evaluate_molecular_descriptor_on_dataset,
+)
+from threedscriptors.evaluation.regression.featurization import calculate_mol_features
 from threedscriptors.evaluation.regression.utils import cv_results_to_nested_dict
 from threedscriptors.model.model_builder import ModelBuilder
 

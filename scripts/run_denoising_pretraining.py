@@ -7,7 +7,7 @@ import numpy as np
 import pydantic_yaml as pyaml
 import torch
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
@@ -15,11 +15,21 @@ from threedscriptors.configuration.architecture_config import (
 from threedscriptors.configuration.training_config import (
     TrainingConfig,
 )
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+from threedscriptors.data_handling.dataset.training_dataset import (
+    TrainingMoleculeDataset,
+    pos_emb_getitem,
+)
 from threedscriptors.data_handling.sample import (
     PreprocessedSample,
     pretraining_padded_collate_fn,
 )
 from threedscriptors.model.model_builder import ModelBuilder
+from threedscriptors.training.data import (
+    DatasetSplitting,
+    worker_init_fn,
+)
+from threedscriptors.training.data.data_normalization import DataNormalizationModule
 from threedscriptors.training.noise_scheduler import ConstantSchedule, NoiseModule
 from threedscriptors.training.pretraining import atom_denoising_loss
 from threedscriptors.training.telemetry import TrainingTelemetry
@@ -27,19 +37,6 @@ from threedscriptors.training.telemetry import TrainingTelemetry
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-import torch
-from torch.utils.data import Subset
-
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.training_dataset import (
-    TrainingMoleculeDataset,
-    pos_emb_getitem,
-)
-from threedscriptors.training.data import (
-    DatasetSplitting,
-    worker_init_fn,
-)
-from threedscriptors.training.data.data_normalization import DataNormalizationModule
 
 
 def parse_args():
@@ -164,6 +161,12 @@ def main():
     architecture_config.positional_encoding_config.reload_state_dict = (
         f"{training_data_dir}/geometric_preprocessor.pth"
     )
+
+    pyaml.to_yaml_file(
+        training_data_dir / "post_training_architecture_config.yaml",
+        architecture_config,
+    )
+
 
     with TrainingTelemetry(
         wandb_active=training_config.wandb_active,
@@ -292,7 +295,7 @@ def main():
                 )
 
                 telemetry.log_pretraining_epoch(
-                    epoch, avg_train_loss, avg_validation_loss
+                    epoch, avg_train_loss, avg_validation_loss, current_lr=lr_scheduler.get_last_lr()
                 )
 
                 if telemetry.best_epoch:

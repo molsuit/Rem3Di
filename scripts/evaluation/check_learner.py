@@ -21,6 +21,7 @@ from threedscriptors.evaluation.regression.featurization import (
 from threedscriptors.evaluation.regression.learner import (
     RandomForestLearner,
     RidgeLearner,
+    ScalerParams,ScalerType
 )
 from threedscriptors.model.model_builder import ModelBuilder
 
@@ -35,9 +36,6 @@ remedi_model = ModelBuilder.from_directory(model_dir).build_remedi_model()
 
 
 dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
-
-print(len(dataset))
-breakpoint()
 
 ds = TrainingMoleculeDataset(dataset_dir, get_item=pos_emb_getitem)
 
@@ -57,18 +55,31 @@ for i, smi in enumerate(smiles):
     mol = Chem.MolFromSmiles(smi)
     logp = Crippen.MolLogP(mol)
     y[i] = logp
+
+
+breakpoint()
+
+
+#y = np.asarray(dataset.targets_system)
 #y = dataset.targets_system
 cv_params = CVParams(scoring="neg_mean_absolute_error")
 
-ridge = RidgeLearner()
+ridge = RidgeLearner(scaler_params = ScalerParams(scaler_type=ScalerType.STANDARD))
+
+ridge_res_remedi = run_kfold_repeated_cross_validation(
+    X_remedi, y, cv_params=cv_params, learner=ridge
+)
+
+print(ridge_res_remedi)
+
 ridge_res_ecfp = run_kfold_repeated_cross_validation(
     X_ecfp, y, cv_params=cv_params, learner=ridge
 )
 
 
-ridge_res_remedi = run_kfold_repeated_cross_validation(
-    X_remedi, y, cv_params=cv_params, learner=ridge
-)
+
+
+print(ridge_res_ecfp)
 
 
 rf = RandomForestLearner()
@@ -79,10 +90,10 @@ rf_res_ecfp = run_kfold_repeated_cross_validation(
 rf_res_remedi = run_kfold_repeated_cross_validation(
     X_remedi, y, cv_params=cv_params, learner=rf
 )
-
-
 print(ridge_res_ecfp)
 print(ridge_res_remedi)
+
+
 
 print(rf_res_ecfp)
 print(rf_res_remedi)

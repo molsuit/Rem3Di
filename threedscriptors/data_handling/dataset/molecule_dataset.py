@@ -144,7 +144,7 @@ class MoleculeDataset:
         # Configure compressor
         os.makedirs(path, exist_ok=True)
 
-        compressor = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE)
+        compressor = Blosc(cname="zstd", clevel=0, shuffle=Blosc.SHUFFLE)
 
         store = zarr.DirectoryStore(path)
         g = zarr.group(store=store, overwrite=True)
@@ -377,8 +377,8 @@ class MoleculeDataset:
 
         # If not, we still attempt to write, but this hints at upstream issues
         # (e.g., inconsistent system_idx vs embeddings sizing).
-        self._ensure_capacity_atoms(n_atoms)
-        self._ensure_capacity_mols(n_mols)
+        self._ensure_capacity_atoms(n_atoms,growth=4)
+        self._ensure_capacity_mols(n_mols, growth=4)
 
         a0, a1 = self._atom_cursor, self._atom_cursor + n_atoms
         m0, m1 = self._mol_cursor, self._mol_cursor + n_mols
