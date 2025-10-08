@@ -29,7 +29,7 @@ dataset_dir = Path(
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/molecule_net"
 )
 model_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/pcqm_with_classic_agg/0-2025_09_26_19_09_22-Train"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/small_geom_drugs/4-2025_10_06_22_47_28-Train"
 )
 
 remedi_model = ModelBuilder.from_directory(model_dir).build_remedi_model()

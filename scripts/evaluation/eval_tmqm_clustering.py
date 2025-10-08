@@ -62,23 +62,7 @@ element_colors, handles = get_atomic_num_colors(atomic_num)
 fig = plot_reduced_dimension(emb, color = element_colors, suptitle="By metal center", handles=handles)
 fig.savefig(f"{out_dir}/metal_center_element.png", dpi = 300)
 
-
-
-
 block_colors = get_block_colors(atomic_num)
-
-
-
-
-
-
-
-
-
-
-
-
-
 fig = plot_reduced_dimension(emb, color = dataset.regression_targets[:,0], suptitle="By homo_lumo_gap")
 fig.savefig(f"{out_dir}/umap_homo_lumo_gap.png", dpi = 300)
 

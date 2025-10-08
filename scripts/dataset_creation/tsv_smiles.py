@@ -59,7 +59,7 @@ mace_model_with_force = MaceModel(
 
 relax_stage = ParallelRelaxStage(mace_model_with_force, device, dtype = torch.float32, N_steps = 50)
 
-pipeline = [conformal_stage, batched_embedding]
+pipeline = [conformal_stage,relax_stage,batched_embedding]
 
 
 orchestrator = DatasetConstructionOrchestrator(pipeline= pipeline, batch_generator= mol_generator, construction_config=creation_config, dataset_config=dataset_config)

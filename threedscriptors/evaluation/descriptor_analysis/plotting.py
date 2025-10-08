@@ -1,45 +1,7 @@
-from abc import ABC, abstractmethod
 
 import matplotlib.pyplot as plt
-import numpy as np
-import torch
-import umap
 
 from threedscriptors.data_handling.data_utils import get_functional_group_label
-
-
-class ClusteringCalculator(ABC):
-    @staticmethod
-    @abstractmethod
-    def get_dimensionality_reduction(data_matrix: torch.Tensor, k=2):
-        pass
-
-
-class PCACalculator(ClusteringCalculator):
-    @staticmethod
-    def get_dimensionality_reduction(data_tensor: torch.Tensor, k=2):
-
-        if isinstance(data_tensor, np.ndarray):
-            data_tensor = torch.from_numpy(data_tensor)
-
-        data_tensor = data_tensor.detach()
-        (U, S, V) = torch.pca_lowrank(data_tensor)
-        principal_components = torch.matmul(data_tensor, V[:, :k]).numpy()
-
-        return principal_components
-
-
-class UMAPCalculator(ClusteringCalculator):
-    @staticmethod
-    def get_dimensionality_reduction(data_matrix: torch.Tensor, k=2, return_fit = False):
-        fit = umap.UMAP(n_components=k)
-        data_matrix = data_matrix.detach().cpu().numpy()
-        umap_projection = fit.fit_transform(data_matrix)
-        if return_fit:
-            return umap_projection, fit
-
-
-        return umap_projection
 
 
 def plot_reduced_dimension_3d(principle_components, color="k", suptitle=None, **kwargs):
@@ -136,3 +98,10 @@ def plot_reduced_dimension_functional_group_comparison(reduced_dimensions, smile
     plt.ylabel("Reduced Dim 2")
 
     return fig
+
+
+#  coloring by
+
+# molecular_weight
+# regression_labels
+# regression predictions

@@ -173,7 +173,9 @@ def main():
         run_name=training_config.training_name,
         group_name=training_config.run_group,
         out_dir=training_data_dir,
+        config = {"train_config": training_config, "architecture_config": architecture_config}
     ) as telemetry:
+        
         encoder.to(device)
         decoder.to(device)
         preprocessor.to(device)

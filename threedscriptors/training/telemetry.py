@@ -7,6 +7,8 @@ import torch
 import yaml
 
 import wandb
+from threedscriptors.configuration.architecture_config import ArchitectureConfig
+from threedscriptors.configuration.training_config import TrainingConfig
 
 
 class TrainingTelemetry:
@@ -16,7 +18,8 @@ class TrainingTelemetry:
         wandb_active: bool,
         run_name: str,
         group_name: str,
-        out_dir: Path
+        out_dir: Path,
+        config
     ):
 
         #self.task_names: list[str] = dataset_config.get_task_names()
@@ -34,7 +37,8 @@ class TrainingTelemetry:
                 project="threedscriptors",
                 entity="threedscriptors",
                 name=run_name,
-                group=group_name)
+                group=group_name,
+                config=config)
 
 
         self.grad_norm_data = []

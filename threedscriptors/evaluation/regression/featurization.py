@@ -5,7 +5,7 @@ import numpy as np
 from molfeat.trans.fp import FPVecTransformer
 
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.evaluation.descriptor_similarity_metrics import (
+from threedscriptors.evaluation.similarity_screening.descriptor_similarity_metrics import (
     cosine_similarity,
     tanimoto_similarity,
 )

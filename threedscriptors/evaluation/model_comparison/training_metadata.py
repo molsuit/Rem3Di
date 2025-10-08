@@ -3,7 +3,7 @@ from pathlib import Path
 import pydantic_yaml as pyaml
 import yaml
 
-from threedscriptors.configuration.data_config import DatasetConfig
+from threedscriptors.configuration.dataset_config import DatasetConfig
 
 
 class TrainingMetadata:

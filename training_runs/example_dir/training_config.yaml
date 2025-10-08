@@ -1,0 +1,22 @@
+batch_size: 112
+dataset_path: 
+  /share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pcqm
+epochs: 10
+learning_rate: 0.0005
+mace_model_path: /share/snw30/projects/mace_model/MACE-OFF24_medium.model
+max_grad_norm: 1.0
+model_config_path: /share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/pcqm_with_classic_agg/architecture_config.yaml
+noise_level: 0.3
+run_group: pcqm500k
+split_config:
+  N_folds: null
+  N_repeats: null
+  shuffle: true
+  strategy: single
+  train_val_ratios:
+  - 0.8
+  - 0.2
+total_steps: null
+training_name: classic_attention_agg
+wandb_active: true
+weight_decay: 0.001
