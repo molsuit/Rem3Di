@@ -19,15 +19,6 @@ from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
 )
 from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
 
-# Get all SDF files from the chembl directory
-sdf_files = [
-    str(f)
-    for f in Path("/share/snw30/projects/threedscriptor/raw_datasets/chembl").glob(
-        "*.sdf"
-    )
-]
-
-
 sdf_files = "/share/snw30/projects/threedscriptor/raw_datasets/pcqm/pcqm4m-v2-train.sdf"
 
 mol_generator = SDFMoleculeGenerator(sdf_file=sdf_files, loading_batch_size=384)
@@ -40,7 +31,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 mace = mace_off(
     model="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
     default_dtype="float64",
-    device="cuda",
+    device=device,
     enable_cueq=True,
     return_raw_model=True,
 )

@@ -24,17 +24,10 @@ mol_generator = TSVMoleculeGenerator(tsv_file=tsv_path, batch_size=4)
 
 # Use CUDA if available
 device = "cuda" if torch.cuda.is_available() else "cpu"
-# Load the MACE "small" foundation model
-#mace = mace_mp(model="small", default_dtype="float64", device="cuda", return_raw_model=True)
-
-#mace = mace_off(model="/share/snw30/projects/mace_model/EGRET_1.model", default_dtype="float32", return_raw_model = True, device = "cuda", enable_cueq = True)
-
 
 mace = mace_off(model = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model", default_dtype= "float32", device = "cuda", enable_cueq = True, return_raw_model=True)
 
-#mace = mace_omol(model = "extra_large", device = device, default_dtype= "float32", return_raw_model= True)
-
-
+# Note that we use two different torch-sim mace models here, one that computes forces and one that doesnt. Disbaling force computation reduces the inference cost because we drop a backward pass
 mace_model = MaceModel(
     model=mace,
     device=device,
@@ -57,6 +50,7 @@ mace_model_with_force = MaceModel(
     enable_cueq=False,
 )
 
+# This is a fixed N_step relaxation (Should be changed to have a AutoBatching/HotSwapping)
 relax_stage = ParallelRelaxStage(mace_model_with_force, device, dtype = torch.float32, N_steps = 50)
 
 pipeline = [conformal_stage,relax_stage,batched_embedding]

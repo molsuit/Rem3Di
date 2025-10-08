@@ -11,8 +11,8 @@ from threedscriptors.data_handling.dataset_creation.structure_ids import Structu
 from threedscriptors.data_handling.sample import (
     Sample,
     paired_sample_collate_fn,
+    pretraining_padded_collate_fn,
     sample_collate_fn,
-    pretraining_padded_collate_fn
 )
 from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.model.model_output import ModelOutput
@@ -70,7 +70,7 @@ def evaluate_regression_model_on_dataset(
 
 
 def evaluate_molecular_descriptor_on_dataset(
-    model: REM3DIModel, dataset, device="cuda"
+    model: REM3DIModel, dataset: TrainingMoleculeDataset, device="cuda"
 ):
     batch_size = min(64, len(dataset))
 
