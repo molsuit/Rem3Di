@@ -1,25 +1,39 @@
 import os
 from itertools import chain, combinations, groupby
 from pathlib import Path
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from ase.data import chemical_symbols
 from ase.visualize.plot import plot_atoms
 from matplotlib.figure import Figure
+from pydantic import BaseModel, Field, ConfigDict
 
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 
 
+class FigureResult(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    result_type: Literal["figure"] = "figure"
+    file_name: str
+    figure: Figure
+    save_kwargs: dict[str, Any] = Field(default_factory=dict)
+
+    def serialize_to(self, directory: Path) -> dict[str, Any]:
+        output_path = directory / self.file_name
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        self.figure.savefig(output_path, **self.save_kwargs)
+        plt.close(self.figure)
+
+
 class MoleculeDatasetAnalysis:
 
-    def __init__(self, dataset: MoleculeDataset, output_dir: Path):
+    def __init__(self, dataset: MoleculeDataset):
 
         self.dataset = dataset
-
-        os.makedirs(output_dir, exist_ok=True)
-        self.dir = output_dir
-
+        self.results :list[FigureResult] = []
 
     def molecule_sizes(self) -> np.ndarray:
         """Per-structure atom counts from the ragged pointer."""
@@ -33,9 +47,106 @@ class MoleculeDatasetAnalysis:
 
         return {n: c for n, c in zip(atomic_numbers, counts, strict=False)}
 
+
+    def get_descriptor_mean_std(self):
+        
+        embeddings = self.dataset.atomic_embeddings
+
+        data = np.asarray(embeddings)
+        reduce_axes = tuple(range(data.ndim - 1))
+        mean = np.mean(data, axis=reduce_axes)
+        print(mean)
+        std = np.std(data, axis=reduce_axes)
+        return mean, std
+
+    def get_descriptor_norm(self):
+        embeddings = self.dataset.atomic_embeddings
+        data = np.asarray(embeddings)
+        norm = np.linalg.norm(data,axis = -1)
+
+        return norm 
+
+    def get_conformer_distance_distribution(self):
+        pass
+
+    def plot_descriptor_mean_std_distribution(self):
+        mean, std = self.get_descriptor_mean_std()
+        mean = np.asarray(mean, dtype=float).ravel()
+        std = np.asarray(std, dtype=float).ravel()
+
+        fig, ax = plt.subplots(figsize=(12, 4))
+        if mean.size > 0:
+            indices = np.arange(mean.size)
+            error_kw = {"ecolor": "0.3", "alpha": 0.7, "elinewidth": 0.8, "capsize": 2}
+            ax.bar(
+                indices,
+                mean,
+                yerr=std,
+                align="center",
+                color="#4c72b0",
+                edgecolor="none",
+                width=0.9,
+                error_kw=error_kw,
+            )
+            ax.axhline(0.0, color="0.5", linewidth=0.8, linestyle="--", alpha=0.7)
+            ax.grid(axis="y", alpha=0.2, linewidth=0.5)
+            ax.set_xlim(-0.5, mean.size - 0.5)
+            ax.set_xlabel("Descriptor channel")
+            ax.set_ylabel("Mean value")
+            ax.set_title("Descriptor channel statistics")
+            if mean.size > 20:
+                step = max(mean.size // 10, 1)
+                ax.set_xticks(indices[::step])
+                ax.tick_params(axis="x", labelrotation=45, labelsize=8)
+        else:
+            ax.text(0.5, 0.5, "No descriptor channels available", ha="center", va="center")
+            ax.axis("off")
+        fig.tight_layout()
+        result = FigureResult(figure=fig, file_name="descriptor_channel_mean_std.png")
+        self.results.append(result)
+        return result
+
+    def plot_descriptor_norm_distribution(self):
+
+        norm = self.get_descriptor_norm()
+        fig, ax = plt.subplots()
+        flat_norm = np.asarray(norm, dtype=float).ravel()
+        if flat_norm.size > 0:
+            counts, bin_edges = np.histogram(flat_norm, bins="auto")
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+            bar_widths = np.diff(bin_edges)
+            ax.bar(bin_centers, counts, width=bar_widths, align="center")
+            ax.set_xlabel("Descriptor norm")
+            ax.set_ylabel("Frequency")
+            ax.set_title("Descriptor norm distribution")
+        else:
+            ax.text(0.5, 0.5, "No descriptor norms available", ha="center", va="center")
+            ax.axis("off")
+        fig.tight_layout()
+        result = FigureResult(figure=fig, file_name="descriptor_norm_distribution.png")
+        self.results.append(result)
+
     def plot_atom_species_histogram(self):
 
-        print(self.atom_species())
+        atom_species = self.atom_species()
+
+        if not atom_species:
+            return
+
+        # Sort species by descending frequency for readability
+        sorted_species = sorted(atom_species.items(), key=lambda item: item[1], reverse=True)
+        labels = [chemical_symbols[atomic_number] for atomic_number, _ in sorted_species]
+        counts = [count for _, count in sorted_species]
+
+        fig, ax = plt.subplots()
+        ax.bar(labels, counts)
+        ax.set_xlabel("Atomic species")
+        ax.set_ylabel("Frequency")
+        ax.set_title("Atom species frequency")
+        fig.tight_layout()
+
+        self.results.append(FigureResult(figure=fig, file_name="atom_species_histogram.png"))
+
 
 
     def plot_molecule_size_distribution(self) -> Figure:
@@ -44,22 +155,44 @@ class MoleculeDatasetAnalysis:
         plt.hist(sizes, bins="auto")
         plt.xlabel("Atoms per structure")
         plt.ylabel("Frequency")
-        return fig
 
+        self.results.append(FigureResult(figure=fig, file_name="molecule_size_distribution.png"))
 
-    def run(self):
-
-        fig_molecule_size = self.plot_molecule_size_distribution()
-        fig_molecule_size.savefig(self.dir / "molecule_size.png")
-
-
-    def calculate_mean_std_descriptors(self):
-        pass
 
     def plot_regression_task_distribution(self):
         pass
 
-    
+    def plot_relaxed_atoms(self, N_max_molecules: int | None = None):
+
+        molecules = self.dataset.get_all_molecules()
+
+        N_horizontal = 3
+        N_vertical = (len(molecules) // 3 )+1
+
+        fig, axarr = plt.subplots(N_vertical, N_horizontal)
+
+        fig.set_figheight(4*N_vertical)
+        fig.set_figwidth(4*N_horizontal)
+
+        for i, mol in enumerate(molecules):
+            plot_atoms(mol, axarr[i // 3 , i % 3])
+
+
+    def run(self):
+        self.plot_molecule_size_distribution()
+        self.plot_atom_species_histogram()
+        self.plot_descriptor_norm_distribution()
+        self.plot_descriptor_mean_std_distribution()
+
+    def output(self, output_dir: Path):
+
+        if isinstance(output_dir, str):
+            output_dir = Path(output_dir)
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        for result in self.results:
+            result.serialize_to(output_dir)
 
 class DatasetPostLoadAnalysis:
 
@@ -112,66 +245,6 @@ class DatasetPostLoadAnalysis:
         return dict(zip(task_names, means, strict=False)), dict(zip(task_names, stds, strict=False))
 
 
-    def get_atom_species(self):
-        smiles_iterator = ListSmilesIterator(self.dataset.smiles_list)
-        return get_atom_species_in_smiles(smiles_iterator)
-
-    def plot_relaxed_atoms(self):
-
-        N_horizontal = 3
-        N_vertical = (len(self.dataset.molecules) // 3 )+1
-
-        fig, axarr = plt.subplots(N_vertical, N_horizontal)
-
-        fig.set_figheight(4*N_vertical)
-        fig.set_figwidth(4*N_horizontal)
-
-        for i, mol in enumerate(self.dataset.molecules):
-            plot_atoms(mol, axarr[i // 3 , i % 3])
-
-        fig.savefig(f"{self.output_dir}/relaxed_atoms.png")
-
-
-
-    def plot_regression_target_distribution(self):
-
-        for idx, task in enumerate(self.dataset.dataset_config.tasks):
-            regression_targets = self.dataset.regression_targets[:,idx]
-            regression_masks = self.dataset.regression_masks[:,idx]
-
-            y = regression_targets[regression_masks.bool()]
-
-            fig = plt.figure()
-            plt.hist(y)
-            fig.savefig(f"{self.output_dir}/distribution_{task.task_name}_labels.png")
-            plt.close(fig)
-
-            log_scaled_y = np.log(y[y>0])
-            fig = plt.figure()
-            plt.hist(log_scaled_y)
-            plt.savefig(f"{self.output_dir}/distribution_{task.task_name}_log_scaled_labels.png")
-
-
-    def check_dataset_integrity(self):
-
-        N_samples = len(self.dataset.molecules)
-
-        assert self.dataset.embeddings.shape[0] == N_samples
-        assert N_samples == self.dataset.padding_mask.shape[0]
-
-
-        assert N_samples == self.dataset.regression_targets.shape[0]
-        assert N_samples == self.dataset.regression_masks.shape[0]
-
-        if self.dataset.atomic_positions is not None:
-            assert N_samples == self.dataset.atomic_positions.shape[0]
-
-        assert N_samples == len(self.dataset.molecules)
-
-
-        assert (self.dataset.embeddings[self.dataset.padding_mask.unsqueeze(-1).expand_as(self.dataset.embeddings)] == 0).all()
-
-
     def check_conformer_distance(self):
 
         if self.dataset.dataset_config.N_conformers == 1:
@@ -200,21 +273,3 @@ class DatasetPostLoadAnalysis:
 
         plt.hist(flattend_rmsds)
         rmsd_fig.savefig(f"{self.output_dir}/rmsd_distribution.png")
-
-
-
-    def run(self):
-
-        self.plot_regression_target_distribution()
-        counts = self.count_samples_per_task()
-        mean, stds = self.mean_and_std()
-        size = self.get_dataset_size()
-        atom_species = self.get_atom_species()
-        self.plot_molecule_size_distribution()
-        #self.plot_relaxed_atoms()
-
-
-        #self.check_conformer_distance()
-        self.get_invariants_std()
-
-        self.check_dataset_integrity()

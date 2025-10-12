@@ -63,7 +63,7 @@ class SDFMoleculeGenerator(MoleculeGenerator):
 
                 if len(batch_atoms) >= self.loading_batch_size:
                     yield InputBatch(
-                        molecules=None,
+                        molecules=batch_atoms,
                         smiles=batch_smiles,
                         structure_ids=batch_structure_ids,
                     )

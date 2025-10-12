@@ -26,10 +26,10 @@ from threedscriptors.evaluation.regression.learner import (
 from threedscriptors.model.model_builder import ModelBuilder
 
 dataset_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/molecule_net"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pcqm_benchmark"
 )
 model_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/small_geom_drugs/4-2025_10_06_22_47_28-Train"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/test_dir_classic_agg/6-2025_10_11_18_56_25-Train"
 )
 
 remedi_model = ModelBuilder.from_directory(model_dir).build_remedi_model()
@@ -57,14 +57,13 @@ for i, smi in enumerate(smiles):
     y[i] = logp
 
 
-breakpoint()
 
 
 #y = np.asarray(dataset.targets_system)
 #y = dataset.targets_system
 cv_params = CVParams(scoring="neg_mean_absolute_error")
 
-ridge = RidgeLearner(scaler_params = ScalerParams(scaler_type=ScalerType.STANDARD))
+ridge = RidgeLearner(scaler_params = ScalerParams())
 
 ridge_res_remedi = run_kfold_repeated_cross_validation(
     X_remedi, y, cv_params=cv_params, learner=ridge

@@ -5,7 +5,7 @@ import torch
 import zarr
 from torch.utils.data import Dataset
 from zarr import DirectoryStore, LRUStoreCache
-
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.data_handling.sample import Sample
 
 GetItemFn = Callable[["TrainingMoleculeDataset", int], Sample]
@@ -57,3 +57,19 @@ class TrainingMoleculeDataset(Dataset):
     def __getitem__(self, idx: int) -> Sample:
         self._ensure_open()
         return self._get_item(self, int(idx))
+    
+    @classmethod
+    def from_molecule_dataset(
+        cls,
+        dataset: MoleculeDataset,
+        *,
+        get_item: GetItemFn = pos_emb_getitem,
+    ) -> "TrainingMoleculeDataset":
+        store = dataset.atomic_embeddings.store
+        while hasattr(store, "store"):
+            store = store.store
+        if not isinstance(store, DirectoryStore):
+            raise TypeError(
+                f"TrainingMoleculeDataset requires a DirectoryStore, got {type(store)}"
+            )
+        return cls(Path(store.path), get_item=get_item)

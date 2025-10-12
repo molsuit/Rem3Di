@@ -28,12 +28,12 @@ class PCACalculator(ClusteringCalculator):
 
 class UMAPCalculator(ClusteringCalculator):
     @staticmethod
-    def get_dimensionality_reduction(data_matrix: torch.Tensor, k=2, return_fit = False):
+    def get_dimensionality_reduction(data_matrix: torch.Tensor, k=2, centered: bool = True):
         fit = umap.UMAP(n_components=k)
         data_matrix = data_matrix.detach().cpu().numpy()
         umap_projection = fit.fit_transform(data_matrix)
-        if return_fit:
-            return umap_projection, fit
 
-
+        if centered:
+            umap_projection -= umap_projection.mean(axis=0, keepdims=True)
+            
         return umap_projection

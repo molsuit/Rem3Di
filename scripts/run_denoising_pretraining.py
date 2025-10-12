@@ -99,10 +99,10 @@ def main():
         train_dataset,
         batch_size=training_config.batch_size,
         worker_init_fn=worker_init_fn,
-        prefetch_factor=8,
+        prefetch_factor=4,
         persistent_workers=True,
         pin_memory=True,
-        num_workers=32,
+        num_workers=16,
         shuffle=True,
         collate_fn=pretraining_padded_collate_fn,
     )
@@ -111,7 +111,7 @@ def main():
         valid_dataset,
         batch_size=64,
         worker_init_fn=worker_init_fn,
-        prefetch_factor=8,
+        prefetch_factor=4,
         persistent_workers=True,
         pin_memory=True,
         num_workers=16,
@@ -173,7 +173,7 @@ def main():
         run_name=training_config.training_name,
         group_name=training_config.run_group,
         out_dir=training_data_dir,
-        config = {"train_config": training_config, "architecture_config": architecture_config}
+        config = {"train_config": training_config.model_dump(), "architecture_config": architecture_config.model_dump()}
     ) as telemetry:
         
         encoder.to(device)
@@ -184,7 +184,7 @@ def main():
         for epoch in range(training_config.epochs):
             # Initialize task and total train losses
 
-            denoising_loss_accumulated = 0.0
+            running = torch.zeros((), device=device)
 
             encoder.train()
             decoder.train()
@@ -239,14 +239,14 @@ def main():
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
-                denoising_loss_accumulated += denoising_loss.item()
+                running += denoising_loss.detach()
 
-            avg_train_loss = denoising_loss_accumulated / (
+            avg_train_loss = (running / (
                 (batch_index + 1)
                 * architecture_config.embedding_preprocess_config.output_irreps_dim
-            )
+            )).item()
 
-            accumulated_validation_loss = 0.0
+            running = torch.zeros((), device=device)
             encoder.eval()
             decoder.eval()
             preprocessor.eval()
@@ -289,15 +289,15 @@ def main():
                         noise_level=noise_level,
                     )
 
-                    accumulated_validation_loss += denoising_loss.item()
+                    running += denoising_loss.detach()
 
-                avg_validation_loss = accumulated_validation_loss / (
+                avg_validation_loss = (running / (
                     (batch_idx + 1)
                     * architecture_config.embedding_preprocess_config.output_irreps_dim
-                )
+                )).item()
 
                 telemetry.log_pretraining_epoch(
-                    epoch, avg_train_loss, avg_validation_loss, current_lr=lr_scheduler.get_last_lr()
+                    epoch, avg_train_loss, avg_validation_loss, current_lr=lr_scheduler.get_last_lr()[0]
                 )
 
                 if telemetry.best_epoch:

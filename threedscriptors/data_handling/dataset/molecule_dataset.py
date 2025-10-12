@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-
+from ase import Atoms
 import numpy as np
 import pydantic_yaml as pyd_yaml
 import zarr
@@ -457,3 +457,25 @@ class MoleculeDataset:
         mol_ids = np.asarray(self.molecule_ids[:n_struct], dtype=np.int64)
         smiles_array = np.asarray(self.isomeric_smiles.to_list(), dtype=object)
         return smiles_array[mol_ids].tolist()
+
+    def get_all_molecules(self) -> list[Atoms]:
+        n_struct = self.N_structures
+        if n_struct == 0:
+            return []
+
+        ptr = np.asarray(self.ptr[: n_struct + 1], dtype=np.int64, order="C")
+        atomic_numbers = np.asarray(
+            self.atomic_numbers[: self._atom_cursor], dtype=np.int64, order="C"
+        )
+        positions = np.asarray(
+            self.positions[: self._atom_cursor], dtype=np.float32, order="C"
+        )
+
+        molecules: list[Atoms] = []
+        append = molecules.append
+        for idx in range(n_struct):
+            start = ptr[idx]
+            end = ptr[idx + 1]
+            append(Atoms(numbers=atomic_numbers[start:end], positions=positions[start:end]))
+
+        return molecules

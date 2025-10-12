@@ -73,17 +73,13 @@ def pretraining_padded_collate_fn(batch: list[Sample]) -> Sample:
     P_pad = pad_sequence([s.atomic_positions for s in batch], batch_first=True)  # (B,Nmax,3)
     Nmax  = E_pad.size(1)
     lengths = torch.tensor([len(s) for s in batch])
-    mask = torch.arange(Nmax).expand(len(batch), Nmax) < lengths.unsqueeze(1)
+    mask = torch.arange(Nmax).expand(len(batch), Nmax) >= lengths.unsqueeze(1)
 
     return Sample(embeddings=E_pad, padding_mask=mask, atomic_positions=P_pad)
 
 def normalization_collate_fn(batch: list[Sample]) -> Sample:
-
-
     E = torch.cat(tensors = [s.embeddings for s in batch])  # (B,Nmax,D)
-
     return Sample(embeddings=E)
-
 
 
 

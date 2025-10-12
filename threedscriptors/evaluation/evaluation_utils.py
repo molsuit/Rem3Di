@@ -256,60 +256,6 @@ def average_over_conformers(
     return predictions
 
 
-def capacity_diagnostics(Z, bins=128, dead_thr=0.2, eps=1e-12):
-    """
-    Estimate information utilisation of a latent space.
-
-    Parameters
-    ----------
-    Z : array_like, shape (N_graphs, d)
-        Graph-level latent vectors (after pooling).
-    bins : int or sequence
-        Number of histogram bins per dimension (power of two recommended).
-    dead_thr : float
-        Fraction of per-dim max entropy below which a dimension is flagged 'dead'.
-    eps : float
-        Numerical jitter to avoid log(0) / divide-by-zero.
-
-    Returns
-    -------
-    H_tot : float
-        Sum of marginal Shannon entropies (bits).
-    utilisation : float
-        H_tot divided by effective capacity.
-    dead_dims : int
-        Count of low-entropy ('dead') coordinates.
-    """
-
-    Z = np.asarray(Z, dtype=np.float64)
-    Z = Z - np.mean(Z, axis=0)
-
-    N, d = Z.shape
-
-    # --- marginal entropies -------------------------------------------------
-    H_i = np.empty(d)
-    for j in range(d):
-        counts, _ = np.histogram(Z[:, j], bins=bins)
-        p = counts / counts.sum()
-        H_i[j] = -np.sum(p * np.log2(p + eps))
-
-    H_tot = H_i.sum()
-
-    # --- capacity proxy -----------------------------------------------------
-    max_bits_per_dim = np.log2(bins)  # guaranteed float
-    cov = np.cov(Z, rowvar=False)
-    eigvals = np.linalg.eigvalsh(cov)
-    d_eff = (eigvals.sum() ** 2) / (np.square(eigvals).sum() + eps)
-
-    C_eff = d_eff * max_bits_per_dim
-
-    utilisation = H_tot / (C_eff + eps)
-    dead_dims = int((H_i < dead_thr * max_bits_per_dim).sum())
-
-    eig = np.sort(eigvals)[::-1]  # descending
-
-    return H_tot, utilisation, dead_dims, eig, d_eff
-
 
 def clip_and_log_transform(y: torch.Tensor) -> torch.Tensor:
     """

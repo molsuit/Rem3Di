@@ -2,38 +2,39 @@
 from pathlib import Path
 
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.training_dataset import (
-    TrainingMoleculeDataset,
-    pos_emb_getitem,
-)
 from threedscriptors.evaluation.descriptor_analysis.clustering import UMAPCalculator
 from threedscriptors.evaluation.descriptor_analysis.clustering_task import (
-    DescriptorClusteringTask,
+    DescriptorClusteringTask,DescriptorElementAnalysis
 )
 from threedscriptors.evaluation.evaluation_pipeline import EvalPipelineRunner
 from threedscriptors.model.model_builder import ModelBuilder
 
 dataset_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/geom_drugs"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pcqm_benchmark"
 )
 model_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/small_geom_drugs/4-2025_10_06_22_47_28-Train"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/minimal_test/3-2025_10_12_14_34_03-Train"
 )
-
-eval_dir = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/geom_drugs_pretraining")
+model_name = "PCQM_benchmark"
+eval_dir = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/pcqm_benchmark")
 
 remedi_model = ModelBuilder.from_directory(model_dir).build_remedi_model()
 
 
+
 dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
 
-ds = TrainingMoleculeDataset(dataset_dir, get_item=pos_emb_getitem)
-
 clustering_calculator = UMAPCalculator()
+clustering_task = DescriptorClusteringTask(dataset=dataset, clustering_calculator=clustering_calculator)
 
-task = DescriptorClusteringTask(dataset=ds, clustering_calculator=clustering_calculator)
+capacity_diagnostic_task= DescriptorElementAnalysis(dataset)
 
-eval_pipeline = EvalPipelineRunner(tasks = [task], dataset_name= "GeomDrugs")
+eval_pipeline = EvalPipelineRunner(tasks = [clustering_task, capacity_diagnostic_task], dataset_name= "pcqm_benchmark")
 
-eval_pipeline.evaluate(remedi_model)
-eval_pipeline.output_results(output_directory=eval_dir, model_name="pretrained_geom_drugs")
+eval_pipeline.evaluate(remedi_model, model_name)
+eval_pipeline.output_results(output_directory=eval_dir)
+
+
+print(clustering_task.descriptors[:500])
+
+breakpoint()

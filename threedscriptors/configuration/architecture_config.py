@@ -14,7 +14,7 @@ from pydantic import (
 )
 
 from threedscriptors.configuration.config_utils import IrrepType
-from threedscriptors.model.pooling import AttnPool, MeanPool
+from threedscriptors.model.pooling import AttnPool, MeanPool, PMAAggregator
 from threedscriptors.model.preprocessing.radial_basis_functions import (
     BesselBasisFunctions,
     GaussianBasisFunctions,
@@ -159,6 +159,7 @@ class EmbeddingPreprocessConfig(BaseModel):
 class Aggregations(Enum):
     MEAN = MeanPool
     ATTENTION = AttnPool
+    PMA_ATTENTION = PMAAggregator
 
     @classmethod
     def _missing_(cls, value):
@@ -175,6 +176,8 @@ class Aggregations(Enum):
             return cls.MEAN
         if issubclass(pool_cls, AttnPool):
             return cls.ATTENTION
+        if issubclass(pool_cls, PMAAggregator):
+            return cls.PMA_ATTENTION
 
         # let Enum blow up otherwise
         return super()._missing_(value)
@@ -185,7 +188,7 @@ class Aggregations(Enum):
 
 
 class MeanAggregatorConfig(BaseModel):
-    aggregator_type: Literal[Aggregations.MEAN]
+    aggregator_type: Literal[Aggregations.MEAN] = Aggregations.MEAN
 
     @field_serializer("aggregator_type")
     def _serialize_aggregator_type(self, v: Aggregations, info):
@@ -201,7 +204,7 @@ class MeanAggregatorConfig(BaseModel):
 
 
 class AttentionAggregatorConfig(BaseModel):
-    aggregator_type: Literal[Aggregations.ATTENTION]
+    aggregator_type: Literal[Aggregations.ATTENTION] = Aggregations.ATTENTION
     num_heads: int
     head_dim: int | None = None
     attn_dropout: float | None = None
@@ -221,6 +224,7 @@ class AttentionAggregatorConfig(BaseModel):
 
 class PMAAggregatorConfig(BaseModel):
     # Q/K total dim (= num_heads * d_k)
+    aggregator_type: Literal[Aggregations.PMA_ATTENTION] = Aggregations.PMA_ATTENTION
     head_dim: int | None = None
     num_heads: int = 4
     attn_dropout: float = 0.0

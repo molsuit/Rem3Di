@@ -3,7 +3,6 @@ from __future__ import annotations
 from time import perf_counter
 
 import numpy as np
-import torch
 
 from threedscriptors.configuration.dataset_config import (
     DatasetConfig,
@@ -15,7 +14,6 @@ from threedscriptors.data_handling.dataset_creation import (
     PipelineStage,
 )
 from threedscriptors.data_handling.dataset_creation.generators import MoleculeGenerator
-
 from threedscriptors.data_handling.dataset_creation.loading_batch import SmilesData
 from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 from threedscriptors.data_handling.dataset_creation.utils import (

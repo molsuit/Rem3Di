@@ -1,26 +1,22 @@
-import os
 from abc import ABC, abstractmethod
+from pathlib import Path
 
-import matplotlib.pyplot as plt
-import yaml as vanilla_yaml
-
+from threedscriptors.evaluation.eval_results import EvalResult
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
 
 
 class BaseEvalTask(ABC):
     @abstractmethod
     def __init__(self):
-        self.results = {}
-        self.figs = {}
+        self.results: list[EvalResult] = []
 
     @abstractmethod
     def run(self, model: MultiTaskRegressionModel):
         pass
 
     @abstractmethod
-    def plot(self, model_name: str):
+    def plot(self):
         pass
-
 
 
 class EvalPipelineRunner:
@@ -30,51 +26,24 @@ class EvalPipelineRunner:
 
         self.tasks = tasks
         self.dataset_label = f"{dataset_name}"
+        self.results: list[EvalResult] = []
 
-    def evaluate(self, model: MultiTaskRegressionModel):
+    def evaluate(self, model: MultiTaskRegressionModel, model_name):
         model.eval()
 
+        self.results.clear()
+
         for task in self.tasks:
+            task.results.clear()
             task.run(model)
-
-    def output_results(self, output_directory: str, model_name: str):
-
-        os.makedirs(output_directory, exist_ok=True)
-        figs = self.visualize(output_directory, model_name)
-
-        report_str = self.write_results(output_directory, model_name)
-
-        return figs, report_str
-
-    def visualize(self, output_directory: str, model_name: str):
-        figs: dict[str : plt.Figure] = {}  # taskname : Figure
-
-        os.makedirs(output_directory, exist_ok=True)
-        for task in self.tasks:
-            task.plot()
-            figs.update(task.figs)
-
-        for fig_name, fig in figs.items():
-            fig.savefig(
-                f"{output_directory}/{fig_name}_{model_name}_{self.dataset_label}.pdf"
-            )
-
-        return figs
-
-    def write_results(self, output_directory, model_name):
+            task.plot(model_name)
+            self.results.extend(task.results)
 
 
-        os.makedirs(output_directory,exist_ok=True)
-        result_dict = {}
+    def output_results(self, output_directory: str):
 
-        for task in self.tasks:
-            if any(task.results):
-                result_dict.update(task.results)
+        output_dir = Path(output_directory)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-        with open(
-            f"{output_directory}/training_results_{model_name}_{self.dataset_label}.yaml",
-            "w",
-        ) as f:
-            vanilla_yaml.dump(result_dict, f)
-
-        return result_dict
+        for result in self.results:
+            result.serialize_to(output_dir)
