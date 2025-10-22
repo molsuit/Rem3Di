@@ -15,8 +15,9 @@ from threedscriptors.data_handling.dataset.tasks import (
     TaskType,
 )
 from threedscriptors.data_handling.dataset_creation.generators.moleculenet_generator import (
-    MoleculeNetGenerator,
+    MoleculeNetGenerator, MoleculeNetTask, MoleculeNetTaskConfig, convert_tasks_to_configs
 )
+
 from threedscriptors.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
@@ -26,21 +27,24 @@ from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
 )
 from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
 
-file = "/share/snw30/projects/threedscriptor/raw_datasets/molecule_net/processed/lipophilicity.csv"
-
+mnet_dir = Path("/share/snw30/projects/threedscriptor/raw_datasets/molecule_net/processed")
 
 creation_config = DatasetCreationConfig(
     path=Path(
         "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/molecule_net"
     ),
-    N_structures=4200,
-    max_embed_attempts=100,
+    N_structures=100_000,
+    max_embed_attempts=10_000,
     max_MMFF_steps=100,
 )
 
+molecule_net_tasks = [MoleculeNetTask.BACE, MoleculeNetTask.BBBP, MoleculeNetTask.HIV, MoleculeNetTask.ESOL, MoleculeNetTask.FREE_SOLVE, MoleculeNetTask.LIPOPHILICITY]
 
-gen = MoleculeNetGenerator(file, 500, mol_column="smiles", tasks=["lipophilicity"], max_atoms=100)
 
+
+task_configs = convert_tasks_to_configs(molecule_net_tasks)
+
+gen = MoleculeNetGenerator(mnet_dir,batch_size= 500, tasks= task_configs, max_atoms=100)
 
 # Use CUDA if available
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -76,15 +80,17 @@ conformal_stage = ConformerGenerationStage(dataset_creation_config=creation_conf
 
 pipeline = [conformal_stage, batched_embedding]
 
-tasks = [TaskConfig(name= "lipophilicity",task_type=TaskType.regression, scope=TaskScope.system)]
 dataset_config = DatasetConfig(
     embedding_dim=mace_irreps.dim,
     irreps=mace_irreps,
     atom_chunk=450,
     molecule_chunk=50,
     contains_smiles=True,
-    tasks = TaskSet.from_list(task_list=tasks)
+    tasks = TaskSet.from_list(task_configs)
 )
+
+print(dataset_config)
+
 
 orchestrator = DatasetConstructionOrchestrator(
     pipeline=pipeline,

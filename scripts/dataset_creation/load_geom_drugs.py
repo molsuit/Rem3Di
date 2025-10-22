@@ -23,9 +23,9 @@ geom_dir = Path("/share/snw30/projects/threedscriptor/raw_datasets/geom_drugs")
 
 mol_generator = GeomGenerator(
     geom_dir=geom_dir,
-    boltzman_weight_threshold=0.2,
-    max_atoms=100,
-    loading_batch_size=300,
+    boltzman_weight_threshold=0.05,
+    max_atoms=128,
+    loading_batch_size=500,
 )
 
 
@@ -67,7 +67,7 @@ creation_config = DatasetCreationConfig(
     path=Path(
         "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/geom_drugs"
     ),
-    N_structures=2_000_000,
+    N_structures=3_000_000,
 )
 dataset_config = DatasetConfig(
     embedding_dim=mace_irreps.dim, irreps=mace_irreps, atom_chunk=450, molecule_chunk=50

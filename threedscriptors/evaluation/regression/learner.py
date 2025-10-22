@@ -159,6 +159,9 @@ class Learner(ABC, Generic[P, S]):
                 v, (float, int, np.floating, np.integer)
             ):
                 final[k] = float(v)
+            elif dv is None and isinstance(v, (float, int, np.floating, np.integer)):
+                f = float(v)
+                final[k] = int(round(f)) if f.is_integer() else f
             else:
                 final[k] = v
         return final
@@ -301,4 +304,3 @@ class LightGBMLearner(Learner[LGBMParams, LGBMSearchSpace]):
         if random_state is not None:
             model_params = dict(model_params, random_state=int(random_state))
         return LGBMRegressor(**model_params)
-

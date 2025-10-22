@@ -1,7 +1,14 @@
+import numpy as np 
 
 
+def get_synthetic_task(dataset):
 
-
+    smiles = dataset.get_smiles_per_structure()
+    y  = np.zeros(shape=len(smiles))
+    for i, smi in enumerate(smiles):
+        mol = Chem.MolFromSmiles(smi)
+        logp = Crippen.MolLogP(mol)
+        y[i] = logp
 # Load data 
 
 # featurize

@@ -1,13 +1,29 @@
 import gzip
 import json
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Mapping, Sequence
 
 import matplotlib.pyplot as plt
+import numpy as np
 import yaml
 from matplotlib.figure import Figure
 from pydantic import BaseModel, ConfigDict, Field
+from sklearn.base import BaseEstimator
+
+def _jsonable(x):
+    if isinstance(x, np.ndarray):
+        return x.tolist()
+    if isinstance(x, np.generic):           # np.float32, np.int64, etc.
+        return x.item()
+    if isinstance(x, Mapping):
+        return {k: _jsonable(v) for k, v in x.items()}
+    if isinstance(x, Sequence) and not isinstance(x, (str, bytes)):
+        return [ _jsonable(v) for v in x ]
+    if isinstance(x, Path):
+        return str(x)
+    return x
 
 
 class EvalResult(BaseModel, ABC):
@@ -60,7 +76,7 @@ class PydanticResult(EvalResult):
     result_type: Literal["pydantic"] = "pydantic"
     obj: BaseModel
 
-    def serialize_to(self, directory: Path) -> dict[str, Any]:
+    def serialize_to(self, directory: Path):
         output_path = directory / self.file_name
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -72,3 +88,5 @@ class PydanticResult(EvalResult):
             default_flow_style=False,
         )
         output_path.write_text(yaml_text, encoding="utf-8")
+
+

@@ -1,16 +1,18 @@
 import importlib
 from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal
 
 import torch.nn
 from e3nn.o3 import Irreps
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Field,
     computed_field,
     field_serializer,
     field_validator,
+    model_validator,
 )
 
 from threedscriptors.configuration.config_utils import IrrepType
@@ -154,8 +156,6 @@ class EmbeddingPreprocessConfig(BaseModel):
     @property
     def output_irreps_dim(self):
         return self.output_irreps.dim
-
-
 class Aggregations(Enum):
     MEAN = MeanPool
     ATTENTION = AttnPool
@@ -179,52 +179,37 @@ class Aggregations(Enum):
         if issubclass(pool_cls, PMAAggregator):
             return cls.PMA_ATTENTION
 
-        # let Enum blow up otherwise
         return super()._missing_(value)
 
     def __str__(self) -> str:
-        # for repr and JSON serializer
         return self.name.lower()
 
 
+def _to_discriminator(value) -> str:
+    """Normalize any accepted input to the lowercase discriminator string."""
+    if isinstance(value, str):
+        return value.strip().lower()
+    # Let the Enum handle class/instance/subclass mapping via _missing_
+    agg = Aggregations(value)
+    return agg.name.lower()
+
+
+# --- Aggregator configs: same field names/defaults; discriminator is a string --------
+
 class MeanAggregatorConfig(BaseModel):
-    aggregator_type: Literal[Aggregations.MEAN] = Aggregations.MEAN
-
-    @field_serializer("aggregator_type")
-    def _serialize_aggregator_type(self, v: Aggregations, info):
-        return v.name.lower()
-
-    @field_validator("aggregator_type", mode="before")
-    @classmethod
-    def check_aggregator_type(cls, v: str | Aggregations) -> Callable:
-        if isinstance(v, Aggregations):
-            return v
-        elif isinstance(v, str):
-            return Aggregations(v)
+    aggregator_type: Literal["mean"] = "mean"
 
 
 class AttentionAggregatorConfig(BaseModel):
-    aggregator_type: Literal[Aggregations.ATTENTION] = Aggregations.ATTENTION
+    aggregator_type: Literal["attention"] = "attention"
     num_heads: int
     head_dim: int | None = None
     attn_dropout: float | None = None
 
-    @field_serializer("aggregator_type")
-    def _serialize_aggregator_type(self, v: Aggregations, info):
-        return v.name.lower()
-
-    @field_validator("aggregator_type", mode="before")
-    @classmethod
-    def check_aggregator_type(cls, v: str | Aggregations) -> Callable:
-        if isinstance(v, Aggregations):
-            return v
-        elif isinstance(v, str):
-            return Aggregations(v)
-
 
 class PMAAggregatorConfig(BaseModel):
     # Q/K total dim (= num_heads * d_k)
-    aggregator_type: Literal[Aggregations.PMA_ATTENTION] = Aggregations.PMA_ATTENTION
+    aggregator_type: Literal["pma_attention"] = "pma_attention"
     head_dim: int | None = None
     num_heads: int = 4
     attn_dropout: float = 0.0
@@ -236,14 +221,32 @@ class PMAAggregatorConfig(BaseModel):
     d_v_out: int | None = None
 
 
+AggUnion = Annotated[
+    MeanAggregatorConfig | AttentionAggregatorConfig | PMAAggregatorConfig,
+    Field(discriminator="aggregator_type"),
+]
+
+
 class GlobalAggregatorConfig(BaseModel):
-    aggregator_type_config: (
-        MeanAggregatorConfig | AttentionAggregatorConfig | PMAAggregatorConfig
-    )
+    aggregator_type_config: AggUnion
     input_dim: int | None = None
     output_dim: int | None = None
     global_molecular_descriptor_dropout: float | None = None
 
+    # Normalize BEFORE discriminated-union selection happens
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_discriminator(cls, data):
+        if isinstance(data, dict) and "aggregator_type_config" in data:
+            cfg = data["aggregator_type_config"]
+            if isinstance(cfg, dict) and "aggregator_type" in cfg:
+                try:
+                    cfg["aggregator_type"] = _to_discriminator(cfg["aggregator_type"])
+                except Exception:
+                    # leave as-is; Pydantic will error with a clear message if invalid
+                    pass
+                data["aggregator_type_config"] = cfg
+        return data
 
 class RandomWalkPositionalEncoding(BaseModel):
     k_hop_random_walk: int

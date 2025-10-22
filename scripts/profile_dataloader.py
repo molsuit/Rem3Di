@@ -55,7 +55,7 @@ class Timing:
 def count_atoms(sample: Sample) -> int:
     # padding_mask marks valid atoms
     if sample.padding_mask is not None:
-        return int(sample.padding_mask.sum().item())
+        return int((~sample.padding_mask).sum().item())
     # fallback
     return int(sample.embeddings.shape[0]) if sample.embeddings is not None else 0
 

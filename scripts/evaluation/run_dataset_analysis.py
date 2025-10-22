@@ -6,10 +6,10 @@ from threedscriptors.data_handling.dataset_analysis import MoleculeDatasetAnalys
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 
 dataset_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pcqm_benchmark"
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/geom_drugs"
 )
 
-eval_dir = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/dataset_analysis_pcqm_benchmark")
+eval_dir = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/dataset_analysis_geom_drugs")
 
 
 dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)

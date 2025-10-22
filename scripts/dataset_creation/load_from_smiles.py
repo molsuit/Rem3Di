@@ -9,12 +9,13 @@ from threedscriptors.configuration.dataset_config import (
     DatasetCreationConfig,
 )
 from threedscriptors.data_handling.dataset.tasks import (
+    TaskConfig,
+    TaskScope,
     TaskSet,
+    TaskType,
 )
-from threedscriptors.data_handling.dataset_creation.generators.polaris_generator import (
-    PolarisGenerator,
-    get_polaris_task_configs,
-)
+from threedscriptors.data_handling.dataset_creation.generators.smiles_list_generator import SmilesMoleculeGenerator, open_smiles_file
+
 from threedscriptors.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
@@ -24,23 +25,26 @@ from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
 )
 from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
 
-dataset_name = "antiviral_potency"
 
 
+
+smiles_file = Path("/share/snw30/projects/threedscriptor/raw_datasets/molecule_net/processed")
+
+
+smiles = open_smiles_file(smiles_file)
 
 creation_config = DatasetCreationConfig(
     path=Path(
-        f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/{dataset_name}"
+        "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/custom"
     ),
-    N_structures=10000,
+    N_structures=len(smiles),
     max_embed_attempts=10_000,
     max_MMFF_steps=100,
 )
 
 
-task_configs = get_polaris_task_configs(dataset_name)
 
-gen = PolarisGenerator(dataset_name=dataset_name,batch_size= 500, max_atoms=100)
+gen = SmilesMoleculeGenerator(smiles,batch_size= 500,max_atoms=100)
 
 # Use CUDA if available
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -82,7 +86,7 @@ dataset_config = DatasetConfig(
     atom_chunk=450,
     molecule_chunk=50,
     contains_smiles=True,
-    tasks = TaskSet.from_list(task_configs)
+    tasks =  None
 )
 
 print(dataset_config)

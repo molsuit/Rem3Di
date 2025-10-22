@@ -12,13 +12,22 @@ from threedscriptors.evaluation.descriptor_analysis import (
     ClusteringCalculator,
     plot_reduced_dimension,
 )
+from threedscriptors.evaluation.descriptor_analysis.capacity_diagnostic import (
+    get_descriptor_channel_distribution,
+    get_descriptor_norm_distribution,
+    run_latent_space_capacity_diagnostic,
+)
 from threedscriptors.evaluation.evaluation_pipeline import BaseEvalTask
 from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
 )
+from threedscriptors.evaluation.results import (
+    ChemiscopeResult,
+    FigureResult,
+    PydanticResult,
+)
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
-from threedscriptors.evaluation.eval_results import PydanticResult, ChemiscopeResult, FigureResult
-from threedscriptors.evaluation.descriptor_analysis.capacity_diagnostic import run_latent_space_capacity_diagnostic, get_descriptor_channel_distribution, get_descriptor_norm_distribution
+
 
 class DescriptorClusteringTask(BaseEvalTask):
     "Plots the PCA results of the Molecular Descriptor"

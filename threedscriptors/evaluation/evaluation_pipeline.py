@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from threedscriptors.evaluation.eval_results import EvalResult
+from threedscriptors.evaluation.results import EvalResult
 from threedscriptors.model.regression_models import MultiTaskRegressionModel
 
 

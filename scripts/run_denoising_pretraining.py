@@ -72,6 +72,8 @@ def main():
         f"{training_dir}/architecture_config.yaml",
     )
 
+    if training_config.model_config_path != Path(f"{training_dir}/architecture_config.yaml"):
+        raise ValueError("Architecture config if the directory does not match to the architecture config in the training_config.yaml")
     full_dataset = MoleculeDataset.open_existing_dataset_from_dir(
         training_config.dataset_path
     )

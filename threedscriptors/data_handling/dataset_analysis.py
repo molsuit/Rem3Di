@@ -1,4 +1,5 @@
 import os
+from collections import Counter
 from itertools import chain, combinations, groupby
 from pathlib import Path
 from typing import Any, Literal
@@ -13,19 +14,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 
-
-class FigureResult(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    result_type: Literal["figure"] = "figure"
-    file_name: str
-    figure: Figure
-    save_kwargs: dict[str, Any] = Field(default_factory=dict)
-
-    def serialize_to(self, directory: Path) -> dict[str, Any]:
-        output_path = directory / self.file_name
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        self.figure.savefig(output_path, **self.save_kwargs)
-        plt.close(self.figure)
+from threedscriptors.evaluation.results import FigureResult
 
 
 class MoleculeDatasetAnalysis:
@@ -36,35 +25,121 @@ class MoleculeDatasetAnalysis:
         self.results :list[FigureResult] = []
 
     def molecule_sizes(self) -> np.ndarray:
-        """Per-structure atom counts from the ragged pointer."""
-        # Only take the active part of ptr (up to sentinel)
-        ptr = np.asarray(self.dataset.ptr[: self.dataset.N_structures + 1])
-        return np.diff(ptr)  # shape: (n_structures,)
+        """Per-structure atom counts streamed from ragged pointer."""
+        n_struct = self.dataset.N_structures
+        if n_struct == 0:
+            return np.asarray([], dtype=np.int64)
+
+        ptr = self.dataset.ptr
+        chunk_len = getattr(ptr, "chunks", (n_struct + 1,))[0]
+        chunk_len = max(1, min(chunk_len, n_struct))
+
+        sizes = np.empty(n_struct, dtype=np.int64)
+        offset = 0
+        while offset < n_struct:
+            end = min(offset + chunk_len, n_struct)
+            # include sentinel at end for diff
+            ptr_chunk = np.asarray(ptr[offset : end + 1], dtype=np.int64)
+            sizes[offset:end] = np.diff(ptr_chunk)
+            offset = end
+
+        return sizes
 
     def atom_species(self) -> np.ndarray:
 
-        atomic_numbers, counts = np.unique_counts(self.dataset.atomic_numbers[:self.dataset.N_atoms])
+        n_atoms = self.dataset.N_atoms
+        if n_atoms == 0:
+            return {}
 
-        return {n: c for n, c in zip(atomic_numbers, counts, strict=False)}
+        atomic_numbers = self.dataset.atomic_numbers
+        chunk_len = getattr(atomic_numbers, "chunks", (n_atoms,))[0]
+        chunk_len = max(1, min(chunk_len, n_atoms))
+
+        counts: Counter[int] = Counter()
+        offset = 0
+        while offset < n_atoms:
+            end = min(offset + chunk_len, n_atoms)
+            chunk = np.asarray(atomic_numbers[offset:end], dtype=np.int64)
+            if chunk.size == 0:
+                offset = end
+                continue
+            unique, chunk_counts = np.unique(chunk, return_counts=True)
+            counts.update(dict(zip(unique.tolist(), chunk_counts.tolist(), strict=False)))
+            offset = end
+
+        return {int(n): int(c) for n, c in counts.items()}
 
 
     def get_descriptor_mean_std(self):
-        
         embeddings = self.dataset.atomic_embeddings
+        n_atoms = self.dataset.N_atoms
+        embedding_dim = embeddings.shape[-1]
+        if n_atoms == 0 or embedding_dim == 0:
+            nan_array = np.full((embedding_dim,), np.nan, dtype=np.float64)
+            print(nan_array)
+            return nan_array, nan_array
 
-        data = np.asarray(embeddings)
-        reduce_axes = tuple(range(data.ndim - 1))
-        mean = np.mean(data, axis=reduce_axes)
+        chunk_len = getattr(embeddings, "chunks", (n_atoms, embedding_dim))[0]
+        chunk_len = max(1, min(chunk_len, n_atoms))
+
+        count = 0
+        mean = np.zeros(embedding_dim, dtype=np.float64)
+        m2 = np.zeros(embedding_dim, dtype=np.float64)
+
+        offset = 0
+        while offset < n_atoms:
+            end = min(offset + chunk_len, n_atoms)
+            chunk = np.asarray(embeddings[offset:end], dtype=np.float64)
+            chunk_count = chunk.shape[0]
+            if chunk_count == 0:
+                offset = end
+                continue
+
+            chunk_mean = chunk.mean(axis=0)
+            chunk_var = chunk.var(axis=0, ddof=0)
+
+            if count == 0:
+                mean = chunk_mean
+                m2 = chunk_var * chunk_count
+                count = chunk_count
+            else:
+                total_count = count + chunk_count
+                delta = chunk_mean - mean
+                mean = mean + delta * (chunk_count / total_count)
+                m2 = (
+                    m2
+                    + chunk_var * chunk_count
+                    + (delta**2) * count * chunk_count / total_count
+                )
+                count = total_count
+            offset = end
+
+        variance = m2 / count if count > 0 else np.full_like(mean, np.nan)
+        std = np.sqrt(variance)
         print(mean)
-        std = np.std(data, axis=reduce_axes)
         return mean, std
 
     def get_descriptor_norm(self):
         embeddings = self.dataset.atomic_embeddings
-        data = np.asarray(embeddings)
-        norm = np.linalg.norm(data,axis = -1)
+        n_atoms = self.dataset.N_atoms
+        if n_atoms == 0:
+            return np.asarray([], dtype=np.float32)
 
-        return norm 
+        chunk_len = getattr(embeddings, "chunks", (n_atoms, embeddings.shape[-1]))[0]
+        chunk_len = max(1, min(chunk_len, n_atoms))
+
+        norms = np.empty(n_atoms, dtype=np.float32)
+        offset = 0
+        while offset < n_atoms:
+            end = min(offset + chunk_len, n_atoms)
+            chunk = np.asarray(embeddings[offset:end], dtype=np.float64)
+            if chunk.size == 0:
+                offset = end
+                continue
+            norms[offset:end] = np.linalg.norm(chunk, axis=-1, ord=2)
+            offset = end
+
+        return norms
 
     def get_conformer_distance_distribution(self):
         pass
@@ -177,11 +252,24 @@ class MoleculeDatasetAnalysis:
         for i, mol in enumerate(molecules):
             plot_atoms(mol, axarr[i // 3 , i % 3])
 
+    def print_dataset_properties(self):
+        n_molecules = self.dataset.N_molecules
+        n_structures = self.dataset.N_structures
+        n_atoms = self.dataset.N_atoms
+
+
+        print(f"N_molecules={n_molecules}, N_structures={n_structures}, N_atoms={n_atoms}")
+
 
     def run(self):
+
+        self.print_dataset_properties()
         self.plot_molecule_size_distribution()
+        print(1)
         self.plot_atom_species_histogram()
+        print(2)
         self.plot_descriptor_norm_distribution()
+        print(3)
         self.plot_descriptor_mean_std_distribution()
 
     def output(self, output_dir: Path):
@@ -194,82 +282,3 @@ class MoleculeDatasetAnalysis:
         for result in self.results:
             result.serialize_to(output_dir)
 
-class DatasetPostLoadAnalysis:
-
-
-    def __init__(self, dataset, output_dir):
-        self.dataset = dataset
-        self.output_dir = output_dir
-
-        os.makedirs(output_dir, exist_ok=True)
-
-    def calculate_atomic_descriptor_norms(atomic_descriptors, padding_masks):
-        pass
-
-    def get_invariants_std(self):
-
-        irreps = get_mace_calculator_irrep_signature(self.dataset.dataset_config.embedding_model_config.mace_calc)
-        invariant_indices, _ = get_invariant_indices(irreps)
-
-
-        invariants = self.dataset.embeddings[:,:,invariant_indices]
-
-        std = torch.std(invariants, dim = (0,1))
-
-        plt.figure()
-        plt.hist(std)
-        plt.savefig(f"{self.output_dir}/invariants_std.png")
-
-        bar_std = plt.figure(figsize=(12, 4), dpi=100)
-        plt.bar(np.arange(len(std)),std, width=1,align="edge")
-        plt.xlim([0, len(std)])
-        plt.xlabel("MACE feature dimension")
-        plt.ylabel("Std of each invariant MACE feature dimension")
-        bar_std.savefig(f"{self.output_dir}/embeddings_std.png")
-
-
-    def count_samples_per_task(self):
-        num_samples = self.dataset.regression_masks.sum(0).tolist()
-        samples_per_task = dict(zip(self.dataset.dataset_config.get_task_names(),num_samples, strict=False))
-        return samples_per_task
-
-    def mean_and_std(self):
-        task_names = self.dataset.dataset_config.get_task_names()
-
-        rt = self.dataset.regression_targets.cpu().numpy()
-        rm = self.dataset.regression_masks.bool().cpu().numpy()
-
-        means = np.mean(rt, axis = 0, where = rm)
-        stds = np.std(rt, axis = 0, where = rm)
-
-        return dict(zip(task_names, means, strict=False)), dict(zip(task_names, stds, strict=False))
-
-
-    def check_conformer_distance(self):
-
-        if self.dataset.dataset_config.N_conformers == 1:
-            return
-
-        mol_id_chunks = [list(g) for _, g in groupby(range(len(self.dataset.mol_ids)), key = lambda i : self.dataset.mol_ids[i])]
-
-        global_rmsds = []
-
-        for mol_indices in mol_id_chunks:
-            mols =[ self.dataset.molecules[i] for i in mol_indices]
-            positions = [m.get_positions() for m in mols]
-
-
-            rmsds = []
-
-            for pos_conf_A, pos_conf_B in combinations(positions,2):
-                rmsds.append(rmsd(pos_conf_A, pos_conf_B))
-
-            global_rmsds.append(rmsds)
-
-
-
-        flattend_rmsds = list(chain.from_iterable(global_rmsds))
-        rmsd_fig = plt.figure()
-
-        plt.hist(flattend_rmsds)
-        rmsd_fig.savefig(f"{self.output_dir}/rmsd_distribution.png")
