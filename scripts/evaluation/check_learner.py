@@ -1,24 +1,18 @@
-from pathlib import Path
 import warnings
+from pathlib import Path
+
 import numpy as np
 
-from rdkit import Chem
-from rdkit.Chem import Crippen
-
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.training_dataset import (
-    TrainingMoleculeDataset,
-    pos_emb_getitem,
-)
-from threedscriptors.evaluation.evaluation_utils import (
-    evaluate_molecular_descriptor_on_dataset,
-)
+from threedscriptors.data_handling.dataset.tasks import TaskType
+
+
 from threedscriptors.evaluation.regression.cross_validation import (
     CrossValidationRunner,
     CVParams,
 )
 from threedscriptors.evaluation.regression.featurization import (
-    MolfeatDescriptorCalculator,
+    MolfeatDescriptorCalculator, RemediDescriptorCalculator
 )
 from threedscriptors.evaluation.regression.learner import (
     RandomForestLearner,
@@ -27,15 +21,16 @@ from threedscriptors.evaluation.regression.learner import (
     ScalerParams,
     ScalerType,
 )
+from threedscriptors.model.model_builder import ModelBuilder
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
-from threedscriptors.data_handling.dataset.tasks import TaskType
-from threedscriptors.model.model_builder import ModelBuilder
 
 dataset_dir = Path(
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/molecule_net"
 )
+
+
 model_dir = Path(
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/geom_drugs_350k/1-2025_10_12_18_02_05-Train"
 )
@@ -43,24 +38,25 @@ eval_dir = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eva
 
 remedi_model = ModelBuilder.from_directory(model_dir).build_remedi_model()
 dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
-ds = TrainingMoleculeDataset(dataset_dir, get_item=pos_emb_getitem)
+
+
+
 desc_ecfp = MolfeatDescriptorCalculator("ecfp")
+desc_remedi = RemediDescriptorCalculator(remedi_model)
 
 
 
-X_remedi_full = evaluate_molecular_descriptor_on_dataset(remedi_model, ds)
-
+X_remedi_full = desc_remedi.calculate_descriptors(dataset)
 X_ecfp_full = desc_ecfp.calculate_descriptors(dataset)
 
 
 for i, task_confs in enumerate(dataset.config.tasks.system_cols):
-    print(task_confs.name)
+
     if task_confs.task_type == TaskType.classification:
         continue
 
     rows = np.nonzero(dataset.mask_system[:, i])[0]
     y = dataset.targets_system.oindex[rows, i]
-
 
 
     X_remedi = X_remedi_full[rows, :]
@@ -86,23 +82,3 @@ for i, task_confs in enumerate(dataset.config.tasks.system_cols):
     print(res_ecfp_ridge)
     cvr_ecfp_ridge.write_output(output_directory=eval_dir)
 
-
-
-
-
-cv_params_rf = CVParams(scoring="neg_mean_absolute_error", n_jobs = 1)
-remedi_rf = RandomForestLearner(RFParams(n_jobs = -1))
-cvr_remedi_rf = CrossValidationRunner(cv_params = cv_params_rf, learner = remedi_rf)
-
-res_remedi_rf = cvr_remedi_rf.run_kfold_repeated_cross_validation(X_remedi, y)
-print(res_remedi_rf)
-cvr_remedi_rf.write_output(output_directory=eval_dir)
-
-
-cv_params_rf = CVParams(scoring="neg_mean_absolute_error", n_jobs = 1)
-ecfp_rf = RandomForestLearner(RFParams(n_jobs = -1))
-cvr_ecfp_rf = CrossValidationRunner(cv_params = cv_params_rf, learner = ecfp_rf)
-
-res_ecfp_rf = cvr_ecfp_rf.run_kfold_repeated_cross_validation(X_ecfp, y)
-print(res_ecfp_rf)
-cvr_ecfp_rf.write_output(output_directory=eval_dir)

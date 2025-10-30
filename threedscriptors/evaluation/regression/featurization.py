@@ -1,18 +1,18 @@
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 
-import numpy as np
 from molfeat.trans.fp import FPVecTransformer
 
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.evaluation.similarity_screening.descriptor_similarity_metrics import (
-    cosine_similarity,
-    tanimoto_similarity,
+from threedscriptors.data_handling.dataset.training_dataset import (
+    TrainingMoleculeDataset,
+    pos_emb_getitem,
 )
 from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
 )
-from threedscriptors.model.regression_models import MultiTaskRegressionModel
+
+
+from threedscriptors.model.remedi_model import REM3DIModel
 
 
 class DescriptorCalculator(ABC):
@@ -20,19 +20,6 @@ class DescriptorCalculator(ABC):
     def calculate_descriptors(self, dataset):
         pass
 
-    @abstractmethod
-    def calculate_similarity(self, des0, des1):
-        pass
-
-    def get_all_similiarities(
-        self, reference_descriptor: np.ndarray, class_descriptors
-    ):
-        similiarities = np.zeros(shape=class_descriptors.shape[0])
-
-        # vectorize the similiarities calculation
-        for idx, desc in enumerate(class_descriptors):
-            similiarities[idx] = self.calculate_similarity(reference_descriptor, desc)
-        return similiarities
 
 
 class MolfeatDescriptorCalculator(DescriptorCalculator):
@@ -44,29 +31,25 @@ class MolfeatDescriptorCalculator(DescriptorCalculator):
     def calculate_descriptors(self, dataset: MoleculeDataset):
         return self.featurizer(dataset.get_smiles_per_structure())
 
-    def calculate_similarity(self, des0, des1):
-        return tanimoto_similarity(des0, des1)
 
-
-class ThreedescriptorCalculator(DescriptorCalculator):
+class RemediDescriptorCalculator(DescriptorCalculator):
     def __init__(
         self,
-        threedescriptor_model,
-        similarity_fn: Callable = cosine_similarity,
+        remedi_model : REM3DIModel,
+
     ):
         super().__init__()
 
-        self.model = threedescriptor_model.eval()
-        self.similarity_fn = similarity_fn
-        self.descriptor_name = "threedscriptor"
+        self.model = remedi_model.eval()
+        self.descriptor_name = "remedi"
 
     def calculate_descriptors(self, dataset: MoleculeDataset):
 
-        descriptors = evaluate_molecular_descriptor_on_dataset(self.model, dataset)
+        train_ds =  TrainingMoleculeDataset.from_molecule_dataset(dataset, get_item=pos_emb_getitem)
+
+
+        descriptors = evaluate_molecular_descriptor_on_dataset(self.model, train_ds)
 
         descriptors = descriptors.numpy()
 
         return descriptors
-
-    def calculate_similarity(self, des0, des1):
-        return self.similarity_fn(des0, des1)

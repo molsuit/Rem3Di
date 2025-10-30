@@ -1,12 +1,13 @@
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+import numpy as np
 from pathlib import Path
 from typing import Sequence
-import numpy as np
+
 from threedscriptors.configuration.dataset_config import DatasetConfig
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+from threedscriptors.data_handling.dataset.tasks import TaskConfig, TaskSet, TaskType
 
 class DatasetConcatenation():
     def __init__(self, datasets : Sequence[MoleculeDataset], new_dataset_dir: Path):
-
 
         self.datasets = datasets
         self.new_dataset_dir = Path(new_dataset_dir)
@@ -158,8 +159,19 @@ class DatasetConcatenation():
         return out_ds
 
     def _create_target_dataset(self) -> tuple[MoleculeDataset, DatasetConfig]:
+        
+        assert self._check_dataset_compatible()
+        
+        ref_cfg = self.datasets[0].config
+
+        out_ds = MoleculeDataset.create_empty_dataset(self.new_dataset_dir, ref_cfg)
+        return out_ds, ref_cfg
+    
+
+    def _check_dataset_compatible(self):
+
         if len(self.datasets) == 0:
-            raise ValueError("No datasets provided for concatenation.")
+            return False
 
         ref_cfg = self.datasets[0].config
         for ds in self.datasets[1:]:
@@ -169,10 +181,8 @@ class DatasetConcatenation():
                 or cfg.contains_smiles != ref_cfg.contains_smiles
                 or cfg.irreps != ref_cfg.irreps
             ):
-                raise ValueError("Incompatible dataset configs; cannot concatenate.")
-
-        out_ds = MoleculeDataset.create_empty_dataset(self.new_dataset_dir, ref_cfg)
-        return out_ds, ref_cfg
+                return False
+        return True
 
     @staticmethod
     def _build_smiles_mapping(storage, target_storage, batch_size: int) -> np.ndarray:
@@ -196,3 +206,151 @@ class DatasetConcatenation():
             mapping[start:end] = [new_ids[s] for s in strings]
 
         return mapping
+
+
+class LabeldDatasetConcatenation(DatasetConcatenation):
+    """
+    This datasets concatenation is for labeld datasets, and concatenates the system labels and masks, as well as all the embeddings and positions
+    """
+
+    
+    def __init__(self, datasets : Sequence[MoleculeDataset], new_dataset_dir: Path):
+
+        self.datasets = datasets
+        self.new_dataset_dir = Path(new_dataset_dir)
+
+    
+    def _create_target_dataset(self) -> tuple[MoleculeDataset, DatasetConfig]:
+
+        assert self._check_dataset_compatible()
+
+        system_tasks: list[TaskConfig] = []
+        atom_tasks: list[TaskConfig] = []
+        system_index: dict[str, TaskConfig] = {}
+        atom_index: dict[str, TaskConfig] = {}
+
+        for dataset in self.datasets:
+            cfg = dataset.config
+            if cfg.tasks is None:
+                continue
+
+            for task in cfg.tasks.system_cols:
+                system_tasks.append(task)
+
+            for task in cfg.tasks.atom_cols:
+                atom_tasks.append(task)
+
+
+        combined_tasks = TaskSet(
+            system_cols=system_tasks,
+            atom_cols=atom_tasks,
+        ).finalize()
+
+        ref_cfg = self.datasets[0].config
+        new_config = ref_cfg.model_copy(deep=True)
+        new_config.tasks = combined_tasks
+
+        out_ds = MoleculeDataset.create_empty_dataset(self.new_dataset_dir, new_config)
+
+        return out_ds, new_config
+
+    def concatenate_datasets(self):
+
+        
+        out_ds, ref_cfg = self._create_target_dataset()
+
+        N_total_systems_tasks = len(ref_cfg.tasks.system_cols)
+
+        for src in self.datasets:
+            
+
+            # Load per-atom arrays
+            E = src.atomic_embeddings[:]
+            P = src.positions[:]
+            Z = src.atomic_numbers[:]
+
+
+
+            # Build cumulative ends per structure from ptr
+            src_ptr = src.ptr[:]
+            if src_ptr.shape[0] <= 1:
+                # Empty dataset; skip
+                continue
+            
+            lengths = (src_ptr[1:] - src_ptr[:-1]).astype("i8", copy=False)
+            C = lengths.cumsum(dtype="i8")
+
+            # Remap molecule and isomer ids appropriately
+            if ref_cfg.contains_smiles:
+                # Simple remap: ids -> strings -> insert -> ids
+                old_mol_ids = src.molecule_ids[:]
+                old_iso_ids = src.isomer_ids[:]
+
+                mol_strings = [src.smiles.id_to_string(int(i)) for i in old_mol_ids]
+                iso_strings = [src.isomeric_smiles.id_to_string(int(i)) for i in old_iso_ids]
+
+                mol_map = out_ds.smiles.append_new_lines(mol_strings)
+                iso_map = out_ds.isomeric_smiles.append_new_lines(iso_strings)
+
+                new_mol_ids = np.asarray([mol_map[s] for s in mol_strings], dtype="i8")
+                new_iso_ids = np.asarray([iso_map[s] for s in iso_strings], dtype="i8")
+
+            # Get all the prediction targets
+            # Build mapping for old dataset column to new dataset_column
+            column_map_systems = {
+                src_col_idx: ref_cfg.tasks.system_map[src_task_name]
+                for src_task_name, src_col_idx in src.config.tasks.system_map.items()
+            }
+
+            n_structures = C.shape[0]
+            if N_total_systems_tasks > 0:
+                system_targets = np.zeros(
+                    (n_structures, N_total_systems_tasks), dtype="f4", order="C"
+                )
+                system_masks = np.zeros(
+                    (n_structures, N_total_systems_tasks), dtype="u1", order="C"
+                )
+
+                if (
+                    column_map_systems
+                    and src.targets_system is not None
+                    and src.mask_system is not None
+                ):
+                    src_indices = np.fromiter(
+                        column_map_systems.keys(),
+                        dtype=np.int64,
+                        count=len(column_map_systems),
+                    )
+                    dst_indices = np.fromiter(
+                        column_map_systems.values(),
+                        dtype=np.int64,
+                        count=len(column_map_systems),
+                    )
+
+                    src_targets = np.asarray(
+                        src.targets_system[:n_structures], dtype="f4", order="C"
+                    )
+                    src_masks = np.asarray(
+                        src.mask_system[:n_structures], dtype="u1", order="C"
+                    )
+
+                    system_targets[:, dst_indices] = src_targets[:, src_indices]
+                    system_masks[:, dst_indices] = src_masks[:, src_indices]
+            else:
+                system_targets = None
+                system_masks = None
+
+            # Create the correct masking for all other targets
+
+            out_ds.append_batch(
+                E,
+                P,
+                Z,
+                C,
+                new_mol_ids,
+                new_iso_ids,
+                system_targets,
+                system_masks,
+                None,
+                None,
+            )

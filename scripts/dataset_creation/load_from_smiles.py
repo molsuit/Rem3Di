@@ -28,14 +28,14 @@ from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
 
 
 
-smiles_file = Path("/share/snw30/projects/threedscriptor/raw_datasets/molecule_net/processed")
+smiles_file = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/scripts/dataset_creation/pharma_smiles")
 
 
 smiles = open_smiles_file(smiles_file)
 
 creation_config = DatasetCreationConfig(
     path=Path(
-        "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/custom"
+        "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pharma"
     ),
     N_structures=len(smiles),
     max_embed_attempts=10_000,
