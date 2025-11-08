@@ -149,7 +149,7 @@ class DatasetConcatenation:
         assert self._check_dataset_compatible()
 
         first_ds = self.datasets[0]
-        store = getattr(first_ds.atomic_embeddings, "store", None)
+        store = getattr(first_ds.positions, "store", None)
         source_dir = getattr(store, "path", None)
         if source_dir is None:
             raise ValueError(
@@ -223,7 +223,10 @@ class DatasetConcatenation:
                     # All structures empty in this chunk; skip append to avoid zero-atom writes
                     continue
 
-                E = np.asarray(src.atomic_embeddings[a0:a1, :])
+                if src.config.contains_embeddings:
+                    E = np.asarray(src.atomic_embeddings[a0:a1, :])
+                else:
+                    E=None
                 P = np.asarray(src.positions[a0:a1, :])
                 Z = np.asarray(src.atomic_numbers[a0:a1])
 
@@ -302,6 +305,7 @@ class DatasetConcatenation:
                 cfg.embedding_dim != ref_cfg.embedding_dim
                 or cfg.contains_smiles != ref_cfg.contains_smiles
                 or cfg.irreps != ref_cfg.irreps
+                or cfg.contains_embeddings != ref_cfg.contains_embeddings
             ):
                 return False
         return True
@@ -392,7 +396,10 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
 
 
             # Load per-atom arrays
-            E = src.atomic_embeddings[:]
+            if src.config.contains_embeddings:
+                E = src.atomic_embeddings[:]
+            else: 
+                E= None
             P = src.positions[:]
             Z = src.atomic_numbers[:]
 

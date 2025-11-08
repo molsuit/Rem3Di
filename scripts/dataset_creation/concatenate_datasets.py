@@ -4,9 +4,9 @@ from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDatas
 from pathlib import Path 
 
 
-pcqm_path = Path("/local/data/public/snw30/pcqm")
-geom_path = Path("/local/data/public/snw30/geom_drugs")
-pharma_path = Path("/local/data/public/snw30/multi_pharma_dataset")
+pcqm_path = Path("/scratch/public/snw30/dataset/pcqm/pcqm_only_structures_3_5_M")
+geom_path = Path("/scratch/public/snw30/dataset/geom_drugs")
+pharma_path = Path("/scratch/public/snw30/dataset/multi_pharma_dataset")
 dataset_pcqm = MoleculeDataset.open_existing_dataset_from_dir(pcqm_path)
 dataset_geom = MoleculeDataset.open_existing_dataset_from_dir(geom_path)
 dataset_pharma = MoleculeDataset.open_existing_dataset_from_dir(pharma_path)
@@ -14,7 +14,7 @@ dataset_pharma = MoleculeDataset.open_existing_dataset_from_dir(pharma_path)
 print(len(dataset_pcqm))
 print(len(dataset_geom))
 
-dc = DatasetConcatenation(datasets = [dataset_pcqm, dataset_geom, dataset_pharma], new_dataset_dir=Path("/local/data/public/snw30/concat_dataset"))
+dc = DatasetConcatenation(datasets = [dataset_pcqm, dataset_geom, dataset_pharma], new_dataset_dir=Path("/scratch/public/snw30/dataset/concat_dataset"))
 #
 dc.concatenate_datasets_copy_first()
 
