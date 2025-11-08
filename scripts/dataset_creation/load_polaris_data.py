@@ -1,108 +1,99 @@
+from pathlib import Path
 
-from mace.calculators import MACECalculator
+import torch
+from mace.calculators.foundations_models import mace_off
+from torch_sim.models.mace import MaceModel
 
-from threedscriptors.configuration.data_config import (
+from threedscriptors.configuration.dataset_config import (
     DatasetConfig,
-    MaceCalculatorConfig,
+    DatasetCreationConfig,
 )
-from threedscriptors.data_handling.dataset import (
-    RegressionDatasetwithPositions,
+from threedscriptors.data_handling.dataset.tasks import (
+    TaskSet,
 )
-from threedscriptors.data_handling.dataset_analysis import DatasetPostLoadAnalysis
-from threedscriptors.data_handling.dataset_io import (
-    store_data_to_disk,
+from threedscriptors.data_handling.dataset_creation.generators.polaris_generator import (
+    PolarisGenerator,
+    get_polaris_task_configs,
 )
-from threedscriptors.data_handling.pipelines import (
-    regression_training_with_pos_pipeline,
+from threedscriptors.data_handling.dataset_creation.orchestrator import (
+    DatasetConstructionOrchestrator,
 )
-from threedscriptors.data_handling.source_preprocessing.polaris_preprocessing import (
-    load_polaris_dataset,
+from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+    BatchedEmbeddingStage,
+    ConformerGenerationStage,
 )
+from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
 
-dataset_registry = {
-    "antiviral_admet": "asap-discovery/antiviral-admet-2025-unblinded",
-    "adme_fang": "biogen/adme-fang-v1",
-    "antiviral_potency" : "asap-discovery/antiviral-potency-2025-unblinded"
-}
-
-smiles_column = {
-    "antiviral_admet": "CXSMILES",
-    "adme_fang": "MOL_smiles",
-    "antiviral_potency": "CXSMILES"
-}
-
-non_task_columns = {
-    "antiviral_admet": ["Molecule Name","Set", "CXSMILES"],
-    "adme_fang": ["UNIQUE_ID", "MOL_smiles", "SMILES"],
-    "antiviral_potency": ["Molecule Name","Set", "CXSMILES"],
-
-}
+dataset_name = "antiviral_potency"
 
 
-load_dataset = "adme_fang"
-# Load the benchmark from polarishub
-smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
-    dataset_registry[load_dataset],
-    smiles_column=smiles_column[load_dataset],
-    non_task_columns=non_task_columns[load_dataset],datasplit="Train"
+
+creation_config = DatasetCreationConfig(
+    path=Path(
+        f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/{dataset_name}"
+    ),
+    N_structures=10000,
+    max_embed_attempts=10_000,
+    max_MMFF_steps=100,
 )
 
 
-dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}"
+task_configs = get_polaris_task_configs(dataset_name)
 
-MACE_PATH = (
-    "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
-)
+gen = PolarisGenerator(dataset_name=dataset_name,batch_size= 500, max_atoms=100)
 
-embedding_model_config = MaceCalculatorConfig(
-    mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
-    model_name="mace_off_24_medium",
-    model_path=MACE_PATH,
+# Use CUDA if available
+device = "cuda" if torch.cuda.is_available() else "cpu"
+# Load the MACE "small" foundation model
+mace = mace_off(
+    model="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
+    default_dtype="float64",
+    device="cuda",
     enable_cueq=True,
-    device="cuda"
+    return_raw_model=True,
 )
+
+mace_irreps = get_mace_model_irrep_signature(mace)
+# egret_irreps = Irreps("192x0e+192x1o+192x2e+192x0e")
+
+
+mace_model = MaceModel(
+    model=mace,
+    device=device,
+    dtype=torch.float64,
+    compute_forces=False,
+    compute_stress=False,
+    compute_descriptors=True,
+    enable_cueq=True,
+)
+
+batched_embedding = BatchedEmbeddingStage(
+    mace_model, device=device, dtype=torch.float64
+)
+conformal_stage = ConformerGenerationStage(dataset_creation_config=creation_config)
+
+# If you want to change what is loaded from MACE, you have to write a PipelineStage for your use case. You might have to modify torch_sim.models.mace.MaceModel.forward to yield the atomic energies.
+
+pipeline = [conformal_stage, batched_embedding]
 
 dataset_config = DatasetConfig(
-    N_molecules=4000,
-    dataset_type=RegressionDatasetwithPositions,
-    BFGS_tol=0.1,
-    BFGS_max_steps=500,
-    N_conformers=1,
-    embedding_model_config=embedding_model_config,
-    max_atoms=None,
-    tasks=tasks,
-    only_heavy_atoms=False,
-    dataset_name= load_dataset,
-    rw_transition_matrix_from_3D=  False
+    embedding_dim=mace_irreps.dim,
+    irreps=mace_irreps,
+    atom_chunk=450,
+    molecule_chunk=50,
+    contains_smiles=True,
+    tasks = TaskSet.from_list(task_configs)
+)
 
+print(dataset_config)
+
+
+orchestrator = DatasetConstructionOrchestrator(
+    pipeline=pipeline,
+    batch_generator=gen,
+    construction_config=creation_config,
+    dataset_config=dataset_config,
 )
 
 
-pipeline = regression_training_with_pos_pipeline(
-    dataset_config, smiles, regression_targets, regression_masks
-)
-
-dataset = pipeline.build()
-
-store_data_to_disk(dataset, f"{dataset_directory}_full")
-
-DatasetPostLoadAnalysis(dataset, f"{dataset_directory}_full").run()
-
-
-from threedscriptors.training.dataset_splitting import DatasetSplitting
-from threedscriptors.data_handling.dataset_builder import DatasetBuilder
-
-
-ds = DatasetSplitting(dataset)
-names = ["training", "test"]
-split_ratios = [0.9, 0.1]
-split_dataset_indices = ds.general_split(split_ratios, True)
-
-
-for ids, name in zip(split_dataset_indices,names, strict=False):
-    new_dataset = ds.materialise_dataset_split(dataset, ids)
-
-
-    db = DatasetBuilder(new_dataset)
-    db.canonicalize_structure_ids()
-    store_data_to_disk(new_dataset, dataset_directory+"_" + name)
+orchestrator.build_dataset()

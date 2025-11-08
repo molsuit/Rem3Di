@@ -1,11 +1,22 @@
 import argparse
 import os
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
+from threedscriptors.data_handling.data_build_pipeline import (
+    AtomicPositionsStage,
+    PipelineOrchestrator,
+    ReduceConformerStage,
+    ReloadFromDiskStage,
+)
+from threedscriptors.training.data_normalization import DataNormalizationModule
+from threedscriptors.training.dataset_splitting import (
+    DatasetSplitting,
+    SplitConfig,
+    SplitStrategy,
+)
 from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
@@ -16,14 +27,8 @@ from threedscriptors.configuration.architecture_config import (
 )
 from threedscriptors.configuration.data_config import DatasetSplit
 from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.data_handling.data_build_pipeline import (
-    AtomicPositionsStage,
-    PipelineOrchestrator,
-    ReduceConformerStage,
-    ReloadFromDiskStage,
-)
 from threedscriptors.data_handling.dataset import (
-    RegressionDatasetwithRandomWalks,RegressionDatasetwithPositions
+    RegressionDatasetwithPositions,
 )
 from threedscriptors.data_handling.indexed_subset import IndexedSubset
 from threedscriptors.data_handling.sample import sample_collate_fn
@@ -31,12 +36,6 @@ from threedscriptors.evaluation.training_evaluation import (
     regression_pipeline,
 )
 from threedscriptors.model.model_builder import ModelBuilder
-from threedscriptors.training.data_normalization import DataNormalizationModule
-from threedscriptors.training.dataset_splitting import (
-    DatasetSplitting,
-    SplitConfig,
-    SplitStrategy,
-)
 from threedscriptors.training.regression_training import (
     BaseMultitaskLoss,
 )

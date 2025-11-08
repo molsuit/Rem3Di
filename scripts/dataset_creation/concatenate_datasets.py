@@ -1,58 +1,41 @@
-from threedscriptors.data_handling.data_build_pipeline import (
-    AtomicPositionsStage,
-    PipelineOrchestrator,
-    ReloadFromDiskStage,
-    ReduceMoleculeSize
-)
-from threedscriptors.data_handling.dataset_concatenation import DatasetConcatenation
-from threedscriptors.data_handling.dataset_io import (
-    store_data_to_disk,
-)
-from threedscriptors.data_handling.dataset import AtomicEmbeddingWithPositionsDataset
+from threedscriptors.data_handling.dataset_creation.dataset_concatenation import DatasetConcatenation
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+
+from pathlib import Path 
 
 
+pcqm_path = Path("/local/data/public/snw30/pcqm")
+geom_path = Path("/local/data/public/snw30/geom_drugs")
+pharma_path = Path("/local/data/public/snw30/multi_pharma_dataset")
+dataset_pcqm = MoleculeDataset.open_existing_dataset_from_dir(pcqm_path)
+dataset_geom = MoleculeDataset.open_existing_dataset_from_dir(geom_path)
+dataset_pharma = MoleculeDataset.open_existing_dataset_from_dir(pharma_path)
 
+print(len(dataset_pcqm))
+print(len(dataset_geom))
 
-def reload_fn(directory):
-    stages = [
-        ReloadFromDiskStage(directory),
-        AtomicPositionsStage(),
-        ReduceMoleculeSize(max_atoms = 100)]
-    
-    dataset = PipelineOrchestrator(stages).build()
-    dataset.convert_to_dataset_type(AtomicEmbeddingWithPositionsDataset)
-    return dataset
-
-
-#data_dir = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data"
-data_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data"
-
-admet_antiviral = reload_fn(
-    f"{data_dir}/antiviral_admet_test",
-)
-
-antiviral_potency = reload_fn(f"{data_dir}/antiviral_potency_test")
-
-
-print(antiviral_potency.embeddings.shape)
-adme_fang = reload_fn(f"{data_dir}/adme_fang_test")
+dc = DatasetConcatenation(datasets = [dataset_pcqm, dataset_geom, dataset_pharma], new_dataset_dir=Path("/local/data/public/snw30/concat_dataset"))
 #
-#geom_200k = reload_fn(f"{data_dir}/geom_200k")
+dc.concatenate_datasets_copy_first()
+
+##from pathlib import Path
+#
+#from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+#from threedscriptors.data_handling.dataset_creation.dataset_concatenation import (
+#    LabeldDatasetConcatenation,
+#)
+#
+#adme_fang_path = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/adme_fang")
+#antiviral_potency_path = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/antiviral_potency")
+#moleculenet_path = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/molecule_net")
+#antiviral_admet_path = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/antiviral_admet")
+#
+#dirs = [adme_fang_path, antiviral_potency_path, antiviral_admet_path,moleculenet_path]
+#
+#datasets = [MoleculeDataset.open_existing_dataset_from_dir(data_dir) for data_dir in dirs]
+#
+#dc = LabeldDatasetConcatenation(datasets = datasets, new_dataset_dir=Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/multi_pharma_dataset"))
+#
+#dc.concatenate_datasets()
 
 
-
-concatenation = DatasetConcatenation(datasets=[admet_antiviral, antiviral_potency, adme_fang])
-
-new_dataset = concatenation.concatenate()
-
-dataset_dir = f"{data_dir}/{new_dataset.dataset_config.dataset_name}"
-
-if new_dataset.dataset_config.dataset_split is not None:
-    dataset_dir = dataset_dir + "_" +str(new_dataset.dataset_config.dataset_split.name).lower()
-
-store_data_to_disk(
-    new_dataset,
-    dataset_dir
-)
-
-print(max([len(mol) for mol in new_dataset.molecules]))

@@ -15,6 +15,18 @@ def get_mace_calculator_irrep_signature(mace_calculator: MACECalculator) -> Irre
 
     return signature
 
+def get_mace_model_irrep_signature(mace_model: MACECalculator) -> Irreps:
+    signature = None
+
+    for products in mace_model.products: # type: ignore
+        if signature is None:
+            signature = Irreps(str(products.linear.__dict__["irreps_out"]))
+        else:
+            signature = signature + Irreps(str(products.linear.__dict__["irreps_out"]))
+
+    return signature
+
+
 
 def get_mace_calculator_embedding_dimension(mace_calculator: MACECalculator) -> int:
     irrep_signature = get_mace_calculator_irrep_signature(mace_calculator)

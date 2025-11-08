@@ -1,17 +1,10 @@
 import pytest
 import torch
 from ase import Atoms
-from mace.calculators import mace_mp
 
 from threedscriptors.configuration.architecture_config import (
     RadialBasisFunctionType,
     RelativeDistancePositionalEncodingConfig,
-)
-from threedscriptors.configuration.data_config import (
-    DatasetConfig,
-    DatasetTypes,
-    MaceCalculatorConfig,
-    TaskConfig,
 )
 from threedscriptors.data_handling.data_utils import get_ase_atoms
 
@@ -66,54 +59,6 @@ def sample_smiles():
     ]
 
     return smiles
-
-
-@pytest.fixture(scope="session")
-def sample_dataset_config():
-    return DatasetConfig(
-        N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION_DATASET,
-        BFGS_tol=0.2,
-        BFGS_max_steps=500,
-        N_conformers=1,
-        embedding_model_config=MaceCalculatorConfig(
-            mace_calc=mace_mp("medium"), model_name="medium"
-        ),
-    )
-
-
-@pytest.fixture(scope="session")
-def sample_chiral_dataset_config():
-    return DatasetConfig(
-        N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION_DATASET,
-        BFGS_tol=0.2,
-        BFGS_max_steps=500,
-        N_conformers=1,
-        embedding_model_config=MaceCalculatorConfig(
-            mace_calc=mace_mp("medium"), model_name="medium"
-        ),
-        tasks=[TaskConfig(task_name="cmrt")],
-    )
-
-
-@pytest.fixture(scope="session")
-def sample_regression_dataset_config():
-    return DatasetConfig(
-        N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION_DATASET,
-        BFGS_tol=0.2,
-        BFGS_max_steps=500,
-        N_conformers=1,
-        embedding_model_config=MaceCalculatorConfig(
-            mace_calc=mace_mp("medium"), model_name="medium"
-        ),
-        tasks=[
-            TaskConfig(task_name="HLM"),
-            TaskConfig(task_name="LogD"),
-            TaskConfig(task_name="KSOL"),
-        ],
-    )
 
 
 @pytest.fixture(scope="session")

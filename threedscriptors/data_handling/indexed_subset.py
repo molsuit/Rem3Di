@@ -4,11 +4,6 @@ from typing import Generic, TypeVar
 import torch
 from torch.utils.data import Subset
 
-from threedscriptors.data_handling.dataset import (
-    BaseDataset,
-    PairedRegressionWithAuxAndPositionDataset,
-)
-
 TBase = TypeVar("TBase", bound="BaseDataset")
 
 
@@ -46,7 +41,6 @@ class IndexedSubset(Subset[TBase], Generic[TBase]):
 
 
 class IndexedPairedSubset(Subset[TBase], Generic[TBase]):
-    dataset: PairedRegressionWithAuxAndPositionDataset
 
     def __init__(self, dataset: TBase, indices: Sequence[int]):
         super().__init__(dataset, indices)

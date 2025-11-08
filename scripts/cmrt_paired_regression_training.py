@@ -6,6 +6,13 @@ from pathlib import Path
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from threedscriptors.training.data_normalization import DataNormalizationModule
+from threedscriptors.training.dataset_splitting import (
+    DatasetSplitting,
+    SplitConfig,
+    SplitStrategy,
+)
 from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
@@ -19,8 +26,9 @@ from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.dataset import (
     PairedRegressionWithAuxAndPositionDataset,
 )
-from threedscriptors.data_handling.indexed_subset import IndexedSubset, IndexedPairedSubset
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from threedscriptors.data_handling.indexed_subset import (
+    IndexedPairedSubset,
+)
 from threedscriptors.data_handling.sample import (
     paired_sample_collate_fn,
 )
@@ -34,14 +42,7 @@ from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.model.molecule_difference_regressor import (
     MolecularDifferenceRegressor,
 )
-from threedscriptors.training.data_normalization import DataNormalizationModule
-from threedscriptors.training.dataset_splitting import (
-    DatasetSplitting,
-    SplitConfig,
-    SplitStrategy,
-)
 from threedscriptors.training.regression_training import (
-    chiral_difference_loss,
     direct_difference_loss,
 )
 from threedscriptors.training.telemetry import TrainingTelemetry
@@ -132,7 +133,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
     valid_dataset = IndexedPairedSubset(dataset, valid_pair_idx)
 
 
-    
+
     training_loader = DataLoader(
         train_dataset,
         batch_size=training_config.batch_size,
@@ -156,7 +157,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
     data_normalization = DataNormalizationModule(dataset=train_dataset)
 
     mean_diff_log, std_diff_logs = data_normalization.get_pairwise_differences(train_dataset)
-    
+
 
 
 
@@ -292,7 +293,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
                     retention_time_differences = difference_regressor(
                     val_output.molecular_descriptor, val_samples.auxillary_data["cmrt"]
                 )
-                    
+
 
                     labels = val_samples.regression_targets
                     B = labels.shape[0]
@@ -302,7 +303,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
                     diff_label = torch.log(lab_e1) - torch.log(lab_e2)
 
                     diff_label = (diff_label - mean_diff_log)/std_diff_logs
-               
+
 
                     # loss = chiral_difference_loss(model_output.regression_predictions, samples.regression_targets, regression_mask= samples.regression_masks)
 
@@ -377,10 +378,10 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
 
 
     cd_task_val = ChiralDifferencePredictionTask(valid_dataset)
-    print(f"Validation")
+    print("Validation")
     cd_task_val.run(model, difference_regressor, mean_diff_log, std_diff_logs)
 
-    print(f"Training")
+    print("Training")
     cd_train_task = ChiralDifferencePredictionTask(train_dataset)
     cd_train_task.run(model, difference_regressor, mean_diff_log, std_diff_logs)
 

@@ -4,32 +4,30 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from threedscriptors.data_handling.dataset import (
-    AtomicEmbeddingDataset,
-    PairedRegressionWithAuxAndPositionDataset,
-    RegressionDataset,
-    RegressionWithAuxDataset,
+from threedscriptors.data_handling.dataset.training_dataset import (
+    TrainingMoleculeDataset,
 )
-from threedscriptors.data_handling.mol_id import StructureID
+from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 from threedscriptors.data_handling.sample import (
     Sample,
     paired_sample_collate_fn,
+    pretraining_padded_collate_fn,
     sample_collate_fn,
 )
 from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.model.model_output import ModelOutput
+from threedscriptors.model.molecule_difference_regressor import (
+    MolecularDifferenceRegressor,
+)
 from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
 from threedscriptors.model.remedi_model import REM3DIModel
-from threedscriptors.model.molecule_difference_regressor import (
-    MolecularDifferenceRegressor,
-)
 
 
 def evaluate_regression_model_on_dataset(
     model: MultiTaskRegressionModel,
-    dataset: RegressionWithAuxDataset | RegressionDataset,
+    dataset: TrainingMoleculeDataset,
     device="cuda",
     undo_standardization=False,
 ):
@@ -44,11 +42,7 @@ def evaluate_regression_model_on_dataset(
 
     batch_size = 256
 
-    collate_fn = (
-        paired_sample_collate_fn
-        if isinstance(dataset, PairedRegressionWithAuxAndPositionDataset)
-        else sample_collate_fn
-    )
+    collate_fn = sample_collate_fn
     dataloader: Iterable[Sample] = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -76,7 +70,7 @@ def evaluate_regression_model_on_dataset(
 
 
 def evaluate_molecular_descriptor_on_dataset(
-    model: REM3DIModel, dataset, device="cuda"
+    model: REM3DIModel, dataset: TrainingMoleculeDataset, device="cuda"
 ):
     batch_size = min(64, len(dataset))
 
@@ -85,7 +79,7 @@ def evaluate_molecular_descriptor_on_dataset(
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
-        collate_fn=sample_collate_fn,
+        collate_fn=pretraining_padded_collate_fn,
     )
 
     model.to(device)
@@ -132,7 +126,7 @@ def evaluate_molecule_difference_on_dataset(
     differences = torch.zeros(size=(len(dataset), 1))
     print(differences.shape)
 
-    
+
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
 
@@ -151,7 +145,7 @@ def evaluate_molecule_difference_on_dataset(
 
 def evaluate_atomic_descriptors(
     model: MultiTaskRegressionModel,
-    dataset: RegressionWithAuxDataset | RegressionDataset,
+    dataset: TrainingMoleculeDataset,
     device="cuda",
 ):
 
@@ -189,7 +183,7 @@ def evaluate_atomic_descriptors(
 
 
 def calculate_fingerprint_uncertainty(
-    encoder: TransformerEncoder, dataset: RegressionDataset
+    encoder: TransformerEncoder, dataset: TrainingMoleculeDataset
 ):
     # for all smiles in the smiles list, get the corresponding unique dataset id
 
@@ -261,60 +255,6 @@ def average_over_conformers(
 
     return predictions
 
-
-def capacity_diagnostics(Z, bins=128, dead_thr=0.2, eps=1e-12):
-    """
-    Estimate information utilisation of a latent space.
-
-    Parameters
-    ----------
-    Z : array_like, shape (N_graphs, d)
-        Graph-level latent vectors (after pooling).
-    bins : int or sequence
-        Number of histogram bins per dimension (power of two recommended).
-    dead_thr : float
-        Fraction of per-dim max entropy below which a dimension is flagged 'dead'.
-    eps : float
-        Numerical jitter to avoid log(0) / divide-by-zero.
-
-    Returns
-    -------
-    H_tot : float
-        Sum of marginal Shannon entropies (bits).
-    utilisation : float
-        H_tot divided by effective capacity.
-    dead_dims : int
-        Count of low-entropy ('dead') coordinates.
-    """
-
-    Z = np.asarray(Z, dtype=np.float64)
-    Z = Z - np.mean(Z, axis=0)
-
-    N, d = Z.shape
-
-    # --- marginal entropies -------------------------------------------------
-    H_i = np.empty(d)
-    for j in range(d):
-        counts, _ = np.histogram(Z[:, j], bins=bins)
-        p = counts / counts.sum()
-        H_i[j] = -np.sum(p * np.log2(p + eps))
-
-    H_tot = H_i.sum()
-
-    # --- capacity proxy -----------------------------------------------------
-    max_bits_per_dim = np.log2(bins)  # guaranteed float
-    cov = np.cov(Z, rowvar=False)
-    eigvals = np.linalg.eigvalsh(cov)
-    d_eff = (eigvals.sum() ** 2) / (np.square(eigvals).sum() + eps)
-
-    C_eff = d_eff * max_bits_per_dim
-
-    utilisation = H_tot / (C_eff + eps)
-    dead_dims = int((H_i < dead_thr * max_bits_per_dim).sum())
-
-    eig = np.sort(eigvals)[::-1]  # descending
-
-    return H_tot, utilisation, dead_dims, eig, d_eff
 
 
 def clip_and_log_transform(y: torch.Tensor) -> torch.Tensor:

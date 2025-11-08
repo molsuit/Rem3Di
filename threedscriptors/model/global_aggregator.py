@@ -4,8 +4,9 @@ from threedscriptors.configuration.architecture_config import (
     AttentionAggregatorConfig,
     GlobalAggregatorConfig,
     MeanAggregatorConfig,
+    PMAAggregatorConfig,
 )
-from threedscriptors.model.pooling import AttnPool, MeanPool
+from threedscriptors.model.pooling import AttnPool, MeanPool, PMAAggregator
 
 
 class GlobalAggregator(nn.Module):
@@ -32,6 +33,12 @@ class GlobalAggregator(nn.Module):
         ):
 
             self.pool = MeanPool()
+
+        elif isinstance(global_aggregator_config.aggregator_type_config, PMAAggregatorConfig):
+
+            self.attn_conf = global_aggregator_config.aggregator_type_config
+
+            self.pool = PMAAggregator(d_in = self.config.input_dim, d_out = self.config.output_dim, num_heads = self.attn_conf.num_heads, head_dim = self.attn_conf.head_dim, k_seeds = global_aggregator_config.aggregator_type_config.num_seeds, dropout=self.attn_conf.attn_dropout, use_mlp=self.attn_conf.use_mlp)
 
         else:
             raise ValueError("No pool given")

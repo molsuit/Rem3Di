@@ -11,7 +11,7 @@ from threedscriptors.configuration.architecture_config import (
     RegressionHeadConfig,
     RelativeDistancePositionalEncodingConfig,
 )
-from threedscriptors.configuration.data_config import DatasetConfig
+from threedscriptors.configuration.dataset_config import DatasetConfig
 from threedscriptors.utils.model_utils import (
     get_mace_calculator_irrep_signature,
 )
@@ -40,8 +40,7 @@ class ConfigFactory:
         self.positional_encoding_config = positional_encoding_config
         self.decoder_config = decoder_config
 
-        mace_calculator = self.dataset_config.embedding_model_config.mace_calc
-        self.initial_irreps = get_mace_calculator_irrep_signature(mace_calculator)
+        self.initial_irreps = dataset_config.irreps
 
     # A lot of boilerplate that fills in fields in the config
 
@@ -59,34 +58,35 @@ class ConfigFactory:
             self.attention_layer_config.embedding_dim
         )
 
-        self.global_aggregator_config.output_dim = (
-            self.global_aggregator_config.input_dim
-        )
+        
+        if self.global_aggregator_config.output_dim is None:
+            self.global_aggregator_config.output_dim = (
+                self.global_aggregator_config.input_dim
+            )
 
     def process_regression_heads_config(
         self, head_config_template: RegressionHeadConfig
     ) -> list[RegressionHeadConfig]:
-        regression_heads = []
+        raise NotImplementedError
+        # for task in self.dataset_config.tasks:
+        #    head_config = head_config_template.model_copy(deep=True)
 
-        for task in self.dataset_config.tasks:
-            head_config = head_config_template.model_copy(deep=True)
-
-            if task.auxillary_data_dimension is not None:
-                input_dim = (
-                    self.global_aggregator_config.output_dim
-                    + task.auxillary_data_dimension
-                )
-            else:
-                input_dim = self.global_aggregator_config.output_dim
-
-            head_config.task_name = task.task_name
-            head_config.input_dimensions = input_dim
-            regression_heads.append(head_config)
-
-        return regression_heads
+    #
+    #    if task.auxillary_dim is not None:
+    #        input_dim = (
+    #            self.global_aggregator_config.output_dim
+    #            + task.auxillary_data_dimension
+    #        )
+    #    else:
+    #        input_dim = self.global_aggregator_config.output_dim
+    #
+    #    head_config.task_name = task.task_name
+    #    head_config.input_dimensions = input_dim
+    #    regression_heads.append(head_config)
+    #
+    # return regression_heads
 
     def process_encoder_config(self):
-
         if self.positional_encoding_config is not None:
             self.encoder_config.d_pair = self.positional_encoding_config.d_projection
 
@@ -106,7 +106,6 @@ class ConfigFactory:
                 )
 
     def process_decoder_config(self):
-
         if self.decoder_config is not None:
             self.decoder_config.d_descriptor = self.global_aggregator_config.output_dim
 
@@ -128,7 +127,7 @@ class ConfigFactory:
                 )
 
     def create_architecture_config_template(
-        self, model_directory, head_config_template: RegressionHeadConfig
+        self, model_directory, head_config_template: RegressionHeadConfig | None = None
     ):
         # Creates the architecture config with default values and the
 

@@ -1,16 +1,18 @@
 from pathlib import Path
 
 from mace.calculators import MACECalculator
+from threedscriptors.data_handling.dataset_builder import DatasetBuilder
+from threedscriptors.data_handling.dataset_io import store_data_to_disk
+from threedscriptors.data_handling.pipelines import (
+    regression_training_from_structures_pipeline,
+)
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     MaceCalculatorConfig,
 )
-from threedscriptors.data_handling.dataset import RegressionDatasetwithPositions, RegressionDatasetwithRandomWalks
-from threedscriptors.data_handling.dataset_builder import DatasetBuilder
-from threedscriptors.data_handling.dataset_io import store_data_to_disk
-from threedscriptors.data_handling.pipelines import (
-    regression_training_from_structures_pipeline,
+from threedscriptors.data_handling.dataset import (
+    RegressionDatasetwithRandomWalks,
 )
 from threedscriptors.data_handling.source_preprocessing.qm9_preprocessing import (
     QM9PropertyNames,
@@ -26,7 +28,7 @@ N_molecules = 134000
 
 tasks_to_load = [
     QM9PropertyNames.mu,
-    QM9PropertyNames.gap, 
+    QM9PropertyNames.gap,
     QM9PropertyNames.alpha,
     QM9PropertyNames.r2,
     QM9PropertyNames.zpve,

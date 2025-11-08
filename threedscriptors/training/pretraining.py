@@ -44,6 +44,6 @@ def atom_denoising_loss(
 
     atoms_in_batch = torch.sum((~padding_mask).to(torch.float32))
 
-    loss =  1 / atoms_in_batch * torch.sum(masked_squared_diff)# * 1 / noise_level**2
+    loss =  1 / atoms_in_batch * torch.sum(masked_squared_diff) * 1 / noise_level**2
     return loss
 

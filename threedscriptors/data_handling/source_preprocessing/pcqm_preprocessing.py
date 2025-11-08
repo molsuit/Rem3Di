@@ -1,11 +1,12 @@
 from pathlib import Path
+from random import shuffle
 
 from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import Mol
 from tqdm import tqdm
+
 from threedscriptors.data_handling.mol_id import StructureID
-from random import shuffle
 
 MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 

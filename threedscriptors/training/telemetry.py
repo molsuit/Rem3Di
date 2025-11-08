@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6,7 +7,7 @@ import torch
 import yaml
 
 import wandb
-from threedscriptors.configuration.data_config import DatasetConfig
+from threedscriptors.configuration.architecture_config import ArchitectureConfig
 from threedscriptors.configuration.training_config import TrainingConfig
 
 
@@ -14,33 +15,30 @@ class TrainingTelemetry:
 
     def __init__(
         self,
-        training_config: TrainingConfig,
-        dataset_config: DatasetConfig,
+        wandb_active: bool,
         run_name: str,
-        split_name: str,
-        config: dict,
+        group_name: str,
+        out_dir: Path,
+        config
     ):
 
-        self.training_config = training_config
-
-        self.task_names: list[str] = dataset_config.get_task_names()
-        self.wandb_active = self.training_config.wandb_active
+        #self.task_names: list[str] = dataset_config.get_task_names()
+        self.wandb_active = wandb_active
+        self.out_dir = out_dir
 
         self.loss_data = []
 
         self.best_validation_loss = math.inf
         self.best_epoch = True
 
-        self.split_name = split_name
 
         if self.wandb_active:
             self._run = wandb.init(
                 project="threedscriptors",
                 entity="threedscriptors",
-                name=split_name or run_name,
-                group=run_name,
-                config=config,
-            )
+                name=run_name,
+                group=group_name,
+                config=config)
 
 
         self.grad_norm_data = []
@@ -121,11 +119,11 @@ class TrainingTelemetry:
         )
 
 
-        if self.training_config.wandb_active:
+        if self.wandb_active:
             wandb.log(epoch_train_data)
 
 
-    def log_pretraining_epoch(self, epoch, train_loss, validation_loss):
+    def log_pretraining_epoch(self, epoch, train_loss, validation_loss, current_lr):
 
 
         self.check_best_val_epoch(validation_loss)
@@ -135,18 +133,20 @@ class TrainingTelemetry:
             f"Epoch {epoch} Training Loss: {train_loss} Validation Loss: {validation_loss}"
         )
 
-        epoch_data = {"denoising_train_loss" : train_loss, "denoising_val_loss" : validation_loss, "epoch": epoch+1}
+        epoch_data = {"denoising_train_loss" : train_loss, "denoising_val_loss" : validation_loss, "epoch": epoch+1, "learning_rate": current_lr}
 
         self.loss_data.append(epoch_data)
 
-        if self.training_config.wandb_active:
-            wandb.log(data = epoch_data)
+        if self.wandb_active:
+            wandb.log(data = epoch_data, step = epoch)
+
+
 
 
     def dump_loss_history(self):
 
         with open(
-            f"{self.training_config.training_data_dir}/{self.split_name.lower()}/training_losses.yaml",
+            f"{self.out_dir}/training_losses.yaml",
             "x",
         ) as f:
 
@@ -166,5 +166,5 @@ class TrainingTelemetry:
     def plot_grad_norm(self):
         fig = plt.figure()
         plt.scatter(np.arange(len(self.grad_norm_data)), self.grad_norm_data)
-        fig.savefig(f"{self.training_config.training_data_dir}/dL_dM_grad_norm.png")
+        fig.savefig(f"{self.out_dir}/dL_dM_grad_norm.png")
 

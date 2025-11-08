@@ -1,13 +1,13 @@
 import torch
 from mace.calculators import mace_mp
+from threedscriptors.data_handling.pipelines import (
+    regression_training_with_transition_probs_pipeline,
+)
 
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     DatasetTypes,
     MaceCalculatorConfig,
-)
-from threedscriptors.data_handling.pipelines import (
-    regression_training_with_transition_probs_pipeline,
 )
 
 

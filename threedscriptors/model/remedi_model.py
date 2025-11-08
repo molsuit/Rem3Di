@@ -13,6 +13,7 @@ from threedscriptors.model.preprocessing.preprocessing import Preprocessor
 from threedscriptors.utils.model_utils import get_mace_calculator_irrep_signature
 
 
+
 class REM3DIModel(nn.Module):
     # A small wrapper to move components around together
 

@@ -136,7 +136,7 @@ class ChiralEmbeddingModel(torch.nn.Module):
             out = self.chi_gate(invariant_embeddings) * out
 
         out = self.linear_out(out)  # (B*N, C) or (N, C)
-        
+
         #out = self.mlp_out(out)
         out = out.to(torch.float32)
         if padding is not None:
