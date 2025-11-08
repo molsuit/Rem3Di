@@ -22,8 +22,9 @@ class DatasetConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     embedding_dim: int
+    irreps: IrrepType
     atom_chunk: int = 8192
     molecule_chunk: int = 4_096
     contains_smiles: bool = True
-    irreps: IrrepType
+    contains_embeddings: bool = True
     tasks: TaskSet | None = None

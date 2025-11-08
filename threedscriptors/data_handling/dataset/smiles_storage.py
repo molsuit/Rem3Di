@@ -124,6 +124,37 @@ class SmilesStorage:
     def __enter__(self):  # context manager support
         return self
 
+    def __iter__(self):
+        n = len(self)
+        if n == 0:
+            return iter(())
+
+        # Lazily create text mmap if needed
+        if self._text_mmap is None:
+            size = self._text_path.stat().st_size
+            if size == 0:
+                return iter(())
+            self._text_mmap = mmap.mmap(
+                self._text_file.fileno(), 0, access=mmap.ACCESS_READ
+            )
+
+        mm = self._text_mmap
+        offsets = self._offsets_memmap
+        starts = offsets[:-1]
+        ends = offsets[1:]
+
+        def _gen():
+            for start, end in zip(starts, ends, strict=False):
+                a = int(start)
+                b = int(end)
+                # strip trailing '\n' (byte 10) if present
+                if b > a and mm[b - 1] == 10:
+                    yield mm[a : b - 1].decode("utf-8")
+                else:
+                    yield mm[a:b].decode("utf-8")
+
+        return _gen()
+
     def __exit__(self, exc_type, exc, tb):
         self.close()
         return False

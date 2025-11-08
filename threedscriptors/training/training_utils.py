@@ -1,4 +1,34 @@
+from pathlib import Path
+
 import torch
+from mace.calculators.foundations_models import mace_off
+from torch_sim.models.mace import MaceModel
+
+
+def get_torch_sim_mace_off_model(path: Path):
+
+    device = "cuda"
+    mace = mace_off(
+        model=path,
+        default_dtype="float64",
+        device=device,
+        enable_cueq=True,
+        return_raw_model=True,
+    )
+
+
+    mace_model = MaceModel(
+        model=mace,
+        device=device,
+        dtype=torch.float64,
+        compute_forces=False,
+        compute_stress=False,
+        compute_descriptors=True,
+        enable_cueq=True,
+    )
+
+    return mace_model
+
 
 
 def flat_grad(grads, params):

@@ -36,7 +36,7 @@ class PairDistanceMatrixGeometricPreprocessor(nn.Module):
     def forward(self, sample : Sample):
 
 
-        positions = sample.atomic_positions
+        positions = sample.atomic_positions.to(dtype=torch.float32)
         atom_mask = sample.padding_mask
         mask_pair = ~(atom_mask[:, :, None] | atom_mask[:, None, :])
         # positions (B, N, 3)

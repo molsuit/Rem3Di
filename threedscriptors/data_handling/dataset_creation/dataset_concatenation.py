@@ -1,16 +1,88 @@
-import numpy as np
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
+import shutil
+
+import numpy as np
 
 from threedscriptors.configuration.dataset_config import DatasetConfig
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.tasks import TaskConfig, TaskSet, TaskType
+from threedscriptors.data_handling.dataset.tasks import TaskConfig, TaskSet
 
-class DatasetConcatenation():
+
+class DatasetConcatenation:
     def __init__(self, datasets : Sequence[MoleculeDataset], new_dataset_dir: Path):
 
         self.datasets = datasets
         self.new_dataset_dir = Path(new_dataset_dir)
+
+    def _append_dataset_to_target(
+        self,
+        out_ds: MoleculeDataset,
+        ref_cfg: DatasetConfig,
+        src: MoleculeDataset,
+        next_mol_base: int,
+        next_iso_base: int,
+    ) -> tuple[int, int]:
+        src_ptr = np.asarray(src.ptr[:], dtype=np.int64)
+        if src_ptr.shape[0] <= 1:
+            return next_mol_base, next_iso_base
+
+        lengths = (src_ptr[1:] - src_ptr[:-1]).astype("i8", copy=False)
+        C = lengths.cumsum(dtype="i8")
+
+        if ref_cfg.contains_embeddings:
+            E = src.atomic_embeddings[:]
+        else:
+            E = None
+        P = src.positions[:]
+        Z = src.atomic_numbers[:]
+
+        if ref_cfg.contains_smiles:
+            if (
+                src.smiles is None
+                or src.isomeric_smiles is None
+                or out_ds.smiles is None
+                or out_ds.isomeric_smiles is None
+            ):
+                raise ValueError("SMILES storage missing; configuration mismatch.")
+
+            old_mol_ids = src.molecule_ids[:]
+            old_iso_ids = src.isomer_ids[:]
+
+            mol_strings = [src.smiles.id_to_string(int(i)) for i in old_mol_ids]
+            iso_strings = [src.isomeric_smiles.id_to_string(int(i)) for i in old_iso_ids]
+
+            mol_map = out_ds.smiles.append_new_lines(mol_strings)
+            iso_map = out_ds.isomeric_smiles.append_new_lines(iso_strings)
+
+            new_mol_ids = np.asarray([mol_map[s] for s in mol_strings], dtype="i8")
+            new_iso_ids = np.asarray([iso_map[s] for s in iso_strings], dtype="i8")
+        else:
+            old_mol_ids = np.asarray(src.molecule_ids[:], dtype="i8", copy=False)
+            old_iso_ids = np.asarray(src.isomer_ids[:], dtype="i8", copy=False)
+
+            new_mol_ids = old_mol_ids + next_mol_base
+            new_iso_ids = old_iso_ids + next_iso_base
+
+            if old_mol_ids.size > 0:
+                next_mol_base += int(old_mol_ids.max()) + 1
+            if old_iso_ids.size > 0:
+                next_iso_base += int(old_iso_ids.max()) + 1
+
+        out_ds.append_batch(
+            E,
+            P,
+            Z,
+            C,
+            new_mol_ids,
+            new_iso_ids,
+            None,
+            None,
+            None,
+            None,
+        )
+
+        return next_mol_base, next_iso_base
 
 
     def concatenate_datasets(self):
@@ -22,51 +94,10 @@ class DatasetConcatenation():
         # For non-smiles case, maintain running id offsets to avoid collisions
         next_mol_base = 0
         next_iso_base = 0
-
         for src in self.datasets:
-            # Load per-atom arrays
-            E = src.atomic_embeddings[:]
-            P = src.positions[:]
-            Z = src.atomic_numbers[:]
-
-            # Build cumulative ends per structure from ptr
-            src_ptr = src.ptr[:]
-            if src_ptr.shape[0] <= 1:
-                # Empty dataset; skip
-                continue
-            lengths = (src_ptr[1:] - src_ptr[:-1]).astype("i8", copy=False)
-            C = lengths.cumsum(dtype="i8")
-
-            # Remap molecule and isomer ids appropriately
-            if ref_cfg.contains_smiles:
-                # Simple remap: ids -> strings -> insert -> ids
-                old_mol_ids = src.molecule_ids[:]
-                old_iso_ids = src.isomer_ids[:]
-
-                mol_strings = [src.smiles.id_to_string(int(i)) for i in old_mol_ids]
-                iso_strings = [src.isomeric_smiles.id_to_string(int(i)) for i in old_iso_ids]
-
-                mol_map = out_ds.smiles.append_new_lines(mol_strings)
-                iso_map = out_ds.isomeric_smiles.append_new_lines(iso_strings)
-
-                new_mol_ids = np.asarray([mol_map[s] for s in mol_strings], dtype="i8")
-                new_iso_ids = np.asarray([iso_map[s] for s in iso_strings], dtype="i8")
-            else:
-
-                old_mol_ids = src.molecule_ids[:].astype("i8", copy=False)
-                old_iso_ids = src.isomer_ids[:].astype("i8", copy=False)
-
-                new_mol_ids = old_mol_ids + next_mol_base
-                new_iso_ids = old_iso_ids + next_iso_base
-
-                # Advance bases to keep ids distinct across datasets
-                if old_mol_ids.size > 0:
-                    next_mol_base += int(old_mol_ids.max()) + 1
-                if old_iso_ids.size > 0:
-                    next_iso_base += int(old_iso_ids.max()) + 1
-
-            # Append to the target dataset
-            out_ds.append_batch(E, P, Z, C, new_mol_ids, new_iso_ids)
+            next_mol_base, next_iso_base = self._append_dataset_to_target(
+                out_ds, ref_cfg, src, next_mol_base, next_iso_base
+            )
 
         # Finalize storage files
         if ref_cfg.contains_smiles:
@@ -76,6 +107,79 @@ class DatasetConcatenation():
         out_ds.shrink_to_fit()
 
         return out_ds
+
+    def concatenate_datasets_copy_first(self, overwrite: bool = False) -> MoleculeDataset:
+        """
+        Concatenate datasets by copying the first dataset to the destination and
+        appending the remaining datasets on top.
+
+        Parameters
+        ----------
+        overwrite:
+            Remove the destination directory if it already exists before copying.
+        """
+
+        out_ds, ref_cfg = self._copy_first_dataset(overwrite=overwrite)
+
+        if ref_cfg.contains_smiles:
+            next_mol_base = 0
+            next_iso_base = 0
+        else:
+            next_mol_base = self._compute_next_id_base(out_ds.molecule_ids)
+            next_iso_base = self._compute_next_id_base(out_ds.isomer_ids)
+
+        for src in self.datasets[1:]:
+            next_mol_base, next_iso_base = self._append_dataset_to_target(
+                out_ds, ref_cfg, src, next_mol_base, next_iso_base
+            )
+
+        if ref_cfg.contains_smiles:
+            out_ds.smiles.close()
+            out_ds.isomeric_smiles.close()
+
+        out_ds.shrink_to_fit()
+        return out_ds
+
+    def _copy_first_dataset(
+        self, overwrite: bool
+    ) -> tuple[MoleculeDataset, DatasetConfig]:
+        if not self.datasets:
+            raise ValueError("No datasets provided for concatenation.")
+
+        assert self._check_dataset_compatible()
+
+        first_ds = self.datasets[0]
+        store = getattr(first_ds.atomic_embeddings, "store", None)
+        source_dir = getattr(store, "path", None)
+        if source_dir is None:
+            raise ValueError(
+                "First dataset store path unavailable; copy-first concatenation "
+                "requires directory-backed datasets."
+            )
+
+        source_path = Path(source_dir).resolve()
+        dest_path = Path(self.new_dataset_dir).expanduser()
+        dest_abs = dest_path.resolve(strict=False)
+
+        if dest_abs == source_path:
+            raise ValueError(
+                "Destination directory must differ from the first dataset directory."
+            )
+
+        if dest_path.exists():
+            if overwrite:
+                shutil.rmtree(dest_path)
+            else:
+                raise FileExistsError(
+                    f"Destination directory '{dest_path}' already exists. "
+                    "Pass overwrite=True to replace it."
+                )
+
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_path, dest_path)
+
+        out_ds = MoleculeDataset.open_existing_dataset_from_dir(dest_path)
+        return out_ds, out_ds.config
 
     def concatenate_datasets_chunked(
         self, structures_per_chunk: int = 50_000, smiles_batch: int = 50_000
@@ -143,7 +247,18 @@ class DatasetConcatenation():
                     if iso_ids_chunk.size > 0:
                         iso_max = max(iso_max, int(iso_ids_chunk.max()))
 
-                out_ds.append_batch(E, P, Z, C, new_mol_ids, new_iso_ids)
+                out_ds.append_batch(
+                    E,
+                    P,
+                    Z,
+                    C,
+                    new_mol_ids,
+                    new_iso_ids,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
 
             if not ref_cfg.contains_smiles:
                 if mol_max >= 0:
@@ -158,15 +273,22 @@ class DatasetConcatenation():
         out_ds.shrink_to_fit()
         return out_ds
 
+    @staticmethod
+    def _compute_next_id_base(id_array) -> int:
+        values = np.asarray(id_array[:], dtype="i8")
+        if values.size == 0:
+            return 0
+        return int(values.max()) + 1
+
     def _create_target_dataset(self) -> tuple[MoleculeDataset, DatasetConfig]:
-        
+
         assert self._check_dataset_compatible()
-        
+
         ref_cfg = self.datasets[0].config
 
         out_ds = MoleculeDataset.create_empty_dataset(self.new_dataset_dir, ref_cfg)
         return out_ds, ref_cfg
-    
+
 
     def _check_dataset_compatible(self):
 
@@ -213,13 +335,13 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
     This datasets concatenation is for labeld datasets, and concatenates the system labels and masks, as well as all the embeddings and positions
     """
 
-    
+
     def __init__(self, datasets : Sequence[MoleculeDataset], new_dataset_dir: Path):
 
         self.datasets = datasets
         self.new_dataset_dir = Path(new_dataset_dir)
 
-    
+
     def _create_target_dataset(self) -> tuple[MoleculeDataset, DatasetConfig]:
 
         assert self._check_dataset_compatible()
@@ -254,15 +376,20 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
 
         return out_ds, new_config
 
+    def concatenate_datasets_copy_first(self, overwrite: bool = False) -> MoleculeDataset:
+        raise NotImplementedError(
+            "Copy-first concatenation is not supported for labeled datasets."
+        )
+
     def concatenate_datasets(self):
 
-        
+
         out_ds, ref_cfg = self._create_target_dataset()
 
         N_total_systems_tasks = len(ref_cfg.tasks.system_cols)
 
         for src in self.datasets:
-            
+
 
             # Load per-atom arrays
             E = src.atomic_embeddings[:]
@@ -276,7 +403,7 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
             if src_ptr.shape[0] <= 1:
                 # Empty dataset; skip
                 continue
-            
+
             lengths = (src_ptr[1:] - src_ptr[:-1]).astype("i8", copy=False)
             C = lengths.cumsum(dtype="i8")
 

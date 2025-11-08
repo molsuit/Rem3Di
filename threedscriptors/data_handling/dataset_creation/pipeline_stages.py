@@ -37,6 +37,35 @@ class PipelineStage(ABC):
 type Pipeline = list[PipelineStage]
 
 
+
+class CopyDataStage(PipelineStage):
+
+    def __init__(self, dtype):
+
+        self._dtype = dtype
+
+
+    def __call__(self, input_batch : InputBatch, output_batch):
+
+        assert output_batch is None
+
+        state = ts.initialize_state(
+            input_batch.molecules, device="cpu", dtype=self._dtype
+        )
+
+        output_batch = DataBatch(
+                atomic_positions=state.positions.detach(),
+                atomic_numbers=state.atomic_numbers.detach(),
+                embeddings=None,
+                systems_index=state.system_idx.detach(),
+                smiles_data=input_batch.smiles,
+                structure_ids=input_batch.structure_ids,
+                regression_data=input_batch.regression_data
+            )
+        
+        return input_batch, output_batch
+
+
 class BatchedEmbeddingStage(PipelineStage):
     def __init__(self, mace_model: MaceModel, device, dtype):
         self.mace_model = mace_model
@@ -44,7 +73,7 @@ class BatchedEmbeddingStage(PipelineStage):
         self._device = device
         self._dtype = dtype
 
-    def __call__(self, input_batch, data_batch):
+    def __call__(self, input_batch: InputBatch, data_batch):
         state = ts.initialize_state(
             input_batch.molecules, device=self._device, dtype=self._dtype
         )

@@ -110,8 +110,8 @@ class DataNormalizationModule(nn.Module):
                 self.dataset,
                 batch_size=10000,
                 shuffle=False,
-                num_workers=16,
-                prefetch_factor=12,
+                num_workers=4,
+                prefetch_factor=2,
                 collate_fn= normalization_collate_fn,
 
             )
@@ -125,8 +125,10 @@ class DataNormalizationModule(nn.Module):
 
 
 
-        for batch in loader:
+        for i,batch in enumerate(loader):
             # Cast for stable math; keep batch on whatever device it arrived
+            if i> 30:
+                break
             embeddings = batch.embeddings[:,invariant_indices]
 
             # Reductions over [N]
@@ -147,9 +149,6 @@ class DataNormalizationModule(nn.Module):
         mean = total_sum / total_count                                 # (D_inv,)
         var  = (total_sumsq / total_count) - mean.pow(2)             # (D_inv,)
         std  = var.clamp_min(0).sqrt().clamp_min(1e-9)               # (D_inv,)
-
-
-
 
 
         print(f"mean shape {mean.shape}, std_ shape {std.shape}")

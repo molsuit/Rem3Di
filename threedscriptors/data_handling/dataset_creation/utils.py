@@ -23,8 +23,11 @@ def system_idx_to_ragged_ptr(system_idx: Tensor) -> Tensor:
     return ptr
 
 
-def ensure_numpy_array(array: Tensor | np.ndarray):
+def ensure_numpy_array(array: Tensor | np.ndarray | None):
 
+    if array is None:
+        return None
+    
     array = (
         array.detach().cpu().numpy()
         if isinstance(array, torch.Tensor)

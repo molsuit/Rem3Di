@@ -36,7 +36,7 @@ model_dir = Path(
 )
 eval_dir = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/lipophilicity_benchmark_pma/cross_validation")
 
-remedi_model = ModelBuilder.from_directory(model_dir).build_remedi_model()
+
 dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
 
 

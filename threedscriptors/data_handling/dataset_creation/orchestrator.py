@@ -46,8 +46,12 @@ class DatasetConstructionOrchestrator:
 
     def build_dataset(self):
         for input_batch in self.batch_generator:
+
+
             if input_batch.molecules == [] and input_batch.smiles == []:
                 continue
+
+
             output_data = None
 
             for stage in self.pipeline:
@@ -84,9 +88,9 @@ class DatasetConstructionOrchestrator:
             output_data.systems_index,
         ))
 
-        N_atoms_batch = embeddings.shape[0]
+        N_atoms_batch = positions.shape[0]
 
-        if embeddings.ndim != 2:
+        if embeddings is not None and embeddings.ndim != 2:
             raise ValueError("embeddings must be 2D [N_atoms, D]")
         if positions.shape != (N_atoms_batch, 3):
             raise ValueError("atomic_positions must be [N_atoms, 3]")

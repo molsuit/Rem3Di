@@ -36,7 +36,7 @@ class InputBatch:
 
 @dataclass
 class DataBatch:
-    embeddings: torch.Tensor
+    embeddings: torch.Tensor | None
     systems_index: torch.Tensor
     atomic_positions: torch.Tensor
     atomic_numbers: torch.Tensor

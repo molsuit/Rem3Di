@@ -18,11 +18,11 @@ from threedscriptors.configuration.training_config import (
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
-    pos_emb_getitem,
+    pos_emb_getitem, atoms_getitem
 )
 from threedscriptors.data_handling.sample import (
     PreprocessedSample,
-    pretraining_padded_collate_fn,
+    pretraining_padded_collate_fn, yield_molecules_collate_fn
 )
 from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.training.data import (
@@ -34,6 +34,9 @@ from threedscriptors.training.noise_scheduler import ConstantSchedule, NoiseModu
 from threedscriptors.training.pretraining import atom_denoising_loss
 from threedscriptors.training.telemetry import TrainingTelemetry
 import logging
+from threedscriptors.training.training_utils import get_torch_sim_mace_off_model
+
+from torch.profiler import profile, ProfilerActivity
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -96,7 +99,7 @@ def main():
         training_config.dataset_path
     )
 
-    ds = TrainingMoleculeDataset(training_config.dataset_path, get_item=pos_emb_getitem)
+    ds = TrainingMoleculeDataset(training_config.dataset_path, get_item=atoms_getitem, in_memory=True)
 
     logger.info("Loaded Dataset")
 
@@ -120,14 +123,14 @@ def main():
 
     training_loader = DataLoader(
         train_dataset,
-        batch_size=training_config.batch_size,
+        batch_size=64,
         worker_init_fn=worker_init_fn,
         prefetch_factor=4,
         persistent_workers=True,
         pin_memory=True,
         num_workers=12,
         shuffle=True,
-        collate_fn=pretraining_padded_collate_fn,
+        collate_fn=yield_molecules_collate_fn,
     )
 
     validation_loader = DataLoader(
@@ -138,24 +141,22 @@ def main():
         persistent_workers=True,
         pin_memory=True,
         num_workers=12,
-        shuffle=True,
-        collate_fn=pretraining_padded_collate_fn,
+        shuffle=False,
+        collate_fn=yield_molecules_collate_fn,
     )
+
+    mace_model = get_torch_sim_mace_off_model(training_config.mace_model_path)
 
     logger.info("Data Loaders Prepared")
 
-    logger.info("Starting to calculate invariant Normalization Constants")
-
-    dn = DataNormalizationModule(train_dataset)
-    inv_mean_per_dim, inv_std_per_dim = dn.get_atomic_embedding_normalization_constants(
-        irreps=full_dataset.config.irreps
-    )
-    logger.info("Completed calculating invariant normalization constants")
-
     mb = ModelBuilder(architecture_config=architecture_config)
-    preprocessor = mb.build_preprocessor(inv_mean_per_dim, inv_std_per_dim)
+    preprocessor = mb.build_preprocessor_with_mace_embedding(mace_model)
     encoder = mb.build_encoder()
     decoder = mb.build_decoder()
+
+    print(preprocessor.atomic_preprocessor.invariant_normalization)
+    print(type(preprocessor.atomic_preprocessor.invariant_normalization))
+
 
     preprocessor.to(dtype=torch.float64)
 
@@ -203,11 +204,15 @@ def main():
         config = {"train_config": training_config.model_dump(), "architecture_config": architecture_config.model_dump()}
     ) as telemetry:
         
-        encoder.to(device)
-        decoder.to(device)
+        encoder.to(device, dtype = torch.float32)
+        decoder.to(device, dtype = torch.float32)
         preprocessor.to(device)
 
         print("Training Start")
+
+    
+
+
         for epoch in range(training_config.epochs):
             # Initialize task and total train losses
 
@@ -235,7 +240,6 @@ def main():
                 noise_module.step()
 
                 molecular_descriptor = encoder(preprocessed_samples)
-                molecular_descriptor.register_hook(telemetry.get_track_grad_norm_fn())
 
                 noised_preprocessing_sample = PreprocessedSample(
                     preprocessed_atomic_embeddings=noised_embeddings,

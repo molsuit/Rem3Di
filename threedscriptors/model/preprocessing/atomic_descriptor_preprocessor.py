@@ -1,6 +1,7 @@
+from typing import Union
 
 import torch
-from torch import nn
+import torch.nn as nn
 
 from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
 from threedscriptors.data_handling.sample import PreprocessedSample
@@ -69,8 +70,7 @@ class RMSLayerNorm(nn.Module):
 
 
 
-
-class InvariantNormalization(nn.Module):
+class PrecomputedInvariantNormalization(nn.Module):
     def __init__(self, invariant_dimension: int, eps: float = 1e-6):
         super().__init__()
         self.eps = eps
@@ -148,13 +148,77 @@ class InvariantNormalization(nn.Module):
         return x
 
 
+class OnTheFlyInvariantNormalization(nn.Module):
+    def __init__(
+        self,
+        invariant_dimension: int,
+        eps: float = 1e-6,
+        momentum: float = 0.1,
+        warmup_batches: int = 1000,
+    ):
+        super().__init__()
+        self.eps = eps
+        self.momentum = momentum
+        self.warmup_batches = warmup_batches
+
+        self.register_buffer("running_mean", torch.zeros(invariant_dimension))
+        self.register_buffer("running_var", torch.ones(invariant_dimension))
+        self.register_buffer("num_batches_tracked", torch.tensor(0, dtype=torch.long))
+        self.register_buffer("frozen", torch.tensor(False))
+
+    def _update_running_stats(self, x: torch.Tensor, padding_mask: torch.Tensor | None):
+        # x: (B, N, D), padding_mask: (B, N), True = padded
+        if padding_mask is not None:
+            valid = ~padding_mask.bool()
+            if not valid.any():
+                return
+            x_valid = x[valid]  # (num_valid, D)
+        else:
+            x_valid = x.reshape(-1, x.size(-1))
+
+        if x_valid.numel() == 0:
+            return
+
+        batch_mean = x_valid.mean(dim=0)
+        batch_var = x_valid.var(dim=0, unbiased=False)
+
+        if self.num_batches_tracked == 0:
+            self.running_mean.copy_(batch_mean)
+            self.running_var.copy_(batch_var)
+        else:
+            self.running_mean.lerp_(batch_mean, self.momentum)
+            self.running_var.lerp_(batch_var, self.momentum)
+
+        self.num_batches_tracked += 1
+        if self.num_batches_tracked >= self.warmup_batches:
+            self.frozen.fill_(True)
+
+    def forward(self, x: torch.Tensor, padding_mask: torch.Tensor | None = None) -> torch.Tensor:
+        # x: (B, N, D)
+        if self.training and not bool(self.frozen):
+            self._update_running_stats(x, padding_mask)
+
+        mean = self.running_mean.view(1, 1, -1)
+        std = (self.running_var + self.eps).sqrt().view(1, 1, -1)
+
+        x_norm = (x - mean) / std
+
+        if padding_mask is not None:
+            # True = padded → zero out normalized values there
+            mask = ~padding_mask.bool()              # (B, N)
+            x_norm = x_norm * mask.unsqueeze(-1)     # (B, N, D)
+
+        return x_norm
+
+InvariantNormalization = OnTheFlyInvariantNormalization |  PrecomputedInvariantNormalization
+
 
 class AtomicDescriptorPreprocessor(nn.Module):
     """
     Pretreats the calculated embeddings with two possible strategies. 1. Get only the invariant part. 2. Add the pseudoscalar.
     """
 
-    def __init__(self, preprocess_config: EmbeddingPreprocessConfig):
+    def __init__(self, preprocess_config: EmbeddingPreprocessConfig, invariant_normalization : InvariantNormalization):
         super().__init__()
 
         self.config = preprocess_config
@@ -166,7 +230,7 @@ class AtomicDescriptorPreprocessor(nn.Module):
 
         assert all([l == 1 for l in self.equivariant_irreps.ls])
 
-        self.invariant_normalization = InvariantNormalization(invariant_dimension= self.invariant_irreps.dim)
+        self.invariant_normalization = invariant_normalization
 
         self.equivariant_rms_norm = RMSLayerNorm(num_blocks = self.equivariant_irreps.num_irreps)
 
@@ -195,4 +259,3 @@ class AtomicDescriptorPreprocessor(nn.Module):
             normalized_invariants = normalized_invariants.to(dtype = torch.float32)
 
             return PreprocessedSample(preprocessed_atomic_embeddings=normalized_invariants)
-

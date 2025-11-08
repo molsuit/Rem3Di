@@ -8,14 +8,10 @@ from threedscriptors.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
 )
-from threedscriptors.data_handling.dataset.tasks import (
-    TaskConfig,
-    TaskScope,
-    TaskSet,
-    TaskType,
+from threedscriptors.data_handling.dataset_creation.generators.smiles_list_generator import (
+    SmilesMoleculeGenerator,
+    open_smiles_file,
 )
-from threedscriptors.data_handling.dataset_creation.generators.smiles_list_generator import SmilesMoleculeGenerator, open_smiles_file
-
 from threedscriptors.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
@@ -24,9 +20,6 @@ from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
     ConformerGenerationStage,
 )
 from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
-
-
-
 
 smiles_file = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/scripts/dataset_creation/pharma_smiles")
 

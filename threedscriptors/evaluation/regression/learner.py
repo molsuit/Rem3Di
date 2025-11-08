@@ -167,17 +167,20 @@ class Learner(ABC, Generic[P, S]):
         return final
 
 
+from typing import Literal
+
 # ---------- Concrete learners ----------
 # Ridge
 @dataclass(frozen=True)
 class RidgeParams:
+    learner_id: Literal["Ridge"]
     alpha: float = 1.0
     fit_intercept: bool = True
 
 
 @dataclass(frozen=True)
 class RidgeSearchSpace:
-    alpha: Any = field(default_factory=lambda: loguniform(1e-6, 1e3))
+    alpha: Any = field(default_factory=lambda: loguniform(1e-6, 1e6))
     fit_intercept: list[bool] = field(default_factory=lambda: [True, False])
 
 
@@ -205,6 +208,8 @@ class RidgeLearner(Learner[RidgeParams, RidgeSearchSpace]):
 # Random Forest
 @dataclass(frozen=True)
 class RFParams:
+    learner_id: Literal["RandomForest"]
+
     n_estimators: int = 100
     max_depth: int | None = None
     max_features: Any = "sqrt"
@@ -254,6 +259,7 @@ class RandomForestLearner(Learner[RFParams, RFSearchSpace]):
 # LightGBM
 @dataclass(frozen=True)
 class LGBMParams:
+    learner_id: Literal["LGBM"]
     n_estimators: int = 4000
     learning_rate: float = 0.03
     num_leaves: int = 256

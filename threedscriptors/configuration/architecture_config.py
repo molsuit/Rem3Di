@@ -99,6 +99,22 @@ class RegressionHeadConfig(BaseModel):
         return activation_fn.__class__.__name__
 
 
+
+class PrecomputedInvariantNormalizationConfig(BaseModel):
+    kind: Literal["precomputed_normalization"] = "precomputed_normalization"
+
+
+class OnTheFlyInvariantNormalizationConfig(BaseModel):
+    kind : Literal["on_the_fly_normalization"] = "on_the_fly_normalization"
+    momentum: float
+    warm_up_batches : int
+
+
+InvNormConfig = Annotated[
+    PrecomputedInvariantNormalizationConfig | OnTheFlyInvariantNormalizationConfig ,
+    Field(discriminator="kind"),
+]
+
 class EmbeddingPreprocessConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -109,6 +125,7 @@ class EmbeddingPreprocessConfig(BaseModel):
     gated: bool = True
     pseudoscalars: bool = True
     equivariant_rms_normalization: bool = True
+    invariant_normalization_config:  InvNormConfig = PrecomputedInvariantNormalizationConfig()
 
     @computed_field(return_type=IrrepType, repr=True)
     @property
@@ -156,6 +173,14 @@ class EmbeddingPreprocessConfig(BaseModel):
     @property
     def output_irreps_dim(self):
         return self.output_irreps.dim
+
+
+    @computed_field(return_type=IrrepType, repr=True)
+    @property
+    def invariant_irreps(self):
+        _, irreps = get_invariant_indices(self.input_irreps)
+        return irreps
+
 class Aggregations(Enum):
     MEAN = MeanPool
     ATTENTION = AttnPool

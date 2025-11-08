@@ -26,6 +26,8 @@ class Sample:
     regression_masks: torch.Tensor | None = None
     auxillary_data: dict[str, Any] | None = None
     atomic_positions: torch.Tensor | None = None
+    atomic_numbers: torch.Tensor | None = None
+    system_index: torch.Tensor | None = None
 
     def to(self, device: torch.device, non_blocking: bool = True) -> "Sample":
         moved_fields = {
@@ -53,6 +55,8 @@ class Sample:
             regression_masks=_pin(self.regression_masks),
             auxillary_data=self.auxillary_data,
             atomic_positions=_pin(self.atomic_positions),
+            atomic_numbers=_pin(self.atomic_numbers),
+            system_index=_pin(self.system_index)
         )
 
 
@@ -110,6 +114,23 @@ def paired_sample_collate_fn(batch: list[tuple["Sample", "Sample"]]):
     batch = sample_collate_fn(list(left) + list(right))
     return batch
 
+
+
+def yield_molecules_collate_fn(batch: list[Sample]) -> Sample:
+    # Reads atomic positions and atomic numbers for online embedding 
+
+    atomic_positions = torch.cat([s.atomic_positions for s in batch])
+    atomic_numbers = torch.cat([s.atomic_numbers for s in batch])
+    repeat_counts = torch.as_tensor(
+        [s.atomic_positions.shape[0] for s in batch],
+        dtype=torch.long,
+        device=atomic_positions.device,
+    )
+    system_idx = torch.repeat_interleave(
+        torch.arange(len(batch), device=atomic_positions.device), repeat_counts
+    )
+
+    return Sample(atomic_positions=atomic_positions, atomic_numbers= atomic_numbers, system_index=system_idx)
 
 @dataclass
 class PreprocessedSample:

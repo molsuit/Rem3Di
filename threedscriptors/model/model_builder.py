@@ -7,19 +7,20 @@ from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
     RandomWalkPositionalEncoding,
     RelativeDistancePositionalEncodingConfig,
+    EmbeddingPreprocessConfig
 )
 from threedscriptors.model.decoder import TransformerDecoder, TransformerPairDecoder
 from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.model.global_aggregator import GlobalAggregator
 from threedscriptors.model.pair_encoder import TransformerPairEncoder
 from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
-    AtomicDescriptorPreprocessor,
+    AtomicDescriptorPreprocessor, OnTheFlyInvariantNormalization, PrecomputedInvariantNormalization
 )
 from threedscriptors.model.preprocessing.geometric_preprocessor import (
     PairDistanceMatrixGeometricPreprocessor,
     RandomWalkGeometricPreprocessor,
 )
-from threedscriptors.model.preprocessing.preprocessing import Preprocessor
+from threedscriptors.model.preprocessing.preprocessing import Preprocessor, PreprocessorWithAtomicEmbedding
 from threedscriptors.model.regression_models import (
     MultitaskHeads,
     MultiTaskRegressionModel,
@@ -142,24 +143,32 @@ class ModelBuilder:
         return structure_encoding
 
     def build_atomic_preprocessor(
-        self,embedding_preprocess_config, mean_atomic_embedding= None, std_atomic_embedding = None
+        self,embedding_preprocess_config : EmbeddingPreprocessConfig , mean_atomic_embedding= None, std_atomic_embedding = None
     ,) -> AtomicDescriptorPreprocessor:
         preprocess_config = embedding_preprocess_config
 
-        atomic_preprocessor = AtomicDescriptorPreprocessor(preprocess_config=preprocess_config)
 
 
-        if (mean_atomic_embedding is not None) and (std_atomic_embedding is not None):
+        invariant_normalization_config = embedding_preprocess_config.invariant_normalization_config
 
-            _, invariant_irreps = get_invariant_indices(
-                embedding_preprocess_config.input_irreps
-            )
-            invariant_dim = invariant_irreps.dim
+        if invariant_normalization_config.kind == "precomputed_normalization":
+            invariant_normalization = PrecomputedInvariantNormalization(invariant_dimension=embedding_preprocess_config.invariant_irreps.dim)
 
-            assert mean_atomic_embedding.shape[-1] == invariant_dim
+            if (mean_atomic_embedding is not None) and (std_atomic_embedding is not None):
 
-            atomic_preprocessor.invariant_normalization.set_stats(mean = mean_atomic_embedding, std= std_atomic_embedding)
+                _, invariant_irreps = get_invariant_indices(
+                    embedding_preprocess_config.input_irreps
+                )
+                invariant_dim = invariant_irreps.dim
 
+                assert mean_atomic_embedding.shape[-1] == invariant_dim
+
+                invariant_normalization.set_stats(mean = mean_atomic_embedding, std= std_atomic_embedding)
+
+        if invariant_normalization_config.kind == "on_the_fly_normalization":
+            invariant_normalization = OnTheFlyInvariantNormalization(invariant_dimension=embedding_preprocess_config.invariant_irreps.dim, momentum=invariant_normalization_config.momentum, warmup_batches= invariant_normalization_config.warm_up_batches)
+
+        atomic_preprocessor = AtomicDescriptorPreprocessor(preprocess_config=preprocess_config, invariant_normalization=invariant_normalization)
 
         if preprocess_config.reload_state_dict is not None:
             print(preprocess_config.reload_state_dict)
@@ -188,7 +197,28 @@ class ModelBuilder:
             )
 
         return Preprocessor(atomic_preprocessor=atomic_preprocessor, geometric_preprocessor=None)
+    
 
+
+
+    def build_preprocessor_with_mace_embedding(
+        self,mace_model, mean_atomic_embedding = None, std_atomic_embedding = None
+    ) -> Preprocessor:
+
+
+
+        atomic_preprocessor = self.build_atomic_preprocessor(
+            self.architecture_config.embedding_preprocess_config, mean_atomic_embedding, std_atomic_embedding
+        )
+
+        geometric_preprocessor = self.build_geometric_preprocessing()
+
+        return PreprocessorWithAtomicEmbedding(mace_model=mace_model,
+                atomic_preprocessor=atomic_preprocessor,
+                geometric_preprocessor=geometric_preprocessor,
+            )
+
+     
     def build_decoder(self) -> TransformerDecoder:
         return TransformerPairDecoder(self.architecture_config.decoder_config)
 
