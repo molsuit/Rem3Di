@@ -1,16 +1,36 @@
 import importlib
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from enum import Enum
+from typing import Annotated, Literal
 
 import torch.nn
-from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
+from e3nn.o3 import Irreps
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from threedscriptors.configuration.config_utils import IrrepType
+from threedscriptors.model.pooling import AttnPool, MeanPool, PMAAggregator
+from threedscriptors.model.preprocessing.radial_basis_functions import (
+    BesselBasisFunctions,
+    GaussianBasisFunctions,
+)
+from threedscriptors.utils.model_utils import (
+    get_equivariant_irreps,
+    get_invariant_indices,
+)
 
 
 class HeadType(Enum):
     RESIDUAL = "residual"
     FULLY_CONNECTED = "fully_connected"
+    LINEAR = "linear"
 
 
 class Activations(Enum):
@@ -30,24 +50,6 @@ class Activations(Enum):
             )
 
 
-class Aggregations(Enum):
-    MEAN = "mean"
-    MAX = "max"
-    STD = "std"
-
-    @staticmethod
-    def get_aggregation_fn(aggregation_name: str) -> Callable:
-        if aggregation_name in Aggregations.__members__:
-            fn_name = Aggregations.__members__[aggregation_name].value
-            module = importlib.import_module("torch")
-            aggregation_fn = getattr(module, fn_name)
-            return aggregation_fn
-        else:
-            raise ValueError(
-                f"Aggregation function '{aggregation_name}' is not supported."
-            )
-
-
 class AttentionLayerConfig(BaseModel):
     num_heads: int
     dim_feedforward: int
@@ -59,12 +61,24 @@ class EncoderConfig(BaseModel):
     N_layers: int
     attention_layer_config: AttentionLayerConfig
     reload_state_dict: str | None = None
+    d_pair: int | None = None
+    d_geo: int | None = None
+
+
+class DecoderConfig(BaseModel):
+    N_layers: int
+    d_descriptor: int | None = None
+    attention_layer_config: AttentionLayerConfig
+    reload_state_dict: str | None = None
+    d_pair: int | None = None
+    d_geo: int | None = None
 
 
 class RegressionHeadConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     task_name: str | None = None
+    task_config: None = None
     activation_fn: Callable = torch.nn.SiLU()
     hidden_dimensions: list[int] = [256, 128]
     input_dimensions: int | None = None
@@ -85,42 +99,228 @@ class RegressionHeadConfig(BaseModel):
         return activation_fn.__class__.__name__
 
 
+
+class PrecomputedInvariantNormalizationConfig(BaseModel):
+    kind: Literal["precomputed_normalization"] = "precomputed_normalization"
+
+
+class OnTheFlyInvariantNormalizationConfig(BaseModel):
+    kind : Literal["on_the_fly_normalization"] = "on_the_fly_normalization"
+    momentum: float
+    warm_up_batches : int
+
+
+InvNormConfig = Annotated[
+    PrecomputedInvariantNormalizationConfig | OnTheFlyInvariantNormalizationConfig ,
+    Field(discriminator="kind"),
+]
+
 class EmbeddingPreprocessConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    pseudoscalars: bool = True
-    pseudoscalar_dimension: int  # This does not actually change anything atm, because we have to think more about how to exactly compute the pseudoscalars. Should this be the dimension of the embedding space that gets computed by the linear layers, or should this be the output dimensions of the pseudscalars. It is not clear yet, whether we would actually want to change that, or is only the intermediate spaces should change.
-    pseudoscalar_embedding_dim: int | None = None
     input_irreps: IrrepType | None = None
-    output_irreps: IrrepType | None = None
-    input_embedding_size: int | None = None
-    output_irreps_dim: int | None = None
+    pseudoscalar_dimension: int
+    chiral_embedding_dimension: int
     reload_state_dict: str | None = None
+    gated: bool = True
+    pseudoscalars: bool = True
+    equivariant_rms_normalization: bool = True
+    invariant_normalization_config:  InvNormConfig = PrecomputedInvariantNormalizationConfig()
+
+    @computed_field(return_type=IrrepType, repr=True)
+    @property
+    def pseudoscalar_irrep(self):
+        if self.pseudoscalars:
+            return Irreps([(self.pseudoscalar_dimension, (0, -1))])
+        else:
+            return Irreps()
+
+    @computed_field(return_type=int, repr=True)
+    @property
+    def input_equivariant_dimension(self) -> int | None:
+        equivariant_irreps = get_equivariant_irreps(self.input_irreps)
+        return sum([e_irrep.dim for e_irrep in equivariant_irreps])
+
+    @computed_field(return_type=int, repr=True)
+    @property
+    def input_dimension(self):
+        return self.input_irreps.dim
+
+    @computed_field(return_type=int, repr=True)
+    @property
+    def input_invariant_dimension(self):
+        invariant_irreps = [
+            Irreps([(m, (i.l, i.p))]) for m, i in self.input_irreps if i.l == 0
+        ]
+
+        return sum([i_irrep.dim for i_irrep in invariant_irreps])
+
+    @computed_field(return_type=IrrepType, repr=True)
+    @property
+    def output_irreps(self):
+        _, even_invariants = get_invariant_indices(self.input_irreps)
+
+        if self.pseudoscalars:
+            odd_invariants_chiral_embedding = Irreps(
+                [(self.chiral_embedding_dimension, (0, -1))]
+            )
+        else:
+            odd_invariants_chiral_embedding = Irreps()
+
+        return even_invariants + odd_invariants_chiral_embedding
+
+    @computed_field(return_type=int, repr=True)
+    @property
+    def output_irreps_dim(self):
+        return self.output_irreps.dim
+
+
+    @computed_field(return_type=IrrepType, repr=True)
+    @property
+    def invariant_irreps(self):
+        _, irreps = get_invariant_indices(self.input_irreps)
+        return irreps
+
+class Aggregations(Enum):
+    MEAN = MeanPool
+    ATTENTION = AttnPool
+    PMA_ATTENTION = PMAAggregator
+
+    @classmethod
+    def _missing_(cls, value):
+        # 1) strings → by name
+        if isinstance(value, str):
+            try:
+                return cls[value.strip().upper()]
+            except KeyError:
+                pass
+
+        # 2&3) class or instance → by subclass check
+        pool_cls = value if isinstance(value, type) else type(value)
+        if issubclass(pool_cls, MeanPool):
+            return cls.MEAN
+        if issubclass(pool_cls, AttnPool):
+            return cls.ATTENTION
+        if issubclass(pool_cls, PMAAggregator):
+            return cls.PMA_ATTENTION
+
+        return super()._missing_(value)
+
+    def __str__(self) -> str:
+        return self.name.lower()
+
+
+def _to_discriminator(value) -> str:
+    """Normalize any accepted input to the lowercase discriminator string."""
+    if isinstance(value, str):
+        return value.strip().lower()
+    # Let the Enum handle class/instance/subclass mapping via _missing_
+    agg = Aggregations(value)
+    return agg.name.lower()
+
+
+# --- Aggregator configs: same field names/defaults; discriminator is a string --------
+
+class MeanAggregatorConfig(BaseModel):
+    aggregator_type: Literal["mean"] = "mean"
+
+
+class AttentionAggregatorConfig(BaseModel):
+    aggregator_type: Literal["attention"] = "attention"
+    num_heads: int
+    head_dim: int | None = None
+    attn_dropout: float | None = None
+
+
+class PMAAggregatorConfig(BaseModel):
+    # Q/K total dim (= num_heads * d_k)
+    aggregator_type: Literal["pma_attention"] = "pma_attention"
+    head_dim: int | None = None
+    num_heads: int = 4
+    attn_dropout: float = 0.0
+    num_seeds: int = 16
+    reduction: Literal["mean", "sum", "max"] = "mean"
+    use_mlp: bool = False
+
+    # NEW: concatenated value dimension across heads (= num_heads * d_v)
+    d_v_out: int | None = None
+
+
+AggUnion = Annotated[
+    MeanAggregatorConfig | AttentionAggregatorConfig | PMAAggregatorConfig,
+    Field(discriminator="aggregator_type"),
+]
 
 
 class GlobalAggregatorConfig(BaseModel):
-    aggregation_fn: Callable | Iterable[Callable]
+    aggregator_type_config: AggUnion
     input_dim: int | None = None
     output_dim: int | None = None
+    global_molecular_descriptor_dropout: float | None = None
 
-    @field_validator("aggregation_fn", mode="before")
+    # Normalize BEFORE discriminated-union selection happens
+    @model_validator(mode="before")
     @classmethod
-    def check_aggregation_fn(cls, v: str | Callable | Aggregations) -> Callable:
-        if isinstance(v, Aggregations):
-            return Aggregations.get_aggregation_fn(v.value.upper())
-        elif isinstance(v, Callable):
+    def _normalize_discriminator(cls, data):
+        if isinstance(data, dict) and "aggregator_type_config" in data:
+            cfg = data["aggregator_type_config"]
+            if isinstance(cfg, dict) and "aggregator_type" in cfg:
+                try:
+                    cfg["aggregator_type"] = _to_discriminator(cfg["aggregator_type"])
+                except Exception:
+                    # leave as-is; Pydantic will error with a clear message if invalid
+                    pass
+                data["aggregator_type_config"] = cfg
+        return data
+
+class RandomWalkPositionalEncoding(BaseModel):
+    k_hop_random_walk: int
+    d_projection: int
+    reload_state_dict: str | None = None
+
+
+class RadialBasisFunctionType(Enum):
+    GAUSSIAN = GaussianBasisFunctions
+    BESSEL = BesselBasisFunctions
+
+    @classmethod
+    def _missing_(cls, value):
+        # 1) strings → by name
+        if isinstance(value, str):
+            try:
+                return cls[value.strip().upper()]
+            except KeyError:
+                print("broken key")
+                raise
+
+
+class RelativeDistancePositionalEncodingConfig(BaseModel):
+    N_radial_basis_functions: int
+    distance_cutoff: float
+    d_projection: int
+    basis_function_type: RadialBasisFunctionType = RadialBasisFunctionType.GAUSSIAN
+    reload_state_dict: str | None = None
+
+    @field_serializer("basis_function_type")
+    def _serialize_aggregator_type(self, v: RadialBasisFunctionType, info):
+        return v.name.lower()
+
+    @field_validator("basis_function_type", mode="before")
+    @classmethod
+    def check_aggregator_type(cls, v: str | RadialBasisFunctionType) -> Callable:
+        if isinstance(v, RadialBasisFunctionType):
             return v
         elif isinstance(v, str):
-            return Aggregations.get_aggregation_fn(v.upper())
-
-    @field_serializer("aggregation_fn")
-    def serialize_aggregation_fn(self, aggregation_fn):
-        return aggregation_fn.__name__
+            return RadialBasisFunctionType(v)
 
 
 class ArchitectureConfig(BaseModel):
     embedding_preprocess_config: EmbeddingPreprocessConfig
     encoder_config: EncoderConfig
     global_aggregator_config: GlobalAggregatorConfig
-    regression_head_config: RegressionHeadConfig | Sequence[RegressionHeadConfig]
+    regression_head_config: RegressionHeadConfig | Sequence[RegressionHeadConfig] | None
+    positional_encoding_config: (
+        RelativeDistancePositionalEncodingConfig | RandomWalkPositionalEncoding | None
+    ) = None
     reload_full_model_weights: str | None = None
+    decoder_config: DecoderConfig | None = None

@@ -1,13 +1,12 @@
 import pytest
 import torch
-from mace.calculators import mace_mp
+from ase import Atoms
 
-from threedscriptors.configuration.data_config import (
-    DatasetConfig,
-    DatasetTypes,
-    MaceCalculatorConfig,
-    TaskConfig,
+from threedscriptors.configuration.architecture_config import (
+    RadialBasisFunctionType,
+    RelativeDistancePositionalEncodingConfig,
 )
+from threedscriptors.data_handling.data_utils import get_ase_atoms
 
 
 @pytest.fixture(scope="session")
@@ -40,6 +39,15 @@ def regression_mask():
     return torch.tensor([1])
 
 
+@pytest.fixture(scope = "session")
+def molecule():
+
+    smiles = "C"
+    atoms : Atoms =  get_ase_atoms(smiles)
+    return atoms
+
+
+
 @pytest.fixture(scope="session")
 def sample_smiles():
     smiles = [
@@ -54,48 +62,6 @@ def sample_smiles():
 
 
 @pytest.fixture(scope="session")
-def sample_dataset_config():
-    return DatasetConfig(
-        N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION_DATASET,
-        BFGS_tol=0.2,
-        BFGS_max_steps=500,
-        N_conformers=1,
-        embedding_model_config=MaceCalculatorConfig(
-            mace_calc=mace_mp("medium"), model_name="medium"
-        ),
-    )
+def positional_encoding_config():
 
-
-@pytest.fixture(scope="session")
-def sample_chiral_dataset_config():
-    return DatasetConfig(
-        N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION_DATASET,
-        BFGS_tol=0.2,
-        BFGS_max_steps=500,
-        N_conformers=1,
-        embedding_model_config=MaceCalculatorConfig(
-            mace_calc=mace_mp("medium"), model_name="medium"
-        ),
-        tasks=[TaskConfig(task_name="cmrt")],
-    )
-
-
-@pytest.fixture(scope="session")
-def sample_regression_dataset_config():
-    return DatasetConfig(
-        N_molecules=5,
-        dataset_type=DatasetTypes.REGRESSION_DATASET,
-        BFGS_tol=0.2,
-        BFGS_max_steps=500,
-        N_conformers=1,
-        embedding_model_config=MaceCalculatorConfig(
-            mace_calc=mace_mp("medium"), model_name="medium"
-        ),
-        tasks=[
-            TaskConfig(task_name="HLM"),
-            TaskConfig(task_name="LogD"),
-            TaskConfig(task_name="KSOL"),
-        ],
-    )
+    return RelativeDistancePositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=20.0, d_projection=64, basis_function_type= RadialBasisFunctionType.GAUSSIAN)

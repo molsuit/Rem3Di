@@ -3,6 +3,7 @@ from importlib import resources
 import numpy as np
 import torch
 from mace.calculators import mace_mp
+from threedscriptors.data_handling.pipelines import chiral_regression_training_pipeline
 
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
@@ -13,7 +14,6 @@ from threedscriptors.configuration.data_config import (
     DatasetTypes,
     MaceCalculatorConfig,
 )
-from threedscriptors.data_handling.pipelines import chiral_regression_training_pipeline
 from threedscriptors.data_handling.source_preprocessing.cmrt_preprocessing import (
     load_cmrt_data,
 )

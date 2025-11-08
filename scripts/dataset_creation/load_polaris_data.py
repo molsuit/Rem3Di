@@ -1,94 +1,99 @@
-from mace.calculators import MACECalculator
+from pathlib import Path
 
-from threedscriptors.configuration.data_config import (
+import torch
+from mace.calculators.foundations_models import mace_off
+from torch_sim.models.mace import MaceModel
+
+from threedscriptors.configuration.dataset_config import (
     DatasetConfig,
-    DatasetTypes,
-    MaceCalculatorConfig,
+    DatasetCreationConfig,
 )
-from threedscriptors.data_handling.dataset import RegressionDataset
-from threedscriptors.data_handling.dataset_io import store_data_to_disk, load_data_from_disk
-from threedscriptors.data_handling.pipelines import regression_training_pipeline
-from threedscriptors.data_handling.source_preprocessing.polaris_preprocessing import (
-    load_polaris_dataset,
+from threedscriptors.data_handling.dataset.tasks import (
+    TaskSet,
+)
+from threedscriptors.data_handling.dataset_creation.generators.polaris_generator import (
+    PolarisGenerator,
+    get_polaris_task_configs,
+)
+from threedscriptors.data_handling.dataset_creation.orchestrator import (
+    DatasetConstructionOrchestrator,
+)
+from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+    BatchedEmbeddingStage,
+    ConformerGenerationStage,
+)
+from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
+
+dataset_name = "antiviral_potency"
+
+
+
+creation_config = DatasetCreationConfig(
+    path=Path(
+        f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/{dataset_name}"
+    ),
+    N_structures=10000,
+    max_embed_attempts=10_000,
+    max_MMFF_steps=100,
 )
 
-from dataclasses import asdict
 
+task_configs = get_polaris_task_configs(dataset_name)
 
-dataset_registry = {
-    "antiviral_admet": "asap-discovery/antiviral-admet-2025-unblinded",
-    "adme_fang": "biogen/adme-fang-v1",
-}
+gen = PolarisGenerator(dataset_name=dataset_name,batch_size= 500, max_atoms=100)
 
-smiles_column = {
-    "antiviral_admet": "CXSMILES",
-    "adme_fang": "MOL_smiles",
-}
-
-non_task_columns = {
-    "antiviral_admet": ["Molecule Name","Set", "CXSMILES"],
-    "adme_fang": ["UNIQUE_ID", "MOL_smiles", "SMILES"],
-}
-
-
-load_dataset = "antiviral_admet"
-
-# Load the benchmark from polarishub
-smiles, regression_targets, regression_masks, tasks = load_polaris_dataset(
-    dataset_registry[load_dataset],
-    smiles_column=smiles_column[load_dataset],
-    non_task_columns=non_task_columns[load_dataset],datasplit="train"
-)
-print(len(smiles))
-
-dataset_directory = f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/{load_dataset}_test"
-
-MACE_PATH = (
-    "/share/snw30/projects/mace_model/mace_agnesi_medium.model"
-)
-embedding_model_config = MaceCalculatorConfig(
-    mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
-    model_name="mace_mp_medium",
-    model_path=MACE_PATH,
-    enable_cueq=True,
+# Use CUDA if available
+device = "cuda" if torch.cuda.is_available() else "cpu"
+# Load the MACE "small" foundation model
+mace = mace_off(
+    model="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
+    default_dtype="float64",
     device="cuda",
+    enable_cueq=True,
+    return_raw_model=True,
 )
+
+mace_irreps = get_mace_model_irrep_signature(mace)
+# egret_irreps = Irreps("192x0e+192x1o+192x2e+192x0e")
+
+
+mace_model = MaceModel(
+    model=mace,
+    device=device,
+    dtype=torch.float64,
+    compute_forces=False,
+    compute_stress=False,
+    compute_descriptors=True,
+    enable_cueq=True,
+)
+
+batched_embedding = BatchedEmbeddingStage(
+    mace_model, device=device, dtype=torch.float64
+)
+conformal_stage = ConformerGenerationStage(dataset_creation_config=creation_config)
+
+# If you want to change what is loaded from MACE, you have to write a PipelineStage for your use case. You might have to modify torch_sim.models.mace.MaceModel.forward to yield the atomic energies.
+
+pipeline = [conformal_stage, batched_embedding]
 
 dataset_config = DatasetConfig(
-    N_molecules=200,
-    dataset_type=RegressionDataset,
-    BFGS_tol=0.2,
-    BFGS_max_steps=500,
-    N_conformers=2,
-    embedding_model_config=embedding_model_config,
-    max_atoms=None,
-    tasks=tasks,
+    embedding_dim=mace_irreps.dim,
+    irreps=mace_irreps,
+    atom_chunk=450,
+    molecule_chunk=50,
+    contains_smiles=True,
+    tasks = TaskSet.from_list(task_configs)
+)
+
+print(dataset_config)
+
+
+orchestrator = DatasetConstructionOrchestrator(
+    pipeline=pipeline,
+    batch_generator=gen,
+    construction_config=creation_config,
+    dataset_config=dataset_config,
 )
 
 
-dataset = regression_training_pipeline(
-    dataset_config, smiles, regression_targets, regression_masks
-).build()
-
-store_data_to_disk(dataset, f"{dataset_directory}_full")
-
-
-print(dataset.embeddings.shape)
-print(dataset.regression_masks.shape)
-print(dataset.regression_targets.shape)
-
-
-from threedscriptors.data_handling.dataset_io import store_data_to_disk, load_data_from_disk
-
-dataset_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/adme_fang"
-dataset = load_data_from_disk(f"{dataset_directory}_full")
-
-
-splitting_ratio = [0.8,0.2]
-
-split_datasets = dataset.split_dataset(splitting_ratio)
-
-store_data_to_disk(split_datasets[0], f"{dataset_directory}_train")
-store_data_to_disk(split_datasets[1], f"{dataset_directory}_valid")
-
-
+orchestrator.build_dataset()

@@ -1,30 +1,37 @@
-import numpy as np
-import torch
-
-from threedscriptors.data_handling.dataset import RegressionDataset
-from threedscriptors.model.transformer_components import TransformerEncoder
-
 from collections.abc import Iterable
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from threedscriptors.data_handling.dataset import (
-    AtomicEmbeddingDataset,
-    RegressionDataset,
-    RegressionWithAuxDataset,
+
+from threedscriptors.data_handling.dataset.training_dataset import (
+    TrainingMoleculeDataset,
 )
-from threedscriptors.data_handling.sample import Sample, sample_collate_fn
+from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
+from threedscriptors.data_handling.sample import (
+    Sample,
+    paired_sample_collate_fn,
+    pretraining_padded_collate_fn,
+    sample_collate_fn,
+)
+from threedscriptors.model.encoder import TransformerEncoder
+from threedscriptors.model.model_output import ModelOutput
+from threedscriptors.model.molecule_difference_regressor import (
+    MolecularDifferenceRegressor,
+)
 from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
+from threedscriptors.model.remedi_model import REM3DIModel
 
 
 def evaluate_regression_model_on_dataset(
     model: MultiTaskRegressionModel,
-    dataset: RegressionWithAuxDataset | RegressionDataset,
+    dataset: TrainingMoleculeDataset,
     device="cuda",
-):  
-    
+    undo_standardization=False,
+):
+
     # returns the predictions of the model on dataset in standardized units
 
     assert set([tc.task_name for tc in dataset.dataset_config.tasks]).issubset(
@@ -34,66 +41,113 @@ def evaluate_regression_model_on_dataset(
     model.eval()
 
     batch_size = 256
+
+    collate_fn = sample_collate_fn
     dataloader: Iterable[Sample] = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
-        collate_fn=sample_collate_fn,
+        collate_fn=collate_fn,
     )
 
     regression_predictions = torch.zeros_like(dataset.regression_targets)
 
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
-            embeddings = samples.embeddings.to(device)
-            padding_mask = samples.padding_mask.to(device)
-            auxillary_data = samples.auxillary_data
-    
+            samples.to_(device)
+
+            if undo_standardization:
+                output: ModelOutput = model.inference(samples)
+            else:
+                output: ModelOutput = model(samples)
+
             regression_predictions[
                 batch_idx * batch_size : (batch_idx + 1) * batch_size, :
-            ], _ = model(embeddings, padding_mask, auxillary_data)
+            ] = output.regression_predictions
 
     return regression_predictions
 
 
 def evaluate_molecular_descriptor_on_dataset(
-    model: MultiTaskRegressionModel, dataset: AtomicEmbeddingDataset, device="cuda"
+    model: REM3DIModel, dataset: TrainingMoleculeDataset, device="cuda"
 ):
     batch_size = min(64, len(dataset))
+
     dataloader: Iterable[Sample] = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
-        collate_fn=sample_collate_fn,
+        collate_fn=pretraining_padded_collate_fn,
     )
 
     model.to(device)
     model.eval()
 
     descriptors = torch.zeros(
-        size=(len(dataset), model.global_aggregator.config.output_dim)
+        size=(len(dataset), model.encoder.aggregator.config.output_dim)
     )
 
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
-            embeddings = samples.embeddings.to(device)
-            padding_mask = samples.padding_mask.to(device)
+            samples.to_(device)
 
+            model_output = model(samples)
             descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
-                model.get_molecular_descriptor(embeddings, padding_mask).detach().cpu()
+                model_output.molecular_descriptor
             )
 
     return descriptors
 
 
+def evaluate_molecule_difference_on_dataset(
+    model: REM3DIModel,
+    dataset,
+    molecular_difference_regressor: MolecularDifferenceRegressor,
+    device="cuda",
+):
+    batch_size = min(64, len(dataset))
+
+    collate_fn = paired_sample_collate_fn
+
+    dataloader: Iterable[Sample] = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=False,
+        collate_fn=collate_fn,
+    )
+
+    model.to(device)
+    model.eval()
+    molecular_difference_regressor.eval()
+
+    differences = torch.zeros(size=(len(dataset), 1))
+    print(differences.shape)
+
+
+    with torch.no_grad():
+        for batch_idx, samples in enumerate(dataloader):
+
+            samples.to_(device)
+
+            descriptors = model(samples).molecular_descriptor
+
+            differences[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
+                molecular_difference_regressor(
+                    descriptors, samples.auxillary_data["cmrt"]
+                )
+            )
+
+    return differences
+
 
 def evaluate_atomic_descriptors(
     model: MultiTaskRegressionModel,
-    dataset: RegressionWithAuxDataset | RegressionDataset,
+    dataset: TrainingMoleculeDataset,
     device="cuda",
-):  
+):
 
     model.to(device)
     model.eval()
@@ -107,14 +161,20 @@ def evaluate_atomic_descriptors(
         collate_fn=sample_collate_fn,
     )
 
-    regression_predictions = torch.zeros(dataset.dataset_config.N_molecules, dataset.dataset_config.max_atoms, model.preprocessor.config.output_irreps_dim)
+    regression_predictions = torch.zeros(
+        dataset.dataset_config.N_molecules,
+        dataset.dataset_config.max_atoms,
+        model.preprocessor.config.output_irreps_dim,
+    )
 
     print(regression_predictions.shape)
 
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
             embeddings = samples.embeddings.to(device)
- 
+
+            batch_size = embeddings.shape[0]
+
             regression_predictions[
                 batch_idx * batch_size : (batch_idx + 1) * batch_size, :
             ] = model.preprocessor(embeddings)
@@ -122,11 +182,8 @@ def evaluate_atomic_descriptors(
     return regression_predictions
 
 
-
-
-
 def calculate_fingerprint_uncertainty(
-    encoder: TransformerEncoder, dataset: RegressionDataset
+    encoder: TransformerEncoder, dataset: TrainingMoleculeDataset
 ):
     # for all smiles in the smiles list, get the corresponding unique dataset id
 
@@ -171,64 +228,45 @@ def compute_class_std(data, class_ids):
     return class_mean, class_std_dev
 
 
+def average_over_conformers(
+    structure_ids: list[StructureID], predictions: torch.Tensor
+):
 
-def capacity_diagnostics(Z, bins=128, dead_thr=0.2, eps=1e-12):
+    classes = [(sid.molecule_id, sid.enantiomer_id) for sid in structure_ids]
+    class_ids = {mol_e_id: i for i, mol_e_id in enumerate(set(classes))}
+
+    class_id_per_mol = []
+
+    for sid in structure_ids:
+        class_id_per_mol.append(class_ids[(sid.molecule_id, sid.enantiomer_id)])
+
+    class_id_per_mol = torch.as_tensor(class_id_per_mol).reshape(
+        -1,
+    )
+
+    print(class_id_per_mol)
+    for class_id in class_ids.values():
+
+        mask = torch.where(class_id_per_mol == class_id)
+        class_mean = torch.mean(predictions[mask], dim=0)
+        print(class_mean)
+
+        predictions[mask] = class_mean
+
+    return predictions
+
+
+
+def clip_and_log_transform(y: torch.Tensor) -> torch.Tensor:
     """
-    Estimate information utilisation of a latent space.
+    Clip to a detection limit and transform to log10 scale.
 
     Parameters
     ----------
-    Z : array_like, shape (N_graphs, d)
-        Graph-level latent vectors (after pooling).
-    bins : int or sequence
-        Number of histogram bins per dimension (power of two recommended).
-    dead_thr : float
-        Fraction of per-dim max entropy below which a dimension is flagged 'dead'.
-    eps : float
-        Numerical jitter to avoid log(0) / divide-by-zero.
-
-    Returns
-    -------
-    H_tot : float
-        Sum of marginal Shannon entropies (bits).
-    utilisation : float
-        H_tot divided by effective capacity.
-    dead_dims : int
-        Count of low-entropy ('dead') coordinates.
+    y : torch.Tensor
+        The tensor to be clipped and transformed.
     """
-
-    
-
-    Z = np.asarray(Z, dtype=np.float64)
-    Z = Z - np.mean(Z, axis = 0)
-    
-    N, d = Z.shape
-
-    # --- marginal entropies -------------------------------------------------
-    H_i = np.empty(d)
-    for j in range(d):
-        counts, _ = np.histogram(Z[:, j], bins=bins)
-        p = counts / counts.sum()
-        H_i[j] = -np.sum(p * np.log2(p + eps))
-
-    H_tot = H_i.sum()
-
-    # --- capacity proxy -----------------------------------------------------
-    max_bits_per_dim = np.log2(bins)                # guaranteed float
-    cov = np.cov(Z, rowvar=False)
-    eigvals = np.linalg.eigvalsh(cov)
-    d_eff = (eigvals.sum()**2) / (np.square(eigvals).sum() + eps)
-
-    print("largest 10 eigvals:", eigvals[::-1][:10])
-    print("smallest 10 eigvals:", eigvals[:10])
-    print(f"Effective dimension {d_eff}")
-    C_eff = d_eff * max_bits_per_dim
-
-    utilisation = H_tot / (C_eff + eps)
-    dead_dims = int((H_i < dead_thr * max_bits_per_dim).sum())
-
-    eig = np.sort(eigvals)[::-1]           # descending
-    
-
-
-    return H_tot, utilisation, dead_dims, eig
+    # Clip negative values to zero
+    y_clipped = torch.clamp(y, min=0.0)
+    # Log10 transform with +1 offset for zeros
+    return torch.log10(y_clipped + 1.0)

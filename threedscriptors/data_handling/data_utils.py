@@ -1,31 +1,34 @@
-import numpy as np
 import math
 from collections.abc import Sequence
-from typing import List
+from typing import TYPE_CHECKING
+
+import numpy as np
 import rdkit.Chem as Chem
-import torch
 from ase import Atoms
 from ase.optimize import LBFGS
 from mace.calculators import MACECalculator
-from rdkit.Chem import AllChem
+from rdkit.Chem import AllChem, rdDetermineBonds, rdmolops
+from rdkit.Chem.rdchem import Conformer
 from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
-from rdkit2ase import rdkit2ase
-
-
-from typing import TYPE_CHECKING
+from rdkit.Geometry import Point3D
 
 if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
-from threedscriptors.data_handling.smiles_iterator import SmilesIterator
-from threedscriptors.model.transformer_components import TransformerEncoder
 
 
-def get_mirrored_molecules(molecules: list[Atoms]):
+
+def get_molecular_weight(molecules: list[Atoms]):
+
+    return [sum(m.get_masses()) for m in molecules]
+
+
+def get_mirrored_molecules(molecules: list[Atoms], new_smiles: str):
     mirrored_molecules = []
 
     for mol in molecules:
         mirrored_mol = mol.copy()
         mirrored_mol.set_positions(-mol.get_positions())
+        mirrored_mol.info["smiles"] = new_smiles
         mirrored_molecules.append(mirrored_mol)
 
     return mirrored_molecules
@@ -53,8 +56,19 @@ def get_ase_atoms(smiles) -> Atoms:
             randomSeed=-1,
         )
 
-    atoms = rdkit2ase(mol)
+    conf = mol.GetConformer()
+    atoms = Atoms(
+        positions=conf.GetPositions(),
+        numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
+        info={"smiles": smiles},
+    )
+
     return atoms
+
+
+def contains_ionic_atom(mol: Chem.Mol) -> bool:
+    """Return True if *any* atom in `mol` has non-zero formal charge."""
+    return any(atom.GetFormalCharge() != 0 for atom in mol.GetAtoms())
 
 
 def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
@@ -65,28 +79,30 @@ def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
         raise ValueError
 
     mol = Chem.AddHs(mol)
-    charge = Chem.GetFormalCharge(mol)
-    if charge != 0:
-        raise ValueError("Charged molecule")
+    charged = contains_ionic_atom(mol)
+
+    if charged:
+        raise ValueError(f"Smiles {smiles} is a charged molecule")
 
     EmbedMultipleConfs(
-        mol, numConfs=N_conformers, numThreads=N_conformers, maxAttempts=5000
+        mol, numConfs=N_conformers, numThreads=N_conformers, maxAttempts=500
     )
 
-    confs = [
+    AllChem.MMFFOptimizeMoleculeConfs(mol, maxIters=500, nonBondedThresh=500.0)
+
+    ase_confs = [
         Atoms(
             positions=conf.GetPositions(),
             numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
+            info={"smiles": smiles},
         )
         for conf in mol.GetConformers()
     ]
 
-    # if mol.GetNumConformers() != N_conformers:
-    #    print("Failed Embedding Multi Confs, trying again with random coords")
-    #
-    #    EmbedMultipleConfs(mol, numConfs=N_conformers, numThreads=N_conformers,maxAttempts=100000, useRandomCoords= True, forceTol=1)
+    if len(ase_confs) == 0:
+        raise ValueError
 
-    return confs
+    return ase_confs
 
 
 def get_relaxed_conformers(
@@ -118,49 +134,50 @@ def get_relaxed_conformers(
     return molecules
 
 
-def get_max_molecule_size_from_smiles(
-    smiles_iterator: SmilesIterator, max_num_molecules=math.inf
+def count_atoms_from_smiles(
+    smiles_iterator, heavy_atoms_only=False, max_num_molecules=np.inf
 ) -> int:
-    max_atoms = 0
+
+    # Returns the max and sum of the atoms from smiles
+
+    atom_count = []
+
     for i, smiles in enumerate(smiles_iterator):
         mol = Chem.MolFromSmiles(smiles)
-        mol = Chem.AddHs(mol)
-        num_atoms = mol.GetNumAtoms()
-        if num_atoms > max_atoms:
-            max_atoms = num_atoms
+
+        if not heavy_atoms_only:
+            mol = Chem.AddHs(mol)
+
+        atom_count.append(mol.GetNumAtoms())
+
         if i >= max_num_molecules:
             break
-    return max_atoms
+
+    return max(atom_count, default=0), sum(atom_count)
 
 
-def get_max_molecule_size_from_atoms(atoms: list[Atoms]):
-    max_atoms = 0
-    for mol in atoms:
-        number_of_atoms = len(mol)
-        max_atoms = max(max_atoms, number_of_atoms)
-    return max_atoms
+def get_all_atom_counts(atoms: list[Atoms], heavy_atoms_only=False):
+    if heavy_atoms_only:
+        counts = ((mol.get_atomic_numbers() != 1).sum() for mol in atoms)
+    else:
+        counts = (len(mol) for mol in atoms)
+
+    return counts
 
 
-def get_atom_species_in_smiles(smiles_iterator: SmilesIterator):
+def count_atoms_from_ase(atoms: list[Atoms], heavy_atoms_only=False):
+    # Returns the max and the sum of the numbers of atoms inside a list of ase atoms
+    counts = get_all_atom_counts(atoms, heavy_atoms_only)
+
+    return max(counts, default=0), sum(counts)
+
+
+def get_atom_species_in_smiles(smiles_iterator):
     atom_species_set = set("H")
     for smiles in smiles_iterator:
         mol = Chem.MolFromSmiles(smiles)
         atom_species_set.update([atom.GetSymbol() for atom in mol.GetAtoms()])
     return atom_species_set
-
-
-def get_global_descriptor(
-    smiles: str, encoder: TransformerEncoder, calculator: MACECalculator
-):
-    # TODO: Maybe check SMILES validity?
-    atoms = get_ase_atoms(smiles)
-    mace_des = calculator.get_descriptors(atoms, invariants_only=True)
-    mace_des = torch.tensor(mace_des).unsqueeze(0).float()
-    encoder.eval()
-    with torch.no_grad():
-        global_descriptor = encoder(mace_des)
-
-    return global_descriptor
 
 
 def has_task_with_auxillary_data(tasks: Sequence["TaskConfig"]) -> bool:
@@ -190,11 +207,11 @@ def get_unique_smiles_id_from_smiles_list(smiles_list: list[str]):
 
 def get_functional_group_label(smiles: list[str]):
     # This function is specific to the test functional group dataset, and is not meaningful in any other context.
-
+    print(smiles)
     functional_group_indices = {"OH": [], "NH2": [], "SH": []}
     # Conformers???
     for smiles_index, smiles_string in enumerate(smiles):
-        match smiles_string[0]:
+        match smiles_string[-1]:
             case "O":
                 functional_group_indices["OH"].append(smiles_index)
             case "S":
@@ -202,6 +219,7 @@ def get_functional_group_label(smiles: list[str]):
             case "N":
                 functional_group_indices["NH2"].append(smiles_index)
             case _:
+                print(f"Smi {smiles_string}")
                 raise ValueError("Non matching smiles in functional group dataset")
 
     return functional_group_indices
@@ -215,25 +233,124 @@ def validate_ratios(ratios: Sequence[float]) -> None:
         raise ValueError("All ratios must be strictly positive")
 
 
-
-
-def compute_splits(size: int, ratios: Sequence[float], split_interval) -> List[slice]:
+def compute_splits(size: int, ratios: Sequence[float]) -> list[slice]:
     """Return slice objects for each split boundary."""
     raw_counts = (np.asarray(ratios) * size).astype(int)
 
-    print(raw_counts)
+    leftover = size - raw_counts.sum()
 
-    base = (raw_counts // split_interval).astype(int) * split_interval
+    raw_counts[0] += leftover
 
-    leftover = (size - base.sum()) // split_interval
-
-    base[0] += leftover* split_interval
-
-    print(base)
     # Fix any rounding drift so the slices cover the full length
-    
-    offsets = np.cumsum(np.insert(base, 0, 0))
-    print(offsets)
+
+    offsets = np.cumsum(np.insert(raw_counts, 0, 0))
+
     return [slice(offsets[i], offsets[i + 1]) for i in range(len(ratios))]
 
 
+def rmsd(A, B):
+    """
+    Compute RMSD between two point sets A and B (shape: Nx3).
+    Centers each, finds optimal rotation, then returns RMSD.
+    """
+    # center
+    A_cent = A - A.mean(axis=0)
+    B_cent = B - B.mean(axis=0)
+
+    # covariance
+    C = A_cent.T @ B_cent
+
+    # SVD
+    V, S, Wt = np.linalg.svd(C)
+
+    # ensure right‐handed coordinate system
+    d = np.sign(np.linalg.det(V @ Wt))
+    U = V @ np.diag([1, 1, d]) @ Wt
+
+    # rotated A and RMSD
+    A_rot = A_cent @ U
+    return np.sqrt(((A_rot - B_cent) ** 2).sum() / A.shape[0])
+
+
+def get_rdkit_mol_from_ase(
+    atoms: Atoms,
+    *,
+    assign_bonds: bool = False,
+    charge: int = 0,
+    cov_factor: float = 1.3,
+    use_hueckel: bool = True,
+) -> Chem.Mol:
+    """
+    Build an RDKit Mol from ASE Atoms using only atomic numbers + 3D coordinates.
+
+    Parameters
+    ----------
+    atoms : ASE Atoms
+        Source object. Positions must be (N, 3).
+    assign_bonds : bool
+        If True, use RDKit's distance/valence heuristic to infer connectivity.
+    charge : int
+        Total molecular charge to use when inferring bonds.
+    cov_factor : float
+        Distance cutoff scaling for bond inference (default 1.3).
+    use_hueckel : bool
+        Use Hückel test during bond inference (helps aromatics).
+
+    Returns
+    -------
+    rdkit.Chem.Mol
+        Molecule with one 3D conformer attached. Not sanitized.
+    """
+    n = len(atoms)
+    if n == 0:
+        return Chem.Mol()
+
+    coords = np.asarray(atoms.get_positions(), dtype=float)
+    zs: Sequence[int] = np.asarray(atoms.get_atomic_numbers(), dtype=int).tolist()
+
+    if coords.shape != (n, 3):
+        raise ValueError(f"positions must be shape ({n}, 3), got {coords.shape}")
+
+    rw = Chem.RWMol()
+    for Z in zs:
+        rw.AddAtom(Chem.Atom(int(Z)))
+
+    conf = Conformer(n)
+    conf.Set3D(True)
+    for i, (x, y, z) in enumerate(coords):
+        conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
+    rw.AddConformer(conf, assignId=True)
+
+    mol = rw.GetMol()
+
+    if assign_bonds:
+        rdDetermineBonds.DetermineBonds(
+            mol,
+            charge=charge,
+            covFactor=cov_factor,
+            useHueckel=use_hueckel,
+        )
+        # Optional: sanitize if you want strict valence checks
+        # Chem.SanitizeMol(mol)
+
+    return mol
+
+
+def mol_is_fragmented(mol, *, ignore_hs=True) -> bool:
+    m = Chem.RemoveHs(mol) if ignore_hs else mol
+    # tuple of tuples of atom indices per fragment
+    frags = rdmolops.GetMolFrags(m, asMols=False)
+    return len(frags) > 1
+
+
+def get_transition_matrix(mol):
+    A = rdmolops.GetAdjacencyMatrix(mol)
+    # Get the adjacency matrix,
+
+    A_self = A + np.eye(A.shape[0])
+
+    deg = A_self.sum(axis=1)
+    D_inv = np.diag(1.0 / deg)
+    T = D_inv @ A_self
+
+    return T

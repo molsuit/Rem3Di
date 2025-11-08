@@ -8,11 +8,12 @@ from threedscriptors.configuration.architecture_config import (
     HeadType,
     RegressionHeadConfig,
 )
-from threedscriptors.model.atomic_descriptor_preprocess import (
-    AtomicDescriptorPreprocess,
-)
-from threedscriptors.model.global_aggregator import GlobalAggregator
-from threedscriptors.model.transformer_components import TransformerEncoder
+from threedscriptors.configuration.data_config import LabelScalingType
+from threedscriptors.data_handling.sample import Sample
+from threedscriptors.model.encoder import TransformerEncoder
+from threedscriptors.model.model_output import ModelOutput
+from threedscriptors.model.pair_encoder import TransformerPairEncoder
+from threedscriptors.model.preprocessing.preprocessing import Preprocessor
 
 
 class ResidualBlock(nn.Module):
@@ -52,6 +53,7 @@ class FullyConnectedBlock(nn.Module):
                     ("linear_layer", nn.Linear(in_dim, out_dim)),
                     ("layer_norm", nn.LayerNorm(out_dim)),
                     ("activation", nn.SiLU()),
+                    ("dropout", nn.Dropout(0.1))
                 ]
             )
         )
@@ -61,22 +63,11 @@ class FullyConnectedBlock(nn.Module):
         return out
 
 
-class MultitaskHeads(nn.Module):
-    def __init__(self, regression_head_configs: list[RegressionHeadConfig]):
-        super().__init__()
-        self.regression_head_configs = regression_head_configs
+class RegressionHead(nn.Module):
 
-        self.task_list = [conf.task_name for conf in regression_head_configs]
-        self.N_tasks = len(self.task_list)
 
-        self.task_heads = nn.ModuleDict()
-        for head_config in regression_head_configs:
-            self.task_heads[head_config.task_name] = self.build_head(head_config)
+    def __init__(self, head_config : RegressionHeadConfig):
 
-    @staticmethod
-    def build_head(
-        head_config: RegressionHeadConfig,
-    ) -> nn.Module:
         """
         Build a regression head based on the provided configuration.
 
@@ -87,12 +78,21 @@ class MultitaskHeads(nn.Module):
         Returns:
             nn.Module: The constructed regression head.
         """
+
+        super().__init__()
+
+        self.head_config = head_config
+        self.task_config = head_config.task_config
+
+
+
+
         head = nn.Sequential()
 
         head.add_module("initial_norm", nn.LayerNorm(head_config.input_dimensions))
 
         dimensions = [head_config.input_dimensions, *head_config.hidden_dimensions]
-
+        idx = 0
         for idx, (in_dim, out_dim) in enumerate(pairwise(dimensions)):
             if head_config.head_type == HeadType.FULLY_CONNECTED:
                 head.add_module(
@@ -109,7 +109,56 @@ class MultitaskHeads(nn.Module):
             nn.Linear(dimensions[-1], 1),
         )
 
-        return head
+        self.head = head
+
+
+        mean = self.task_config.mean
+        std = self.task_config.std
+        if type(self.task_config.mean ) is float:
+            mean = torch.Tensor([mean])
+
+        if type(self.task_config.std) is float:
+            std = torch.Tensor([std])
+
+
+        self.register_buffer("task_mean", mean)
+        self.register_buffer("task_std", std)
+
+
+    def forward(self, molecular_descriptor):
+        return self.head(molecular_descriptor)
+
+
+    def inference(self, molecular_descriptor):
+        standardized_prediction = self.head(molecular_descriptor)
+
+
+        standardized_prediction = (standardized_prediction * self.task_std) + self.task_mean
+
+        if self.task_config.scaling == LabelScalingType.LOG_Z:
+            standardized_prediction = torch.exp(standardized_prediction)
+
+
+        return standardized_prediction
+            # undo the standardization:
+
+
+
+
+
+class MultitaskHeads(nn.Module):
+    def __init__(self, regression_head_configs: list[RegressionHeadConfig]):
+        super().__init__()
+        self.regression_head_configs = regression_head_configs
+
+        self.task_list = [conf.task_name for conf in regression_head_configs]
+        self.N_tasks = len(self.task_list)
+
+        self.task_heads = nn.ModuleDict({
+            conf.task_name: RegressionHead(conf)
+            for conf in regression_head_configs
+        })
+
 
     def forward(self, descriptor, auxillary_data: dict | None = None):
         preds = []
@@ -123,43 +172,68 @@ class MultitaskHeads(nn.Module):
                 preds.append(head(descriptor))
         # TODO: Make this return a dict of all tasks instead of a stacked tensor to ensure that the task predictions are returned in the correct order. This would require us to also change the way that the dataset yields the regression targets, would also be a dict then. Maybe it should be possible to just assert that the dataset task ordering and the model task ordering are identical.
 
+        preds = torch.cat(preds, dim=-1)
+
         return preds
 
 
-class MultiTaskRegressionModel(nn.Module):
-    def __init__(
-        self,
-        regression_heads: MultitaskHeads,
-        encoder: TransformerEncoder,
-        preprocessor: AtomicDescriptorPreprocess,
-        global_aggregator: GlobalAggregator,
-    ):
-        super().__init__()
-        self.encoder = encoder
-        self.multitask_heads = regression_heads
-        self.preprocessor = preprocessor
-        self.global_aggregator = global_aggregator
+    def inference(self, descriptor, auxillary_data: dict | None = None):
+        preds = []
 
-    def forward(self, x, padding_mask=None, auxillary_data: dict | None = None):
-        descriptor = self.get_molecular_descriptor(x, padding_mask)
+        for name, head in self.task_heads.items():
+            if auxillary_data is not None and name in auxillary_data:
+                aux = auxillary_data[name].to(descriptor.device)
+                input_data = torch.cat((descriptor, aux), dim=1)
+                preds.append(head.inference(input_data))
+            else:
+                preds.append(head.inference(descriptor))
 
-        preds = self.multitask_heads(descriptor, auxillary_data)
-        # Compute outputs from each head.
-        # Each head's output is assumed to be of shape (batch_size, output_dim)
+        preds = torch.cat(preds, dim=-1)
 
-        # Concatenate outputs along the feature dimension.
-        # Final shape: (batch_size, N_tasks * output_dim)
-        pred = torch.cat(preds, dim=-1)
-        return pred, descriptor
-
-    def get_molecular_descriptor(self, x, padding_mask=None) -> torch.Tensor:
-        x = self.preprocessor(x)
-        x = self.encoder(x, padding_mask)
-        descriptor = self.global_aggregator(x)
-
-        return descriptor
+        return preds
 
 
 class FusedMultiHeadRegression(nn.Module):
     # A class that implements the fused calulation of regression heads by using the torch.bmm (batched matrix multiply) instead of sequentially calculating each head.
     pass
+
+
+class MultiTaskRegressionModel(nn.Module):
+    def __init__(
+        self,
+        preprocessor: Preprocessor,
+        encoder: TransformerEncoder | TransformerPairEncoder,
+        regression_heads: MultitaskHeads,
+    ):
+        super().__init__()
+        self.encoder = encoder
+        self.multitask_heads = regression_heads
+        self.preprocessor = preprocessor
+
+    def forward(self, sample: Sample):
+        molecular_descriptor = self.get_molecular_descriptor(sample)
+
+        preds = self.multitask_heads(molecular_descriptor, sample.auxillary_data)
+
+        return ModelOutput(
+            molecular_descriptor=molecular_descriptor, regression_predictions=preds
+        )
+
+    def inference(self, sample: Sample):
+        # Calls the multitask inference method that returns the prediction in the original unit system
+
+        molecular_descriptor = self.get_molecular_descriptor(sample)
+
+        preds = self.multitask_heads.inference(molecular_descriptor, sample.auxillary_data)
+
+        return ModelOutput(
+            molecular_descriptor=molecular_descriptor, regression_predictions=preds
+        )
+
+
+    def get_molecular_descriptor(self, sample: Sample) -> torch.Tensor:
+        preprocessed_sample = self.preprocessor(sample)
+
+        molecular_descriptor = self.encoder(preprocessed_sample)
+        return molecular_descriptor
+

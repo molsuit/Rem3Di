@@ -1,5 +1,5 @@
 __pycache__/
-data/
+datasets/
 figures/
 transformer_model/
 mace_model/
@@ -9,3 +9,6 @@ wandb
 .vscode/
 eval_runs/
 training_runs/
+notebooks/
+backed_up_models/
+*.log

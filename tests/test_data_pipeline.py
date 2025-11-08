@@ -1,21 +1,21 @@
 import numpy as np
 from mace.calculators import mace_mp
-
-from threedscriptors.configuration.data_config import (
-    DatasetConfig,
-    DatasetTypes,
-    MaceCalculatorConfig,
-)
 from threedscriptors.data_handling.data_build_pipeline import (
     ChiralConformalEmbeddingStage,
     InitializeBuildPipeline,
     InsertSmilesStage,
     PipelineOrchestrator,
 )
-from threedscriptors.data_handling.dataset import RegressionDataset
 from threedscriptors.data_handling.pipelines import (
     regression_training_pipeline,
+    regression_training_with_pos_pipeline,
 )
+
+from threedscriptors.configuration.data_config import (
+    DatasetConfig,
+    MaceCalculatorConfig,
+)
+from threedscriptors.data_handling.dataset import RegressionDataset
 
 
 def test_regression_training_pipeline(
@@ -58,3 +58,20 @@ def test_chiral_pipeline():
     assert np.all(
         dataset.molecules[0].get_positions() == -dataset.molecules[1].get_positions()
     )
+
+def test_regression_training_with_positions_pipeline(
+    sample_smiles, regression_targets, regression_masks, sample_dataset_config
+):
+
+    regression_pipeline = regression_training_with_pos_pipeline(
+        sample_dataset_config, sample_smiles, regression_targets,regression_masks
+    )
+    dataset =  regression_pipeline.build()
+
+    sample = dataset[0]
+
+    print(sample)
+
+    assert sample.atomic_positions is not None
+
+

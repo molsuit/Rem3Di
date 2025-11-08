@@ -1,35 +1,41 @@
-from threedscriptors.data_handling.dataset import (
-    RegressionDataset,
-    RegressionWithAuxDataset,
-)
-from threedscriptors.data_handling.dataset_concatenation import DatasetConcatenation
-from threedscriptors.data_handling.dataset_io import (
-    load_data_from_disk,
-    store_data_to_disk,
-)
+from threedscriptors.data_handling.dataset_creation.dataset_concatenation import DatasetConcatenation
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 
-adme_fang_dataset = load_data_from_disk(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/adme_fang",
-    RegressionDataset,
-    load_molecules=True,
-)
-admet_antiviral = load_data_from_disk(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_admet",
-    RegressionDataset,
-    load_molecules=True,
-)
-cmrt = load_data_from_disk(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt",
-    RegressionWithAuxDataset,
-    load_molecules=True,
-)
+from pathlib import Path 
 
 
-concatenation = DatasetConcatenation(datasets=[adme_fang_dataset, admet_antiviral, cmrt])
+pcqm_path = Path("/local/data/public/snw30/pcqm")
+geom_path = Path("/local/data/public/snw30/geom_drugs")
+pharma_path = Path("/local/data/public/snw30/multi_pharma_dataset")
+dataset_pcqm = MoleculeDataset.open_existing_dataset_from_dir(pcqm_path)
+dataset_geom = MoleculeDataset.open_existing_dataset_from_dir(geom_path)
+dataset_pharma = MoleculeDataset.open_existing_dataset_from_dir(pharma_path)
 
-new_dataset = concatenation.concatenate()
+print(len(dataset_pcqm))
+print(len(dataset_geom))
 
-store_data_to_disk(
-    new_dataset,
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/multitask",
-)
+dc = DatasetConcatenation(datasets = [dataset_pcqm, dataset_geom, dataset_pharma], new_dataset_dir=Path("/local/data/public/snw30/concat_dataset"))
+#
+dc.concatenate_datasets_copy_first()
+
+##from pathlib import Path
+#
+#from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+#from threedscriptors.data_handling.dataset_creation.dataset_concatenation import (
+#    LabeldDatasetConcatenation,
+#)
+#
+#adme_fang_path = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/adme_fang")
+#antiviral_potency_path = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/antiviral_potency")
+#moleculenet_path = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/molecule_net")
+#antiviral_admet_path = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/antiviral_admet")
+#
+#dirs = [adme_fang_path, antiviral_potency_path, antiviral_admet_path,moleculenet_path]
+#
+#datasets = [MoleculeDataset.open_existing_dataset_from_dir(data_dir) for data_dir in dirs]
+#
+#dc = LabeldDatasetConcatenation(datasets = datasets, new_dataset_dir=Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/multi_pharma_dataset"))
+#
+#dc.concatenate_datasets()
+
+

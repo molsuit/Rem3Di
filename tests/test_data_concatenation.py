@@ -1,7 +1,3 @@
-from threedscriptors.data_handling.dataset import (
-    RegressionDataset,
-    RegressionWithAuxDataset,
-)
 from threedscriptors.data_handling.dataset_concatenation import DatasetConcatenation
 from threedscriptors.data_handling.dataset_io import (
     load_data_from_disk,

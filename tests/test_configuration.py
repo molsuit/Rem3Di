@@ -118,3 +118,4 @@ def test_model_construction_from_yaml():
         _ = ModelBuilder(architecture_config=architecture_config).build_model()
     except Exception as err:
         raise AssertionError from err
+

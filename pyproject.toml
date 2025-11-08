@@ -8,25 +8,26 @@ authors = [
 ]
 
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "torch>=2.5.1",
     "ase>=3.24.0",
-    "polaris-lib>=0.11.4",
     "rdkit>=2024.9.4",
     "wandb",
     "pydantic",
     "pydantic_yaml",
-    "rdkit2ase",
-    "mace-torch==0.3.10",
-    "molfeat",
+    "mace-torch",
     "umap-learn"
 ]
 [project.optional-dependencies]
 cuequivariance = [
-    "cuequivariance==0.1.0",
-    "cuequivariance-torch==0.1.0",
-    "cuequivariance-ops-torch-cu12==0.1.0"
+    "cuequivariance",
+    "cuequivariance-torch",
+    "cuequivariance-ops-torch-cu12"
+]
+
+mols  = ["polaris-lib>=0.11.4",
+    "molfeat",
 ]
 
 [build-system]
