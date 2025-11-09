@@ -167,31 +167,32 @@ class OnTheFlyInvariantNormalization(nn.Module):
         self.register_buffer("frozen", torch.tensor(False))
 
     def _update_running_stats(self, x: torch.Tensor, padding_mask: torch.Tensor | None):
+        with torch.no_grad():
         # x: (B, N, D), padding_mask: (B, N), True = padded
-        if padding_mask is not None:
-            valid = ~padding_mask.bool()
-            if not valid.any():
+            if padding_mask is not None:
+                valid = ~padding_mask.bool()
+                if not valid.any():
+                    return
+                x_valid = x[valid]  # (num_valid, D)
+            else:
+                x_valid = x.reshape(-1, x.size(-1))
+
+            if x_valid.numel() == 0:
                 return
-            x_valid = x[valid]  # (num_valid, D)
-        else:
-            x_valid = x.reshape(-1, x.size(-1))
 
-        if x_valid.numel() == 0:
-            return
+            batch_mean = x_valid.mean(dim=0)
+            batch_var = x_valid.var(dim=0, unbiased=False)
 
-        batch_mean = x_valid.mean(dim=0)
-        batch_var = x_valid.var(dim=0, unbiased=False)
+            if self.num_batches_tracked == 0:
+                self.running_mean.copy_(batch_mean)
+                self.running_var.copy_(batch_var)
+            else:
+                self.running_mean.lerp_(batch_mean, self.momentum)
+                self.running_var.lerp_(batch_var, self.momentum)
 
-        if self.num_batches_tracked == 0:
-            self.running_mean.copy_(batch_mean)
-            self.running_var.copy_(batch_var)
-        else:
-            self.running_mean.lerp_(batch_mean, self.momentum)
-            self.running_var.lerp_(batch_var, self.momentum)
-
-        self.num_batches_tracked += 1
-        if self.num_batches_tracked >= self.warmup_batches:
-            self.frozen.fill_(True)
+            self.num_batches_tracked += 1
+            if self.num_batches_tracked >= self.warmup_batches:
+                self.frozen.fill_(True)
 
     def forward(self, x: torch.Tensor, padding_mask: torch.Tensor | None = None) -> torch.Tensor:
         # x: (B, N, D)

@@ -2,68 +2,118 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 
+import math
 import numpy as np
-from torch.utils.data import BatchSampler
+from torch.utils.data import Sampler
 
-
-class BucketByLengthBatchSampler(BatchSampler):
+class BucketBatchSampler(Sampler):
     """
-    Groups indices into batches of similar lengths to reduce padding.
+    Length-based bucketing for variable-size data (e.g. molecules).
 
-    Typical usage: pass structure lengths (atoms per structure) and the
-    subset indices to be batched. Batches are formed by sorting by length
-    once and then chunking into fixed-size batches. Optionally shuffles
-    the batch order each epoch while keeping elements within a batch similar.
+    Constraints:
+      - max_atoms_per_batch: upper bound on sum(num_atoms) in a batch.
+      - max_batch_size: optional hard cap on number of samples per batch.
+
+    Strategy:
+      1) Sort samples by length.
+      2) Shuffle within buckets of similar lengths.
+      3) Greedily pack indices into batches under the constraints.
     """
 
     def __init__(
         self,
-        indices: Sequence[int],
-        lengths: np.ndarray,
-        batch_size: int,
-        drop_last: bool = False,
-        shuffle_batches: bool = True,
-        seed: int | None = 1,
-    ) -> None:
-        if not isinstance(lengths, np.ndarray):
-            lengths = np.asarray(lengths)
+        lengths,
+        max_atoms_per_batch: int,
+        max_batch_size: int | None = None,
+        bucket_size: int = 512,
+        shuffle: bool = True,
+    ):
+        self.lengths = np.asarray(lengths, dtype=np.int64).reshape(-1)
+        self.max_atoms_per_batch = int(max_atoms_per_batch)
+        self.max_batch_size = int(max_batch_size) if max_batch_size is not None else None
+        self.bucket_size = int(bucket_size)
+        self.shuffle = shuffle
 
-        self.indices = np.asarray(indices, dtype=np.int64)
-        self.lengths = lengths.astype(np.int64, copy=False)
-        self.batch_size = int(batch_size)
-        self.drop_last = bool(drop_last)
-        self.shuffle_batches = bool(shuffle_batches)
-        self._rng = np.random.default_rng(seed) if seed is not None else None
+        assert (self.lengths > 0).all(), "All lengths must be positive."
 
-        # Precompute a stable sort by length (descending)
-        order = np.argsort(self.lengths[self.indices])[::-1]
-        self._sorted_indices = self.indices[order]
+    def __iter__(self):
+        # 1) sort by length
+        order = np.argsort(self.lengths)
 
-        # Materialise contiguous slices as batches
-        n = len(self._sorted_indices)
-        bs = self.batch_size
-        self._batches: list[np.ndarray] = [
-            self._sorted_indices[i : i + bs] for i in range(0, n, bs)
-        ]
-        if self.drop_last and (len(self._batches) > 0) and (
-            len(self._batches[-1]) < bs
-        ):
-            self._batches.pop()
+        # 2) optional: shuffle within buckets to keep similar sizes together
+        if self.shuffle:
+            buckets = [
+                order[i : i + self.bucket_size]
+                for i in range(0, len(order), self.bucket_size)
+            ]
+            for b in buckets:
+                np.random.shuffle(b)
+            order = np.concatenate(buckets)
 
-    def __iter__(self) -> Iterator[list[int]]:
-        # Shuffle at the batch granularity each epoch
-        if self.shuffle_batches and self._rng is not None and len(self._batches) > 1:
-            perm = self._rng.permutation(len(self._batches))
-            batches = [self._batches[i] for i in perm]
-        else:
-            batches = self._batches
+        # 3) greedy packing
+        batch = []
+        atoms_in_batch = 0
 
-        for b in batches:
-            # Yield as Python list for DataLoader consumption
-            yield b.tolist()
+        for idx in order:
+            L = int(self.lengths[idx])
+            if L > self.max_atoms_per_batch:
+                # Single huge sample: yield alone to avoid infinite loop.
+                if batch:
+                    yield batch
+                    batch = []
+                    atoms_in_batch = 0
+                yield [int(idx)]
+                continue
 
-    def __len__(self) -> int:
-        return len(self._batches)
+            new_atoms = atoms_in_batch + L
+            too_many_atoms = new_atoms > self.max_atoms_per_batch
+            too_many_samples = (
+                self.max_batch_size is not None
+                and len(batch) >= self.max_batch_size
+            )
+
+            if batch and (too_many_atoms or too_many_samples):
+                yield batch
+                batch = []
+                atoms_in_batch = 0
+
+            batch.append(int(idx))
+            atoms_in_batch += L
+
+        if batch:
+            yield batch
+
+    def __len__(self):
+        # Deterministic estimate: compute without shuffle
+        order = np.argsort(self.lengths)
+        n_batches = 0
+        atoms_in_batch = 0
+        batch_size = 0
+        for idx in order:
+            L = int(self.lengths[idx])
+            if L > self.max_atoms_per_batch:
+                if batch_size > 0:
+                    n_batches += 1
+                    batch_size = 0
+                    atoms_in_batch = 0
+                n_batches += 1
+                continue
+
+            new_atoms = atoms_in_batch + L
+            too_many_atoms = new_atoms > self.max_atoms_per_batch
+            too_many_samples = (
+                self.max_batch_size is not None
+                and batch_size >= self.max_batch_size
+            )
+            if batch_size > 0 and (too_many_atoms or too_many_samples):
+                n_batches += 1
+                atoms_in_batch = 0
+                batch_size = 0
+            atoms_in_batch += L
+            batch_size += 1
+        if batch_size > 0:
+            n_batches += 1
+        return n_batches
 
 
 def lengths_from_ptr(ptr: np.ndarray) -> np.ndarray:

@@ -40,7 +40,7 @@ from torch.profiler import profile, ProfilerActivity
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-
+from threedscriptors.training.data.samplers import BucketBatchSampler, lengths_from_ptr
 
 
 def parse_args():
@@ -123,19 +123,19 @@ def main():
 
     training_loader = DataLoader(
         train_dataset,
-        batch_size=64,
+        batch_size=training_config.batch_size,
         worker_init_fn=worker_init_fn,
         prefetch_factor=4,
         persistent_workers=True,
         pin_memory=True,
         num_workers=12,
         shuffle=True,
-        collate_fn=yield_molecules_collate_fn,
+        collate_fn=yield_molecules_collate_fn
     )
 
     validation_loader = DataLoader(
         valid_dataset,
-        batch_size=64,
+        batch_size=32,
         worker_init_fn=worker_init_fn,
         prefetch_factor=4,
         persistent_workers=True,
@@ -154,10 +154,7 @@ def main():
     encoder = mb.build_encoder()
     decoder = mb.build_decoder()
 
-    print(preprocessor.atomic_preprocessor.invariant_normalization)
-    print(type(preprocessor.atomic_preprocessor.invariant_normalization))
-
-
+    
     preprocessor.to(dtype=torch.float64)
 
     all_params = (
@@ -211,8 +208,6 @@ def main():
         print("Training Start")
 
     
-
-
         for epoch in range(training_config.epochs):
             # Initialize task and total train losses
 

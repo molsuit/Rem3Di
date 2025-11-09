@@ -55,7 +55,7 @@ class TrainingTelemetry:
 
         # plot all the plots
 
-        self.plot_grad_norm()
+        #self.plot_grad_norm()
 
 
         if self.wandb_active:
