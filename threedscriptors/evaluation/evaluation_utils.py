@@ -14,11 +14,11 @@ from threedscriptors.data_handling.sample import (
     pretraining_padded_collate_fn,
     sample_collate_fn,
 )
-from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.model.model_output import ModelOutput
 from threedscriptors.model.molecule_difference_regressor import (
     MolecularDifferenceRegressor,
 )
+from threedscriptors.model.pair_encoder import TransformerPairEncoder
 from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
@@ -31,7 +31,6 @@ def evaluate_regression_model_on_dataset(
     device="cuda",
     undo_standardization=False,
 ):
-
     # returns the predictions of the model on dataset in standardized units
 
     assert set([tc.task_name for tc in dataset.dataset_config.tasks]).issubset(
@@ -126,10 +125,8 @@ def evaluate_molecule_difference_on_dataset(
     differences = torch.zeros(size=(len(dataset), 1))
     print(differences.shape)
 
-
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
-
             samples.to_(device)
 
             descriptors = model(samples).molecular_descriptor
@@ -148,7 +145,6 @@ def evaluate_atomic_descriptors(
     dataset: TrainingMoleculeDataset,
     device="cuda",
 ):
-
     model.to(device)
     model.eval()
 
@@ -183,7 +179,7 @@ def evaluate_atomic_descriptors(
 
 
 def calculate_fingerprint_uncertainty(
-    encoder: TransformerEncoder, dataset: TrainingMoleculeDataset
+    encoder: TransformerPairEncoder, dataset: TrainingMoleculeDataset
 ):
     # for all smiles in the smiles list, get the corresponding unique dataset id
 
@@ -231,7 +227,6 @@ def compute_class_std(data, class_ids):
 def average_over_conformers(
     structure_ids: list[StructureID], predictions: torch.Tensor
 ):
-
     classes = [(sid.molecule_id, sid.enantiomer_id) for sid in structure_ids]
     class_ids = {mol_e_id: i for i, mol_e_id in enumerate(set(classes))}
 
@@ -246,7 +241,6 @@ def average_over_conformers(
 
     print(class_id_per_mol)
     for class_id in class_ids.values():
-
         mask = torch.where(class_id_per_mol == class_id)
         class_mean = torch.mean(predictions[mask], dim=0)
         print(class_mean)
@@ -254,7 +248,6 @@ def average_over_conformers(
         predictions[mask] = class_mean
 
     return predictions
-
 
 
 def clip_and_log_transform(y: torch.Tensor) -> torch.Tensor:

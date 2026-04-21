@@ -3,22 +3,7 @@ from collections.abc import Sequence
 import pydantic_yaml as pyaml
 import torch
 
-from threedscriptors.configuration.architecture_config import (
-    ArchitectureConfig,
-    EmbeddingPreprocessConfig,
-)
-from threedscriptors.model.decoder import TransformerDecoder, TransformerPairDecoder
-from threedscriptors.model.encoder import TransformerEncoder
-from threedscriptors.model.global_aggregator import GlobalAggregator
-from threedscriptors.model.pair_encoder import TransformerPairEncoder
-from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
-    AtomicDescriptorPreprocessor,
-    OnTheFlyInvariantNormalization,
-    PrecomputedInvariantNormalization,
-)
-from threedscriptors.model.preprocessing.geometric_preprocessor import (
-    PairDistanceMatrixGeometricPreprocessor,
-)
+from threedscriptors.configuration.architecture_config import ArchitectureConfig
 from threedscriptors.model.preprocessing.preprocessing import (
     Preprocessor,
     PreprocessorWithAtomicEmbedding,
@@ -28,34 +13,26 @@ from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
 from threedscriptors.model.remedi_model import REM3DIModel
-from threedscriptors.utils.model_utils import get_invariant_indices
 
 
 class ModelBuilder:
     def __init__(self, architecture_config: ArchitectureConfig):
         self.architecture_config = architecture_config
-
         self.model: MultiTaskRegressionModel | None = None
-
-        self._N_trainable_parameters = None
 
     @classmethod
     def from_directory(cls, directory: str, trained: bool = True):
-        if trained:
-            path = f"{directory}/post_training_architecture_config.yaml"
-        else:
-            path = f"{directory}/architecture_config.yaml"
+        filename = (
+            "post_training_architecture_config.yaml"
+            if trained
+            else "architecture_config.yaml"
+        )
         architecture_config = pyaml.parse_yaml_file_as(
-            ArchitectureConfig,
-            path,
+            ArchitectureConfig, f"{directory}/{filename}"
         )
         return cls(architecture_config)
 
     @property
-    def N_trainable_parameters(self):
-        return self._N_trainable_parameters
-
-    @N_trainable_parameters.getter
     def N_trainable_parameters(self):
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
@@ -71,12 +48,45 @@ class ModelBuilder:
             torch.load(self.architecture_config.reload_full_model_weights)
         )
 
+    def build_preprocessor(
+        self, mean_atomic_embedding=None, std_atomic_embedding=None
+    ) -> Preprocessor:
+        return Preprocessor(
+            atomic_preprocessor=self.architecture_config.embedding_preprocess_config.build(
+                mean_atomic_embedding, std_atomic_embedding
+            ),
+            geometric_preprocessor=self.architecture_config.positional_encoding_config.build(),
+        )
+
+    def build_preprocessor_with_mace_embedding(
+        self, mace_model, mean_atomic_embedding=None, std_atomic_embedding=None
+    ) -> PreprocessorWithAtomicEmbedding:
+        return PreprocessorWithAtomicEmbedding(
+            mace_model=mace_model,
+            atomic_preprocessor=self.architecture_config.embedding_preprocess_config.build(
+                mean_atomic_embedding, std_atomic_embedding
+            ),
+            geometric_preprocessor=self.architecture_config.positional_encoding_config.build(),
+        )
+
+    def build_encoder(self):
+        global_aggregator = self.architecture_config.global_aggregator_config.build()
+        return self.architecture_config.encoder_config.build(global_aggregator)
+
+    def build_decoder(self):
+        return self.architecture_config.decoder_config.build()
+
+    def build_regression_heads(self) -> MultitaskHeads:
+        head_configs = self.architecture_config.regression_head_config
+        if isinstance(head_configs, Sequence):
+            return MultitaskHeads(regression_head_configs=head_configs)
+        raise NotImplementedError
+
     def build_model(self, mean_atomic_embedding=None, std_atomic_embedding=None):
         preprocessor = self.build_preprocessor(
             mean_atomic_embedding, std_atomic_embedding
         )
         encoder = self.build_encoder()
-
         multitask_heads = self.build_regression_heads()
 
         model = MultiTaskRegressionModel(
@@ -94,7 +104,7 @@ class ModelBuilder:
         return self.model
 
     def build_remedi_model(self, mace_calc=None) -> REM3DIModel:
-        preprocessor = self.build_preprocessor(None, None)
+        preprocessor = self.build_preprocessor()
         encoder = self.build_encoder()
 
         model = REM3DIModel(
@@ -107,138 +117,3 @@ class ModelBuilder:
             self._reload_model_weights()
 
         return self.model
-
-    def build_geometric_preprocessing(self):
-        pos_config = self.architecture_config.positional_encoding_config
-        structure_encoding = PairDistanceMatrixGeometricPreprocessor(
-            N_radial_basis_functions=pos_config.N_radial_basis_functions,
-            distance_cutoff=pos_config.distance_cutoff,
-            d_projection=pos_config.d_projection,
-            basis_function_type=pos_config.basis_function_type,
-        )
-
-        if pos_config.reload_state_dict is not None:
-            structure_encoding.load_state_dict(torch.load(pos_config.reload_state_dict))
-
-        return structure_encoding
-
-    def build_atomic_preprocessor(
-        self,
-        embedding_preprocess_config: EmbeddingPreprocessConfig,
-        mean_atomic_embedding=None,
-        std_atomic_embedding=None,
-    ) -> AtomicDescriptorPreprocessor:
-        preprocess_config = embedding_preprocess_config
-
-        invariant_normalization_config = (
-            embedding_preprocess_config.invariant_normalization_config
-        )
-
-        if invariant_normalization_config.kind == "precomputed_normalization":
-            invariant_normalization = PrecomputedInvariantNormalization(
-                invariant_dimension=embedding_preprocess_config.invariant_irreps.dim
-            )
-
-            if (mean_atomic_embedding is not None) and (
-                std_atomic_embedding is not None
-            ):
-                _, invariant_irreps = get_invariant_indices(
-                    embedding_preprocess_config.input_irreps
-                )
-                invariant_dim = invariant_irreps.dim
-
-                assert mean_atomic_embedding.shape[-1] == invariant_dim
-
-                invariant_normalization.set_stats(
-                    mean=mean_atomic_embedding, std=std_atomic_embedding
-                )
-
-        if invariant_normalization_config.kind == "on_the_fly_normalization":
-            invariant_normalization = OnTheFlyInvariantNormalization(
-                invariant_dimension=embedding_preprocess_config.invariant_irreps.dim,
-                momentum=invariant_normalization_config.momentum,
-                warmup_batches=invariant_normalization_config.warm_up_batches,
-            )
-
-        atomic_preprocessor = AtomicDescriptorPreprocessor(
-            preprocess_config=preprocess_config,
-            invariant_normalization=invariant_normalization,
-        )
-
-        if preprocess_config.reload_state_dict is not None:
-            print(preprocess_config.reload_state_dict)
-            atomic_preprocessor.load_state_dict(
-                torch.load(preprocess_config.reload_state_dict)
-            )
-
-        return atomic_preprocessor
-
-    def build_preprocessor(
-        self, mean_atomic_embedding, std_atomic_embedding
-    ) -> Preprocessor:
-        atomic_preprocessor = self.build_atomic_preprocessor(
-            self.architecture_config.embedding_preprocess_config,
-            mean_atomic_embedding,
-            std_atomic_embedding,
-        )
-
-        geometric_preprocessor = self.build_geometric_preprocessing()
-
-        return Preprocessor(
-            atomic_preprocessor=atomic_preprocessor,
-            geometric_preprocessor=geometric_preprocessor,
-        )
-
-    def build_preprocessor_with_mace_embedding(
-        self, mace_model, mean_atomic_embedding=None, std_atomic_embedding=None
-    ) -> Preprocessor:
-        atomic_preprocessor = self.build_atomic_preprocessor(
-            self.architecture_config.embedding_preprocess_config,
-            mean_atomic_embedding,
-            std_atomic_embedding,
-        )
-
-        geometric_preprocessor = self.build_geometric_preprocessing()
-
-        return PreprocessorWithAtomicEmbedding(
-            mace_model=mace_model,
-            atomic_preprocessor=atomic_preprocessor,
-            geometric_preprocessor=geometric_preprocessor,
-        )
-
-    def build_decoder(self) -> TransformerDecoder:
-        return TransformerPairDecoder(self.architecture_config.decoder_config)
-
-    def build_encoder(self):
-        encoder_config = self.architecture_config.encoder_config
-        global_aggregator = self.build_global_aggregator()
-
-        if encoder_config.d_pair is None:
-            encoder = TransformerEncoder(encoder_config, global_aggregator)
-        else:
-            encoder = TransformerPairEncoder(
-                encoder_config=encoder_config, global_aggregator=global_aggregator
-            )
-
-        if encoder_config.reload_state_dict:
-            encoder.load_state_dict(
-                torch.load(encoder_config.reload_state_dict), strict=False
-            )
-
-        return encoder
-
-    def build_global_aggregator(self) -> GlobalAggregator:
-        return GlobalAggregator(self.architecture_config.global_aggregator_config)
-
-    def build_regression_heads(self) -> MultitaskHeads:
-        regression_head_config = self.architecture_config.regression_head_config
-
-        if isinstance(regression_head_config, Sequence):
-            regression_heads = MultitaskHeads(
-                regression_head_configs=regression_head_config
-            )
-
-            return regression_heads
-        else:
-            # Build single regression head, but should probably get rid of this as the single regression head could also be multihead with tasks  = [task]
-            raise NotImplementedError

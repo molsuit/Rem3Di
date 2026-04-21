@@ -1,9 +1,10 @@
 import importlib
 from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
-import torch.nn
+import torch
+import torch.nn as nn
 from e3nn.o3 import Irreps
 from pydantic import (
     BaseModel,
@@ -25,6 +26,14 @@ from threedscriptors.utils.model_utils import (
     get_equivariant_irreps,
     get_invariant_indices,
 )
+
+if TYPE_CHECKING:
+    from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
+        AtomicDescriptorPreprocessor,
+    )
+    from threedscriptors.model.preprocessing.geometric_preprocessor import (
+        PairDistanceMatrixGeometricPreprocessor,
+    )
 
 
 class HeadType(Enum):
@@ -64,6 +73,14 @@ class EncoderConfig(BaseModel):
     d_pair: int | None = None
     d_geo: int | None = None
 
+    def build(self, global_aggregator: nn.Module) -> nn.Module:
+        from threedscriptors.model.pair_encoder import TransformerPairEncoder
+
+        encoder = TransformerPairEncoder(self, global_aggregator)
+        if self.reload_state_dict:
+            encoder.load_state_dict(torch.load(self.reload_state_dict), strict=False)
+        return encoder
+
 
 class DecoderConfig(BaseModel):
     N_layers: int
@@ -72,6 +89,14 @@ class DecoderConfig(BaseModel):
     reload_state_dict: str | None = None
     d_pair: int | None = None
     d_geo: int | None = None
+
+    def build(self) -> nn.Module:
+        from threedscriptors.model.decoder import TransformerPairDecoder
+
+        decoder = TransformerPairDecoder(self)
+        if self.reload_state_dict:
+            decoder.load_state_dict(torch.load(self.reload_state_dict))
+        return decoder
 
 
 class RegressionHeadConfig(BaseModel):
@@ -102,11 +127,31 @@ class RegressionHeadConfig(BaseModel):
 class PrecomputedInvariantNormalizationConfig(BaseModel):
     kind: Literal["precomputed_normalization"] = "precomputed_normalization"
 
+    def build(self, invariant_dimension: int) -> nn.Module:
+        from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
+            PrecomputedInvariantNormalization,
+        )
+
+        return PrecomputedInvariantNormalization(
+            invariant_dimension=invariant_dimension
+        )
+
 
 class OnTheFlyInvariantNormalizationConfig(BaseModel):
     kind: Literal["on_the_fly_normalization"] = "on_the_fly_normalization"
     momentum: float
     warm_up_batches: int
+
+    def build(self, invariant_dimension: int) -> nn.Module:
+        from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
+            OnTheFlyInvariantNormalization,
+        )
+
+        return OnTheFlyInvariantNormalization(
+            invariant_dimension=invariant_dimension,
+            momentum=self.momentum,
+            warmup_batches=self.warm_up_batches,
+        )
 
 
 InvNormConfig = Annotated[
@@ -118,7 +163,7 @@ InvNormConfig = Annotated[
 class EmbeddingPreprocessConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    input_irreps: IrrepType | None = None
+    input_irreps: IrrepType
     pseudoscalar_dimension: int
     chiral_embedding_dimension: int
     reload_state_dict: str | None = None
@@ -182,6 +227,40 @@ class EmbeddingPreprocessConfig(BaseModel):
         _, irreps = get_invariant_indices(self.input_irreps)
         return irreps
 
+    def build(
+        self,
+        mean_atomic_embedding: torch.Tensor | None = None,
+        std_atomic_embedding: torch.Tensor | None = None,
+    ) -> "AtomicDescriptorPreprocessor":
+        from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
+            AtomicDescriptorPreprocessor,
+            PrecomputedInvariantNormalization,
+        )
+
+        invariant_normalization = self.invariant_normalization_config.build(
+            invariant_dimension=self.invariant_irreps.dim
+        )
+
+        if (
+            isinstance(invariant_normalization, PrecomputedInvariantNormalization)
+            and mean_atomic_embedding is not None
+            and std_atomic_embedding is not None
+        ):
+            assert mean_atomic_embedding.shape[-1] == self.invariant_irreps.dim
+            invariant_normalization.set_stats(
+                mean=mean_atomic_embedding, std=std_atomic_embedding
+            )
+
+        atomic_preprocessor = AtomicDescriptorPreprocessor(
+            preprocess_config=self,
+            invariant_normalization=invariant_normalization,
+        )
+
+        if self.reload_state_dict is not None:
+            atomic_preprocessor.load_state_dict(torch.load(self.reload_state_dict))
+
+        return atomic_preprocessor
+
 
 class Aggregations(Enum):
     MEAN = MeanPool
@@ -216,16 +295,15 @@ def _to_discriminator(value) -> str:
     """Normalize any accepted input to the lowercase discriminator string."""
     if isinstance(value, str):
         return value.strip().lower()
-    # Let the Enum handle class/instance/subclass mapping via _missing_
     agg = Aggregations(value)
     return agg.name.lower()
 
 
-# --- Aggregator configs: same field names/defaults; discriminator is a string --------
-
-
 class MeanAggregatorConfig(BaseModel):
     aggregator_type: Literal["mean"] = "mean"
+
+    def build(self, input_dim: int, output_dim: int) -> nn.Module:
+        return MeanPool()
 
 
 class AttentionAggregatorConfig(BaseModel):
@@ -234,19 +312,34 @@ class AttentionAggregatorConfig(BaseModel):
     head_dim: int | None = None
     attn_dropout: float | None = None
 
+    def build(self, input_dim: int, output_dim: int) -> nn.Module:
+        return AttnPool(
+            d_in=input_dim,
+            d_hidden=self.head_dim,
+            n_heads=self.num_heads,
+            dropout=self.attn_dropout or 0.0,
+        )
+
 
 class PMAAggregatorConfig(BaseModel):
-    # Q/K total dim (= num_heads * d_k)
     aggregator_type: Literal["pma_attention"] = "pma_attention"
-    head_dim: int | None = None
+    head_dim: int
     num_heads: int = 4
     attn_dropout: float = 0.0
     num_seeds: int = 16
     reduction: Literal["mean", "sum", "max"] = "mean"
     use_mlp: bool = False
 
-    # NEW: concatenated value dimension across heads (= num_heads * d_v)
-    d_v_out: int | None = None
+    def build(self, input_dim: int, output_dim: int) -> nn.Module:
+        return PMAAggregator(
+            d_in=input_dim,
+            d_out=output_dim,
+            num_heads=self.num_heads,
+            head_dim=self.head_dim,
+            k_seeds=self.num_seeds,
+            dropout=self.attn_dropout,
+            use_mlp=self.use_mlp,
+        )
 
 
 AggUnion = Annotated[
@@ -271,10 +364,14 @@ class GlobalAggregatorConfig(BaseModel):
                 try:
                     cfg["aggregator_type"] = _to_discriminator(cfg["aggregator_type"])
                 except Exception:
-                    # leave as-is; Pydantic will error with a clear message if invalid
                     pass
                 data["aggregator_type_config"] = cfg
         return data
+
+    def build(self) -> nn.Module:
+        from threedscriptors.model.global_aggregator import GlobalAggregator
+
+        return GlobalAggregator(self)
 
 
 class RadialBasisFunctionType(Enum):
@@ -283,7 +380,6 @@ class RadialBasisFunctionType(Enum):
 
     @classmethod
     def _missing_(cls, value):
-        # 1) strings → by name
         if isinstance(value, str):
             try:
                 return cls[value.strip().upper()]
@@ -311,6 +407,21 @@ class RelativeDistancePositionalEncodingConfig(BaseModel):
         elif isinstance(v, str):
             return RadialBasisFunctionType(v)
 
+    def build(self) -> "PairDistanceMatrixGeometricPreprocessor":
+        from threedscriptors.model.preprocessing.geometric_preprocessor import (
+            PairDistanceMatrixGeometricPreprocessor,
+        )
+
+        module = PairDistanceMatrixGeometricPreprocessor(
+            N_radial_basis_functions=self.N_radial_basis_functions,
+            distance_cutoff=self.distance_cutoff,
+            d_projection=self.d_projection,
+            basis_function_type=self.basis_function_type,
+        )
+        if self.reload_state_dict is not None:
+            module.load_state_dict(torch.load(self.reload_state_dict))
+        return module
+
 
 class ArchitectureConfig(BaseModel):
     embedding_preprocess_config: EmbeddingPreprocessConfig
@@ -320,3 +431,65 @@ class ArchitectureConfig(BaseModel):
     positional_encoding_config: RelativeDistancePositionalEncodingConfig
     reload_full_model_weights: str | None = None
     decoder_config: DecoderConfig | None = None
+
+    @model_validator(mode="after")
+    def _cascade_derived_fields(self):
+        embed_dim = self.embedding_preprocess_config.output_irreps_dim
+        pos = self.positional_encoding_config
+
+        _fill_encoder_dims(self.encoder_config, embed_dim, pos)
+        _fill_aggregator_dims(
+            self.global_aggregator_config,
+            self.encoder_config.attention_layer_config.embedding_dim,
+        )
+        if self.decoder_config is not None:
+            _fill_decoder_dims(
+                self.decoder_config,
+                embed_dim,
+                self.global_aggregator_config.output_dim,
+                pos,
+            )
+        if isinstance(self.regression_head_config, Sequence):
+            for head in self.regression_head_config:
+                if head.input_dimensions is None:
+                    head.input_dimensions = self.global_aggregator_config.output_dim
+
+        return self
+
+
+def _fill_encoder_dims(
+    encoder_config: EncoderConfig,
+    embed_dim: int,
+    pos: RelativeDistancePositionalEncodingConfig,
+):
+    attn = encoder_config.attention_layer_config
+    if attn.embedding_dim is None:
+        attn.embedding_dim = embed_dim
+    if encoder_config.d_pair is None:
+        encoder_config.d_pair = pos.d_projection
+    if encoder_config.d_geo is None:
+        encoder_config.d_geo = pos.N_radial_basis_functions
+
+
+def _fill_aggregator_dims(agg: GlobalAggregatorConfig, embed_dim: int | None):
+    if agg.input_dim is None:
+        agg.input_dim = embed_dim
+    if agg.output_dim is None:
+        agg.output_dim = agg.input_dim
+
+
+def _fill_decoder_dims(
+    decoder_config: DecoderConfig,
+    embed_dim: int,
+    descriptor_dim: int | None,
+    pos: RelativeDistancePositionalEncodingConfig,
+):
+    attn = decoder_config.attention_layer_config
+    if attn.embedding_dim is None:
+        attn.embedding_dim = embed_dim
+    if decoder_config.d_descriptor is None:
+        decoder_config.d_descriptor = descriptor_dim
+    if decoder_config.d_pair is None:
+        decoder_config.d_pair = pos.d_projection
+    if decoder_config.d_geo is None:
+        decoder_config.d_geo = pos.N_radial_basis_functions
