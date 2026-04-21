@@ -1,13 +1,10 @@
-
 class ChiralPredictionTask(BaseEvalTask):
-
     def __init__(self, chiral_dataset):
         super().__init__()
 
         self.dataset = chiral_dataset
 
     def run(self, model: MultiTaskRegressionModel):
-
         assert "cmrt" in model.multitask_heads.task_heads.keys()
 
         self.predictions = evaluate_regression_model_on_dataset(
@@ -42,7 +39,6 @@ class ChiralPredictionTask(BaseEvalTask):
         return prediction_by_enantiomer_batch, targets_by_enantiomer_batch
 
     def get_enantiomer_predictions_and_mean(self):
-
         prediction_by_enantiomer_batch, regression_targets_by_enantiomer_batch = (
             self.reshape_by_enantiomers()
         )
@@ -58,7 +54,6 @@ class ChiralPredictionTask(BaseEvalTask):
         )
 
     def calculate_mean_prediction_loss(self):
-
         enantiomer_batched_predictions, enantiomer_batched_targets, mean_predictions = (
             self.get_enantiomer_predictions_and_mean()
         )
@@ -123,7 +118,6 @@ class ChiralPredictionTask(BaseEvalTask):
         print(f"R2 coeffeicient{r2}")
 
     def plot(self):
-
         figs = {}
         figs["chiral_parity_plot"] = self._plot_reference_vs_prediction()
         figs["Distance_to_mean_hist"] = self.plot_distance_to_mean()
@@ -143,7 +137,6 @@ class ChiralPredictionTask(BaseEvalTask):
         return fig
 
     def plot_distribution_conformer_predictions(self):
-
         prediction_by_enantiomer_batch, regression_targets_by_enantiomer_batch = (
             self.reshape_by_enantiomers()
         )
@@ -165,7 +158,6 @@ class ChiralPredictionTask(BaseEvalTask):
             regression_targets_by_enantiomer_batch,
             strict=False,
         ):
-
             class_pos = idx * 6
 
             e0 = predictions[:n_confs_per_enantiomer]
@@ -242,7 +234,6 @@ class ChiralPredictionTask(BaseEvalTask):
         pass
 
     def plot_distance_to_mean(self):
-
         enantiomer_batched_predictions, enantiomer_batched_targets, mean_predictions = (
             self.get_enantiomer_predictions_and_mean()
         )
@@ -258,10 +249,9 @@ class ChiralPredictionTask(BaseEvalTask):
         plt.xlabel("Distance from the mean predictions")
 
         return fig
-    
+
 
 class ChiralDifferencePredictionTask(BaseEvalTask):
-
     def __init__(self, chiral_dataset):
         super().__init__()
 
@@ -270,34 +260,29 @@ class ChiralDifferencePredictionTask(BaseEvalTask):
     def run(
         self,
         model: MultiTaskRegressionModel,
-        difference_prediction_model: MolecularDifferenceRegressor,mean, std
+        difference_prediction_model: MolecularDifferenceRegressor,
+        mean,
+        std,
     ):
-
-        pred_differences = evaluate_molecule_difference_on_dataset(model,self.dataset, difference_prediction_model)
+        pred_differences = evaluate_molecule_difference_on_dataset(
+            model, self.dataset, difference_prediction_model
+        )
 
         pred_differences = (pred_differences * std) + mean
         print(pred_differences[:10])
 
+        len(self.dataset)
 
-        N_pairs = len(self.dataset)
-
-        targets = self.dataset.regression_targets.reshape(-1,2)
-        labeled_differences = torch.log(targets[:,0])- torch.log(targets[:,1])
+        targets = self.dataset.regression_targets.reshape(-1, 2)
+        labeled_differences = torch.log(targets[:, 0]) - torch.log(targets[:, 1])
 
         print(labeled_differences[:10])
 
-
-        model_loss = (labeled_differences-pred_differences).abs().mean()
-
+        model_loss = (labeled_differences - pred_differences).abs().mean()
 
         mean_loss = (labeled_differences).abs().mean()
 
         print(f"Mean Predicted Loss {mean_loss}, Model Loss = {model_loss}")
 
-
-
     def plot():
         pass
-
-
-

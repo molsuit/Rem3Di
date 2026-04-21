@@ -32,6 +32,7 @@ class LatentCapacityReportModel(BaseModel):
     def _serialize_ndarray(self, v: np.ndarray) -> list[float]:
         return v.tolist()
 
+
 def run_latent_space_capacity_diagnostic(
     Z: np.ndarray,
     bins: int | Iterable[int] = 128,
@@ -75,7 +76,7 @@ def run_latent_space_capacity_diagnostic(
     N, d = Z.shape
 
     # normalize bins parameter -> per-dimension integer array
-    if isinstance(bins, Iterable) and not isinstance(bins, (str, bytes)):
+    if isinstance(bins, Iterable) and not isinstance(bins, str | bytes):
         bins_per_dim = np.array(list(bins), dtype=int)
         if bins_per_dim.shape[0] != d:
             raise ValueError("len(bins) must equal latent dimension d")
@@ -130,17 +131,17 @@ def run_latent_space_capacity_diagnostic(
 
 def get_descriptor_norm_distribution(Z):
     Z = np.asarray(Z, dtype=np.float64)
-    norms = np.linalg.norm(Z, axis = -1)
+    norms = np.linalg.norm(Z, axis=-1)
     print(norms.shape)
     return norms
+
 
 def get_descriptor_channel_distribution(Z):
     Z = np.asarray(Z, dtype=np.float64)
     N, d = Z.shape
 
-    means = np.mean(Z, axis = 0)
-    stds = np.std(Z, axis = 0)
+    means = np.mean(Z, axis=0)
+    stds = np.std(Z, axis=0)
     print(means.shape)
-
 
     return means, stds

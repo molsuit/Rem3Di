@@ -1,4 +1,3 @@
-
 import torch
 from e3nn import o3
 from e3nn.o3 import Irreps
@@ -27,11 +26,9 @@ class ChiGate(torch.nn.Module):
 
 
 class OddMLP(torch.nn.Module):
-
     def __init__(
         self, pseudoscalar_dim: int, hidden_dim: int, chiral_embedding_dim: int
     ):
-
         super().__init__()
 
         self.pseudoscalar_dim = pseudoscalar_dim
@@ -49,7 +46,6 @@ class OddMLP(torch.nn.Module):
 
 
 class ChiralEmbeddingModel(torch.nn.Module):
-
     def __init__(
         self,
         invariant_irreps: Irreps,
@@ -66,7 +62,6 @@ class ChiralEmbeddingModel(torch.nn.Module):
 
         self.invariant_irreps = invariant_irreps
         self.equivariant_irreps = equivariant_irreps
-
 
         self.pseudoscalar_irreps = Irreps(f"{pseudoscalar_dimension}x0o")
 
@@ -102,7 +97,6 @@ class ChiralEmbeddingModel(torch.nn.Module):
 
         self.ln = torch.nn.LayerNorm(pseudoscalar_dimension, dtype=dtype, bias=False)
 
-
         self.chi_gate = ChiGate(
             inv_dim=self.invariant_irreps.dim, K=self.pseudoscalar_irreps.dim
         )
@@ -111,21 +105,23 @@ class ChiralEmbeddingModel(torch.nn.Module):
             pseudoscalar_dimension, chiral_embedding_dim, bias=False
         )
 
-        #self.mlp_out = OddMLP(
+        # self.mlp_out = OddMLP(
         #    pseudoscalar_dim = pseudoscalar_dimension,
         #    hidden_dim = pseudoscalar_dimension * 2,
         #    chiral_embedding_dim = chiral_embedding_dim
-        #)
+        # )
 
     def forward(
         self,
-        invariant_embeddings: torch.Tensor, equivariant_embeddings: torch.Tensor,   # (B, N, F) or (N, F)
+        invariant_embeddings: torch.Tensor,
+        equivariant_embeddings: torch.Tensor,  # (B, N, F) or (N, F)
         padding: torch.BoolTensor | None = None,  # (B, N), True => padded
     ):
-
-
-
-        x0, x1, x2 = self.lin0(equivariant_embeddings), self.lin1(equivariant_embeddings), self.lin2(equivariant_embeddings)
+        x0, x1, x2 = (
+            self.lin0(equivariant_embeddings),
+            self.lin1(equivariant_embeddings),
+            self.lin2(equivariant_embeddings),
+        )
 
         cross = self.tp_cross(x0, x1)
         out = self.tp_dot(cross, x2)
@@ -137,7 +133,7 @@ class ChiralEmbeddingModel(torch.nn.Module):
 
         out = self.linear_out(out)  # (B*N, C) or (N, C)
 
-        #out = self.mlp_out(out)
+        # out = self.mlp_out(out)
         out = out.to(torch.float32)
         if padding is not None:
             out = out.masked_fill(padding.unsqueeze(-1), 0.0)

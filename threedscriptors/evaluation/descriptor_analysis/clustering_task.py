@@ -43,58 +43,78 @@ class DescriptorClusteringTask(BaseEvalTask):
     def run(self, model: MultiTaskRegressionModel):
         # evaluate model to get descriptors
 
-        train_dataset = TrainingMoleculeDataset.from_molecule_dataset(self.dataset, get_item=pos_emb_getitem)
-
-        self.descriptors = evaluate_molecular_descriptor_on_dataset(model, train_dataset)
-
-        self.reduced_dimensions = (
-            self.clustering_calculator.get_dimensionality_reduction(self.descriptors, k=2)
+        train_dataset = TrainingMoleculeDataset.from_molecule_dataset(
+            self.dataset, get_item=pos_emb_getitem
         )
 
-    def plot(self,model_name: str):
+        self.descriptors = evaluate_molecular_descriptor_on_dataset(
+            model, train_dataset
+        )
+
+        self.reduced_dimensions = (
+            self.clustering_calculator.get_dimensionality_reduction(
+                self.descriptors, k=2
+            )
+        )
+
+    def plot(self, model_name: str):
         assert self.reduced_dimensions is not None
 
         fig = plot_reduced_dimension(self.reduced_dimensions)
 
-        self.results.append(FigureResult(file_name=f"umap_{model_name}.png", figure = fig))
+        self.results.append(
+            FigureResult(file_name=f"umap_{model_name}.png", figure=fig)
+        )
 
         chemiscope_input = self._get_chemiscope_umap()
 
-        self.results.append(ChemiscopeResult(file_name= f"umap_{model_name}.json.gz", data = chemiscope_input))
+        self.results.append(
+            ChemiscopeResult(
+                file_name=f"umap_{model_name}.json.gz", data=chemiscope_input
+            )
+        )
 
     def _get_chemiscope_umap(self):
-        chemiscope_properties = {"PC" : self.reduced_dimensions}
-        chemiscope_settings = chemiscope.quick_settings(x="PC[1]",y="PC[2]")
+        chemiscope_properties = {"PC": self.reduced_dimensions}
+        chemiscope_settings = chemiscope.quick_settings(x="PC[1]", y="PC[2]")
         frames = self.dataset.get_all_molecules()
-        return chemiscope.create_input(frames=frames, properties=chemiscope_properties, settings = chemiscope_settings)
+        return chemiscope.create_input(
+            frames=frames,
+            properties=chemiscope_properties,
+            settings=chemiscope_settings,
+        )
 
 
 class DescriptorElementAnalysis(BaseEvalTask):
-
     def __init__(self, dataset):
         super().__init__()
 
         self.dataset = dataset
 
     def run(self, model: MultiTaskRegressionModel):
+        train_dataset = TrainingMoleculeDataset.from_molecule_dataset(
+            self.dataset, get_item=pos_emb_getitem
+        )
 
-        train_dataset = TrainingMoleculeDataset.from_molecule_dataset(self.dataset, get_item=pos_emb_getitem)
-
-        self.descriptors = evaluate_molecular_descriptor_on_dataset(model, train_dataset)
+        self.descriptors = evaluate_molecular_descriptor_on_dataset(
+            model, train_dataset
+        )
 
         self.capacity_diagnostic_result = run_latent_space_capacity_diagnostic(
             self.descriptors
         )
-        self.results.append(PydanticResult(file_name="capacity_diagnostic.yaml",obj = self.capacity_diagnostic_result))
+        self.results.append(
+            PydanticResult(
+                file_name="capacity_diagnostic.yaml",
+                obj=self.capacity_diagnostic_result,
+            )
+        )
 
         self.mean, self.std = get_descriptor_channel_distribution(self.descriptors)
 
         self.descriptor_norms = get_descriptor_norm_distribution(self.descriptors)
 
-
-
     def plot(self, model_name: str):
-
         fig_hist = plt.figure()
         plt.hist(
             self.descriptors.reshape(-1),
@@ -103,8 +123,12 @@ class DescriptorElementAnalysis(BaseEvalTask):
             ),
         )
         plt.yscale("log")
-        self.results.append(FigureResult(file_name=f"{model_name}_descriptor_element_distribution.png", figure = fig_hist))
-
+        self.results.append(
+            FigureResult(
+                file_name=f"{model_name}_descriptor_element_distribution.png",
+                figure=fig_hist,
+            )
+        )
 
         fig_discriptor_norm = plt.figure()
         plt.hist(
@@ -115,5 +139,9 @@ class DescriptorElementAnalysis(BaseEvalTask):
         )
         plt.yscale("log")
         plt.title("Distribution of Descriptor L2 Norms")
-        self.results.append(FigureResult(file_name=f"{model_name}_descriptor_norm_distribution.png", figure = fig_discriptor_norm))
-
+        self.results.append(
+            FigureResult(
+                file_name=f"{model_name}_descriptor_norm_distribution.png",
+                figure=fig_discriptor_norm,
+            )
+        )

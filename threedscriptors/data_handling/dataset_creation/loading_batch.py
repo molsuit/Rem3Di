@@ -43,4 +43,3 @@ class DataBatch:
     structure_ids: list[StructureID]
     smiles_data: list[SmilesData] | None
     regression_data: RegressionData | None = None
-

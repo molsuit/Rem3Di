@@ -21,7 +21,9 @@ from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
 )
 from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
 
-smiles_file = Path("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/scripts/dataset_creation/pharma_smiles")
+smiles_file = Path(
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/scripts/dataset_creation/pharma_smiles"
+)
 
 
 smiles = open_smiles_file(smiles_file)
@@ -36,8 +38,7 @@ creation_config = DatasetCreationConfig(
 )
 
 
-
-gen = SmilesMoleculeGenerator(smiles,batch_size= 500,max_atoms=100)
+gen = SmilesMoleculeGenerator(smiles, batch_size=500, max_atoms=100)
 
 # Use CUDA if available
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -79,7 +80,7 @@ dataset_config = DatasetConfig(
     atom_chunk=450,
     molecule_chunk=50,
     contains_smiles=True,
-    tasks =  None
+    tasks=None,
 )
 
 print(dataset_config)

@@ -44,7 +44,9 @@ class DatasetReconfigurator:
         iso_lut: np.ndarray | None = None
         if self.new_config.contains_smiles:
             mol_lut = self._build_smiles_mapping(src.smiles, dst.smiles)
-            iso_lut = self._build_smiles_mapping(src.isomeric_smiles, dst.isomeric_smiles)
+            iso_lut = self._build_smiles_mapping(
+                src.isomeric_smiles, dst.isomeric_smiles
+            )
 
         self._copy_contents(src, dst, mol_lut, iso_lut)
 
@@ -85,9 +87,7 @@ class DatasetReconfigurator:
             else len(self.new_config.tasks.system_cols)
         )
         new_atom_cols = (
-            0
-            if self.new_config.tasks is None
-            else len(self.new_config.tasks.atom_cols)
+            0 if self.new_config.tasks is None else len(self.new_config.tasks.atom_cols)
         )
         if src_sys_cols != new_sys_cols or src_atom_cols != new_atom_cols:
             raise ValueError(
@@ -145,9 +145,7 @@ class DatasetReconfigurator:
                 else np.asarray(src.targets_system[s0:s1])
             )
             system_masks = (
-                None
-                if src.mask_system is None
-                else np.asarray(src.mask_system[s0:s1])
+                None if src.mask_system is None else np.asarray(src.mask_system[s0:s1])
             )
 
             atom_targets = (
@@ -156,9 +154,7 @@ class DatasetReconfigurator:
                 else np.asarray(src.targets_atom[a0:a1])
             )
             atom_masks = (
-                None
-                if src.mask_atom is None
-                else np.asarray(src.mask_atom[a0:a1])
+                None if src.mask_atom is None else np.asarray(src.mask_atom[a0:a1])
             )
 
             dst.append_batch(

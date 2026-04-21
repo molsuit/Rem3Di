@@ -50,8 +50,6 @@ task_type_registry = {
 }
 
 
-
-
 class MoleculeNetTaskConfig(TaskConfig):
     name: str
     file_path: Path
@@ -59,23 +57,35 @@ class MoleculeNetTaskConfig(TaskConfig):
     scope: TaskScope = TaskScope.system
 
 
-
-def convert_tasks_to_configs(tasks: list[MoleculeNetTask]) -> list[MoleculeNetTaskConfig]:
-
-
+def convert_tasks_to_configs(
+    tasks: list[MoleculeNetTask],
+) -> list[MoleculeNetTaskConfig]:
     configs = []
 
     for mnet_task in tasks:
         task_name_str = mnet_task.value
-        task_columns = [f"{task_name_str}.{t}" for t in task_column_registry[task_name_str]]
+        task_columns = [
+            f"{task_name_str}.{t}" for t in task_column_registry[task_name_str]
+        ]
 
         file_path = f"{task_name_str}.csv"
-        target_types = [task_type_registry[t] for t in task_column_registry[task_name_str]]
+        target_types = [
+            task_type_registry[t] for t in task_column_registry[task_name_str]
+        ]
 
         for col, target_typ in zip(task_columns, target_types, strict=False):
-            configs.append(MoleculeNetTaskConfig(name= col, file_path=file_path, auxillary_dim=None,scope=TaskScope.system,task_type= target_typ))
+            configs.append(
+                MoleculeNetTaskConfig(
+                    name=col,
+                    file_path=file_path,
+                    auxillary_dim=None,
+                    scope=TaskScope.system,
+                    task_type=target_typ,
+                )
+            )
 
     return configs
+
 
 class MoleculeNetGenerator(MoleculeGenerator):
     def __init__(
@@ -97,27 +107,28 @@ class MoleculeNetGenerator(MoleculeGenerator):
         return lf.rename(rename_map)
 
     def load_regression_data(self):
-
         csvs = set([t.file_path for t in self.tasks])
-        lfs = [self._load_renamed_moleculenet_lf(self.mnet_dir / file_path) for file_path in csvs]
+        lfs = [
+            self._load_renamed_moleculenet_lf(self.mnet_dir / file_path)
+            for file_path in csvs
+        ]
 
-        #set of keys
+        # set of keys
         smiles_series = pl.concat([lf.select("smiles") for lf in lfs]).unique()
 
-        lf = reduce(lambda acc, lf: acc.join(lf, on="smiles", how="left"), lfs, smiles_series)
+        lf = reduce(
+            lambda acc, lf: acc.join(lf, on="smiles", how="left"), lfs, smiles_series
+        )
 
         self.target_cols = lf.columns
         self.target_cols.remove("smiles")
         return lf
-
-
 
     def __iter__(self):
         """
         Generator yielding 'Ligand SMILES' values from a TSV file in streaming batches.
         """
         idx = 0
-        B = self.loading_batch_size
 
         data_source = self.load_regression_data()
 

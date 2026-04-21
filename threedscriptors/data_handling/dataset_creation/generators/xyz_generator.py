@@ -40,7 +40,7 @@ class XYZMoleculeGenerator(MoleculeGenerator):
             if len(batch_atoms) >= self.loading_batch_size:
                 yield InputBatch(
                     molecules=batch_atoms,
-                    smiles = None,
+                    smiles=None,
                     structure_ids=batch_structure_ids,
                 )
                 batch_atoms, batch_structure_ids = [], []
@@ -49,6 +49,6 @@ class XYZMoleculeGenerator(MoleculeGenerator):
         if batch_atoms:
             yield InputBatch(
                 molecules=batch_atoms,
-                smiles = None,
+                smiles=None,
                 structure_ids=batch_structure_ids,
             )

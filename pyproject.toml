@@ -17,7 +17,8 @@ dependencies = [
     "pydantic",
     "pydantic_yaml",
     "mace-torch",
-    "umap-learn"
+    "umap-learn",
+    "torch-sim-atomistic",
 ]
 [project.optional-dependencies]
 cuequivariance = [
@@ -41,4 +42,13 @@ lint.ignore = ["E501", "B008"]
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
+    "pytest",
+    "ty>=0.0.32",
 ]
+[tool.uv.sources]
+mace-torch = { git = "https://github.com/ACEsuit/mace.git", branch = "main" }
+graph-longrange = { git = "https://github.com/WillBaldwin0/graph_electrostatics.git" }
+torch-sim-atomistic = { git = "https://github.com/TorchSim/torch-sim.git", branch = "main"}
+
+[tool.ty.environment]
+root = ["./threedscriptors"]

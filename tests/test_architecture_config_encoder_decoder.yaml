@@ -1,15 +1,14 @@
-kind: regression
+kind: encoder_decoder
 embedding_preprocess_config:
   input_irreps: 128x0e+128x1o+128x0e
   pseudoscalar_dimension: 0
-  chiral_embedding_dimension: 0
+  chiral_embedding_dimension: 16
   pseudoscalars: false
 encoder_config:
-  N_layers: 1
+  N_layers: 5
   attention_layer_config:
-    dim_feedforward: 256
+    dim_feedforward: 1024
     dropout: 0.3
-    embedding_dim: 256
     num_heads: 8
 positional_encoding_config:
   N_radial_basis_functions: 16
@@ -18,12 +17,9 @@ positional_encoding_config:
 global_aggregator_config:
   aggregator_type_config:
     aggregator_type: mean
-  input_dim: 256
-  output_dim: 256
-regression_head_config:
-- activation_fn: SiLU
-  head_type: fully_connected
-  hidden_dimensions:
-  - 128
-  input_dimensions: 258
-  task_name: cmrt
+decoder_config:
+  N_layers: 2
+  attention_layer_config:
+    dim_feedforward: 1024
+    dropout: 0.3
+    num_heads: 8

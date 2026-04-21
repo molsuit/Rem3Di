@@ -1,8 +1,10 @@
 import importlib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal, Self
 
+import pydantic_yaml as pyaml
 import torch
 import torch.nn as nn
 from e3nn.o3 import Irreps
@@ -28,12 +30,17 @@ from threedscriptors.utils.model_utils import (
 )
 
 if TYPE_CHECKING:
+    from mace.calculators import MACECalculator
+
     from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
         AtomicDescriptorPreprocessor,
     )
     from threedscriptors.model.preprocessing.geometric_preprocessor import (
         PairDistanceMatrixGeometricPreprocessor,
     )
+    from threedscriptors.model.preprocessing.preprocessing import Preprocessor
+    from threedscriptors.model.regression_models import MultiTaskRegressionModel
+    from threedscriptors.model.remedi_model import REM3DIModel
 
 
 class HeadType(Enum):
@@ -86,34 +93,26 @@ class AttentionLayerConfig(BaseModel):
 class EncoderConfig(BaseModel):
     N_layers: int
     attention_layer_config: AttentionLayerConfig
-    reload_state_dict: str | None = None
     d_pair: int | None = None
     d_geo: int | None = None
 
     def build(self, global_aggregator: nn.Module) -> nn.Module:
         from threedscriptors.model.pair_encoder import TransformerPairEncoder
 
-        encoder = TransformerPairEncoder(self, global_aggregator)
-        if self.reload_state_dict:
-            encoder.load_state_dict(torch.load(self.reload_state_dict), strict=False)
-        return encoder
+        return TransformerPairEncoder(self, global_aggregator)
 
 
 class DecoderConfig(BaseModel):
     N_layers: int
     d_descriptor: int | None = None
     attention_layer_config: AttentionLayerConfig
-    reload_state_dict: str | None = None
     d_pair: int | None = None
     d_geo: int | None = None
 
     def build(self) -> nn.Module:
         from threedscriptors.model.decoder import TransformerPairDecoder
 
-        decoder = TransformerPairDecoder(self)
-        if self.reload_state_dict:
-            decoder.load_state_dict(torch.load(self.reload_state_dict))
-        return decoder
+        return TransformerPairDecoder(self)
 
 
 class RegressionHeadConfig(BaseModel):
@@ -169,7 +168,6 @@ class EmbeddingPreprocessConfig(BaseModel):
     input_irreps: IrrepType
     pseudoscalar_dimension: int
     chiral_embedding_dimension: int
-    reload_state_dict: str | None = None
     gated: bool = True
     pseudoscalars: bool = True
     equivariant_rms_normalization: bool = True
@@ -254,15 +252,10 @@ class EmbeddingPreprocessConfig(BaseModel):
                 mean=mean_atomic_embedding, std=std_atomic_embedding
             )
 
-        atomic_preprocessor = AtomicDescriptorPreprocessor(
+        return AtomicDescriptorPreprocessor(
             preprocess_config=self,
             invariant_normalization=invariant_normalization,
         )
-
-        if self.reload_state_dict is not None:
-            atomic_preprocessor.load_state_dict(torch.load(self.reload_state_dict))
-
-        return atomic_preprocessor
 
 
 class MeanAggregatorConfig(BaseModel):
@@ -368,7 +361,6 @@ class RelativeDistancePositionalEncodingConfig(BaseModel):
     distance_cutoff: float
     d_projection: int
     basis_function_config: BasisFunctionConfig = GaussianBasisConfig()
-    reload_state_dict: str | None = None
 
     def build(self) -> "PairDistanceMatrixGeometricPreprocessor":
         from threedscriptors.model.preprocessing.geometric_preprocessor import (
@@ -379,49 +371,183 @@ class RelativeDistancePositionalEncodingConfig(BaseModel):
             N_radial_basis_functions=self.N_radial_basis_functions,
             distance_cutoff=self.distance_cutoff,
         )
-        module = PairDistanceMatrixGeometricPreprocessor(
+        return PairDistanceMatrixGeometricPreprocessor(
             radial_basis=radial_basis,
             N_radial_basis_functions=self.N_radial_basis_functions,
             distance_cutoff=self.distance_cutoff,
             d_projection=self.d_projection,
         )
-        if self.reload_state_dict is not None:
-            module.load_state_dict(torch.load(self.reload_state_dict))
-        return module
 
 
-class ArchitectureConfig(BaseModel):
+@dataclass
+class EncoderDecoderBundle:
+    preprocessor: "Preprocessor"
+    encoder: nn.Module
+    decoder: nn.Module
+
+
+class _BaseArchitectureConfig(BaseModel):
     embedding_preprocess_config: EmbeddingPreprocessConfig
     encoder_config: EncoderConfig
     global_aggregator_config: GlobalAggregatorConfig
-    regression_head_config: RegressionHeadConfig | Sequence[RegressionHeadConfig] | None
     positional_encoding_config: RelativeDistancePositionalEncodingConfig
-    reload_full_model_weights: str | None = None
-    decoder_config: DecoderConfig | None = None
 
     @model_validator(mode="after")
-    def _cascade_derived_fields(self):
+    def _cascade_shared_dims(self):
         embed_dim = self.embedding_preprocess_config.output_irreps_dim
-        pos = self.positional_encoding_config
-
-        _fill_encoder_dims(self.encoder_config, embed_dim, pos)
+        _fill_encoder_dims(
+            self.encoder_config, embed_dim, self.positional_encoding_config
+        )
         _fill_aggregator_dims(
             self.global_aggregator_config,
             self.encoder_config.attention_layer_config.embedding_dim,
         )
-        if self.decoder_config is not None:
-            _fill_decoder_dims(
-                self.decoder_config,
-                embed_dim,
-                self.global_aggregator_config.output_dim,
-                pos,
-            )
-        if isinstance(self.regression_head_config, Sequence):
-            for head in self.regression_head_config:
-                if head.input_dimensions is None:
-                    head.input_dimensions = self.global_aggregator_config.output_dim
-
         return self
+
+    def _build_preprocessor(
+        self,
+        mace_model=None,
+        mean_atomic_embedding: torch.Tensor | None = None,
+        std_atomic_embedding: torch.Tensor | None = None,
+    ) -> "Preprocessor":
+        from threedscriptors.model.preprocessing.preprocessing import (
+            Preprocessor,
+            PreprocessorWithAtomicEmbedding,
+        )
+
+        atomic = self.embedding_preprocess_config.build(
+            mean_atomic_embedding, std_atomic_embedding
+        )
+        geometric = self.positional_encoding_config.build()
+        if mace_model is not None:
+            return PreprocessorWithAtomicEmbedding(
+                mace_model=mace_model,
+                atomic_preprocessor=atomic,
+                geometric_preprocessor=geometric,
+            )
+        return Preprocessor(
+            atomic_preprocessor=atomic, geometric_preprocessor=geometric
+        )
+
+    def _build_encoder(self) -> nn.Module:
+        aggregator = self.global_aggregator_config.build()
+        return self.encoder_config.build(aggregator)
+
+    @classmethod
+    def from_directory(cls, directory: str, trained: bool = True) -> Self:
+        filename = (
+            "post_training_architecture_config.yaml"
+            if trained
+            else "architecture_config.yaml"
+        )
+        return pyaml.parse_yaml_file_as(cls, f"{directory}/{filename}")
+
+
+class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):
+    kind: Literal["encoder_only"] = "encoder_only"
+
+    def build(
+        self,
+        mace_calculator: "MACECalculator | None" = None,
+        mace_model=None,
+        mean_atomic_embedding: torch.Tensor | None = None,
+        std_atomic_embedding: torch.Tensor | None = None,
+    ) -> "REM3DIModel":
+        from threedscriptors.model.remedi_model import REM3DIModel
+
+        preprocessor = self._build_preprocessor(
+            mace_model, mean_atomic_embedding, std_atomic_embedding
+        )
+        encoder = self._build_encoder()
+        model = REM3DIModel(
+            preprocessor=preprocessor,
+            encoder=encoder,
+            mace_calculator=mace_calculator,
+        ).float()
+        model.preprocessor.atomic_preprocessor.double()
+        return model
+
+
+class EncoderDecoderArchitectureConfig(_BaseArchitectureConfig):
+    kind: Literal["encoder_decoder"] = "encoder_decoder"
+    decoder_config: DecoderConfig
+
+    @model_validator(mode="after")
+    def _cascade_decoder_dims(self):
+        _fill_decoder_dims(
+            self.decoder_config,
+            self.embedding_preprocess_config.output_irreps_dim,
+            self.global_aggregator_config.output_dim,
+            self.positional_encoding_config,
+        )
+        return self
+
+    def build(
+        self,
+        mace_model=None,
+        mean_atomic_embedding: torch.Tensor | None = None,
+        std_atomic_embedding: torch.Tensor | None = None,
+    ) -> EncoderDecoderBundle:
+        preprocessor = self._build_preprocessor(
+            mace_model, mean_atomic_embedding, std_atomic_embedding
+        )
+        encoder = self._build_encoder()
+        decoder = self.decoder_config.build()
+        return EncoderDecoderBundle(
+            preprocessor=preprocessor, encoder=encoder, decoder=decoder
+        )
+
+
+class RegressionArchitectureConfig(_BaseArchitectureConfig):
+    kind: Literal["regression"] = "regression"
+    regression_head_config: list[RegressionHeadConfig]
+
+    @model_validator(mode="after")
+    def _cascade_head_dims(self):
+        out_dim = self.global_aggregator_config.output_dim
+        for head in self.regression_head_config:
+            if head.input_dimensions is None:
+                head.input_dimensions = out_dim
+        return self
+
+    def insert_task_configs(self, task_configs) -> None:
+        for task_cfg, head_cfg in zip(
+            task_configs, self.regression_head_config, strict=True
+        ):
+            assert head_cfg.task_name == task_cfg.task_name
+            head_cfg.task_config = task_cfg
+
+    def build(
+        self,
+        mean_atomic_embedding: torch.Tensor | None = None,
+        std_atomic_embedding: torch.Tensor | None = None,
+    ) -> "MultiTaskRegressionModel":
+        from threedscriptors.model.regression_models import (
+            MultitaskHeads,
+            MultiTaskRegressionModel,
+        )
+
+        preprocessor = self._build_preprocessor(
+            None, mean_atomic_embedding, std_atomic_embedding
+        )
+        encoder = self._build_encoder()
+        model = MultiTaskRegressionModel(
+            preprocessor=preprocessor,
+            encoder=encoder,
+            regression_heads=MultitaskHeads(
+                regression_head_configs=self.regression_head_config
+            ),
+        ).float()
+        model.preprocessor.atomic_preprocessor.double()
+        return model
+
+
+ArchitectureConfig = Annotated[
+    EncoderOnlyArchitectureConfig
+    | EncoderDecoderArchitectureConfig
+    | RegressionArchitectureConfig,
+    Field(discriminator="kind"),
+]
 
 
 def _fill_encoder_dims(

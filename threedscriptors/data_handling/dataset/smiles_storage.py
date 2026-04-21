@@ -265,9 +265,9 @@ class SmilesStorage:
             if s_norm in self._str2id:
                 out[s_norm] = self._str2id[s_norm]
             else:
-                self._str2id[s_norm] = (
-                    -1
-                )  # reserved to keep order uniqueness for this call
+                self._str2id[
+                    s_norm
+                ] = -1  # reserved to keep order uniqueness for this call
                 new_unique.append(s_norm)
 
         if new_unique:
@@ -372,5 +372,3 @@ class SmilesStorage:
         self._offsets_memmap = np.memmap(self._index_path, dtype=np.uint64, mode="r")
 
         self._verify_integrity_or_raise()
-
-

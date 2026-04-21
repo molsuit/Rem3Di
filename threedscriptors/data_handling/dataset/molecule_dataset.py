@@ -1,15 +1,17 @@
 import os
 from pathlib import Path
-from ase import Atoms
+
 import numpy as np
 import pydantic_yaml as pyd_yaml
 import zarr
+from ase import Atoms
 from numcodecs import Blosc
 from zarr import Array
-from typing import Optional
+from zarr.convenience import consolidate_metadata
+
 from threedscriptors.configuration.dataset_config import DatasetConfig
 from threedscriptors.data_handling.dataset.smiles_storage import SmilesStorage
-from zarr.convenience import consolidate_metadata
+
 
 class MoleculeDataset:
     # This is the ondisk storage of all data related to the molecular systems we store
@@ -63,12 +65,10 @@ class MoleculeDataset:
         store = zarr.DirectoryStore(str(path))
         g = zarr.open_group(store=store, mode="r+")
 
-        if os.path.exists(path/"atomic_embeddings"):
-
+        if os.path.exists(path / "atomic_embeddings"):
             atomic_embeddings = g["atomic_embeddings"]
         else:
             atomic_embeddings = None
-
 
         positions = g["positions"]
         atomic_numbers = g["atomic_numbers"]
@@ -164,9 +164,8 @@ class MoleculeDataset:
                 dtype="f4",
                 compressor=compressor,
             )
-        else: 
+        else:
             atomic_embeddings = None
-
 
         positions = g.create(
             "positions",
@@ -382,9 +381,10 @@ class MoleculeDataset:
         elif not self.config.contains_embeddings and embeddings is None:
             E = None
 
-        else: 
-            raise ValueError("Dataset Config and batch append disagree on whether there should be embeddings here or not")
-        
+        else:
+            raise ValueError(
+                "Dataset Config and batch append disagree on whether there should be embeddings here or not"
+            )
 
         P = np.asarray(positions, dtype="f4", order="C")
         Z = np.asarray(atomic_numbers, dtype="u1", order="C")
@@ -399,7 +399,7 @@ class MoleculeDataset:
 
         # If not, we still attempt to write, but this hints at upstream issues
         # (e.g., inconsistent system_idx vs embeddings sizing).
-        self._ensure_capacity_atoms(n_atoms,growth=4)
+        self._ensure_capacity_atoms(n_atoms, growth=4)
         self._ensure_capacity_mols(n_mols, growth=4)
 
         a0, a1 = self._atom_cursor, self._atom_cursor + n_atoms
@@ -454,7 +454,9 @@ class MoleculeDataset:
 
     def shrink_to_fit(self):
         if self.config.contains_embeddings:
-            self.atomic_embeddings.resize((self._atom_cursor, self.config.embedding_dim))
+            self.atomic_embeddings.resize(
+                (self._atom_cursor, self.config.embedding_dim)
+            )
         self.positions.resize((self._atom_cursor, 3))
         self.atomic_numbers.resize((self._atom_cursor,))
         self.ptr.resize((self._mol_cursor + 1,))
@@ -499,15 +501,15 @@ class MoleculeDataset:
         atomic_numbers = np.asarray(
             self.atomic_numbers[: ptr[-1]], dtype=np.int64, order="C"
         )
-        positions = np.asarray(
-            self.positions[: ptr[-1]], dtype=np.float32, order="C"
-        )
+        positions = np.asarray(self.positions[: ptr[-1]], dtype=np.float32, order="C")
 
         molecules: list[Atoms] = []
         append = molecules.append
         for idx in range(n_struct):
             start = ptr[idx]
             end = ptr[idx + 1]
-            append(Atoms(numbers=atomic_numbers[start:end], positions=positions[start:end]))
+            append(
+                Atoms(numbers=atomic_numbers[start:end], positions=positions[start:end])
+            )
 
         return molecules

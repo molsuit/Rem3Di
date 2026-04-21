@@ -3,10 +3,9 @@ from importlib import resources
 import numpy as np
 import torch
 from mace.calculators import mace_mp
-from threedscriptors.data_handling.pipelines import chiral_regression_training_pipeline
 
 from threedscriptors.configuration.architecture_config import (
-    ArchitectureConfig,
+    RegressionArchitectureConfig,
 )
 from threedscriptors.configuration.config_utils import from_yaml
 from threedscriptors.configuration.data_config import (
@@ -14,10 +13,10 @@ from threedscriptors.configuration.data_config import (
     DatasetTypes,
     MaceCalculatorConfig,
 )
+from threedscriptors.data_handling.pipelines import chiral_regression_training_pipeline
 from threedscriptors.data_handling.source_preprocessing.cmrt_preprocessing import (
     load_cmrt_data,
 )
-from threedscriptors.model.model_builder import ModelBuilder
 
 data_file = resources.files("tests") / "cmrt_raw_test_data.csv"
 smiles, regression_targets, regression_masks, aux_data, tasks = load_cmrt_data(
@@ -71,10 +70,9 @@ def test_molecule_creation():
 def test_different_predictions_nops():
     yaml_file = resources.files("tests") / "architecture_config_nops.yaml"
 
-    architecture_config = from_yaml(yaml_file, ArchitectureConfig)
+    architecture_config = from_yaml(yaml_file, RegressionArchitectureConfig)
 
-    mb = ModelBuilder(architecture_config=architecture_config)
-    model = mb.build_model()
+    model = architecture_config.build()
     model.eval()
 
     invariant_embeddings = model.preprocessor(dataset.embeddings)
@@ -95,10 +93,9 @@ def test_different_predictions_nops():
 def test_different_predictions_with_ps():
     yaml_file = resources.files("tests") / "architecture_config_ps.yaml"
 
-    architecture_config = from_yaml(yaml_file, ArchitectureConfig)
+    architecture_config = from_yaml(yaml_file, RegressionArchitectureConfig)
 
-    mb = ModelBuilder(architecture_config=architecture_config)
-    model = mb.build_model()
+    model = architecture_config.build()
     model.eval()
 
     embeddings_w_ps = model.preprocessor(dataset.embeddings)

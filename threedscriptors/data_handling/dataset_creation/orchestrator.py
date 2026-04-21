@@ -46,11 +46,8 @@ class DatasetConstructionOrchestrator:
 
     def build_dataset(self):
         for input_batch in self.batch_generator:
-
-
             if input_batch.molecules == [] and input_batch.smiles == []:
                 continue
-
 
             output_data = None
 
@@ -63,7 +60,7 @@ class DatasetConstructionOrchestrator:
 
             t0 = perf_counter()
 
-            #if torch.isnan(output_data.embeddings).any():
+            # if torch.isnan(output_data.embeddings).any():
             #    breakpoint()
 
             self.append_batch_to_dataset(output_data)
@@ -84,9 +81,11 @@ class DatasetConstructionOrchestrator:
         # Ensure pointer length matches the number of structures in the batch.
         # If the last system produced zero atoms, `minlength` keeps a trailing 0 count
         # so the ptr length equals len(structure_ids).
-        ptr = ensure_numpy_array(system_idx_to_ragged_ptr(
-            output_data.systems_index,
-        ))
+        ptr = ensure_numpy_array(
+            system_idx_to_ragged_ptr(
+                output_data.systems_index,
+            )
+        )
 
         N_atoms_batch = positions.shape[0]
 

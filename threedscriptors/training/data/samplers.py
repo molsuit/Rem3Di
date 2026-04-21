@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
-
-import math
 import numpy as np
 from torch.utils.data import Sampler
+
 
 class BucketBatchSampler(Sampler):
     """
@@ -30,7 +28,9 @@ class BucketBatchSampler(Sampler):
     ):
         self.lengths = np.asarray(lengths, dtype=np.int64).reshape(-1)
         self.max_atoms_per_batch = int(max_atoms_per_batch)
-        self.max_batch_size = int(max_batch_size) if max_batch_size is not None else None
+        self.max_batch_size = (
+            int(max_batch_size) if max_batch_size is not None else None
+        )
         self.bucket_size = int(bucket_size)
         self.shuffle = shuffle
 
@@ -68,8 +68,7 @@ class BucketBatchSampler(Sampler):
             new_atoms = atoms_in_batch + L
             too_many_atoms = new_atoms > self.max_atoms_per_batch
             too_many_samples = (
-                self.max_batch_size is not None
-                and len(batch) >= self.max_batch_size
+                self.max_batch_size is not None and len(batch) >= self.max_batch_size
             )
 
             if batch and (too_many_atoms or too_many_samples):
@@ -102,8 +101,7 @@ class BucketBatchSampler(Sampler):
             new_atoms = atoms_in_batch + L
             too_many_atoms = new_atoms > self.max_atoms_per_batch
             too_many_samples = (
-                self.max_batch_size is not None
-                and batch_size >= self.max_batch_size
+                self.max_batch_size is not None and batch_size >= self.max_batch_size
             )
             if batch_size > 0 and (too_many_atoms or too_many_samples):
                 n_batches += 1
@@ -125,4 +123,3 @@ def lengths_from_ptr(ptr: np.ndarray) -> np.ndarray:
     if not isinstance(ptr, np.ndarray):
         ptr = np.asarray(ptr)
     return (ptr[1:] - ptr[:-1]).astype(np.int64, copy=False)
-

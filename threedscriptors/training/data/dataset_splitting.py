@@ -14,7 +14,6 @@ class DatasetSplitting:
         self.dataset = dataset
 
     def _single_split(self, train_val_split_ratios, shuffle):
-
         # 1. Get the set of mol ids
         mol_ids = list(set(self.dataset.molecule_ids[:]))
         N_mols = len(mol_ids)
@@ -23,7 +22,7 @@ class DatasetSplitting:
 
         if shuffle:
             # perm =  list that contains randomly shuffeld indices
-            rng = np.random.default_rng(seed= 1)
+            rng = np.random.default_rng(seed=1)
             perm = rng.permutation(N_mols).tolist()
         else:
             perm = list(range(N_mols))
@@ -40,16 +39,17 @@ class DatasetSplitting:
 
         # 4 get the correct struture_ids
 
+        train_structure_ids = self.dataset.get_structure_ids_from_molecule_ids(
+            train_mol_ids
+        )
 
-        train_structure_ids = self.dataset.get_structure_ids_from_molecule_ids(train_mol_ids)
+        validation_structure_ids = self.dataset.get_structure_ids_from_molecule_ids(
+            val_mol_ids
+        )
 
-        validation_structure_ids = self.dataset.get_structure_ids_from_molecule_ids(val_mol_ids)
-
-
-        #if self.dataset.regression_targets is not None:
+        # if self.dataset.regression_targets is not None:
         #    print(f"lables per class Train set{self.dataset.regression_masks[train_structure_ids,:].sum(dim= 0)}")
         #    print(f"lables per class Vals set{self.dataset.regression_masks[validation_structure_ids,:].sum(dim= 0)}")
-
 
         return train_structure_ids, validation_structure_ids, "Train"
 
@@ -85,10 +85,9 @@ class DatasetSplitting:
 
         # --- 2. Repeated CV ---------------------------------------------------
         for i_repeat in range(N_repeats):
-
             # 2a. (Re)shuffle indices
             if shuffle:
-                rng = np.random.default_rng(seed = 1)
+                rng = np.random.default_rng(seed=1)
                 perm = rng.permutation(n_mols).tolist()
             else:
                 perm = list(range(n_mols))
@@ -114,12 +113,19 @@ class DatasetSplitting:
                 )
                 val_structure_ids = self.dataset.get_structure_ids_for_mol(val_mol_ids)
 
-                print(f"lables per class Train set{self.dataset.regression_masks[train_structure_ids,:].sum(dim= 0)}")
+                print(
+                    f"lables per class Train set{self.dataset.regression_masks[train_structure_ids,:].sum(dim= 0)}"
+                )
 
-                print(f"lables per class Vals set{self.dataset.regression_masks[val_structure_ids,:].sum(dim= 0)}")
+                print(
+                    f"lables per class Vals set{self.dataset.regression_masks[val_structure_ids,:].sum(dim= 0)}"
+                )
 
-
-                yield train_structure_ids, val_structure_ids, f"Split_{i_repeat}-Fold_{val_fold_idx}"
+                yield (
+                    train_structure_ids,
+                    val_structure_ids,
+                    f"Split_{i_repeat}-Fold_{val_fold_idx}",
+                )
 
     def _bemis_murcko_scaffold_splitting(self):
         raise NotImplementedError
@@ -154,13 +160,13 @@ class DatasetSplitting:
         N_structures = len(self.dataset.structure_ids)
         matrix = np.zeros((N_repeats * N_splits, N_structures))
 
-        for row_idx, (train_idx, val_idx) in enumerate(splits):
+        for row_idx, (_train_idx, val_idx) in enumerate(splits):
             for col in val_idx:  # mark validation samples as 1
                 matrix[row_idx, col] = 1
 
         # ---------- plot ----------
         fig, ax = plt.subplots(figsize=(8, 4))
-        im = ax.imshow(
+        ax.imshow(
             matrix, aspect="auto", cmap="Blues", vmin=0, vmax=1, interpolation="none"
         )  # default colormap
 
@@ -182,7 +188,6 @@ class DatasetSplitting:
         return fig
 
     def general_split(self, split_ratios, shuffle):
-
         # 1. Get the set of mol ids
         mol_ids = self.dataset.get_all_mol_ids()
         N_mols = len(mol_ids)
@@ -191,11 +196,10 @@ class DatasetSplitting:
 
         if shuffle:
             # perm =  list that contains randomly shuffeld indices
-            rng = np.random.default_rng(seed = 1)
+            rng = np.random.default_rng(seed=1)
             perm = rng.permutation(N_mols).tolist()
         else:
             perm = list(range(N_mols))
-
 
         # Split the mol ids
 
@@ -204,8 +208,6 @@ class DatasetSplitting:
         index_per_slice = []
 
         for splitting_slice in splitting_indices:
-
-
             split_perm = perm[splitting_slice.start : splitting_slice.stop]
 
             split_mol_ids = [mol_ids[i] for i in split_perm]

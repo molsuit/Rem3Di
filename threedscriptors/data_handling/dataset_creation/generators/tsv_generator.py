@@ -1,4 +1,3 @@
-
 import polars as pl
 from rdkit import Chem
 
@@ -14,9 +13,7 @@ from threedscriptors.data_handling.dataset_creation.structure_ids import Structu
 
 
 class TSVMoleculeGenerator(MoleculeGenerator):
-
     def __init__(self, tsv_file: str, batch_size: int):
-
         self.tsv_file = tsv_file
         self.loading_batch_size = batch_size
 
@@ -39,13 +36,11 @@ class TSVMoleculeGenerator(MoleculeGenerator):
         # 3) Slice into batches and yield one SMILES at a time
         for batch_df in df.iter_slices(n_rows=self.loading_batch_size):
             for smi in batch_df["Ligand SMILES"]:
-
                 if smi is None:
                     continue
 
                 mol = Chem.MolFromSmiles(smi)
                 if filter_mol(mol):
-
                     smiles = Chem.MolToSmiles(
                         Chem.RemoveAllHs(mol), isomericSmiles=True, canonical=True
                     )

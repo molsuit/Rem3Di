@@ -1,6 +1,6 @@
+import shutil
 from collections.abc import Sequence
 from pathlib import Path
-import shutil
 
 import numpy as np
 
@@ -10,8 +10,7 @@ from threedscriptors.data_handling.dataset.tasks import TaskConfig, TaskSet
 
 
 class DatasetConcatenation:
-    def __init__(self, datasets : Sequence[MoleculeDataset], new_dataset_dir: Path):
-
+    def __init__(self, datasets: Sequence[MoleculeDataset], new_dataset_dir: Path):
         self.datasets = datasets
         self.new_dataset_dir = Path(new_dataset_dir)
 
@@ -50,7 +49,9 @@ class DatasetConcatenation:
             old_iso_ids = src.isomer_ids[:]
 
             mol_strings = [src.smiles.id_to_string(int(i)) for i in old_mol_ids]
-            iso_strings = [src.isomeric_smiles.id_to_string(int(i)) for i in old_iso_ids]
+            iso_strings = [
+                src.isomeric_smiles.id_to_string(int(i)) for i in old_iso_ids
+            ]
 
             mol_map = out_ds.smiles.append_new_lines(mol_strings)
             iso_map = out_ds.isomeric_smiles.append_new_lines(iso_strings)
@@ -84,7 +85,6 @@ class DatasetConcatenation:
 
         return next_mol_base, next_iso_base
 
-
     def concatenate_datasets(self):
         # Concatenate multiple MoleculeDatasets into a new one at new_dataset_dir.
         # Arrays are backed by zarr; we stream per-dataset to keep it fast.
@@ -108,7 +108,9 @@ class DatasetConcatenation:
 
         return out_ds
 
-    def concatenate_datasets_copy_first(self, overwrite: bool = False) -> MoleculeDataset:
+    def concatenate_datasets_copy_first(
+        self, overwrite: bool = False
+    ) -> MoleculeDataset:
         """
         Concatenate datasets by copying the first dataset to the destination and
         appending the remaining datasets on top.
@@ -226,7 +228,7 @@ class DatasetConcatenation:
                 if src.config.contains_embeddings:
                     E = np.asarray(src.atomic_embeddings[a0:a1, :])
                 else:
-                    E=None
+                    E = None
                 P = np.asarray(src.positions[a0:a1, :])
                 Z = np.asarray(src.atomic_numbers[a0:a1])
 
@@ -284,7 +286,6 @@ class DatasetConcatenation:
         return int(values.max()) + 1
 
     def _create_target_dataset(self) -> tuple[MoleculeDataset, DatasetConfig]:
-
         assert self._check_dataset_compatible()
 
         ref_cfg = self.datasets[0].config
@@ -292,9 +293,7 @@ class DatasetConcatenation:
         out_ds = MoleculeDataset.create_empty_dataset(self.new_dataset_dir, ref_cfg)
         return out_ds, ref_cfg
 
-
     def _check_dataset_compatible(self):
-
         if len(self.datasets) == 0:
             return False
 
@@ -339,21 +338,15 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
     This datasets concatenation is for labeld datasets, and concatenates the system labels and masks, as well as all the embeddings and positions
     """
 
-
-    def __init__(self, datasets : Sequence[MoleculeDataset], new_dataset_dir: Path):
-
+    def __init__(self, datasets: Sequence[MoleculeDataset], new_dataset_dir: Path):
         self.datasets = datasets
         self.new_dataset_dir = Path(new_dataset_dir)
 
-
     def _create_target_dataset(self) -> tuple[MoleculeDataset, DatasetConfig]:
-
         assert self._check_dataset_compatible()
 
         system_tasks: list[TaskConfig] = []
         atom_tasks: list[TaskConfig] = []
-        system_index: dict[str, TaskConfig] = {}
-        atom_index: dict[str, TaskConfig] = {}
 
         for dataset in self.datasets:
             cfg = dataset.config
@@ -365,7 +358,6 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
 
             for task in cfg.tasks.atom_cols:
                 atom_tasks.append(task)
-
 
         combined_tasks = TaskSet(
             system_cols=system_tasks,
@@ -380,30 +372,26 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
 
         return out_ds, new_config
 
-    def concatenate_datasets_copy_first(self, overwrite: bool = False) -> MoleculeDataset:
+    def concatenate_datasets_copy_first(
+        self, overwrite: bool = False
+    ) -> MoleculeDataset:
         raise NotImplementedError(
             "Copy-first concatenation is not supported for labeled datasets."
         )
 
     def concatenate_datasets(self):
-
-
         out_ds, ref_cfg = self._create_target_dataset()
 
         N_total_systems_tasks = len(ref_cfg.tasks.system_cols)
 
         for src in self.datasets:
-
-
             # Load per-atom arrays
             if src.config.contains_embeddings:
                 E = src.atomic_embeddings[:]
-            else: 
-                E= None
+            else:
+                E = None
             P = src.positions[:]
             Z = src.atomic_numbers[:]
-
-
 
             # Build cumulative ends per structure from ptr
             src_ptr = src.ptr[:]
@@ -421,7 +409,9 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
                 old_iso_ids = src.isomer_ids[:]
 
                 mol_strings = [src.smiles.id_to_string(int(i)) for i in old_mol_ids]
-                iso_strings = [src.isomeric_smiles.id_to_string(int(i)) for i in old_iso_ids]
+                iso_strings = [
+                    src.isomeric_smiles.id_to_string(int(i)) for i in old_iso_ids
+                ]
 
                 mol_map = out_ds.smiles.append_new_lines(mol_strings)
                 iso_map = out_ds.isomeric_smiles.append_new_lines(iso_strings)

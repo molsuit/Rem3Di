@@ -1,29 +1,22 @@
 import os
 from collections import Counter
-from itertools import chain, combinations, groupby
 from pathlib import Path
-from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from ase.data import chemical_symbols
 from ase.visualize.plot import plot_atoms
 from matplotlib.figure import Figure
-from pydantic import BaseModel, Field, ConfigDict
-
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-
-from threedscriptors.evaluation.results import FigureResult
+from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors as rdMD
 
-from rdkit import Chem  
-
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+from threedscriptors.evaluation.results import FigureResult
 
 
 def has_stereocenter(iso_smi):
     # make sure stereochem is perceived from 2D/SMILES
-    
+
     mol = Chem.MolFromSmiles(iso_smi)
     Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
     n_assigned = rdMD.CalcNumAtomStereoCenters(mol)
@@ -31,11 +24,9 @@ def has_stereocenter(iso_smi):
 
 
 class MoleculeDatasetAnalysis:
-
     def __init__(self, dataset: MoleculeDataset):
-
         self.dataset = dataset
-        self.results :list[FigureResult] = []
+        self.results: list[FigureResult] = []
 
     def molecule_sizes(self) -> np.ndarray:
         """Per-structure atom counts streamed from ragged pointer."""
@@ -59,7 +50,6 @@ class MoleculeDatasetAnalysis:
         return sizes
 
     def atom_species(self, chunk_len: int | None = None) -> np.ndarray:
-
         n_atoms = self.dataset.N_atoms
         if n_atoms == 0:
             return {}
@@ -78,11 +68,12 @@ class MoleculeDatasetAnalysis:
                 offset = end
                 continue
             unique, chunk_counts = np.unique(chunk, return_counts=True)
-            counts.update(dict(zip(unique.tolist(), chunk_counts.tolist(), strict=False)))
+            counts.update(
+                dict(zip(unique.tolist(), chunk_counts.tolist(), strict=False))
+            )
             offset = end
 
         return {int(n): int(c) for n, c in counts.items()}
-
 
     def get_descriptor_mean_std(self):
         embeddings = self.dataset.atomic_embeddings
@@ -144,18 +135,18 @@ class MoleculeDatasetAnalysis:
 
         atomic_numbers = np.asarray(self.dataset.atomic_numbers[:total_atoms])
         hetero_mask = (atomic_numbers != 1) & (atomic_numbers != 6)
-        hetero_counts = np.add.reduceat(hetero_mask.astype(np.int64, copy=False), ptr[:-1])
+        hetero_counts = np.add.reduceat(
+            hetero_mask.astype(np.int64, copy=False), ptr[:-1]
+        )
         return hetero_counts
-    
 
     def get_fraction_molecules_with_stereocentres(self):
         dataset = self.dataset
         n_struct = dataset.N_structures
-        
+
         molecules_with_stereo = 0
         for smi in dataset.isomeric_smiles:
             if has_stereocenter(smi):
-
                 molecules_with_stereo += 1
 
         return molecules_with_stereo / n_struct
@@ -183,14 +174,15 @@ class MoleculeDatasetAnalysis:
         return norms
 
     def plot_heteroatom_distribution(self):
-
         hetero_counts = self.get_heteroatom_count_per_molecule_distribution()
         hetero_counts = np.asarray(hetero_counts, dtype=np.int64).ravel()
 
         fig, ax = plt.subplots(figsize=(12, 4))
         if hetero_counts.size > 0:
             unique_counts, frequencies = np.unique(hetero_counts, return_counts=True)
-            ax.bar(unique_counts, frequencies, align="center", width=0.8, color="#55a868")
+            ax.bar(
+                unique_counts, frequencies, align="center", width=0.8, color="#55a868"
+            )
             ax.set_xlabel("Heteroatoms per molecule")
             ax.set_ylabel("Number of molecules")
             ax.set_title("Distribution of heteroatoms per molecule")
@@ -235,7 +227,9 @@ class MoleculeDatasetAnalysis:
                 ax.set_xticks(indices[::step])
                 ax.tick_params(axis="x", labelrotation=45, labelsize=8)
         else:
-            ax.text(0.5, 0.5, "No descriptor channels available", ha="center", va="center")
+            ax.text(
+                0.5, 0.5, "No descriptor channels available", ha="center", va="center"
+            )
             ax.axis("off")
         fig.tight_layout()
         result = FigureResult(figure=fig, file_name="descriptor_channel_mean_std.png")
@@ -243,7 +237,6 @@ class MoleculeDatasetAnalysis:
         return result
 
     def plot_descriptor_norm_distribution(self):
-
         norm = self.get_descriptor_norm()
         fig, ax = plt.subplots()
         flat_norm = np.asarray(norm, dtype=float).ravel()
@@ -263,15 +256,18 @@ class MoleculeDatasetAnalysis:
         self.results.append(result)
 
     def plot_atom_species_histogram(self):
-
         atom_species = self.atom_species(chunk_len=100_000)
 
         if not atom_species:
             return
 
         # Sort species by descending frequency for readability
-        sorted_species = sorted(atom_species.items(), key=lambda item: item[1], reverse=True)
-        labels = [chemical_symbols[atomic_number] for atomic_number, _ in sorted_species]
+        sorted_species = sorted(
+            atom_species.items(), key=lambda item: item[1], reverse=True
+        )
+        labels = [
+            chemical_symbols[atomic_number] for atomic_number, _ in sorted_species
+        ]
         counts = [count for _, count in sorted_species]
 
         fig, ax = plt.subplots()
@@ -281,9 +277,9 @@ class MoleculeDatasetAnalysis:
         ax.set_title("Atom species frequency")
         fig.tight_layout()
 
-        self.results.append(FigureResult(figure=fig, file_name="atom_species_histogram.png"))
-
-
+        self.results.append(
+            FigureResult(figure=fig, file_name="atom_species_histogram.png")
+        )
 
     def plot_molecule_size_distribution(self) -> Figure:
         sizes = self.molecule_sizes()
@@ -292,29 +288,28 @@ class MoleculeDatasetAnalysis:
         plt.xlabel("Atoms per structure")
         plt.ylabel("Frequency")
 
-        self.results.append(FigureResult(figure=fig, file_name="molecule_size_distribution.png"))
-
+        self.results.append(
+            FigureResult(figure=fig, file_name="molecule_size_distribution.png")
+        )
 
     def plot_regression_task_distribution(self):
         pass
 
     def plot_relaxed_atoms(self, N_max_molecules: int | None = None):
-
         molecules = self.dataset.get_all_molecules()
 
         N_horizontal = 3
-        N_vertical = (len(molecules) // 3 )+1
+        N_vertical = (len(molecules) // 3) + 1
 
         fig, axarr = plt.subplots(N_vertical, N_horizontal)
 
-        fig.set_figheight(4*N_vertical)
-        fig.set_figwidth(4*N_horizontal)
+        fig.set_figheight(4 * N_vertical)
+        fig.set_figwidth(4 * N_horizontal)
 
         for i, mol in enumerate(molecules):
-            plot_atoms(mol, axarr[i // 3 , i % 3])
+            plot_atoms(mol, axarr[i // 3, i % 3])
 
         self.results.append(FigureResult(figure=fig, file_name="example_molecules.png"))
-
 
     def print_dataset_properties(self):
         n_molecules = self.dataset.N_molecules
@@ -323,25 +318,24 @@ class MoleculeDatasetAnalysis:
 
         stereocentre_ratio = self.get_fraction_molecules_with_stereocentres()
 
-        print(f"N_molecules={n_molecules}, N_structures={n_structures}, N_atoms={n_atoms}, stereocentre_ratio={stereocentre_ratio}")
-
+        print(
+            f"N_molecules={n_molecules}, N_structures={n_structures}, N_atoms={n_atoms}, stereocentre_ratio={stereocentre_ratio}"
+        )
 
     def run(self):
-
         self.print_dataset_properties()
         self.plot_molecule_size_distribution()
         print(1)
         self.plot_atom_species_histogram()
         print(2)
-        #self.plot_descriptor_norm_distribution()
-        #print(3)
-        #self.plot_descriptor_mean_std_distribution()
+        # self.plot_descriptor_norm_distribution()
+        # print(3)
+        # self.plot_descriptor_mean_std_distribution()
 
         self.plot_relaxed_atoms(100)
         self.plot_heteroatom_distribution()
 
     def output(self, output_dir: Path):
-
         if isinstance(output_dir, str):
             output_dir = Path(output_dir)
 

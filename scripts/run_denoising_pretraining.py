@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +11,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader, Subset
 
 from threedscriptors.configuration.architecture_config import (
-    ArchitectureConfig,
+    EncoderDecoderArchitectureConfig,
 )
 from threedscriptors.configuration.training_config import (
     TrainingConfig,
@@ -24,7 +25,6 @@ from threedscriptors.data_handling.sample import (
     PreprocessedSample,
     pretraining_padded_collate_fn,
 )
-from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.training.data import (
     DatasetSplitting,
     worker_init_fn,
@@ -33,11 +33,8 @@ from threedscriptors.training.data.data_normalization import DataNormalizationMo
 from threedscriptors.training.noise_scheduler import ConstantSchedule, NoiseModule
 from threedscriptors.training.pretraining import atom_denoising_loss
 from threedscriptors.training.telemetry import TrainingTelemetry
-import logging
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
-
 
 
 def parse_args():
@@ -57,6 +54,7 @@ def parse_args():
     args = parser.parse_args()
     return args.train_dir
 
+
 def setup_logging(filename, level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger("remedi")
     if not logger.handlers:
@@ -67,7 +65,6 @@ def setup_logging(filename, level: int = logging.INFO) -> logging.Logger:
         logger.addHandler(h)
         logger.propagate = False
     return logger
-
 
 
 def main():
@@ -81,15 +78,18 @@ def main():
         TrainingConfig, f"{training_dir}/training_config.yaml"
     )
     architecture_config = pyaml.parse_yaml_file_as(
-        ArchitectureConfig,
+        EncoderDecoderArchitectureConfig,
         f"{training_dir}/architecture_config.yaml",
     )
 
-    if training_config.model_config_path != Path(f"{training_dir}/architecture_config.yaml"):
-        raise ValueError("Architecture config if the directory does not match to the architecture config in the training_config.yaml")
+    if training_config.model_config_path != Path(
+        f"{training_dir}/architecture_config.yaml"
+    ):
+        raise ValueError(
+            "Architecture config if the directory does not match to the architecture config in the training_config.yaml"
+        )
 
-
-    logger = setup_logging(filename = training_dir/ "logfile.info")
+    logger = setup_logging(filename=training_dir / "logfile.info")
 
     logger.info("Start Loading Dataset")
     full_dataset = MoleculeDataset.open_existing_dataset_from_dir(
@@ -152,10 +152,13 @@ def main():
     )
     logger.info("Completed calculating invariant normalization constants")
 
-    mb = ModelBuilder(architecture_config=architecture_config)
-    preprocessor = mb.build_preprocessor(inv_mean_per_dim, inv_std_per_dim)
-    encoder = mb.build_encoder()
-    decoder = mb.build_decoder()
+    bundle = architecture_config.build(
+        mean_atomic_embedding=inv_mean_per_dim,
+        std_atomic_embedding=inv_std_per_dim,
+    )
+    preprocessor = bundle.preprocessor
+    encoder = bundle.encoder
+    decoder = bundle.decoder
 
     preprocessor.to(dtype=torch.float64)
 
@@ -177,32 +180,21 @@ def main():
         total_steps=training_config.epochs * len(training_loader),
     )
 
-    best_model_path = f"{training_data_dir}/best_model.pth"
-
-    architecture_config.encoder_config.reload_state_dict = (
-        f"{training_data_dir}/encoder.pth"
-    )
-    architecture_config.embedding_preprocess_config.reload_state_dict = (
-        f"{training_data_dir}/atomic_preprocessor.pth"
-    )
-    architecture_config.positional_encoding_config.reload_state_dict = (
-        f"{training_data_dir}/geometric_preprocessor.pth"
-    )
-
     pyaml.to_yaml_file(
         training_data_dir / "post_training_architecture_config.yaml",
         architecture_config,
     )
-
 
     with TrainingTelemetry(
         wandb_active=training_config.wandb_active,
         run_name=training_config.training_name,
         group_name=training_config.run_group,
         out_dir=training_data_dir,
-        config = {"train_config": training_config.model_dump(), "architecture_config": architecture_config.model_dump()}
+        config={
+            "train_config": training_config.model_dump(),
+            "architecture_config": architecture_config.model_dump(),
+        },
     ) as telemetry:
-        
         encoder.to(device)
         decoder.to(device)
         preprocessor.to(device)
@@ -219,7 +211,7 @@ def main():
 
             optimizer.zero_grad()
 
-            for batch_index, samples in enumerate(training_loader):
+            for samples in training_loader:
                 samples.to_(device)
                 preprocessed_samples: PreprocessedSample = preprocessor(samples)
 
@@ -268,10 +260,13 @@ def main():
                 optimizer.zero_grad()
                 running += denoising_loss.detach()
 
-            avg_train_loss = (running / (
-                (batch_index + 1)
-                * architecture_config.embedding_preprocess_config.output_irreps_dim
-            )).item()
+            avg_train_loss = (
+                running
+                / (
+                    len(training_loader)
+                    * architecture_config.embedding_preprocess_config.output_irreps_dim
+                )
+            ).item()
 
             running = torch.zeros((), device=device)
             encoder.eval()
@@ -279,7 +274,7 @@ def main():
             preprocessor.eval()
 
             with torch.no_grad():
-                for batch_idx, val_samples in enumerate(validation_loader):
+                for val_samples in validation_loader:
                     val_samples.to_(device)
                     preprocessed_val_samples: PreprocessedSample = preprocessor(
                         val_samples
@@ -318,13 +313,19 @@ def main():
 
                     running += denoising_loss.detach()
 
-                avg_validation_loss = (running / (
-                    (batch_idx + 1)
-                    * architecture_config.embedding_preprocess_config.output_irreps_dim
-                )).item()
+                avg_validation_loss = (
+                    running
+                    / (
+                        len(validation_loader)
+                        * architecture_config.embedding_preprocess_config.output_irreps_dim
+                    )
+                ).item()
 
                 telemetry.log_pretraining_epoch(
-                    epoch, avg_train_loss, avg_validation_loss, current_lr=lr_scheduler.get_last_lr()[0]
+                    epoch,
+                    avg_train_loss,
+                    avg_validation_loss,
+                    current_lr=lr_scheduler.get_last_lr()[0],
                 )
 
                 if telemetry.best_epoch:
@@ -337,11 +338,6 @@ def main():
                         preprocessor.geometric_preprocessor.state_dict(),
                         f"{training_data_dir}/geometric_preprocessor.pth",
                     )
-
-    pyaml.to_yaml_file(
-        training_data_dir / "post_training_architecture_config.yaml",
-        architecture_config,
-    )
 
 
 if __name__ == "__main__":

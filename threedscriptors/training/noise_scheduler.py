@@ -24,7 +24,6 @@ class ConstantSchedule(NoiseScheduler):
         pass
 
 
-
 class NoiseModule(nn.Module):
     def __init__(self, scheduler: NoiseScheduler):
         super().__init__()

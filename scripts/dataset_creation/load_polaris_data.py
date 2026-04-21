@@ -27,7 +27,6 @@ from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
 dataset_name = "antiviral_potency"
 
 
-
 creation_config = DatasetCreationConfig(
     path=Path(
         f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/{dataset_name}"
@@ -40,7 +39,7 @@ creation_config = DatasetCreationConfig(
 
 task_configs = get_polaris_task_configs(dataset_name)
 
-gen = PolarisGenerator(dataset_name=dataset_name,batch_size= 500, max_atoms=100)
+gen = PolarisGenerator(dataset_name=dataset_name, batch_size=500, max_atoms=100)
 
 # Use CUDA if available
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -82,7 +81,7 @@ dataset_config = DatasetConfig(
     atom_chunk=450,
     molecule_chunk=50,
     contains_smiles=True,
-    tasks = TaskSet.from_list(task_configs)
+    tasks=TaskSet.from_list(task_configs),
 )
 
 print(dataset_config)

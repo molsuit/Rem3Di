@@ -85,7 +85,6 @@ TM_numbers = set([atomic_numbers[sym] for sym in TM])
 
 
 def get_coordination_numbers(molecules: list[Atoms]):
-
     cns = []
 
     for m in molecules:
@@ -135,7 +134,6 @@ def get_tm_colormap():
 
 
 def get_block_colors(atomic_nums):
-
     blocks = {
         "3d": ["Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn"],
         "4d": ["Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd"],
@@ -145,7 +143,7 @@ def get_block_colors(atomic_nums):
 
     back_map = {}
 
-    for i, (key, val) in enumerate(blocks.items()):
+    for i, (_key, val) in enumerate(blocks.items()):
         for v in val:
             back_map[v] = i
 
@@ -170,7 +168,6 @@ def get_metal_center_type(molecules: list[Atoms]) -> list[int]:
 
 
 def get_atomic_num_colors(atomic_nums: int):
-
     colors = [jmol_colors[num] for num in atomic_nums]
 
     color_atomic_symbols = {
@@ -179,7 +176,6 @@ def get_atomic_num_colors(atomic_nums: int):
 
     handles = []
     for key, val in color_atomic_symbols.items():
-
         handles.append(
             plt.Line2D(
                 [],

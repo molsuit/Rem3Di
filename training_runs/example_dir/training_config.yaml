@@ -1,5 +1,5 @@
 batch_size: 112
-dataset_path: 
+dataset_path:
   /share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pcqm
 epochs: 10
 learning_rate: 0.0005

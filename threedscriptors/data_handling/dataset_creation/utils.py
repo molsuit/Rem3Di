@@ -1,4 +1,3 @@
-
 import numpy as np
 import torch
 from ase import Atoms
@@ -24,10 +23,9 @@ def system_idx_to_ragged_ptr(system_idx: Tensor) -> Tensor:
 
 
 def ensure_numpy_array(array: Tensor | np.ndarray | None):
-
     if array is None:
         return None
-    
+
     array = (
         array.detach().cpu().numpy()
         if isinstance(array, torch.Tensor)
@@ -65,7 +63,7 @@ def embed_one_smiles(
 
     # ETKDGv3 with deterministic seeding if provided
     params = AllChem.ETKDGv3()
-    #print(params.keys)
+    # print(params.keys)
     params.numThreads = 1
     params.maxIterations = int(max_embed_attempts)
     # Some quality-of-life flags that help with odd chemistries
@@ -79,7 +77,7 @@ def embed_one_smiles(
         raise ValueError(f"No conformers embedded for {isomeric_smiles}")
 
     # MMFF optimize (UFF as fallback could be added)
-    opt_results = AllChem.MMFFOptimizeMoleculeConfs(
+    AllChem.MMFFOptimizeMoleculeConfs(
         mol,
         maxIters=int(max_opt_iters),
         nonBondedThresh=500.0,  # generous so we don't drop too many

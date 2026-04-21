@@ -1,5 +1,3 @@
-
-
 class RegressionUncertaintyTask(BaseEvalTask):
     def __init__(self, dataset):
         super().__init__()
@@ -24,7 +22,6 @@ class RegressionUncertaintyTask(BaseEvalTask):
         self.figs = figs
 
     def _plot_conformer_uncertainty_histogram(self):
-
         unlabeled_std_dev = np.squeeze(
             np.concatenate(self.results["unlabeled_std_devs_conf_predictions"])
         )
@@ -63,7 +60,6 @@ class RegressionUncertaintyTask(BaseEvalTask):
         unlabeld_std_devs = []
 
         for task_idx, _ in enumerate(self.dataset.dataset_config.tasks):
-
             mol_ids_with_labels, predictions_with_labels, labels = (
                 self.get_labeled_task_data(task_idx)
             )
@@ -93,7 +89,6 @@ class RegressionUncertaintyTask(BaseEvalTask):
         }
 
     def get_unlabeled_task_data(self, task_idx):
-
         task_predictions = self.predictions[:, task_idx]
 
         unlabeld_task_mask = torch.logical_not(
@@ -112,7 +107,6 @@ class RegressionUncertaintyTask(BaseEvalTask):
         return mol_ids_without_labels, predictions_without_lables
 
     def get_labeled_task_data(self, task_idx):
-
         task_mask = torch.tensor(self.dataset.regression_masks[:, task_idx], dtype=bool)
 
         task_predictions = self.predictions[:, task_idx]
@@ -128,6 +122,3 @@ class RegressionUncertaintyTask(BaseEvalTask):
         ]
 
         return mol_ids_with_labels, predictions_with_labels, labels
-
-
-

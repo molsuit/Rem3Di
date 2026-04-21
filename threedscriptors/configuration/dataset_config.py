@@ -14,7 +14,7 @@ class DatasetCreationConfig(BaseModel):
     relaxation_steps: int | None = None
     N_structures: int | None = None
     N_sampled_conformers: int = 1
-    max_embed_attempts: int  = 500
+    max_embed_attempts: int = 500
     max_MMFF_steps: int = 500
 
 

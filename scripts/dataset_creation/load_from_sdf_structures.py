@@ -15,7 +15,8 @@ from threedscriptors.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
 from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
-    BatchedEmbeddingStage, CopyDataStage
+    BatchedEmbeddingStage,
+    CopyDataStage,
 )
 from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
 
@@ -55,16 +56,18 @@ batched_embedding = BatchedEmbeddingStage(
 )
 copy_data = CopyDataStage(dtype=torch.float64)
 
-#pipeline = [batched_embedding]
+# pipeline = [batched_embedding]
 
 creation_config = DatasetCreationConfig(
-    path=Path(
-        "/scratch/public/snw30/dataset/pcqm/pcqm_only_structures_3_5_M"
-    ),
+    path=Path("/scratch/public/snw30/dataset/pcqm/pcqm_only_structures_3_5_M"),
     N_structures=3_500_000,
 )
 dataset_config = DatasetConfig(
-    embedding_dim=mace_irreps.dim, irreps=mace_irreps, atom_chunk=450, molecule_chunk=50, contains_embeddings= False
+    embedding_dim=mace_irreps.dim,
+    irreps=mace_irreps,
+    atom_chunk=450,
+    molecule_chunk=50,
+    contains_embeddings=False,
 )
 
 orchestrator = DatasetConstructionOrchestrator(

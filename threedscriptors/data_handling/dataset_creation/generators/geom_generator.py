@@ -29,7 +29,7 @@ class GeomGenerator(MoleculeGenerator):
     def __init__(
         self,
         geom_dir: Path,
-        boltzman_weight_threshold: float, # The minimum boltzman weight that a conf needs to have to be accepted
+        boltzman_weight_threshold: float,  # The minimum boltzman weight that a conf needs to have to be accepted
         max_atoms: int | None = None,
         loading_batch_size: int = 100,
         max_workers: int = os.cpu_count(),
@@ -139,7 +139,7 @@ class GeomGenerator(MoleculeGenerator):
             raw_results.sort(key=lambda t: (t[0], t[1]))  # (molecule_id, conformer_id)
 
             # Push everything we just loaded into the buffer
-            for mol_id, conf_id, can_smi, nums, pos in raw_results:
+            for mol_id, _conf_id, can_smi, nums, pos in raw_results:
                 atoms = Atoms(numbers=nums, positions=pos, info={"smiles": can_smi})
                 buf_mols.append(atoms)
                 buf_ids.append(

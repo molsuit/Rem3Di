@@ -3,22 +3,23 @@ from importlib import resources
 import pydantic_yaml as pyaml
 import pytest
 from mace.calculators import mace_mp
-from threedscriptors.data_handling.pipelines import regression_training_pipeline
 
-from threedscriptors.configuration.architecture_config import ArchitectureConfig
+from threedscriptors.configuration.architecture_config import (
+    RegressionArchitectureConfig,
+)
 from threedscriptors.configuration.data_config import (
     DatasetConfig,
     DatasetTypes,
     MaceCalculatorConfig,
     TaskConfig,
 )
+from threedscriptors.data_handling.pipelines import regression_training_pipeline
 from threedscriptors.evaluation.clustering import UMAPCalculator
 from threedscriptors.evaluation.evaluation_pipeline import RegressionHeadPCATask
 from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
     evaluate_regression_model_on_dataset,
 )
-from threedscriptors.model.model_builder import ModelBuilder
 
 
 def test_regression_evaluation(sample_smiles, regression_targets, regression_masks):
@@ -39,10 +40,10 @@ def test_regression_evaluation(sample_smiles, regression_targets, regression_mas
     )
 
     config_path = resources.files("tests") / "test_architecture_config.yaml"
-    architecture_config: ArchitectureConfig = pyaml.parse_yaml_file_as(
-        ArchitectureConfig, config_path
+    architecture_config = pyaml.parse_yaml_file_as(
+        RegressionArchitectureConfig, config_path
     )
-    model = ModelBuilder(architecture_config).build_model().eval()
+    model = architecture_config.build().eval()
 
     dataset = regression_training_pipeline(
         dataset_config, sample_smiles, regression_targets, regression_masks
@@ -67,10 +68,10 @@ def test_regression_evaluation_negative(
     )
 
     config_path = resources.files("tests") / "test_architecture_config.yaml"
-    architecture_config: ArchitectureConfig = pyaml.parse_yaml_file_as(
-        ArchitectureConfig, config_path
+    architecture_config = pyaml.parse_yaml_file_as(
+        RegressionArchitectureConfig, config_path
     )
-    model = ModelBuilder(architecture_config).build_model().eval()
+    model = architecture_config.build().eval()
 
     dataset = regression_training_pipeline(
         dataset_config, sample_smiles, regression_targets, regression_masks
@@ -98,10 +99,10 @@ def test_descriptor_evaluation(sample_smiles, regression_targets, regression_mas
     )
 
     config_path = resources.files("tests") / "test_architecture_config.yaml"
-    architecture_config: ArchitectureConfig = pyaml.parse_yaml_file_as(
-        ArchitectureConfig, config_path
+    architecture_config = pyaml.parse_yaml_file_as(
+        RegressionArchitectureConfig, config_path
     )
-    model = ModelBuilder(architecture_config).build_model().eval()
+    model = architecture_config.build().eval()
 
     dataset = regression_training_pipeline(
         dataset_config, sample_smiles, regression_targets, regression_masks
@@ -128,18 +129,17 @@ def test_activation_clustering_in_fully_connected_regression_heads(
     )
 
     config_path = resources.files("tests") / "test_architecture_config.yaml"
-    architecture_config: ArchitectureConfig = pyaml.parse_yaml_file_as(
-        ArchitectureConfig, config_path
+    architecture_config = pyaml.parse_yaml_file_as(
+        RegressionArchitectureConfig, config_path
     )
-    model = ModelBuilder(architecture_config).build_model().eval().cuda()
+    model = architecture_config.build().eval().cuda()
     dataset = regression_training_pipeline(
         dataset_config, sample_smiles, regression_targets, regression_masks
     ).build()
 
-
     umap_calc = UMAPCalculator()
 
-    task = RegressionHeadPCATask(dataset=dataset, clustering_calculator= umap_calc)
+    task = RegressionHeadPCATask(dataset=dataset, clustering_calculator=umap_calc)
     activations = task.run(model)
     print(activations)
 
@@ -162,23 +162,22 @@ def test_activation_clustering_in_residual_regression_heads(
     )
 
     config_path = resources.files("tests") / "architecture_config_ps.yaml"
-    architecture_config: ArchitectureConfig = pyaml.parse_yaml_file_as(
-        ArchitectureConfig, config_path
+    architecture_config = pyaml.parse_yaml_file_as(
+        RegressionArchitectureConfig, config_path
     )
 
     architecture_config.regression_head_config[
         0
     ].input_dimensions = 384  # To allow us not passing any auxillary data.
 
-    model = ModelBuilder(architecture_config).build_model().eval().cuda()
+    model = architecture_config.build().eval().cuda()
 
     print(regression_masks)
     dataset = regression_training_pipeline(
         dataset_config, sample_smiles, regression_targets, regression_masks
     ).build()
 
-
     umap_calc = UMAPCalculator()
-    task = RegressionHeadPCATask(dataset=dataset, clustering_calculator= umap_calc)
+    task = RegressionHeadPCATask(dataset=dataset, clustering_calculator=umap_calc)
     activations = task.run(model)
     print(activations)

@@ -25,8 +25,7 @@ class TaskSet(BaseModel):
     atom_cols: list[TaskConfig] = []
 
     system_map: dict[str, int] = {}
-    atom_map:   dict[str, int] = {}
-
+    atom_map: dict[str, int] = {}
 
     @classmethod
     def from_list(cls, task_list: list[TaskConfig]):

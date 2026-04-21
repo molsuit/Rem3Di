@@ -22,13 +22,14 @@ from threedscriptors.evaluation.results import PydanticResult
 # Silence linalg warnings from NumPy & SciPy
 warnings.filterwarnings("ignore", category=scipy.linalg.LinAlgWarning)
 
+
 class CrossValidationOutput(BaseModel):
     """
     Cross-validation result payload to be wrapped by PydanticResult(obj=...).
     """
 
     # payload
-    fold_metrics: np.ndarray                  # (n_folds, 3) -> [MAE, RMSE, R2]
+    fold_metrics: np.ndarray  # (n_folds, 3) -> [MAE, RMSE, R2]
     best_params_per_fold: list[dict[str, Any]]
     final_params: dict[str, Any]
     info: dict[str, Any] = Field(default_factory=dict)
@@ -45,7 +46,9 @@ class CrossValidationOutput(BaseModel):
     def _coerce_fold_metrics(cls, v: Any) -> np.ndarray:
         arr = np.asarray(v, dtype=float)
         if arr.ndim != 2 or arr.shape[1] != 3:
-            raise ValueError("fold_metrics must have shape (n_folds, 3) for [MAE, RMSE, R2].")
+            raise ValueError(
+                "fold_metrics must have shape (n_folds, 3) for [MAE, RMSE, R2]."
+            )
         return arr
 
     @staticmethod
@@ -57,7 +60,7 @@ class CrossValidationOutput(BaseModel):
             return x.item()
         if isinstance(x, dict):
             return {k: CrossValidationOutput._jsonable(v) for k, v in x.items()}
-        if isinstance(x, (list, tuple)):
+        if isinstance(x, list | tuple):
             return [CrossValidationOutput._jsonable(v) for v in x]
         return x
 
@@ -78,7 +81,9 @@ class CrossValidationOutput(BaseModel):
         ddof = 1 if n > 1 else 0
         means = m.mean(axis=0)
         stds = m.std(axis=0, ddof=ddof)
-        params = ", ".join(f"{k}={self.final_params.get(k, 'NA')}" for k in self.final_params.keys())
+        params = ", ".join(
+            f"{k}={self.final_params.get(k, 'NA')}" for k in self.final_params.keys()
+        )
         return (
             f"Results from {n}-fold CV: "
             f"MAE: {means[0]:.4f}±{stds[0]:.4f} | "
@@ -107,16 +112,15 @@ class CVParams:
 
 
 class CrossValidationRunner:
-
-    def __init__(self,cv_params: CVParams,  # your CVParams dataclass
-    learner: Learner):
-
+    def __init__(
+        self,
+        cv_params: CVParams,  # your CVParams dataclass
+        learner: Learner,
+    ):
         self.cv_params = cv_params
         self.learner = learner
 
-    def run_kfold_repeated_cross_validation(self,
-    X,
-    y) -> CrossValidationOutput:
+    def run_kfold_repeated_cross_validation(self, X, y) -> CrossValidationOutput:
         """
         Outer: RepeatedKFold for generalization estimate.
         Optional inner: RandomizedSearchCV to tune hyperparams on the training fold.
@@ -211,10 +215,11 @@ class CrossValidationRunner:
 
         return self.result
 
-    def write_output(self, output_directory : Path):
-
+    def write_output(self, output_directory: Path):
         output_directory = Path(output_directory)
         output_directory.mkdir(parents=True, exist_ok=True)
 
-        res = PydanticResult(file_name= f"cross_validation_result_{self.learner.name}", obj = self.result)
+        res = PydanticResult(
+            file_name=f"cross_validation_result_{self.learner.name}", obj=self.result
+        )
         res.serialize_to(directory=output_directory)

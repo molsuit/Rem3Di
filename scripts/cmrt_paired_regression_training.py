@@ -6,22 +6,16 @@ from pathlib import Path
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-from threedscriptors.training.data_normalization import DataNormalizationModule
-from threedscriptors.training.dataset_splitting import (
-    DatasetSplitting,
-    SplitConfig,
-    SplitStrategy,
-)
+import wandb
 from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
 
-import wandb
 from threedscriptors.configuration.architecture_config import (
-    ArchitectureConfig,
+    RegressionArchitectureConfig,
 )
 from threedscriptors.configuration.data_config import DatasetSplit
+from threedscriptors.configuration.mace_config import MaceConfig
 from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.dataset import (
     PairedRegressionWithAuxAndPositionDataset,
@@ -29,6 +23,7 @@ from threedscriptors.data_handling.dataset import (
 from threedscriptors.data_handling.indexed_subset import (
     IndexedPairedSubset,
 )
+from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
 from threedscriptors.data_handling.sample import (
     paired_sample_collate_fn,
 )
@@ -38,9 +33,14 @@ from threedscriptors.evaluation.evaluation_pipeline import (
 from threedscriptors.evaluation.training_evaluation import (
     chiral_regression_pipeline,
 )
-from threedscriptors.model.model_builder import ModelBuilder
 from threedscriptors.model.molecule_difference_regressor import (
     MolecularDifferenceRegressor,
+)
+from threedscriptors.training.data_normalization import DataNormalizationModule
+from threedscriptors.training.dataset_splitting import (
+    DatasetSplitting,
+    SplitConfig,
+    SplitStrategy,
 )
 from threedscriptors.training.regression_training import (
     direct_difference_loss,
@@ -77,7 +77,7 @@ training_run_dir = Path(
 training_idx = len(list(training_run_dir.glob("*/")))
 now = datetime.now()
 training_data_dir = training_run_dir / Path(
-    f"{training_idx}-{now.strftime("%Y_%m_%d_%H_%M_%S")}-{run_name}"
+    f"{training_idx}-{now.strftime('%Y_%m_%d_%H_%M_%S')}-{run_name}"
 )
 
 os.makedirs(training_data_dir)
@@ -95,7 +95,9 @@ training_config = TrainingConfig(
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
-    mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
+    mace_config=MaceConfig(
+        model_path=Path("/share/snw30/projects/mace_model/MACE-OFF24_medium.model")
+    ),
     dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt_training",
     test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_test",
     model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/cmrt_training",
@@ -103,7 +105,7 @@ training_config = TrainingConfig(
 )
 
 architecture_config = pyaml.parse_yaml_file_as(
-    ArchitectureConfig,
+    RegressionArchitectureConfig,
     f"{training_config.model_dir}/architecture_config.yaml",
 )
 
@@ -123,7 +125,6 @@ lowest_val_losses = []
 for train_idx, val_idx, split_name in dataset_splitting.get_split(
     training_config.split_config
 ):
-
     os.makedirs(f"{training_config.training_data_dir}/{split_name.lower()}")
 
     train_pair_idx = dataset.get_pair_indices_for_structures(set(train_idx))
@@ -131,8 +132,6 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
 
     train_dataset = IndexedPairedSubset(dataset, train_pair_idx)
     valid_dataset = IndexedPairedSubset(dataset, valid_pair_idx)
-
-
 
     training_loader = DataLoader(
         train_dataset,
@@ -156,10 +155,9 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
 
     data_normalization = DataNormalizationModule(dataset=train_dataset)
 
-    mean_diff_log, std_diff_logs = data_normalization.get_pairwise_differences(train_dataset)
-
-
-
+    mean_diff_log, std_diff_logs = data_normalization.get_pairwise_differences(
+        train_dataset
+    )
 
     task_configs = data_normalization.task_configs
 
@@ -167,9 +165,8 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
         data_normalization.get_atomic_embedding_normalization_constants()
     )
 
-    mb = ModelBuilder(architecture_config=architecture_config)
-    mb.insert_task_configs_into_regression_heads(task_configs)
-    model = mb.build_model(
+    architecture_config.insert_task_configs(task_configs)
+    model = architecture_config.build(
         mean_atomic_embedding=inv_mean_per_dim, std_atomic_embedding=inv_std_per_dim
     )
 
@@ -181,7 +178,9 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
         aux_embedding_dim=64,
     )
 
-    print(f"Trainable Parameters: {mb.N_trainable_parameters}")
+    print(
+        f"Trainable Parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
+    )
 
     config = {
         "architecture_config": architecture_config.model_dump(),
@@ -198,7 +197,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
     # list(model.encoder.parameters())
     # + list(model.preprocessor.geometric_preprocessor.parameters())+list(model.multitask_heads.parameters())
     # )
-    all_params = list(model.parameters()) +list(difference_regressor.parameters())
+    all_params = list(model.parameters()) + list(difference_regressor.parameters())
 
     # all_params = model.multitask_heads.parameters()
     optimizer = optim.AdamW(
@@ -225,11 +224,9 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
         split_name=split_name,
         config=config,
     ) as telemetry:
-
         print("Starting Training")
 
         for epoch in range(training_config.epochs):
-
             # Initialize task and total train losses
             accumulated_train_loss = 0.0
             accumulated_train_loss_per_task = torch.zeros(
@@ -239,8 +236,8 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
             model.train()
             optimizer.zero_grad()
 
-            for batch_idx, samples in enumerate(training_loader):
-                #samples = data_normalization(samples)
+            for samples in training_loader:
+                # samples = data_normalization(samples)
                 samples.to_(device)
                 model_output = model(samples)
 
@@ -248,18 +245,16 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
                 B = labels.shape[0]
                 N = B // 2
 
-                lab_e1,  lab_e2  = labels[:N],        labels[N:]
+                lab_e1, lab_e2 = labels[:N], labels[N:]
                 diff_label = torch.log(lab_e1) - torch.log(lab_e2)
 
-                diff_label = (diff_label - mean_diff_log)/std_diff_logs
-
-
+                diff_label = (diff_label - mean_diff_log) / std_diff_logs
 
                 retention_time_differences = difference_regressor(
                     model_output.molecular_descriptor, samples.auxillary_data["cmrt"]
                 )
 
-                #retention_time_diff_labels = samples
+                # retention_time_diff_labels = samples
 
                 # loss = chiral_difference_loss(model_output.regression_predictions, samples.regression_targets, regression_mask= samples.regression_masks)
 
@@ -276,7 +271,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
 
                 accumulated_train_loss += loss.item()
 
-            avg_train_loss = accumulated_train_loss / (batch_idx + 1)
+            avg_train_loss = accumulated_train_loss / len(training_loader)
 
             accumulated_validation_loss = 0.0
 
@@ -284,43 +279,43 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
             difference_regressor.eval()
 
             with torch.no_grad():
-                for batch_idx, val_samples in enumerate(validation_loader):
-                    #val_samples = data_normalization(val_samples)
+                for val_samples in validation_loader:
+                    # val_samples = data_normalization(val_samples)
                     val_samples.to_(device)
 
                     val_output = model(val_samples)
 
                     retention_time_differences = difference_regressor(
-                    val_output.molecular_descriptor, val_samples.auxillary_data["cmrt"]
-                )
-
+                        val_output.molecular_descriptor,
+                        val_samples.auxillary_data["cmrt"],
+                    )
 
                     labels = val_samples.regression_targets
                     B = labels.shape[0]
                     N = B // 2
 
-                    lab_e1,  lab_e2  = labels[:N],        labels[N:]
+                    lab_e1, lab_e2 = labels[:N], labels[N:]
                     diff_label = torch.log(lab_e1) - torch.log(lab_e2)
 
-                    diff_label = (diff_label - mean_diff_log)/std_diff_logs
-
+                    diff_label = (diff_label - mean_diff_log) / std_diff_logs
 
                     # loss = chiral_difference_loss(model_output.regression_predictions, samples.regression_targets, regression_mask= samples.regression_masks)
 
-                    loss = direct_difference_loss(retention_time_differences, diff_label)
+                    loss = direct_difference_loss(
+                        retention_time_differences, diff_label
+                    )
 
-
-
-
-                    #loss = chiral_difference_loss(
+                    # loss = chiral_difference_loss(
                     #    val_output.regression_predictions,
                     #    val_samples.regression_targets,
                     #    regression_mask=val_samples.regression_masks,
-                    #)
+                    # )
 
                     accumulated_validation_loss += loss.item()
 
-                avg_validation_loss = accumulated_validation_loss / (batch_idx + 1)
+                avg_validation_loss = accumulated_validation_loss / len(
+                    validation_loader
+                )
 
                 current_lr = scheduler.get_last_lr()[0]
 
@@ -334,7 +329,6 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
                 )
 
                 if telemetry.best_epoch:
-
                     torch.save(model.state_dict(), best_model_path)
                     print(
                         f"  - New best model (val_loss {avg_validation_loss:.4f}), saving to {best_model_path}"
@@ -362,10 +356,6 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
         f"{training_config.training_data_dir}/training_config.yaml", training_config
     )
 
-    architecture_config.reload_full_model_weights = (
-        f"{training_config.training_data_dir}/regression_model.pth"
-    )
-
     pyaml.to_yaml_file(
         f"{training_config.training_data_dir}/architecture_config.yaml",
         architecture_config,
@@ -376,7 +366,6 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
         dataset.dataset_config,
     )
 
-
     cd_task_val = ChiralDifferencePredictionTask(valid_dataset)
     print("Validation")
     cd_task_val.run(model, difference_regressor, mean_diff_log, std_diff_logs)
@@ -384,7 +373,6 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
     print("Training")
     cd_train_task = ChiralDifferencePredictionTask(train_dataset)
     cd_train_task.run(model, difference_regressor, mean_diff_log, std_diff_logs)
-
 
     breakpoint()
 

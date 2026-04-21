@@ -66,7 +66,6 @@ class PairBlock(nn.Module):
         self.pair_ffn = PairFFN(d_pair) if pair_ffn else nn.Identity()
 
     def forward(self, S, mask, P, p_geo, mask_pair):
-
         # Atom Representation Attention Update
         S = S + self.attn(self.ln_s1(S), P, mask)
 
@@ -80,10 +79,7 @@ class PairBlock(nn.Module):
         return S, P
 
 
-
-
-
-#Not in Use
+# Not in Use
 class PairCrossAttentionBlock(nn.Module):
     def __init__(
         self,
@@ -115,7 +111,6 @@ class PairCrossAttentionBlock(nn.Module):
         self.pair_ffn = PairFFN(d_pair) if pair_ffn else nn.Identity()
 
     def forward(self, S, mask, P, p_geo, mask_pair):
-
         # Atom Representation Update
 
         S = S + self.attn(self.ln_s1(S), P, mask)

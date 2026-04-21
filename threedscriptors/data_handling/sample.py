@@ -28,6 +28,8 @@ class Sample:
     atomic_positions: torch.Tensor | None = None
     atomic_numbers: torch.Tensor | None = None
     system_index: torch.Tensor | None = None
+    total_charge: torch.Tensor | None = None
+    total_spin: torch.Tensor | None = None
 
     def to(self, device: torch.device, non_blocking: bool = True) -> "Sample":
         moved_fields = {
@@ -47,7 +49,9 @@ class Sample:
         return self.embeddings.shape[0]
 
     def pin_memory(self):
-        def _pin(x): return None if x is None else x.pin_memory()
+        def _pin(x):
+            return None if x is None else x.pin_memory()
+
         return Sample(
             embeddings=_pin(self.embeddings),
             padding_mask=_pin(self.padding_mask),
@@ -56,40 +60,40 @@ class Sample:
             auxillary_data=self.auxillary_data,
             atomic_positions=_pin(self.atomic_positions),
             atomic_numbers=_pin(self.atomic_numbers),
-            system_index=_pin(self.system_index)
+            system_index=_pin(self.system_index),
+            total_charge=_pin(self.total_charge),
+            total_spin=_pin(self.total_spin),
         )
 
 
-
-
 def pretraining_padded_collate_fn(batch: list[Sample]) -> Sample:
-
     Ns = [len(s) for s in batch]
-    #B = len(batch)
+    # B = len(batch)
     Nmax = max(Ns)
 
-    #D = int(batch[0].embeddings.shape[1])
+    # D = int(batch[0].embeddings.shape[1])
 
-    #e_dtype = batch[0].embeddings.dtype
-    #p_dtype = batch[0].atomic_positions.dtype
+    # e_dtype = batch[0].embeddings.dtype
+    # p_dtype = batch[0].atomic_positions.dtype
 
     E_pad = pad_sequence([s.embeddings for s in batch], batch_first=True)  # (B,Nmax,D)
-    P_pad = pad_sequence([s.atomic_positions for s in batch], batch_first=True)  # (B,Nmax,3)
-    Nmax  = E_pad.size(1)
+    P_pad = pad_sequence(
+        [s.atomic_positions for s in batch], batch_first=True
+    )  # (B,Nmax,3)
+    Nmax = E_pad.size(1)
     lengths = torch.tensor([len(s) for s in batch])
     mask = torch.arange(Nmax).expand(len(batch), Nmax) >= lengths.unsqueeze(1)
 
     return Sample(embeddings=E_pad, padding_mask=mask, atomic_positions=P_pad)
 
+
 def normalization_collate_fn(batch: list[Sample]) -> Sample:
-    E = torch.cat(tensors = [s.embeddings for s in batch])  # (B,Nmax,D)
+    E = torch.cat(tensors=[s.embeddings for s in batch])  # (B,Nmax,D)
     return Sample(embeddings=E)
 
 
-
 def sample_collate_fn(batch: list[Sample]) -> Sample:
-
-    max_atoms = max([len(s) for s in batch])
+    max([len(s) for s in batch])
 
     # Pad all samples to the same max atoms
 
@@ -115,9 +119,8 @@ def paired_sample_collate_fn(batch: list[tuple["Sample", "Sample"]]):
     return batch
 
 
-
 def yield_molecules_collate_fn(batch: list[Sample]) -> Sample:
-    # Reads atomic positions and atomic numbers for online embedding 
+    # Reads atomic positions and atomic numbers for online embedding
 
     atomic_positions = torch.cat([s.atomic_positions for s in batch])
     atomic_numbers = torch.cat([s.atomic_numbers for s in batch])
@@ -130,7 +133,28 @@ def yield_molecules_collate_fn(batch: list[Sample]) -> Sample:
         torch.arange(len(batch), device=atomic_positions.device), repeat_counts
     )
 
-    return Sample(atomic_positions=atomic_positions, atomic_numbers= atomic_numbers, system_index=system_idx)
+    def _per_system(field: str, default: float) -> torch.Tensor:
+        vals: list[torch.Tensor] = []
+        for s in batch:
+            v = getattr(s, field)
+            if v is None:
+                v = torch.tensor(default, dtype=atomic_positions.dtype)
+            else:
+                v = torch.as_tensor(v, dtype=atomic_positions.dtype).reshape(())
+            vals.append(v)
+        return torch.stack(vals)
+
+    total_charge = _per_system("total_charge", 0.0)
+    total_spin = _per_system("total_spin", 1.0)
+
+    return Sample(
+        atomic_positions=atomic_positions,
+        atomic_numbers=atomic_numbers,
+        system_index=system_idx,
+        total_charge=total_charge,
+        total_spin=total_spin,
+    )
+
 
 @dataclass
 class PreprocessedSample:

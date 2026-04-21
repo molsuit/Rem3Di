@@ -9,15 +9,13 @@ from threedscriptors.configuration.dataset_config import (
     DatasetCreationConfig,
 )
 from threedscriptors.data_handling.dataset.tasks import (
-    TaskConfig,
-    TaskScope,
     TaskSet,
-    TaskType,
 )
 from threedscriptors.data_handling.dataset_creation.generators.moleculenet_generator import (
-    MoleculeNetGenerator, MoleculeNetTask, MoleculeNetTaskConfig, convert_tasks_to_configs
+    MoleculeNetGenerator,
+    MoleculeNetTask,
+    convert_tasks_to_configs,
 )
-
 from threedscriptors.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
@@ -27,7 +25,9 @@ from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
 )
 from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
 
-mnet_dir = Path("/share/snw30/projects/threedscriptor/raw_datasets/molecule_net/processed")
+mnet_dir = Path(
+    "/share/snw30/projects/threedscriptor/raw_datasets/molecule_net/processed"
+)
 
 creation_config = DatasetCreationConfig(
     path=Path(
@@ -38,13 +38,19 @@ creation_config = DatasetCreationConfig(
     max_MMFF_steps=100,
 )
 
-molecule_net_tasks = [MoleculeNetTask.BACE, MoleculeNetTask.BBBP, MoleculeNetTask.HIV, MoleculeNetTask.ESOL, MoleculeNetTask.FREE_SOLVE, MoleculeNetTask.LIPOPHILICITY]
-
+molecule_net_tasks = [
+    MoleculeNetTask.BACE,
+    MoleculeNetTask.BBBP,
+    MoleculeNetTask.HIV,
+    MoleculeNetTask.ESOL,
+    MoleculeNetTask.FREE_SOLVE,
+    MoleculeNetTask.LIPOPHILICITY,
+]
 
 
 task_configs = convert_tasks_to_configs(molecule_net_tasks)
 
-gen = MoleculeNetGenerator(mnet_dir,batch_size= 500, tasks= task_configs, max_atoms=100)
+gen = MoleculeNetGenerator(mnet_dir, batch_size=500, tasks=task_configs, max_atoms=100)
 
 # Use CUDA if available
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -86,7 +92,7 @@ dataset_config = DatasetConfig(
     atom_chunk=450,
     molecule_chunk=50,
     contains_smiles=True,
-    tasks = TaskSet.from_list(task_configs)
+    tasks=TaskSet.from_list(task_configs),
 )
 
 print(dataset_config)

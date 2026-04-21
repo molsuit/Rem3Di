@@ -1,26 +1,26 @@
 import gzip
 import json
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from matplotlib.figure import Figure
 from pydantic import BaseModel, ConfigDict, Field
-from sklearn.base import BaseEstimator
+
 
 def _jsonable(x):
     if isinstance(x, np.ndarray):
         return x.tolist()
-    if isinstance(x, np.generic):           # np.float32, np.int64, etc.
+    if isinstance(x, np.generic):  # np.float32, np.int64, etc.
         return x.item()
     if isinstance(x, Mapping):
         return {k: _jsonable(v) for k, v in x.items()}
-    if isinstance(x, Sequence) and not isinstance(x, (str, bytes)):
-        return [ _jsonable(v) for v in x ]
+    if isinstance(x, Sequence) and not isinstance(x, str | bytes):
+        return [_jsonable(v) for v in x]
     if isinstance(x, Path):
         return str(x)
     return x
@@ -52,7 +52,6 @@ class FigureResult(EvalResult):
         plt.close(self.figure)
 
 
-
 class ChemiscopeResult(EvalResult):
     result_type: Literal["chemiscope"] = "chemiscope"
     data: dict[str, Any]
@@ -64,7 +63,10 @@ class ChemiscopeResult(EvalResult):
 
         if ".gz" in output_path.suffixes:
             with gzip.open(
-                output_path, mode="wt", encoding="utf-8", compresslevel=self.compresslevel
+                output_path,
+                mode="wt",
+                encoding="utf-8",
+                compresslevel=self.compresslevel,
             ) as file:
                 json.dump(self.data, file)
         else:
@@ -88,5 +90,3 @@ class PydanticResult(EvalResult):
             default_flow_style=False,
         )
         output_path.write_text(yaml_text, encoding="utf-8")
-
-

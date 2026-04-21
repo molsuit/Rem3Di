@@ -2,9 +2,7 @@ from torch import nn
 
 
 class MolecularDifferenceRegressor(nn.Module):
-
     def __init__(self, descriptor_input_dim, aux_input_dim, aux_embedding_dim):
-
         super().__init__()
         self.descriptor_input_dim = descriptor_input_dim
 
@@ -14,18 +12,18 @@ class MolecularDifferenceRegressor(nn.Module):
             nn.SiLU(),
             nn.Dropout(0.2),
             nn.Linear(256, 64),
-            #nn.LayerNorm(256),
-            #nn.SiLU(),
-            #nn.Dropout(0.2),
-            #nn.Linear(256, 256),
-            #nn.LayerNorm(256),
-            #nn.SiLU(),
-            #nn.Dropout(0.2),
-            #nn.Linear(256, 128),
-            #nn.LayerNorm(128),
-            #nn.SiLU(),
-            #nn.Dropout(0.2),
-            #nn.Linear(128, aux_embedding_dim),
+            # nn.LayerNorm(256),
+            # nn.SiLU(),
+            # nn.Dropout(0.2),
+            # nn.Linear(256, 256),
+            # nn.LayerNorm(256),
+            # nn.SiLU(),
+            # nn.Dropout(0.2),
+            # nn.Linear(256, 128),
+            # nn.LayerNorm(128),
+            # nn.SiLU(),
+            # nn.Dropout(0.2),
+            # nn.Linear(128, aux_embedding_dim),
         )
 
         self.experimental_cond_gate = nn.Sequential(
@@ -33,7 +31,7 @@ class MolecularDifferenceRegressor(nn.Module):
             nn.LayerNorm(aux_embedding_dim),
             nn.SiLU(),
             nn.Linear(aux_embedding_dim, aux_embedding_dim),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
 
         self.output_mlp = nn.Sequential(
@@ -44,7 +42,6 @@ class MolecularDifferenceRegressor(nn.Module):
         )
 
     def forward(self, descriptors, auxillary_data):
-
         B = descriptors.shape[0]
         if B % 2 != 0:
             raise ValueError(f"Batch size must be even — got {B}")

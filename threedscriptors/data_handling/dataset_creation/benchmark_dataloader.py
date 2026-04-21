@@ -85,7 +85,7 @@ class DataloaderBenchmarkResult(BaseModel):
     @field_serializer("dataset_dir")
     def _serialize_dataset_dir(self, dataset_dir: Path) -> str:
         return str(dataset_dir)
-    
+
     def summary(self) -> str:
         if self.batches == 0:
             return "No batches processed."
@@ -224,7 +224,8 @@ class DataloaderBenchmark:
             source_ds.isomeric_smiles.close()
 
         scratch_dir = TemporaryDirectory(
-            prefix="dataloader_bench_", dir=str(scratch_parent) if scratch_parent else None
+            prefix="dataloader_bench_",
+            dir=str(scratch_parent) if scratch_parent else None,
         )
         target_dir = Path(scratch_dir.name) / "dataset"
         self._scratch = scratch_dir
@@ -236,7 +237,9 @@ class DataloaderBenchmark:
                 target_dir,
                 new_cfg,
                 structures_per_chunk=self._structures_per_chunk,
-                structure_limit= int(self.config.batch_size * self.config.limit_n_batches* 1.25)
+                structure_limit=int(
+                    self.config.batch_size * self.config.limit_n_batches * 1.25
+                ),
             )
             reconfig.run()
             print("Reconfig completed")
@@ -349,7 +352,9 @@ class DataloaderBenchmark:
             return None
 
         rng = np.random.default_rng(0)
-        idxs = rng.integers(low=0, high=len(self._lengths), size=n_iters, endpoint=False)
+        idxs = rng.integers(
+            low=0, high=len(self._lengths), size=n_iters, endpoint=False
+        )
 
         total_atoms = 0
         t0 = perf_counter()

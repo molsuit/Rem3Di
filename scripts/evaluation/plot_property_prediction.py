@@ -20,15 +20,14 @@ rc_params = {
 \usepackage{sansmath}   % use sans serif in math mode as well
 \sansmath
 """,
-"font.size": 14
+    "font.size": 14,
 }
 mpl.rcParams.update(rc_params)
 
 
-
-
 def _wrap(labels: Iterable[str], width: int = 16) -> list[str]:
     return [textwrap.fill(str(l), width=width) for l in labels]
+
 
 def _flatten_results_any(results_any) -> pd.DataFrame:
     """
@@ -50,7 +49,9 @@ def _flatten_results_any(results_any) -> pd.DataFrame:
                 rows.append(row)
     return pd.DataFrame(rows)
 
+
 _NULL_REGEX = re.compile(r"(null|test\s*mean|mean\s*baseline)", re.IGNORECASE)
+
 
 def _find_null_mae_for_task(df_task: pd.DataFrame) -> float | None:
     # exact hits first
@@ -65,23 +66,31 @@ def _find_null_mae_for_task(df_task: pd.DataFrame) -> float | None:
             return float(row["MAE"])
     return None
 
-def _auto_family_colors(models: list[str]) -> dict[str, tuple[float, float, float, float]]:
+
+def _auto_family_colors(
+    models: list[str],
+) -> dict[str, tuple[float, float, float, float]]:
     families = {
         "REM3DI": [m for m in models if "rem3di" in m.lower()],
-        "ECFP":   [m for m in models if "ecfp" in m.lower()],
-        "OTHER":  [m for m in models if ("rem3di" not in m.lower() and "ecfp" not in m.lower())],
+        "ECFP": [m for m in models if "ecfp" in m.lower()],
+        "OTHER": [
+            m for m in models if ("rem3di" not in m.lower() and "ecfp" not in m.lower())
+        ],
     }
     colors = {}
+
     def assign_shades(members, cmap, lo=0.45, hi=0.85):
         if not members:
             return
         t = np.linspace(lo, hi, num=len(members))
         for name, ti in zip(members, t, strict=False):
             colors[name] = cmap(ti)
+
     assign_shades(families["REM3DI"], plt.cm.Blues)
-    assign_shades(families["ECFP"],   plt.cm.Reds)
-    assign_shades(families["OTHER"],  plt.cm.Greys, lo=0.35, hi=0.75)
+    assign_shades(families["ECFP"], plt.cm.Reds)
+    assign_shades(families["OTHER"], plt.cm.Greys, lo=0.35, hi=0.75)
     return colors
+
 
 def plot_normalized_mae_bar_one_figure(
     results_any: Mapping[str, Any] | list[Mapping[str, Any]],
@@ -93,10 +102,13 @@ def plot_normalized_mae_bar_one_figure(
     colors: dict[str, tuple[float, float, float, float]] | None = None,
     use_family_colors: bool = True,
 ) -> Path | None:
-
     df = _flatten_results_any(results_any)
-    missing = [(t, m) for t in tasks for m in models
-               if not ((df["task"] == t) & (df["model"] == m)).any()]
+    missing = [
+        (t, m)
+        for t in tasks
+        for m in models
+        if not ((df["task"] == t) & (df["model"] == m)).any()
+    ]
     if missing:
         ex = ", ".join([f"({t}, {m})" for t, m in missing[:8]])
         if len(missing) > 8:
@@ -126,7 +138,9 @@ def plot_normalized_mae_bar_one_figure(
     bar_w = total_width / nM
     offsets = (np.arange(nM) - (nM - 1) / 2) * bar_w
     for j, m in enumerate(models):
-        ax.bar(x + offsets[j], norm[:, j], width=bar_w, label=m, color=colors.get(m, None))
+        ax.bar(
+            x + offsets[j], norm[:, j], width=bar_w, label=m, color=colors.get(m, None)
+        )
 
     ax.set_xticks(x, _wrap(tasks, width=14), rotation=0, ha="center")
     ax.set_ylabel("MAE / MAE(Null)")
@@ -134,28 +148,37 @@ def plot_normalized_mae_bar_one_figure(
 
     ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False, ncol=1)
     fig.tight_layout(rect=(0, 0, 0.82, 1))
-    y_max = max(1.05, float(np.nanmax(norm)) * 1.1)
+    max(1.05, float(np.nanmax(norm)) * 1.1)
     ax.set_ylim(0, 1.4)
     fig.tight_layout()
     return fig
 
 
 models = ["Ridge REM3DI", "RF REM3DI", "Ridge ECFP", "RF ECFP"]
-tasks_avp  = ["pIC50 (MERS-CoV Mpro)","pIC50 (SARS-CoV-2 Mpro)"]
-tasks_adme_fang = ["LOG_HLM_CLint","LOG_RLM_CLint","LOG_MDR1-MDCK_ER","LOG_HPPB", "LOG_RPPB","LOG_SOLUBILITY"]
-tasks_av_admet = ["HLM","KSOL","LogD", "MDR1-MDCKII","MLM"]
+tasks_avp = ["pIC50 (MERS-CoV Mpro)", "pIC50 (SARS-CoV-2 Mpro)"]
+tasks_adme_fang = [
+    "LOG_HLM_CLint",
+    "LOG_RLM_CLint",
+    "LOG_MDR1-MDCK_ER",
+    "LOG_HPPB",
+    "LOG_RPPB",
+    "LOG_SOLUBILITY",
+]
+tasks_av_admet = ["HLM", "KSOL", "LogD", "MDR1-MDCKII", "MLM"]
 
-tasks_av = tasks_avp +tasks_av_admet
+tasks_av = tasks_avp + tasks_av_admet
 import yaml
 
-results = yaml.safe_load(open("/share/snw30/projects/threedscriptor/3DMolecularDescriptors/test_metrics.yaml"))
+results = yaml.safe_load(
+    open(
+        "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/test_metrics.yaml"
+    )
+)
 
 
 fig = plot_normalized_mae_bar_one_figure(
-    results_any=results,
-    models=models,
-    tasks=tasks_adme_fang,
-    title="ADME Fang Dataset")
+    results_any=results, models=models, tasks=tasks_adme_fang, title="ADME Fang Dataset"
+)
 
 
 fig.savefig("adme_fang_pp.svg")
@@ -164,7 +187,8 @@ fig = plot_normalized_mae_bar_one_figure(
     results_any=results,
     models=models,
     tasks=tasks_av,
-    title="Polaris Antiviral Dataset")
+    title="Polaris Antiviral Dataset",
+)
 
 
 fig.savefig("av_pp.svg")

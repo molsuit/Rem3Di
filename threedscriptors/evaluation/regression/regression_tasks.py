@@ -1,19 +1,18 @@
-import numpy as np 
+import numpy as np
 
 
 def get_synthetic_task(dataset):
-
     smiles = dataset.get_smiles_per_structure()
-    y  = np.zeros(shape=len(smiles))
+    y = np.zeros(shape=len(smiles))
     for i, smi in enumerate(smiles):
         mol = Chem.MolFromSmiles(smi)
         logp = Crippen.MolLogP(mol)
         y[i] = logp
-# Load data 
+    # Load data
 
-# featurize
+    # featurize
 
-# cross validate lass RegressionHeadPCATask(BaseEvalTask):
+    # cross validate lass RegressionHeadPCATask(BaseEvalTask):
     "Run the PCA analysis for the activations in each head"
 
     def __init__(self, dataset, clustering_calculator: ClusteringCalculator):
@@ -37,7 +36,6 @@ def get_synthetic_task(dataset):
             )
 
     def plot(self):
-
         figs = {}
 
         colors = get_colors_for_predictions(self.predictions)
@@ -91,7 +89,6 @@ class RegressionTestTask(BaseEvalTask):
         self.figs = figs
 
     def get_labeled_task_data(self, task_idx):
-
         task_mask = torch.tensor(self.dataset.regression_masks[:, task_idx], dtype=bool)
 
         task_predictions = self.standardized_predictions[:, task_idx]
@@ -112,7 +109,6 @@ class RegressionTestTask(BaseEvalTask):
         fig, ax = plt.subplots()
 
         for task_idx, task in enumerate(self.dataset.dataset_config.tasks):
-
             _, predictions_with_labels, labels = self.get_labeled_task_data(task_idx)
             plt.scatter(
                 predictions_with_labels, labels, label=task.task_name, alpha=0.6, s=0.5
@@ -132,7 +128,6 @@ class RegressionTestTask(BaseEvalTask):
         return {"RefVSPredScatter": fig}
 
     def calculate_model_loss(self):
-
         # Get the model predictions for all tasks.
 
         if self.dataset.dataset_config.N_conformers > 1:
@@ -149,7 +144,6 @@ class RegressionTestTask(BaseEvalTask):
         loss_results = {}
 
         for task_idx, task in enumerate(self.dataset.dataset_config.tasks):
-
             sliced_preds = preds[masks[:, task_idx].squeeze(), task_idx]
 
             sliced_targets = targets[masks[:, task_idx].squeeze(), task_idx]

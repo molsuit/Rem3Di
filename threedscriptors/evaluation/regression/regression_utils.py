@@ -30,7 +30,9 @@ def plot_delta_histogram(reference, prediction):
 def add_regression_head_activations_hooks(
     model: MultiTaskRegressionModel,
 ) -> tuple[dict, Callable]:
-    activations : dict[str, list[torch.Tensor]] = defaultdict(list) # keys will be names of layers
+    activations: dict[str, list[torch.Tensor]] = defaultdict(
+        list
+    )  # keys will be names of layers
 
     def get_activation(name):
         """Creates a hook function that saves the output of a layer."""
@@ -74,10 +76,9 @@ def add_regression_head_activations_hooks(
 
 
 def get_colors_for_predictions(predictions):
-
     norm = Normalize(vmin=predictions.min(), vmax=predictions.max())
     # 2. Pick a colormap (you can swap 'viridis' for any Matplotlib cmap)
-    cmap = get_cmap('viridis')
+    cmap = get_cmap("viridis")
     # 3. Turn it into a ScalarMappable, so you can map values → RGBA
     mappable = ScalarMappable(norm=norm, cmap=cmap)
     # 4. Get colors for each prediction

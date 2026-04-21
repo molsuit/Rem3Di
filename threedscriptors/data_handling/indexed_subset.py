@@ -27,7 +27,7 @@ class IndexedSubset(Subset[TBase], Generic[TBase]):
         # 3) slice depending on type
         if isinstance(attr, torch.Tensor):
             return attr[self._idx_torch.to(attr.device)]
-        if isinstance(attr, (list, tuple)):
+        if isinstance(attr, list | tuple):
             sliced = [attr[i] for i in self.indices]
             return type(attr)(sliced)
         if isinstance(attr, dict):
@@ -41,7 +41,6 @@ class IndexedSubset(Subset[TBase], Generic[TBase]):
 
 
 class IndexedPairedSubset(Subset[TBase], Generic[TBase]):
-
     def __init__(self, dataset: TBase, indices: Sequence[int]):
         super().__init__(dataset, indices)
         # cache once so we don't re-create tensors every getattr
@@ -56,7 +55,6 @@ class IndexedPairedSubset(Subset[TBase], Generic[TBase]):
         )
 
     def __getattr__(self, name):
-
         try:
             return super().__getattr__(name)
         except AttributeError:

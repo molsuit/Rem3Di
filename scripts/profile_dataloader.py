@@ -81,7 +81,6 @@ def main() -> int:
         with output_path.open("w", encoding="utf-8") as fh:
             yaml.safe_dump(result.model_dump(), fh)
 
-
         if script_cfg.run_micro:
             print("\nMicro-benchmarks:")
             micro = benchmark.run_microbenchmarks(script_cfg.micro_iters)

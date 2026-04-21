@@ -16,8 +16,6 @@ def worker_init_fn(_):
     os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 
-
-
 def benchmark_loader(dl, warmup=10, max_batches=100, device="cuda"):
     data_times, h2d_times, batch_sizes = [], [], []
     it = iter(dl)

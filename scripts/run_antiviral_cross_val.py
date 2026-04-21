@@ -5,28 +5,23 @@ from pathlib import Path
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
+import wandb
+from torch import optim
+from torch.optim.lr_scheduler import OneCycleLR
+from torch.utils.data import DataLoader
+
+from threedscriptors.configuration.architecture_config import (
+    RegressionArchitectureConfig,
+)
+from threedscriptors.configuration.data_config import DatasetSplit
+from threedscriptors.configuration.mace_config import MaceConfig
+from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.data_build_pipeline import (
     AtomicPositionsStage,
     PipelineOrchestrator,
     ReduceConformerStage,
     ReloadFromDiskStage,
 )
-from threedscriptors.training.data_normalization import DataNormalizationModule
-from threedscriptors.training.dataset_splitting import (
-    DatasetSplitting,
-    SplitConfig,
-    SplitStrategy,
-)
-from torch import optim
-from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import DataLoader
-
-import wandb
-from threedscriptors.configuration.architecture_config import (
-    ArchitectureConfig,
-)
-from threedscriptors.configuration.data_config import DatasetSplit
-from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.dataset import (
     RegressionDatasetwithPositions,
 )
@@ -35,7 +30,12 @@ from threedscriptors.data_handling.sample import sample_collate_fn
 from threedscriptors.evaluation.training_evaluation import (
     regression_pipeline,
 )
-from threedscriptors.model.model_builder import ModelBuilder
+from threedscriptors.training.data_normalization import DataNormalizationModule
+from threedscriptors.training.dataset_splitting import (
+    DatasetSplitting,
+    SplitConfig,
+    SplitStrategy,
+)
 from threedscriptors.training.regression_training import (
     BaseMultitaskLoss,
 )
@@ -70,11 +70,9 @@ training_run_dir = Path(
 )
 
 run_name = f"{N_conformers}_conformers"
-training_data_dir = training_run_dir / Path(
-    f"{run_name}"
-)
+training_data_dir = training_run_dir / Path(f"{run_name}")
 
-os.makedirs(training_data_dir,exist_ok=True)
+os.makedirs(training_data_dir, exist_ok=True)
 
 split_config = SplitConfig(
     strategy=SplitStrategy.REPEATED_CV, N_folds=5, N_repeats=2, shuffle=True
@@ -89,18 +87,18 @@ training_config = TrainingConfig(
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
-    mace_model_path="/share/snw30/projects/mace_model/MACE-OFF24_medium.model",
+    mace_config=MaceConfig(
+        model_path=Path("/share/snw30/projects/mace_model/MACE-OFF24_medium.model")
+    ),
     dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_64_conf_full",
     model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_potency_full",
     normalized_targets=True,
 )
 
 architecture_config = pyaml.parse_yaml_file_as(
-    ArchitectureConfig,
+    RegressionArchitectureConfig,
     f"{training_config.model_dir}/architecture_config.yaml",
 )
-
-
 
 
 print("Start Dataloading")
@@ -120,18 +118,17 @@ dataset_splitting = DatasetSplitting(dataset)
 lowest_val_losses = {}
 
 
-patience = 7   # epochs
+patience = 7  # epochs
 
 
 epochs_since_improve = 0
-
 
 
 for train_idx, val_idx, split_name in dataset_splitting.get_split(
     training_config.split_config
 ):
     split_dir = f"{training_config.training_data_dir}/{split_name.lower()}"
-    os.makedirs(split_dir,exist_ok = True)
+    os.makedirs(split_dir, exist_ok=True)
 
     train_dataset = IndexedSubset(dataset, train_idx)
     valid_dataset = IndexedSubset(dataset, val_idx)
@@ -161,13 +158,14 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
         data_normalization.get_atomic_embedding_normalization_constants()
     )
 
-    mb = ModelBuilder(architecture_config=architecture_config)
-    mb.insert_task_configs_into_regression_heads(task_configs)
-    model = mb.build_model(
+    architecture_config.insert_task_configs(task_configs)
+    model = architecture_config.build(
         mean_atomic_embedding=inv_mean_per_dim, std_atomic_embedding=inv_std_per_dim
     )
 
-    print(f"Trainable Parameters: {mb.N_trainable_parameters}")
+    print(
+        f"Trainable Parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
+    )
 
     config = {
         "architecture_config": architecture_config.model_dump(),
@@ -214,11 +212,9 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
         split_name=split_name,
         config=config,
     ) as telemetry:
-
         print("Starting Training")
 
         for epoch in range(training_config.epochs):
-
             # Initialize task and total train losses
             accumulated_train_loss = 0.0
             accumulated_train_loss_per_task = torch.zeros(
@@ -229,7 +225,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
             model.train()
             optimizer.zero_grad()
 
-            for batch_idx, samples in enumerate(training_loader):
+            for samples in training_loader:
                 samples = data_normalization(samples)
                 samples.to_(device)
                 model_output = model(samples)
@@ -250,8 +246,10 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
                     batch_weighed_loss_per_task_train.detach()
                 )
 
-            avg_train_loss = accumulated_train_loss / (batch_idx + 1)
-            avg_train_loss_per_task = accumulated_train_loss_per_task / (batch_idx + 1)
+            avg_train_loss = accumulated_train_loss / len(training_loader)
+            avg_train_loss_per_task = accumulated_train_loss_per_task / len(
+                training_loader
+            )
 
             accumulated_validation_loss = 0.0
             accumulated_validation_loss_per_task = torch.zeros(
@@ -262,7 +260,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
             model.eval()
 
             with torch.no_grad():
-                for batch_idx, val_samples in enumerate(validation_loader):
+                for val_samples in validation_loader:
                     val_samples = data_normalization(val_samples)
                     val_samples.to_(device)
 
@@ -277,9 +275,11 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
 
                     accumulated_validation_loss += loss.item()
 
-                avg_validation_loss = accumulated_validation_loss / (batch_idx + 1)
-                avg_validation_loss_per_task = accumulated_validation_loss_per_task / (
-                    batch_idx + 1
+                avg_validation_loss = accumulated_validation_loss / len(
+                    validation_loader
+                )
+                avg_validation_loss_per_task = (
+                    accumulated_validation_loss_per_task / len(validation_loader)
                 )
 
                 current_lr = scheduler.get_last_lr()[0]
@@ -297,14 +297,20 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
                     best_val = avg_validation_loss
                     epochs_since_improve = 0
                     torch.save(model.state_dict(), best_model_path)
-                    print(f"  - New best model (val_loss {avg_validation_loss:.6f}), saved to {best_model_path}")
+                    print(
+                        f"  - New best model (val_loss {avg_validation_loss:.6f}), saved to {best_model_path}"
+                    )
 
                 else:
                     epochs_since_improve += 1
-                    print(f"  - No improvement ({epochs_since_improve}/{patience}) | best={best_val:.6f}")
+                    print(
+                        f"  - No improvement ({epochs_since_improve}/{patience}) | best={best_val:.6f}"
+                    )
 
                 if epochs_since_improve >= patience:
-                    print(f"Early stopping triggered at epoch {epoch}. Best val_loss={best_val:.6f}.")
+                    print(
+                        f"Early stopping triggered at epoch {epoch}. Best val_loss={best_val:.6f}."
+                    )
                     break
 
     lowest_val_losses[split_name] = telemetry.best_validation_loss
@@ -313,32 +319,19 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
     model.load_state_dict(torch.load(best_model_path, map_location=device))
     model.eval()
 
-    torch.save(
-        model.state_dict(), f"{split_dir}/regression_model.pth"
-    )
+    torch.save(model.state_dict(), f"{split_dir}/regression_model.pth")
 
     torch.save(
         model.preprocessor.state_dict(),
         f"{split_dir}/preprocessor.pth",
     )
-    torch.save(
-        model.encoder.state_dict(), f"{split_dir}/encoder.pth"
-    )
+    torch.save(model.encoder.state_dict(), f"{split_dir}/encoder.pth")
     #
-    pyaml.to_yaml_file(
-        f"{split_dir}/training_config.yaml", training_config
-    )
-
-
-    c_architecture_config = architecture_config.model_copy()
-
-    c_architecture_config.reload_full_model_weights = (
-        f"{split_dir}/regression_model.pth"
-    )
+    pyaml.to_yaml_file(f"{split_dir}/training_config.yaml", training_config)
 
     pyaml.to_yaml_file(
         f"{split_dir}/architecture_config.yaml",
-        c_architecture_config,
+        architecture_config,
     )
 
     pyaml.to_yaml_file(

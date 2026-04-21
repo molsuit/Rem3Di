@@ -12,19 +12,21 @@ from threedscriptors.data_handling.mol_id import StructureID
 
 
 class TmqmTask(Enum):
-        ELECTRONIC_E = "Electronic_E"
-        DISPERSION_E = "Dispersion_E"
-        DIPOLE_M = "Dipole_M"
-        METAL_Q = "Metal_q"
-        HL_GAP = "HL_Gap"
-        HOMO_ENERGY = "HOMO_Energy"
-        LUMO_ENERGY = "LUMO_Energy"
-        POLARIZABILITY = "Polarizability"
+    ELECTRONIC_E = "Electronic_E"
+    DISPERSION_E = "Dispersion_E"
+    DIPOLE_M = "Dipole_M"
+    METAL_Q = "Metal_q"
+    HL_GAP = "HL_Gap"
+    HOMO_ENERGY = "HOMO_Energy"
+    LUMO_ENERGY = "LUMO_Energy"
+    POLARIZABILITY = "Polarizability"
 
 
 def load_tmqm_dataset(
-    directory: str, tasks: list[str], N_structures = 50000, max_atoms = 80
-) -> tuple[list[StructureID], list[int], list[Atoms], np.ndarray, np.ndarray, list[TaskConfig]]:
+    directory: str, tasks: list[str], N_structures=50000, max_atoms=80
+) -> tuple[
+    list[StructureID], list[int], list[Atoms], np.ndarray, np.ndarray, list[TaskConfig]
+]:
     """
     Load the tmQM dataset.
 
@@ -56,7 +58,6 @@ def load_tmqm_dataset(
 
     N_molecules = len(molecules)
 
-
     # Load regression targets
     regression_file = os.path.join(directory, "tmQM_y.csv")
     regression_targets, regression_masks = load_regression_targets(
@@ -70,15 +71,29 @@ def load_tmqm_dataset(
 
     tasks = get_task_configs(tasks)
 
-    return csd_ids_to_structure_id(csd_ids), molecules, regression_targets, regression_masks, tasks
+    return (
+        csd_ids_to_structure_id(csd_ids),
+        molecules,
+        regression_targets,
+        regression_masks,
+        tasks,
+    )
 
 
 def csd_ids_to_structure_id(csd_ids) -> list[StructureID]:
-    assert len(csd_ids) == len(set(csd_ids)) # uniqueness check
+    assert len(csd_ids) == len(set(csd_ids))  # uniqueness check
 
     structure_ids = []
     for index, csd_id in enumerate(csd_ids):
-        structure_ids.append(StructureID(structure_id=index, molecule_id=index, canonical_smiles=csd_id,conformer_id=0, smiles_id=index))
+        structure_ids.append(
+            StructureID(
+                structure_id=index,
+                molecule_id=index,
+                canonical_smiles=csd_id,
+                conformer_id=0,
+                smiles_id=index,
+            )
+        )
 
     return structure_ids
 
@@ -93,12 +108,10 @@ def get_task_configs(tasks):
     return task_configs
 
 
-def load_molecules(file: str,  max_atoms : int) -> tuple[list[Atoms], list[str]]:
-
+def load_molecules(file: str, max_atoms: int) -> tuple[list[Atoms], list[str]]:
     mol = read(file, index=":")
 
     csd_ids = [m.info["CSD_code"] for m in mol]
-
 
     filter = [m.info["q"] == 0 and m.info["S"] == 0 and len(m) < max_atoms for m in mol]
 
@@ -109,7 +122,7 @@ def load_molecules(file: str,  max_atoms : int) -> tuple[list[Atoms], list[str]]
 
 
 def load_regression_targets(
-    regression_target_file: str, tasks: list[str], csd_ids : list[str]
+    regression_target_file: str, tasks: list[str], csd_ids: list[str]
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Load regression targets and masks for specified tasks from tmQM_y.csv.
@@ -145,4 +158,3 @@ def load_regression_targets(
     targets = sub.fillna(0).to_numpy(dtype=float)
 
     return targets, masks
-

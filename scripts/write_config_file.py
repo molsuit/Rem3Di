@@ -3,12 +3,12 @@ import os
 import pydantic_yaml as pyaml
 
 from threedscriptors.configuration.architecture_config import (
-    ArchitectureConfig,
     AttentionLayerConfig,
     BesselBasisConfig,
     DecoderConfig,
     EmbeddingPreprocessConfig,
     EncoderConfig,
+    EncoderDecoderArchitectureConfig,
     GlobalAggregatorConfig,
     PMAAggregatorConfig,
     RelativeDistancePositionalEncodingConfig,
@@ -65,11 +65,10 @@ global_aggregator_config = GlobalAggregatorConfig(
 
 os.makedirs(model_dir, exist_ok=True)
 
-architecture_config = ArchitectureConfig(
+architecture_config = EncoderDecoderArchitectureConfig(
     embedding_preprocess_config=embedding_preprocessor_config,
     encoder_config=encoder_config,
     global_aggregator_config=global_aggregator_config,
-    regression_head_config=None,
     positional_encoding_config=pos_encoding_config,
     decoder_config=decoder_config,
 )

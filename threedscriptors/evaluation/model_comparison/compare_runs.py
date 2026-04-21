@@ -10,7 +10,7 @@ dirs = [
     "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs/13-2025_08_16_20_39_16-qm9_pre200k_finetune10k",
     "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs/15-2025_08_16_20_55_23-qm9_pre400k_finetune10k",
 ]
-labels = ["From Scratch", "100k" , "200k", "400k"]
+labels = ["From Scratch", "100k", "200k", "400k"]
 pretrain_size = [0, 100_000, 200_000, 400_000]
 
 runs = [TrainingMetadata.from_dir(d) for d in dirs]
@@ -21,7 +21,7 @@ rc_params = {
     "font.family": "sans-serif",
     "axes.unicode_minus": False,
     "text.latex.preamble": r"\usepackage{helvet}\usepackage{sansmath}\sansmath",
-    "font.size" : 11
+    "font.size": 11,
 }
 mpl.rcParams.update(rc_params)
 
@@ -63,7 +63,7 @@ ax.set_yscale("log")
 tick_candidates = [1, 10, 20, 30, 40, 50, 75, 100]
 xt = [t for t in tick_candidates if t <= max_epoch]
 if 1 not in xt:
-    xt = [1] + xt
+    xt = [1, *xt]
 ax.set_xlim(1, max_epoch)
 ax.set_xticks(xt)
 ax.set_xticklabels([str(t) for t in xt])
@@ -85,7 +85,6 @@ plt.savefig("pretraining.png", bbox_inches="tight")
 plt.close()
 
 
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter
@@ -101,13 +100,19 @@ mask = sizes > 0
 
 fig, ax = plt.subplots(figsize=(3, 2.75))
 
-ax.plot(sizes[mask], ratios[mask], marker="o", lw=1.6, label=r"$\min\mathrm{MSE}/\mathrm{scratch}$")
+ax.plot(
+    sizes[mask],
+    ratios[mask],
+    marker="o",
+    lw=1.6,
+    label=r"$\min\mathrm{MSE}/\mathrm{scratch}$",
+)
 ax.axhline(1.0, ls="--", lw=1.4, color="0.4", label="Scratch baseline")
 
 y_ticks = [0.90, 0.94, 0.98, 1.00]
 ax.yaxis.set_major_locator(FixedLocator(y_ticks))
 ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.2f}"))
-ax.yaxis.set_minor_formatter(NullFormatter())   # hide minor labels
+ax.yaxis.set_minor_formatter(NullFormatter())  # hide minor labels
 ax.set_ylim(0.89, 1.01)
 
 # X: show 1, 2, 4 with ×10^5 in the axis label
@@ -124,7 +129,8 @@ plt.tight_layout()
 plt.savefig("loglog_ratio_to_scratch.svg", bbox_inches="tight")
 
 # optional: slope on N>0 (same as absolute since division by constant)
-m, b = np.polyfit(np.log(sizes[mask].astype(float)),
-                  np.log(ratios[mask].astype(float)), 1)
+m, b = np.polyfit(
+    np.log(sizes[mask].astype(float)), np.log(ratios[mask].astype(float)), 1
+)
 nu = -m
 print({"nu": float(nu)})

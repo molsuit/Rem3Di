@@ -105,4 +105,3 @@ class TmqmGenerator(MoleculeGenerator):
                     targets_system=regression_targets, mask_system=regression_masks
                 ),
             )
-

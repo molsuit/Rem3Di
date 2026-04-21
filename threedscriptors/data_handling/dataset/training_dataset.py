@@ -12,10 +12,11 @@ from threedscriptors.data_handling.sample import Sample
 
 GetItemFn = Callable[["TrainingMoleculeDataset", int], Sample]
 
+
 def pos_emb_getitem(ds: "TrainingMoleculeDataset", i: int) -> Sample:
     # Read both bounds in one go (one chunk decompress)
-    a0, a1 = ds._ptr[i:i+2].tolist()
-    emb_np = ds._emb[a0:a1]       # zarr -> numpy view/copy as needed
+    a0, a1 = ds._ptr[i : i + 2].tolist()
+    emb_np = ds._emb[a0:a1]  # zarr -> numpy view/copy as needed
     pos_np = ds._pos[a0:a1]
     # Zero-copy into torch where possible
     emb = torch.from_numpy(emb_np)
@@ -24,14 +25,13 @@ def pos_emb_getitem(ds: "TrainingMoleculeDataset", i: int) -> Sample:
 
 
 def atoms_getitem(ds: "TrainingMoleculeDataset", i: int):
-    a0, a1 = ds._ptr[i:i+2].tolist()
-    num_np = ds._atom_num[a0:a1]       # zarr -> numpy view/copy as needed
+    a0, a1 = ds._ptr[i : i + 2].tolist()
+    num_np = ds._atom_num[a0:a1]  # zarr -> numpy view/copy as needed
     pos_np = ds._pos[a0:a1]
 
     pos = torch.from_numpy(pos_np)
     num = torch.from_numpy(num_np)
-    return Sample(atomic_positions=pos, atomic_numbers= num)
-
+    return Sample(atomic_positions=pos, atomic_numbers=num)
 
 
 class TrainingMoleculeDataset(Dataset):
@@ -73,13 +73,13 @@ class TrainingMoleculeDataset(Dataset):
             # load everything into RAM once (per process)
             g = zarr.open_group(self.root, mode="r")
             # materialize as numpy arrays
-            self._ptr = np.array(g["molecule_ptr"])          # (N+1,)
- 
+            self._ptr = np.array(g["molecule_ptr"])  # (N+1,)
+
             if "atomic_embeddings" in list(g.arrays()):
                 self._emb = g["atomic_embeddings"]
- 
-            self._pos = np.array(g["positions"])             # (total_atoms, 3)
-            self._atom_num = np.array(g["atomic_numbers"])           # (total_atoms,)
+
+            self._pos = np.array(g["positions"])  # (total_atoms, 3)
+            self._atom_num = np.array(g["atomic_numbers"])  # (total_atoms,)
             self._group = None
         else:
             # on-disk zarr arrays with cached store

@@ -35,15 +35,13 @@ def atomic_embedding_loss(decoder_prediction, atomic_embedding, reconstruction_m
 def atom_denoising_loss(
     input_atomic_embeddings, denoised_embeddings, padding_mask, noise_level
 ):
-
     # Compute squared differences
     squared_diff = (denoised_embeddings - input_atomic_embeddings) ** 2
     # Apply the mask
 
-    masked_squared_diff = squared_diff * ~padding_mask[:,:,None]
+    masked_squared_diff = squared_diff * ~padding_mask[:, :, None]
 
     atoms_in_batch = torch.sum((~padding_mask).to(torch.float32))
 
-    loss =  1 / atoms_in_batch * torch.sum(masked_squared_diff) * 1 / noise_level**2
+    loss = 1 / atoms_in_batch * torch.sum(masked_squared_diff) * 1 / noise_level**2
     return loss
-

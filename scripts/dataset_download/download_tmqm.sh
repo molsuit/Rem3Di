@@ -2,7 +2,7 @@
 
 cd $1
 
-mkdir tmqm 
+mkdir tmqm
 cd tmqm
 
 wget https://github.com/uiocompcat/tmQM/raw/refs/heads/master/tmQM/tmQM_X1.xyz.gz
