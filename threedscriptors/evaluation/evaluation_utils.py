@@ -84,9 +84,7 @@ def evaluate_molecular_descriptor_on_dataset(
     model.to(device)
     model.eval()
 
-    descriptors = torch.zeros(
-        size=(len(dataset), model.encoder.aggregator.config.output_dim)
-    )
+    descriptors = torch.zeros(size=(len(dataset), model.encoder.aggregator.d_out))
 
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):

@@ -302,8 +302,10 @@ def _to_discriminator(value) -> str:
 class MeanAggregatorConfig(BaseModel):
     aggregator_type: Literal["mean"] = "mean"
 
-    def build(self, input_dim: int, output_dim: int) -> nn.Module:
-        return MeanPool()
+    def build(
+        self, input_dim: int, output_dim: int, output_dropout: float | None = None
+    ) -> nn.Module:
+        return MeanPool(d_in=input_dim, output_dropout=output_dropout)
 
 
 class AttentionAggregatorConfig(BaseModel):
@@ -312,12 +314,15 @@ class AttentionAggregatorConfig(BaseModel):
     head_dim: int | None = None
     attn_dropout: float | None = None
 
-    def build(self, input_dim: int, output_dim: int) -> nn.Module:
+    def build(
+        self, input_dim: int, output_dim: int, output_dropout: float | None = None
+    ) -> nn.Module:
         return AttnPool(
             d_in=input_dim,
             d_hidden=self.head_dim,
             n_heads=self.num_heads,
             dropout=self.attn_dropout or 0.0,
+            output_dropout=output_dropout,
         )
 
 
@@ -330,7 +335,9 @@ class PMAAggregatorConfig(BaseModel):
     reduction: Literal["mean", "sum", "max"] = "mean"
     use_mlp: bool = False
 
-    def build(self, input_dim: int, output_dim: int) -> nn.Module:
+    def build(
+        self, input_dim: int, output_dim: int, output_dropout: float | None = None
+    ) -> nn.Module:
         return PMAAggregator(
             d_in=input_dim,
             d_out=output_dim,
@@ -339,6 +346,7 @@ class PMAAggregatorConfig(BaseModel):
             k_seeds=self.num_seeds,
             dropout=self.attn_dropout,
             use_mlp=self.use_mlp,
+            output_dropout=output_dropout,
         )
 
 
@@ -369,9 +377,15 @@ class GlobalAggregatorConfig(BaseModel):
         return data
 
     def build(self) -> nn.Module:
-        from threedscriptors.model.global_aggregator import GlobalAggregator
+        assert (
+            self.input_dim is not None and self.output_dim is not None
+        ), "Dimensions must be resolved by ArchitectureConfig cascade before build."
 
-        return GlobalAggregator(self)
+        return self.aggregator_type_config.build(
+            input_dim=self.input_dim,
+            output_dim=self.output_dim,
+            output_dropout=self.global_molecular_descriptor_dropout,
+        )
 
 
 class RadialBasisFunctionType(Enum):
