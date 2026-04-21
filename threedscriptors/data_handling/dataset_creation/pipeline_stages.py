@@ -37,16 +37,11 @@ class PipelineStage(ABC):
 type Pipeline = list[PipelineStage]
 
 
-
 class CopyDataStage(PipelineStage):
-
     def __init__(self, dtype):
-
         self._dtype = dtype
 
-
-    def __call__(self, input_batch : InputBatch, output_batch):
-
+    def __call__(self, input_batch: InputBatch, output_batch):
         assert output_batch is None
 
         state = ts.initialize_state(
@@ -54,15 +49,15 @@ class CopyDataStage(PipelineStage):
         )
 
         output_batch = DataBatch(
-                atomic_positions=state.positions.detach(),
-                atomic_numbers=state.atomic_numbers.detach(),
-                embeddings=None,
-                systems_index=state.system_idx.detach(),
-                smiles_data=input_batch.smiles,
-                structure_ids=input_batch.structure_ids,
-                regression_data=input_batch.regression_data
-            )
-        
+            atomic_positions=state.positions.detach(),
+            atomic_numbers=state.atomic_numbers.detach(),
+            embeddings=None,
+            systems_index=state.system_idx.detach(),
+            smiles_data=input_batch.smiles,
+            structure_ids=input_batch.structure_ids,
+            regression_data=input_batch.regression_data,
+        )
+
         return input_batch, output_batch
 
 
@@ -96,7 +91,7 @@ class BatchedEmbeddingStage(PipelineStage):
                 systems_index=state.system_idx.detach().cpu(),
                 smiles_data=input_batch.smiles,
                 structure_ids=input_batch.structure_ids,
-                regression_data=input_batch.regression_data
+                regression_data=input_batch.regression_data,
             )
 
         return input_batch, data_batch
@@ -257,7 +252,7 @@ class ParallelRelaxStage(PipelineStage):
 
         # Run optimization for a few steps
 
-        for step in range(self.N_steps):
+        for _step in range(self.N_steps):
             state = update_fn(state)
 
         print(f"Final max force: {torch.linalg.norm(state.forces, dim=1)} eV")
@@ -265,12 +260,6 @@ class ParallelRelaxStage(PipelineStage):
         input_batch.molecules = ts.io.state_to_atoms(state)
 
         return input_batch, data_batch
-
-
-class RandomWalkTransitionMatrix(PipelineStage):
-    pass
-
-    # Implements calculation of the Transition matrix for 2D positional encodings, should be stored in sparse format.
 
 
 class EnantiomaiPairConformalSamplingStage(PipelineStage):

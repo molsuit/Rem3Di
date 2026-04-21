@@ -5,22 +5,24 @@ import torch
 
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
-    RandomWalkPositionalEncoding,
-    RelativeDistancePositionalEncodingConfig,
-    EmbeddingPreprocessConfig
+    EmbeddingPreprocessConfig,
 )
 from threedscriptors.model.decoder import TransformerDecoder, TransformerPairDecoder
 from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.model.global_aggregator import GlobalAggregator
 from threedscriptors.model.pair_encoder import TransformerPairEncoder
 from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
-    AtomicDescriptorPreprocessor, OnTheFlyInvariantNormalization, PrecomputedInvariantNormalization
+    AtomicDescriptorPreprocessor,
+    OnTheFlyInvariantNormalization,
+    PrecomputedInvariantNormalization,
 )
 from threedscriptors.model.preprocessing.geometric_preprocessor import (
     PairDistanceMatrixGeometricPreprocessor,
-    RandomWalkGeometricPreprocessor,
 )
-from threedscriptors.model.preprocessing.preprocessing import Preprocessor, PreprocessorWithAtomicEmbedding
+from threedscriptors.model.preprocessing.preprocessing import (
+    Preprocessor,
+    PreprocessorWithAtomicEmbedding,
+)
 from threedscriptors.model.regression_models import (
     MultitaskHeads,
     MultiTaskRegressionModel,
@@ -58,16 +60,13 @@ class ModelBuilder:
         return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
 
     def insert_task_configs_into_regression_heads(self, task_configs):
-
         for task_cfg, head_cfg in zip(
             task_configs, self.architecture_config.regression_head_config, strict=False
         ):
-
             assert head_cfg.task_name == task_cfg.task_name
             head_cfg.task_config = task_cfg
 
     def _reload_model_weights(self):
-
         self.model.load_state_dict(
             torch.load(self.architecture_config.reload_full_model_weights)
         )
@@ -94,13 +93,13 @@ class ModelBuilder:
 
         return self.model
 
-
-    def build_remedi_model(self, mace_calc = None) -> REM3DIModel:
-
-        preprocessor = self.build_preprocessor(None,None)
+    def build_remedi_model(self, mace_calc=None) -> REM3DIModel:
+        preprocessor = self.build_preprocessor(None, None)
         encoder = self.build_encoder()
 
-        model = REM3DIModel(preprocessor=preprocessor, encoder=encoder, mace_calculator= mace_calc)
+        model = REM3DIModel(
+            preprocessor=preprocessor, encoder=encoder, mace_calculator=mace_calc
+        )
         self.model = model.float()
         self.model.preprocessor.atomic_preprocessor.double()
 
@@ -110,52 +109,39 @@ class ModelBuilder:
         return self.model
 
     def build_geometric_preprocessing(self):
-
-        if isinstance(
-            self.architecture_config.positional_encoding_config,
-            RelativeDistancePositionalEncodingConfig,
-        ):
-            pos_config = self.architecture_config.positional_encoding_config
-            structure_encoding = PairDistanceMatrixGeometricPreprocessor(
-                N_radial_basis_functions=pos_config.N_radial_basis_functions,
-                distance_cutoff=pos_config.distance_cutoff,
-                d_projection=pos_config.d_projection,
-                basis_function_type=pos_config.basis_function_type,
-            )
-
-        elif isinstance(
-            self.architecture_config.positional_encoding_config,
-            RandomWalkPositionalEncoding,
-        ):
-
-            pos_config = self.architecture_config.positional_encoding_config
-            structure_encoding = RandomWalkGeometricPreprocessor(
-                k_hop=pos_config.k_hop_random_walk, d_projection=pos_config.d_projection
-            )
-
-        else:
-            raise ValueError("Invalid Choice of Structural Encoding")
+        pos_config = self.architecture_config.positional_encoding_config
+        structure_encoding = PairDistanceMatrixGeometricPreprocessor(
+            N_radial_basis_functions=pos_config.N_radial_basis_functions,
+            distance_cutoff=pos_config.distance_cutoff,
+            d_projection=pos_config.d_projection,
+            basis_function_type=pos_config.basis_function_type,
+        )
 
         if pos_config.reload_state_dict is not None:
-
             structure_encoding.load_state_dict(torch.load(pos_config.reload_state_dict))
 
         return structure_encoding
 
     def build_atomic_preprocessor(
-        self,embedding_preprocess_config : EmbeddingPreprocessConfig , mean_atomic_embedding= None, std_atomic_embedding = None
-    ,) -> AtomicDescriptorPreprocessor:
+        self,
+        embedding_preprocess_config: EmbeddingPreprocessConfig,
+        mean_atomic_embedding=None,
+        std_atomic_embedding=None,
+    ) -> AtomicDescriptorPreprocessor:
         preprocess_config = embedding_preprocess_config
 
-
-
-        invariant_normalization_config = embedding_preprocess_config.invariant_normalization_config
+        invariant_normalization_config = (
+            embedding_preprocess_config.invariant_normalization_config
+        )
 
         if invariant_normalization_config.kind == "precomputed_normalization":
-            invariant_normalization = PrecomputedInvariantNormalization(invariant_dimension=embedding_preprocess_config.invariant_irreps.dim)
+            invariant_normalization = PrecomputedInvariantNormalization(
+                invariant_dimension=embedding_preprocess_config.invariant_irreps.dim
+            )
 
-            if (mean_atomic_embedding is not None) and (std_atomic_embedding is not None):
-
+            if (mean_atomic_embedding is not None) and (
+                std_atomic_embedding is not None
+            ):
                 _, invariant_irreps = get_invariant_indices(
                     embedding_preprocess_config.input_irreps
                 )
@@ -163,12 +149,21 @@ class ModelBuilder:
 
                 assert mean_atomic_embedding.shape[-1] == invariant_dim
 
-                invariant_normalization.set_stats(mean = mean_atomic_embedding, std= std_atomic_embedding)
+                invariant_normalization.set_stats(
+                    mean=mean_atomic_embedding, std=std_atomic_embedding
+                )
 
         if invariant_normalization_config.kind == "on_the_fly_normalization":
-            invariant_normalization = OnTheFlyInvariantNormalization(invariant_dimension=embedding_preprocess_config.invariant_irreps.dim, momentum=invariant_normalization_config.momentum, warmup_batches= invariant_normalization_config.warm_up_batches)
+            invariant_normalization = OnTheFlyInvariantNormalization(
+                invariant_dimension=embedding_preprocess_config.invariant_irreps.dim,
+                momentum=invariant_normalization_config.momentum,
+                warmup_batches=invariant_normalization_config.warm_up_batches,
+            )
 
-        atomic_preprocessor = AtomicDescriptorPreprocessor(preprocess_config=preprocess_config, invariant_normalization=invariant_normalization)
+        atomic_preprocessor = AtomicDescriptorPreprocessor(
+            preprocess_config=preprocess_config,
+            invariant_normalization=invariant_normalization,
+        )
 
         if preprocess_config.reload_state_dict is not None:
             print(preprocess_config.reload_state_dict)
@@ -176,49 +171,41 @@ class ModelBuilder:
                 torch.load(preprocess_config.reload_state_dict)
             )
 
-
         return atomic_preprocessor
 
     def build_preprocessor(
         self, mean_atomic_embedding, std_atomic_embedding
     ) -> Preprocessor:
-
         atomic_preprocessor = self.build_atomic_preprocessor(
-            self.architecture_config.embedding_preprocess_config, mean_atomic_embedding, std_atomic_embedding
-        )
-
-        if self.architecture_config.positional_encoding_config is not None:
-
-            geometric_preprocessor = self.build_geometric_preprocessing()
-
-            return Preprocessor(
-                atomic_preprocessor=atomic_preprocessor,
-                geometric_preprocessor=geometric_preprocessor,
-            )
-
-        return Preprocessor(atomic_preprocessor=atomic_preprocessor, geometric_preprocessor=None)
-    
-
-
-
-    def build_preprocessor_with_mace_embedding(
-        self,mace_model, mean_atomic_embedding = None, std_atomic_embedding = None
-    ) -> Preprocessor:
-
-
-
-        atomic_preprocessor = self.build_atomic_preprocessor(
-            self.architecture_config.embedding_preprocess_config, mean_atomic_embedding, std_atomic_embedding
+            self.architecture_config.embedding_preprocess_config,
+            mean_atomic_embedding,
+            std_atomic_embedding,
         )
 
         geometric_preprocessor = self.build_geometric_preprocessing()
 
-        return PreprocessorWithAtomicEmbedding(mace_model=mace_model,
-                atomic_preprocessor=atomic_preprocessor,
-                geometric_preprocessor=geometric_preprocessor,
-            )
+        return Preprocessor(
+            atomic_preprocessor=atomic_preprocessor,
+            geometric_preprocessor=geometric_preprocessor,
+        )
 
-     
+    def build_preprocessor_with_mace_embedding(
+        self, mace_model, mean_atomic_embedding=None, std_atomic_embedding=None
+    ) -> Preprocessor:
+        atomic_preprocessor = self.build_atomic_preprocessor(
+            self.architecture_config.embedding_preprocess_config,
+            mean_atomic_embedding,
+            std_atomic_embedding,
+        )
+
+        geometric_preprocessor = self.build_geometric_preprocessing()
+
+        return PreprocessorWithAtomicEmbedding(
+            mace_model=mace_model,
+            atomic_preprocessor=atomic_preprocessor,
+            geometric_preprocessor=geometric_preprocessor,
+        )
+
     def build_decoder(self) -> TransformerDecoder:
         return TransformerPairDecoder(self.architecture_config.decoder_config)
 
@@ -234,8 +221,9 @@ class ModelBuilder:
             )
 
         if encoder_config.reload_state_dict:
-
-            encoder.load_state_dict(torch.load(encoder_config.reload_state_dict),strict=False)
+            encoder.load_state_dict(
+                torch.load(encoder_config.reload_state_dict), strict=False
+            )
 
         return encoder
 

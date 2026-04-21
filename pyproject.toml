@@ -37,3 +37,8 @@ build-backend = "hatchling.build"
 [tool.ruff]
 lint.select = ["I", "UP", "F", "E", "W", "C90", "B", "A", "RUF"]
 lint.ignore = ["E501", "B008"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+]

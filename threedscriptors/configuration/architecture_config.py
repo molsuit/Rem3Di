@@ -99,21 +99,21 @@ class RegressionHeadConfig(BaseModel):
         return activation_fn.__class__.__name__
 
 
-
 class PrecomputedInvariantNormalizationConfig(BaseModel):
     kind: Literal["precomputed_normalization"] = "precomputed_normalization"
 
 
 class OnTheFlyInvariantNormalizationConfig(BaseModel):
-    kind : Literal["on_the_fly_normalization"] = "on_the_fly_normalization"
+    kind: Literal["on_the_fly_normalization"] = "on_the_fly_normalization"
     momentum: float
-    warm_up_batches : int
+    warm_up_batches: int
 
 
 InvNormConfig = Annotated[
-    PrecomputedInvariantNormalizationConfig | OnTheFlyInvariantNormalizationConfig ,
+    PrecomputedInvariantNormalizationConfig | OnTheFlyInvariantNormalizationConfig,
     Field(discriminator="kind"),
 ]
+
 
 class EmbeddingPreprocessConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -125,7 +125,9 @@ class EmbeddingPreprocessConfig(BaseModel):
     gated: bool = True
     pseudoscalars: bool = True
     equivariant_rms_normalization: bool = True
-    invariant_normalization_config:  InvNormConfig = PrecomputedInvariantNormalizationConfig()
+    invariant_normalization_config: InvNormConfig = (
+        PrecomputedInvariantNormalizationConfig()
+    )
 
     @computed_field(return_type=IrrepType, repr=True)
     @property
@@ -174,12 +176,12 @@ class EmbeddingPreprocessConfig(BaseModel):
     def output_irreps_dim(self):
         return self.output_irreps.dim
 
-
     @computed_field(return_type=IrrepType, repr=True)
     @property
     def invariant_irreps(self):
         _, irreps = get_invariant_indices(self.input_irreps)
         return irreps
+
 
 class Aggregations(Enum):
     MEAN = MeanPool
@@ -220,6 +222,7 @@ def _to_discriminator(value) -> str:
 
 
 # --- Aggregator configs: same field names/defaults; discriminator is a string --------
+
 
 class MeanAggregatorConfig(BaseModel):
     aggregator_type: Literal["mean"] = "mean"
@@ -273,11 +276,6 @@ class GlobalAggregatorConfig(BaseModel):
                 data["aggregator_type_config"] = cfg
         return data
 
-class RandomWalkPositionalEncoding(BaseModel):
-    k_hop_random_walk: int
-    d_projection: int
-    reload_state_dict: str | None = None
-
 
 class RadialBasisFunctionType(Enum):
     GAUSSIAN = GaussianBasisFunctions
@@ -319,8 +317,6 @@ class ArchitectureConfig(BaseModel):
     encoder_config: EncoderConfig
     global_aggregator_config: GlobalAggregatorConfig
     regression_head_config: RegressionHeadConfig | Sequence[RegressionHeadConfig] | None
-    positional_encoding_config: (
-        RelativeDistancePositionalEncodingConfig | RandomWalkPositionalEncoding | None
-    ) = None
+    positional_encoding_config: RelativeDistancePositionalEncodingConfig
     reload_full_model_weights: str | None = None
     decoder_config: DecoderConfig | None = None

@@ -7,14 +7,10 @@ from threedscriptors.configuration.architecture_config import (
     EmbeddingPreprocessConfig,
     EncoderConfig,
     GlobalAggregatorConfig,
-    RandomWalkPositionalEncoding,
     RegressionHeadConfig,
     RelativeDistancePositionalEncodingConfig,
 )
 from threedscriptors.configuration.dataset_config import DatasetConfig
-from threedscriptors.utils.model_utils import (
-    get_mace_calculator_irrep_signature,
-)
 
 
 class ConfigFactory:
@@ -25,11 +21,7 @@ class ConfigFactory:
         attention_layer_config: AttentionLayerConfig,
         encoder_config: EncoderConfig,
         global_aggregator_config: GlobalAggregatorConfig,
-        positional_encoding_config: (
-            RelativeDistancePositionalEncodingConfig
-            | RandomWalkPositionalEncoding
-            | None
-        ) = None,
+        positional_encoding_config: RelativeDistancePositionalEncodingConfig,
         decoder_config: DecoderConfig | None = None,
     ):
         self.dataset_config = dataset_config
@@ -58,7 +50,6 @@ class ConfigFactory:
             self.attention_layer_config.embedding_dim
         )
 
-        
         if self.global_aggregator_config.output_dim is None:
             self.global_aggregator_config.output_dim = (
                 self.global_aggregator_config.input_dim
@@ -87,44 +78,18 @@ class ConfigFactory:
     # return regression_heads
 
     def process_encoder_config(self):
-        if self.positional_encoding_config is not None:
-            self.encoder_config.d_pair = self.positional_encoding_config.d_projection
-
-            if isinstance(
-                self.positional_encoding_config, RandomWalkPositionalEncoding
-            ):
-                self.encoder_config.d_geo = (
-                    self.positional_encoding_config.k_hop_random_walk
-                )
-
-            elif isinstance(
-                self.positional_encoding_config,
-                RelativeDistancePositionalEncodingConfig,
-            ):
-                self.encoder_config.d_geo = (
-                    self.positional_encoding_config.N_radial_basis_functions
-                )
+        self.encoder_config.d_pair = self.positional_encoding_config.d_projection
+        self.encoder_config.d_geo = (
+            self.positional_encoding_config.N_radial_basis_functions
+        )
 
     def process_decoder_config(self):
         if self.decoder_config is not None:
             self.decoder_config.d_descriptor = self.global_aggregator_config.output_dim
-
             self.decoder_config.d_pair = self.positional_encoding_config.d_projection
-
-            if isinstance(
-                self.positional_encoding_config, RandomWalkPositionalEncoding
-            ):
-                self.decoder_config.d_geo = (
-                    self.positional_encoding_config.k_hop_random_walk
-                )
-
-            elif isinstance(
-                self.positional_encoding_config,
-                RelativeDistancePositionalEncodingConfig,
-            ):
-                self.decoder_config.d_geo = (
-                    self.positional_encoding_config.N_radial_basis_functions
-                )
+            self.decoder_config.d_geo = (
+                self.positional_encoding_config.N_radial_basis_functions
+            )
 
     def create_architecture_config_template(
         self, model_directory, head_config_template: RegressionHeadConfig | None = None
