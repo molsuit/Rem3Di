@@ -8,11 +8,11 @@ import torch.nn as nn
 from e3nn.o3 import Irreps
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
+    PlainSerializer,
     computed_field,
-    field_serializer,
-    field_validator,
     model_validator,
 )
 
@@ -57,6 +57,23 @@ class Activations(Enum):
             raise ValueError(
                 f"Activation function '{activation_name}' is not supported."
             )
+
+
+def _to_activation_fn(v: str | Callable | Activations) -> Callable:
+    if isinstance(v, Activations):
+        return Activations.get_activation_fn(v.value.upper())
+    if isinstance(v, str):
+        return Activations.get_activation_fn(v.upper())
+    if callable(v):
+        return v
+    raise ValueError(f"Cannot coerce {v!r} to an activation function.")
+
+
+ActivationFn = Annotated[
+    Callable,
+    BeforeValidator(_to_activation_fn),
+    PlainSerializer(lambda fn: fn.__class__.__name__, return_type=str),
+]
 
 
 class AttentionLayerConfig(BaseModel):
@@ -104,24 +121,10 @@ class RegressionHeadConfig(BaseModel):
 
     task_name: str | None = None
     task_config: None = None
-    activation_fn: Callable = torch.nn.SiLU()
+    activation_fn: ActivationFn = torch.nn.SiLU()
     hidden_dimensions: list[int] = [256, 128]
     input_dimensions: int | None = None
     head_type: HeadType = HeadType.FULLY_CONNECTED
-
-    @field_validator("activation_fn", mode="before")
-    @classmethod
-    def check_activation_fn(cls, v: str | Callable | Activations) -> Callable:
-        if isinstance(v, Activations):
-            return Activations.get_activation_fn(v.value.upper())
-        elif isinstance(v, Callable):
-            return v
-        elif isinstance(v, str):
-            return Activations.get_activation_fn(v.upper())
-
-    @field_serializer("activation_fn")
-    def serialize_activation_fn(self, activation_fn):
-        return activation_fn.__class__.__name__
 
 
 class PrecomputedInvariantNormalizationConfig(BaseModel):
@@ -262,43 +265,6 @@ class EmbeddingPreprocessConfig(BaseModel):
         return atomic_preprocessor
 
 
-class Aggregations(Enum):
-    MEAN = MeanPool
-    ATTENTION = AttnPool
-    PMA_ATTENTION = PMAAggregator
-
-    @classmethod
-    def _missing_(cls, value):
-        # 1) strings → by name
-        if isinstance(value, str):
-            try:
-                return cls[value.strip().upper()]
-            except KeyError:
-                pass
-
-        # 2&3) class or instance → by subclass check
-        pool_cls = value if isinstance(value, type) else type(value)
-        if issubclass(pool_cls, MeanPool):
-            return cls.MEAN
-        if issubclass(pool_cls, AttnPool):
-            return cls.ATTENTION
-        if issubclass(pool_cls, PMAAggregator):
-            return cls.PMA_ATTENTION
-
-        return super()._missing_(value)
-
-    def __str__(self) -> str:
-        return self.name.lower()
-
-
-def _to_discriminator(value) -> str:
-    """Normalize any accepted input to the lowercase discriminator string."""
-    if isinstance(value, str):
-        return value.strip().lower()
-    agg = Aggregations(value)
-    return agg.name.lower()
-
-
 class MeanAggregatorConfig(BaseModel):
     aggregator_type: Literal["mean"] = "mean"
 
@@ -362,20 +328,6 @@ class GlobalAggregatorConfig(BaseModel):
     output_dim: int | None = None
     global_molecular_descriptor_dropout: float | None = None
 
-    # Normalize BEFORE discriminated-union selection happens
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_discriminator(cls, data):
-        if isinstance(data, dict) and "aggregator_type_config" in data:
-            cfg = data["aggregator_type_config"]
-            if isinstance(cfg, dict) and "aggregator_type" in cfg:
-                try:
-                    cfg["aggregator_type"] = _to_discriminator(cfg["aggregator_type"])
-                except Exception:
-                    pass
-                data["aggregator_type_config"] = cfg
-        return data
-
     def build(self) -> nn.Module:
         assert (
             self.input_dim is not None and self.output_dim is not None
@@ -388,49 +340,50 @@ class GlobalAggregatorConfig(BaseModel):
         )
 
 
-class RadialBasisFunctionType(Enum):
-    GAUSSIAN = GaussianBasisFunctions
-    BESSEL = BesselBasisFunctions
+class GaussianBasisConfig(BaseModel):
+    kind: Literal["gaussian"] = "gaussian"
 
-    @classmethod
-    def _missing_(cls, value):
-        if isinstance(value, str):
-            try:
-                return cls[value.strip().upper()]
-            except KeyError:
-                print("broken key")
-                raise
+    def build(self, N_radial_basis_functions: int, distance_cutoff: float) -> nn.Module:
+        return GaussianBasisFunctions(N_radial_basis_functions, distance_cutoff)
+
+
+class BesselBasisConfig(BaseModel):
+    kind: Literal["bessel"] = "bessel"
+    eps: float = 1e-8
+
+    def build(self, N_radial_basis_functions: int, distance_cutoff: float) -> nn.Module:
+        return BesselBasisFunctions(
+            N_radial_basis_functions, distance_cutoff, eps=self.eps
+        )
+
+
+BasisFunctionConfig = Annotated[
+    GaussianBasisConfig | BesselBasisConfig,
+    Field(discriminator="kind"),
+]
 
 
 class RelativeDistancePositionalEncodingConfig(BaseModel):
     N_radial_basis_functions: int
     distance_cutoff: float
     d_projection: int
-    basis_function_type: RadialBasisFunctionType = RadialBasisFunctionType.GAUSSIAN
+    basis_function_config: BasisFunctionConfig = GaussianBasisConfig()
     reload_state_dict: str | None = None
-
-    @field_serializer("basis_function_type")
-    def _serialize_aggregator_type(self, v: RadialBasisFunctionType, info):
-        return v.name.lower()
-
-    @field_validator("basis_function_type", mode="before")
-    @classmethod
-    def check_aggregator_type(cls, v: str | RadialBasisFunctionType) -> Callable:
-        if isinstance(v, RadialBasisFunctionType):
-            return v
-        elif isinstance(v, str):
-            return RadialBasisFunctionType(v)
 
     def build(self) -> "PairDistanceMatrixGeometricPreprocessor":
         from threedscriptors.model.preprocessing.geometric_preprocessor import (
             PairDistanceMatrixGeometricPreprocessor,
         )
 
+        radial_basis = self.basis_function_config.build(
+            N_radial_basis_functions=self.N_radial_basis_functions,
+            distance_cutoff=self.distance_cutoff,
+        )
         module = PairDistanceMatrixGeometricPreprocessor(
+            radial_basis=radial_basis,
             N_radial_basis_functions=self.N_radial_basis_functions,
             distance_cutoff=self.distance_cutoff,
             d_projection=self.d_projection,
-            basis_function_type=self.basis_function_type,
         )
         if self.reload_state_dict is not None:
             module.load_state_dict(torch.load(self.reload_state_dict))

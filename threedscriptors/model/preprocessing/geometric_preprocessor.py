@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 
-from threedscriptors.configuration.architecture_config import RadialBasisFunctionType
 from threedscriptors.data_handling.sample import Sample
 
 
@@ -19,10 +18,10 @@ class RadialFilter(nn.Module):
 class PairDistanceMatrixGeometricPreprocessor(nn.Module):
     def __init__(
         self,
+        radial_basis: nn.Module,
         N_radial_basis_functions: int,
         distance_cutoff: float,
         d_projection: int,
-        basis_function_type=RadialBasisFunctionType,
     ):
         super().__init__()
 
@@ -30,9 +29,7 @@ class PairDistanceMatrixGeometricPreprocessor(nn.Module):
         self.d_cutoff = distance_cutoff
         self.d_projection = d_projection
 
-        self.radial_basis = basis_function_type.value(
-            N_radial_basis_functions, distance_cutoff
-        )
+        self.radial_basis = radial_basis
 
         self.proj = nn.Linear(N_radial_basis_functions, d_projection, bias=False)
 

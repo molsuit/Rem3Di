@@ -3,7 +3,7 @@ import torch
 from ase import Atoms
 
 from threedscriptors.configuration.architecture_config import (
-    RadialBasisFunctionType,
+    GaussianBasisConfig,
     RelativeDistancePositionalEncodingConfig,
 )
 from threedscriptors.data_handling.data_utils import get_ase_atoms
@@ -39,13 +39,11 @@ def regression_mask():
     return torch.tensor([1])
 
 
-@pytest.fixture(scope = "session")
+@pytest.fixture(scope="session")
 def molecule():
-
     smiles = "C"
-    atoms : Atoms =  get_ase_atoms(smiles)
+    atoms: Atoms = get_ase_atoms(smiles)
     return atoms
-
 
 
 @pytest.fixture(scope="session")
@@ -63,5 +61,9 @@ def sample_smiles():
 
 @pytest.fixture(scope="session")
 def positional_encoding_config():
-
-    return RelativeDistancePositionalEncodingConfig(N_radial_basis_functions=16, distance_cutoff=20.0, d_projection=64, basis_function_type= RadialBasisFunctionType.GAUSSIAN)
+    return RelativeDistancePositionalEncodingConfig(
+        N_radial_basis_functions=16,
+        distance_cutoff=20.0,
+        d_projection=64,
+        basis_function_config=GaussianBasisConfig(),
+    )

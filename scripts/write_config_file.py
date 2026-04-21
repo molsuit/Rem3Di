@@ -5,12 +5,12 @@ import pydantic_yaml as pyaml
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
     AttentionLayerConfig,
+    BesselBasisConfig,
     DecoderConfig,
     EmbeddingPreprocessConfig,
     EncoderConfig,
     GlobalAggregatorConfig,
     PMAAggregatorConfig,
-    RadialBasisFunctionType,
     RelativeDistancePositionalEncodingConfig,
 )
 from threedscriptors.configuration.dataset_config import DatasetConfig
@@ -30,7 +30,7 @@ pos_encoding_config = RelativeDistancePositionalEncodingConfig(
     N_radial_basis_functions=16,
     distance_cutoff=32,
     d_projection=64,
-    basis_function_type=RadialBasisFunctionType.BESSEL,
+    basis_function_config=BesselBasisConfig(),
 )
 
 embedding_preprocessor_config = EmbeddingPreprocessConfig(
