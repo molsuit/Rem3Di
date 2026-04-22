@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import torch
-from pydantic import BaseModel
+from e3nn.o3 import Irreps
+from pydantic import BaseModel, PrivateAttr
 
 if TYPE_CHECKING:
     from mace.calculators.mace import MACECalculator
@@ -24,9 +25,49 @@ class MaceConfig(BaseModel):
     compute_stress: bool = False
     enable_cueq: bool = True
 
+    _raw_model: Any | None = PrivateAttr(default=None)
+    _irrep_signature: Irreps | None = PrivateAttr(default=None)
+
     @property
     def torch_dtype(self) -> torch.dtype:
         return torch.float64 if self.dtype == "float64" else torch.float32
+
+    def _load_raw_model(self):
+        if self._raw_model is not None:
+            return self._raw_model
+
+        from mace.calculators import MACECalculator
+        from mace.calculators.foundations_models import mace_off
+
+        if self.model_path is None:
+            raw = mace_off(
+                model="medium",
+                device=self.device,
+                default_dtype=self.dtype,
+                return_raw_model=True,
+                enable_cueq=self.enable_cueq,
+            )
+        else:
+            calc = MACECalculator(
+                model_paths=str(self.model_path),
+                device=self.device,
+                default_dtype=self.dtype,
+                enable_cueq=self.enable_cueq,
+            )
+            raw = calc.models[0]
+
+        self._raw_model = raw.to(self.torch_dtype)
+        return self._raw_model
+
+    def get_irrep_signature(self) -> Irreps:
+        """Return the product-stack irrep signature of the configured MACE model."""
+        if self._irrep_signature is None:
+            from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
+
+            self._irrep_signature = get_mace_model_irrep_signature(
+                self._load_raw_model()
+            )
+        return self._irrep_signature
 
     def build_ase_calculator(self) -> MACECalculator:
         from mace.calculators import MACECalculator
@@ -47,29 +88,10 @@ class MaceConfig(BaseModel):
         )
 
     def build_torch_sim_model(self) -> MaceModel:
-        from mace.calculators import MACECalculator
-        from mace.calculators.foundations_models import mace_off
         from torch_sim.models.mace import MaceModel
 
-        if self.model_path is None:
-            raw = mace_off(
-                model="medium",
-                device=self.device,
-                default_dtype=self.dtype,
-                return_raw_model=True,
-                enable_cueq=self.enable_cueq,
-            )
-        else:
-            calc = MACECalculator(
-                model_paths=str(self.model_path),
-                device=self.device,
-                default_dtype=self.dtype,
-                enable_cueq=self.enable_cueq,
-            )
-            raw = calc.models[0]
-        raw = raw.to(self.torch_dtype)
         return MaceModel(
-            model=raw,
+            model=self._load_raw_model(),
             device=torch.device(self.device),
             dtype=self.torch_dtype,
             compute_forces=self.compute_forces,

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import pydantic_yaml as pyaml
 
@@ -13,17 +14,9 @@ from threedscriptors.configuration.architecture_config import (
     PMAAggregatorConfig,
     RelativeDistancePositionalEncodingConfig,
 )
-from threedscriptors.configuration.dataset_config import DatasetConfig
+from threedscriptors.configuration.mace_config import MaceConfig
 
-run = "pcqm"
-
-base_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/"
-
-config_file = f"{base_dir}/datasets/{run}/dataset_config.yaml"
-dataset_config = pyaml.parse_yaml_file_as(DatasetConfig, config_file)
-
-
-model_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/pcqm_with_pma_agg"
+model_dir = "/home/steffen/projects/mol_descriptors/training_runs"
 
 
 pos_encoding_config = RelativeDistancePositionalEncodingConfig(
@@ -33,16 +26,21 @@ pos_encoding_config = RelativeDistancePositionalEncodingConfig(
     basis_function_config=BesselBasisConfig(),
 )
 
+mace_config = MaceConfig(
+    model_path=Path(
+        "/home/steffen/projects/mol_descriptors/mace_model/MACE-POLAR-1-M.model"
+    ),
+)
+
 embedding_preprocessor_config = EmbeddingPreprocessConfig(
-    input_irreps=dataset_config.irreps,
-    pseudoscalars=True,
+    pseudoscalars=False,
     pseudoscalar_dimension=64,
     chiral_embedding_dimension=64,
 )
 
 attention_layer_config = AttentionLayerConfig(
     num_heads=8,
-    dim_feedforward=1024,
+    dim_feedforward=2048,
     dropout=0.3,
 )
 
@@ -66,6 +64,7 @@ global_aggregator_config = GlobalAggregatorConfig(
 os.makedirs(model_dir, exist_ok=True)
 
 architecture_config = EncoderDecoderArchitectureConfig(
+    mace_config=mace_config,
     embedding_preprocess_config=embedding_preprocessor_config,
     encoder_config=encoder_config,
     global_aggregator_config=global_aggregator_config,

@@ -4,8 +4,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from threedscriptors.configuration.mace_config import MaceConfig
-
 
 class SplitStrategy(str, Enum):
     SINGLE = "single"  # hold-out / train-val split
@@ -36,7 +34,6 @@ class TrainingConfig(BaseModel):
     max_grad_norm: float | None = None
     noise_level: float | None = None
     split_config: SplitConfig
-    mace_config: MaceConfig
     dataset_path: Path
     model_config_path: Path
     total_steps: int | None = None

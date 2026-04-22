@@ -1,6 +1,10 @@
 kind: encoder_decoder
+mace_config:
+  model_path: /share/snw30/projects/mace_model/MACE-OFF24_medium.model
+  device: cuda
+  dtype: float64
+  enable_cueq: true
 embedding_preprocess_config:
-  input_irreps: 128x0e+128x1o+128x0e
   pseudoscalar_dimension: 64
   chiral_embedding_dimension: 64
   pseudoscalars: true

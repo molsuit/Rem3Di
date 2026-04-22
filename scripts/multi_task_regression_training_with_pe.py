@@ -15,7 +15,6 @@ from threedscriptors.configuration.architecture_config import (
     RegressionArchitectureConfig,
 )
 from threedscriptors.configuration.data_config import DatasetSplit
-from threedscriptors.configuration.mace_config import MaceConfig
 from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.data_build_pipeline import (
     AtomicPositionsStage,
@@ -89,9 +88,6 @@ model_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transfo
 dataset_path = (
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm_training"
 )
-# mace_model_path = "/home/snw30/rds/hpc-work/models/MACE-OFF24_medium.model"
-mace_model_path = "/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
-
 training_config = TrainingConfig(
     batch_size=64,
     epochs=100,
@@ -101,7 +97,6 @@ training_config = TrainingConfig(
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
-    mace_config=MaceConfig(model_path=mace_model_path),
     dataset_path=dataset_path,
     model_dir=model_dir,
     normalized_targets=True,

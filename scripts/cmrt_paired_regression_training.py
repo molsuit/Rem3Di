@@ -15,7 +15,6 @@ from threedscriptors.configuration.architecture_config import (
     RegressionArchitectureConfig,
 )
 from threedscriptors.configuration.data_config import DatasetSplit
-from threedscriptors.configuration.mace_config import MaceConfig
 from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.dataset import (
     PairedRegressionWithAuxAndPositionDataset,
@@ -95,9 +94,6 @@ training_config = TrainingConfig(
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
-    mace_config=MaceConfig(
-        model_path=Path("/share/snw30/projects/mace_model/MACE-OFF24_medium.model")
-    ),
     dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/cmrt_training",
     test_dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9_test",
     model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/cmrt_training",

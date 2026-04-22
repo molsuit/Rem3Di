@@ -143,11 +143,9 @@ def main():
         collate_fn=yield_molecules_collate_fn,
     )
 
-    mace_model = training_config.mace_config.build_torch_sim_model()
-
     logger.info("Data Loaders Prepared")
 
-    bundle = architecture_config.build(mace_model=mace_model)
+    bundle = architecture_config.build()
     preprocessor = bundle.preprocessor
     encoder = bundle.encoder
     decoder = bundle.decoder

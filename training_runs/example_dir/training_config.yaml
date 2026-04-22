@@ -3,7 +3,6 @@ dataset_path:
   /share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pcqm
 epochs: 10
 learning_rate: 0.0005
-mace_model_path: /share/snw30/projects/mace_model/MACE-OFF24_medium.model
 max_grad_norm: 1.0
 model_config_path: /share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/pcqm_with_classic_agg/architecture_config.yaml
 noise_level: 0.3

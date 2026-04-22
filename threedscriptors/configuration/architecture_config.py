@@ -19,6 +19,7 @@ from pydantic import (
 )
 
 from threedscriptors.configuration.config_utils import IrrepType
+from threedscriptors.configuration.mace_config import MaceConfig
 from threedscriptors.model.pooling import AttnPool, MeanPool, PMAAggregator
 from threedscriptors.model.preprocessing.radial_basis_functions import (
     BesselBasisFunctions,
@@ -165,7 +166,9 @@ InvNormConfig = Annotated[
 class EmbeddingPreprocessConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    input_irreps: IrrepType
+    # Resolved from the parent architecture's MaceConfig during cascade; can
+    # also be set directly (e.g. in unit tests that don't want to load MACE).
+    input_irreps: IrrepType | None = None
     pseudoscalar_dimension: int
     chiral_embedding_dimension: int
     gated: bool = True
@@ -387,6 +390,7 @@ class EncoderDecoderBundle:
 
 
 class _BaseArchitectureConfig(BaseModel):
+    mace_config: MaceConfig | None = None
     embedding_preprocess_config: EmbeddingPreprocessConfig
     encoder_config: EncoderConfig
     global_aggregator_config: GlobalAggregatorConfig
@@ -394,6 +398,16 @@ class _BaseArchitectureConfig(BaseModel):
 
     @model_validator(mode="after")
     def _cascade_shared_dims(self):
+        if self.embedding_preprocess_config.input_irreps is None:
+            if self.mace_config is None:
+                raise ValueError(
+                    "embedding_preprocess_config.input_irreps is not set and "
+                    "no mace_config was provided to derive it from."
+                )
+            self.embedding_preprocess_config.input_irreps = (
+                self.mace_config.get_irrep_signature()
+            )
+
         embed_dim = self.embedding_preprocess_config.output_irreps_dim
         _fill_encoder_dims(
             self.encoder_config, embed_dim, self.positional_encoding_config
@@ -449,11 +463,14 @@ class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):
     def build(
         self,
         mace_calculator: "MACECalculator | None" = None,
-        mace_model=None,
         mean_atomic_embedding: torch.Tensor | None = None,
         std_atomic_embedding: torch.Tensor | None = None,
     ) -> "REM3DIModel":
         from threedscriptors.model.remedi_model import REM3DIModel
+
+        if self.mace_config is None:
+            raise ValueError("EncoderOnlyArchitectureConfig.build requires mace_config")
+        mace_model = self.mace_config.build_torch_sim_model()
 
         preprocessor = self._build_preprocessor(
             mace_model, mean_atomic_embedding, std_atomic_embedding
@@ -484,10 +501,14 @@ class EncoderDecoderArchitectureConfig(_BaseArchitectureConfig):
 
     def build(
         self,
-        mace_model=None,
         mean_atomic_embedding: torch.Tensor | None = None,
         std_atomic_embedding: torch.Tensor | None = None,
     ) -> EncoderDecoderBundle:
+        if self.mace_config is None:
+            raise ValueError(
+                "EncoderDecoderArchitectureConfig.build requires mace_config"
+            )
+        mace_model = self.mace_config.build_torch_sim_model()
         preprocessor = self._build_preprocessor(
             mace_model, mean_atomic_embedding, std_atomic_embedding
         )

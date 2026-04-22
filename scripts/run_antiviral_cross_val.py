@@ -14,7 +14,6 @@ from threedscriptors.configuration.architecture_config import (
     RegressionArchitectureConfig,
 )
 from threedscriptors.configuration.data_config import DatasetSplit
-from threedscriptors.configuration.mace_config import MaceConfig
 from threedscriptors.configuration.training_config import TrainingConfig
 from threedscriptors.data_handling.data_build_pipeline import (
     AtomicPositionsStage,
@@ -87,9 +86,6 @@ training_config = TrainingConfig(
     wandb_active=True,
     split_config=split_config,
     training_data_dir=training_data_dir,
-    mace_config=MaceConfig(
-        model_path=Path("/share/snw30/projects/mace_model/MACE-OFF24_medium.model")
-    ),
     dataset_path="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/antiviral_potency_64_conf_full",
     model_dir="/share/snw30/projects/threedscriptor/3DMolecularDescriptors/transformer_model/antiviral_potency_full",
     normalized_targets=True,
