@@ -69,7 +69,10 @@ class DatasetConstructionOrchestrator:
 
             self._num_batches += 1
 
-            if self.dataset.N_structures > self.construction_config.N_structures:
+            if (
+                self.construction_config.N_structures is not None
+                and self.dataset.N_structures > self.construction_config.N_structures
+            ):
                 break
 
         self.finalize()
