@@ -6,7 +6,7 @@ import torch
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
-    pos_emb_getitem,
+    atoms_getitem,
 )
 from threedscriptors.evaluation.descriptor_analysis import (
     ClusteringCalculator,
@@ -44,7 +44,7 @@ class DescriptorClusteringTask(BaseEvalTask):
         # evaluate model to get descriptors
 
         train_dataset = TrainingMoleculeDataset.from_molecule_dataset(
-            self.dataset, get_item=pos_emb_getitem
+            self.dataset, get_item=atoms_getitem
         )
 
         self.descriptors = evaluate_molecular_descriptor_on_dataset(
@@ -93,7 +93,7 @@ class DescriptorElementAnalysis(BaseEvalTask):
 
     def run(self, model: MultiTaskRegressionModel):
         train_dataset = TrainingMoleculeDataset.from_molecule_dataset(
-            self.dataset, get_item=pos_emb_getitem
+            self.dataset, get_item=atoms_getitem
         )
 
         self.descriptors = evaluate_molecular_descriptor_on_dataset(

@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch_sim as ts
 from ase import Atoms
-from mace.calculators import MACECalculator
 from torch_sim.models.mace import MaceModel
 from torch_sim.optimizers import fire
 from tqdm import tqdm
@@ -37,6 +36,26 @@ class PipelineStage(ABC):
 type Pipeline = list[PipelineStage]
 
 
+def _per_system_charge_spin(
+    input_batch: InputBatch, n_systems: int, dtype: torch.dtype
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if input_batch.total_charge is None:
+        charge = torch.zeros(n_systems, dtype=dtype)
+    else:
+        charge = torch.as_tensor(input_batch.total_charge, dtype=dtype)
+    if input_batch.total_spin is None:
+        spin = torch.zeros(n_systems, dtype=dtype)
+    else:
+        spin = torch.as_tensor(input_batch.total_spin, dtype=dtype)
+
+    if charge.shape[0] != n_systems or spin.shape[0] != n_systems:
+        raise ValueError(
+            f"total_charge / total_spin must have length {n_systems}, "
+            f"got {charge.shape[0]} / {spin.shape[0]}"
+        )
+    return charge, spin
+
+
 class CopyDataStage(PipelineStage):
     def __init__(self, dtype):
         self._dtype = dtype
@@ -48,93 +67,21 @@ class CopyDataStage(PipelineStage):
             input_batch.molecules, device="cpu", dtype=self._dtype
         )
 
+        n_systems = len(input_batch.molecules)
+        charge, spin = _per_system_charge_spin(input_batch, n_systems, self._dtype)
+
         output_batch = DataBatch(
             atomic_positions=state.positions.detach(),
             atomic_numbers=state.atomic_numbers.detach(),
-            embeddings=None,
             systems_index=state.system_idx.detach(),
             smiles_data=input_batch.smiles,
             structure_ids=input_batch.structure_ids,
+            total_charge=charge,
+            total_spin=spin,
             regression_data=input_batch.regression_data,
         )
 
         return input_batch, output_batch
-
-
-class BatchedEmbeddingStage(PipelineStage):
-    def __init__(self, mace_model: MaceModel, device, dtype):
-        self.mace_model = mace_model
-
-        self._device = device
-        self._dtype = dtype
-
-    def __call__(self, input_batch: InputBatch, data_batch):
-        state = ts.initialize_state(
-            input_batch.molecules, device=self._device, dtype=self._dtype
-        )
-
-        with torch.inference_mode():
-            out = self.mace_model(state)
-
-        if data_batch is not None:
-            # Databatch has already been initialized
-            data_batch.atomic_positions = state.positions.detach().cpu()
-            data_batch.atomic_numbers = state.atomic_numbers.detach().cpu()
-            data_batch.embeddings = out["descriptors"].detach().cpu()
-            data_batch.systems_index = state.system_idx.detach().cpu()
-
-        else:
-            data_batch = DataBatch(
-                atomic_positions=state.positions.detach().cpu(),
-                atomic_numbers=state.atomic_numbers.detach().cpu(),
-                embeddings=out["descriptors"].detach().cpu(),
-                systems_index=state.system_idx.detach().cpu(),
-                smiles_data=input_batch.smiles,
-                structure_ids=input_batch.structure_ids,
-                regression_data=input_batch.regression_data,
-            )
-
-        return input_batch, data_batch
-
-
-class SequentialEmbeddingStage(PipelineStage):
-    def __init__(self, mace_calculator: MACECalculator, device, dtype):
-        self.mace_calc = mace_calculator
-        self._device = device
-        self._dtype = dtype
-
-    def __call__(self, input_batch, data_batch):
-        embeddings = []
-        positions = []
-        atomic_numbers = []
-        systems_index = []
-
-        for i, atoms in enumerate(input_batch.molecules):
-            des = self.mace_calc.get_descriptors(atoms, invariants_only=False)
-
-            embeddings.append(torch.from_numpy(des))
-            positions.append(torch.as_tensor(atoms.get_positions(), dtype=self._dtype))
-            atomic_numbers.append(
-                torch.as_tensor(atoms.get_atomic_numbers(), dtype=torch.long)
-            )
-            systems_index.append(torch.full((len(atoms),), i, dtype=torch.long))
-
-        if data_batch is not None:
-            data_batch.embeddings = torch.cat(embeddings, dim=0)
-            data_batch.atomic_positions = torch.cat(positions, dim=0)
-            data_batch.atomic_numbers = torch.cat(atomic_numbers)
-            data_batch.systems_index = torch.cat(systems_index)
-
-        else:
-            data_batch = DataBatch(
-                embeddings=torch.cat(embeddings, dim=0),
-                atomic_positions=torch.cat(positions, dim=0),
-                atomic_numbers=torch.cat(atomic_numbers),
-                systems_index=torch.cat(systems_index),
-                smiles_data=input_batch.smiles,
-                structure_ids=input_batch.structure_ids,
-            )
-        return input_batch, data_batch
 
 
 class ConformerGenerationStage(PipelineStage):
@@ -172,10 +119,8 @@ class ConformerGenerationStage(PipelineStage):
 
                 try:
                     iso_smi, noniso_smi, positions, atomic_numbers = fut.result()
-                    # Sanity: use the returned noniso if you want; here we trust the original inputs
                     K = positions.shape[0]
 
-                    # Build ASE atoms in the parent process
                     for k in range(K):
                         atoms = Atoms(
                             positions=positions[k],
@@ -203,12 +148,19 @@ class ConformerGenerationStage(PipelineStage):
                 except Exception as e:
                     tqdm.write(f"[error] {isomeric_smiles}: {e!r}")
 
-        # Overwrite the original smiles and molecules
         input_batch.molecules = molecules
         input_batch.smiles = smiles_list
         input_batch.structure_ids = structure_ids
 
-        # Duplicate regression rows to match generated conformers
+        if input_batch.total_charge is not None and parent_idx_for_regression:
+            input_batch.total_charge = [
+                input_batch.total_charge[i] for i in parent_idx_for_regression
+            ]
+        if input_batch.total_spin is not None and parent_idx_for_regression:
+            input_batch.total_spin = [
+                input_batch.total_spin[i] for i in parent_idx_for_regression
+            ]
+
         if (
             input_batch.regression_data is not None
             and len(parent_idx_for_regression) > 0
@@ -243,14 +195,11 @@ class ParallelRelaxStage(PipelineStage):
             input_batch.molecules, device=self._device, dtype=self._dtype
         )
 
-        # Initialize unit cell gradient descent optimizer
         init_fn, update_fn = fire(
             model=self.mace_model,
         )
 
         state = init_fn(state)
-
-        # Run optimization for a few steps
 
         for _step in range(self.N_steps):
             state = update_fn(state)

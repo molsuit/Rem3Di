@@ -26,6 +26,8 @@ class InputBatch:
     smiles: list[SmilesData] | None
     molecules: list[Atoms] | None
     structure_ids: list[StructureID]
+    total_charge: list[float] | None = None
+    total_spin: list[float] | None = None
     regression_data: RegressionData | None = None
 
     def __len__(self):
@@ -36,10 +38,11 @@ class InputBatch:
 
 @dataclass
 class DataBatch:
-    embeddings: torch.Tensor | None
     systems_index: torch.Tensor
     atomic_positions: torch.Tensor
     atomic_numbers: torch.Tensor
     structure_ids: list[StructureID]
     smiles_data: list[SmilesData] | None
+    total_charge: torch.Tensor
+    total_spin: torch.Tensor
     regression_data: RegressionData | None = None

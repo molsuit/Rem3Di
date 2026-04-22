@@ -75,54 +75,6 @@ class MoleculeDatasetAnalysis:
 
         return {int(n): int(c) for n, c in counts.items()}
 
-    def get_descriptor_mean_std(self):
-        embeddings = self.dataset.atomic_embeddings
-        n_atoms = self.dataset.N_atoms
-        embedding_dim = embeddings.shape[-1]
-        if n_atoms == 0 or embedding_dim == 0:
-            nan_array = np.full((embedding_dim,), np.nan, dtype=np.float64)
-            print(nan_array)
-            return nan_array, nan_array
-
-        chunk_len = getattr(embeddings, "chunks", (n_atoms, embedding_dim))[0]
-        chunk_len = max(1, min(chunk_len, n_atoms))
-
-        count = 0
-        mean = np.zeros(embedding_dim, dtype=np.float64)
-        m2 = np.zeros(embedding_dim, dtype=np.float64)
-
-        offset = 0
-        while offset < n_atoms:
-            end = min(offset + chunk_len, n_atoms)
-            chunk = np.asarray(embeddings[offset:end], dtype=np.float64)
-            chunk_count = chunk.shape[0]
-            if chunk_count == 0:
-                offset = end
-                continue
-
-            chunk_mean = chunk.mean(axis=0)
-            chunk_var = chunk.var(axis=0, ddof=0)
-
-            if count == 0:
-                mean = chunk_mean
-                m2 = chunk_var * chunk_count
-                count = chunk_count
-            else:
-                total_count = count + chunk_count
-                delta = chunk_mean - mean
-                mean = mean + delta * (chunk_count / total_count)
-                m2 = (
-                    m2
-                    + chunk_var * chunk_count
-                    + (delta**2) * count * chunk_count / total_count
-                )
-                count = total_count
-            offset = end
-
-        variance = m2 / count if count > 0 else np.full_like(mean, np.nan)
-        std = np.sqrt(variance)
-        return mean, std
-
     def get_heteroatom_count_per_molecule_distribution(self):
         n_struct = self.dataset.N_structures
         if n_struct == 0:
@@ -151,28 +103,6 @@ class MoleculeDatasetAnalysis:
 
         return molecules_with_stereo / n_struct
 
-    def get_descriptor_norm(self):
-        embeddings = self.dataset.atomic_embeddings
-        n_atoms = self.dataset.N_atoms
-        if n_atoms == 0:
-            return np.asarray([], dtype=np.float32)
-
-        chunk_len = getattr(embeddings, "chunks", (n_atoms, embeddings.shape[-1]))[0]
-        chunk_len = max(1, min(chunk_len, n_atoms))
-
-        norms = np.empty(n_atoms, dtype=np.float32)
-        offset = 0
-        while offset < n_atoms:
-            end = min(offset + chunk_len, n_atoms)
-            chunk = np.asarray(embeddings[offset:end], dtype=np.float64)
-            if chunk.size == 0:
-                offset = end
-                continue
-            norms[offset:end] = np.linalg.norm(chunk, axis=-1, ord=2)
-            offset = end
-
-        return norms
-
     def plot_heteroatom_distribution(self):
         hetero_counts = self.get_heteroatom_count_per_molecule_distribution()
         hetero_counts = np.asarray(hetero_counts, dtype=np.int64).ravel()
@@ -196,64 +126,6 @@ class MoleculeDatasetAnalysis:
         result = FigureResult(figure=fig, file_name="heteroatom_distribution.png")
         self.results.append(result)
         return result
-
-    def plot_descriptor_mean_std_distribution(self):
-        mean, std = self.get_descriptor_mean_std()
-        mean = np.asarray(mean, dtype=float).ravel()
-        std = np.asarray(std, dtype=float).ravel()
-
-        fig, ax = plt.subplots(figsize=(12, 4))
-        if mean.size > 0:
-            indices = np.arange(mean.size)
-            error_kw = {"ecolor": "0.3", "alpha": 0.7, "elinewidth": 0.8, "capsize": 2}
-            ax.bar(
-                indices,
-                mean,
-                yerr=std,
-                align="center",
-                color="#4c72b0",
-                edgecolor="none",
-                width=0.9,
-                error_kw=error_kw,
-            )
-            ax.axhline(0.0, color="0.5", linewidth=0.8, linestyle="--", alpha=0.7)
-            ax.grid(axis="y", alpha=0.2, linewidth=0.5)
-            ax.set_xlim(-0.5, mean.size - 0.5)
-            ax.set_xlabel("Descriptor channel")
-            ax.set_ylabel("Mean value")
-            ax.set_title("Descriptor channel statistics")
-            if mean.size > 20:
-                step = max(mean.size // 10, 1)
-                ax.set_xticks(indices[::step])
-                ax.tick_params(axis="x", labelrotation=45, labelsize=8)
-        else:
-            ax.text(
-                0.5, 0.5, "No descriptor channels available", ha="center", va="center"
-            )
-            ax.axis("off")
-        fig.tight_layout()
-        result = FigureResult(figure=fig, file_name="descriptor_channel_mean_std.png")
-        self.results.append(result)
-        return result
-
-    def plot_descriptor_norm_distribution(self):
-        norm = self.get_descriptor_norm()
-        fig, ax = plt.subplots()
-        flat_norm = np.asarray(norm, dtype=float).ravel()
-        if flat_norm.size > 0:
-            counts, bin_edges = np.histogram(flat_norm, bins="auto")
-            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
-            bar_widths = np.diff(bin_edges)
-            ax.bar(bin_centers, counts, width=bar_widths, align="center")
-            ax.set_xlabel("Descriptor norm")
-            ax.set_ylabel("Frequency")
-            ax.set_title("Descriptor norm distribution")
-        else:
-            ax.text(0.5, 0.5, "No descriptor norms available", ha="center", va="center")
-            ax.axis("off")
-        fig.tight_layout()
-        result = FigureResult(figure=fig, file_name="descriptor_norm_distribution.png")
-        self.results.append(result)
 
     def plot_atom_species_histogram(self):
         atom_species = self.atom_species(chunk_len=100_000)

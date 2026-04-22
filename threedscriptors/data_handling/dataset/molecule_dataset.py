@@ -14,17 +14,18 @@ from threedscriptors.data_handling.dataset.smiles_storage import SmilesStorage
 
 
 class MoleculeDataset:
-    # This is the ondisk storage of all data related to the molecular systems we store
+    # On-disk storage of all data related to the molecular systems.
 
     def __init__(
         self,
-        atomic_embeddings: Array,
         positions: Array,
         atomic_numbers: Array,
         ptr: Array,
         structure_ids: Array,
         molecule_ids: Array,
         isomer_ids: Array,
+        total_charge: Array,
+        total_spin: Array,
         smiles: SmilesStorage | None,
         isomeric_smiles: SmilesStorage | None,
         targets_system: Array | None,
@@ -33,9 +34,6 @@ class MoleculeDataset:
         mask_atom: Array | None,
         config: DatasetConfig,
     ):
-        # creates all required fields in the zarr dataset
-
-        self.atomic_embeddings = atomic_embeddings
         self.positions = positions
         self.atomic_numbers = atomic_numbers
         self.ptr = ptr
@@ -43,6 +41,9 @@ class MoleculeDataset:
         self.structure_ids = structure_ids
         self.molecule_ids = molecule_ids
         self.isomer_ids = isomer_ids
+
+        self.total_charge = total_charge
+        self.total_spin = total_spin
 
         self.smiles = smiles
         self.isomeric_smiles = isomeric_smiles
@@ -59,27 +60,21 @@ class MoleculeDataset:
 
     @classmethod
     def open_existing_dataset_from_dir(cls, path: Path):
-        """
-        Open an existing on-disk dataset created by create_empty_dataset.
-        """
+        """Open an existing on-disk dataset created by create_empty_dataset."""
         store = zarr.DirectoryStore(str(path))
         g = zarr.open_group(store=store, mode="r+")
-
-        if os.path.exists(path / "atomic_embeddings"):
-            atomic_embeddings = g["atomic_embeddings"]
-        else:
-            atomic_embeddings = None
 
         positions = g["positions"]
         atomic_numbers = g["atomic_numbers"]
         ptr = g["molecule_ptr"]
+        total_charge = g["total_charge"]
+        total_spin = g["total_spin"]
 
         ids = g.require_group("ids")
         mol_id = ids["molecule_id"]
         stereo_id = ids["stereoisomer_id"]
         struct_id = ids["structure_id"]
 
-        # Optional smiles stores
         smiles = None
         isomeric_smiles = None
         smiles_text_path = os.path.join(path, "smiles.txt")
@@ -123,13 +118,14 @@ class MoleculeDataset:
             )
 
         return cls(
-            atomic_embeddings,
             positions,
             atomic_numbers,
             ptr,
             struct_id,
             mol_id,
             stereo_id,
+            total_charge,
+            total_spin,
             smiles=smiles,
             isomeric_smiles=isomeric_smiles,
             targets_system=targets_system,
@@ -147,25 +143,12 @@ class MoleculeDataset:
 
     @classmethod
     def create_empty_dataset(cls, path: Path, config: DatasetConfig):
-        # Configure compressor
         os.makedirs(path, exist_ok=True)
 
         compressor = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE)
 
         store = zarr.DirectoryStore(path)
         g = zarr.group(store=store, overwrite=True)
-
-        # per-atom
-        if config.contains_embeddings:
-            atomic_embeddings = g.create(
-                "atomic_embeddings",
-                shape=(0, config.embedding_dim),
-                chunks=(config.atom_chunk, config.embedding_dim),
-                dtype="f4",
-                compressor=compressor,
-            )
-        else:
-            atomic_embeddings = None
 
         positions = g.create(
             "positions",
@@ -191,6 +174,22 @@ class MoleculeDataset:
             compressor=compressor,
         )
         ptr[:] = 0
+
+        # per-structure scalars
+        total_charge = g.create(
+            "total_charge",
+            shape=(0,),
+            chunks=(config.molecule_chunk,),
+            dtype="f4",
+            compressor=compressor,
+        )
+        total_spin = g.create(
+            "total_spin",
+            shape=(0,),
+            chunks=(config.molecule_chunk,),
+            dtype="f4",
+            compressor=compressor,
+        )
 
         # ID section
         ids = g.require_group("ids")
@@ -234,9 +233,6 @@ class MoleculeDataset:
             isomeric_smiles = SmilesStorage(
                 text_path=isomeric_smiles_path, index_path=isomeric_index_path
             )
-        else:
-            smiles = None
-            isomeric_smiles = None
 
         targets_system = None
         mask_system = None
@@ -281,19 +277,19 @@ class MoleculeDataset:
                     compressor=compressor,
                 )
 
-        # Write config to disk
         pyd_yaml.to_yaml_file(path / "dataset_config.yaml", config)
 
         consolidate_metadata(str(path))
 
         return cls(
-            atomic_embeddings,
             positions,
             atomic_numbers,
             ptr,
             struct_id,
             mol_id,
             stereo_id,
+            total_charge,
+            total_spin,
             smiles,
             isomeric_smiles,
             targets_system,
@@ -305,19 +301,14 @@ class MoleculeDataset:
 
     @property
     def N_structures(self) -> int:
-        """Number of stored structures (conformers)."""
         return int(self._mol_cursor)
 
     @property
     def N_atoms(self) -> int:
-        """Total number of stored atoms."""
         return int(self._atom_cursor)
 
     @property
     def N_molecules(self) -> int:
-        """
-        Number of unique molecules, assuming 0-based contiguous `molecule_id`s.
-        """
         n = int(self.molecule_ids.shape[0])
         if n == 0:
             return 0
@@ -333,8 +324,6 @@ class MoleculeDataset:
         cur = int(self.positions.shape[0])
         if need > cur:
             new_cap = max(need, int(cur * growth) + min_slack)
-            if self.config.contains_embeddings:
-                self.atomic_embeddings.resize((new_cap, self.config.embedding_dim))
             self.positions.resize((new_cap, 3))
             self.atomic_numbers.resize((new_cap,))
             if self.targets_atom is not None:
@@ -357,6 +346,8 @@ class MoleculeDataset:
             self.structure_ids.resize((new_ids_cap,))
             self.molecule_ids.resize((new_ids_cap,))
             self.isomer_ids.resize((new_ids_cap,))
+            self.total_charge.resize((new_ids_cap,))
+            self.total_spin.resize((new_ids_cap,))
             if self.targets_system is not None:
                 ncols = self.targets_system.shape[1]
                 self.targets_system.resize((new_ids_cap, ncols))
@@ -364,41 +355,32 @@ class MoleculeDataset:
 
     def append_batch(
         self,
-        embeddings,
         positions,
         atomic_numbers,
         batch_ptr_cumsum,  # length = n_mols, cumulative ends (no leading 0)
         molecule_ids,
         stereoisomer_ids,
+        total_charge,
+        total_spin,
         system_targets,
         system_masks,
         atom_targets,
         atom_masks,
     ):
-        # Normalize dtype & layout once, here (avoids per-element casting inside zarr)
-        if self.config.contains_embeddings and embeddings is not None:
-            E = np.asarray(embeddings, dtype="f4", order="C")
-        elif not self.config.contains_embeddings and embeddings is None:
-            E = None
-
-        else:
-            raise ValueError(
-                "Dataset Config and batch append disagree on whether there should be embeddings here or not"
-            )
-
         P = np.asarray(positions, dtype="f4", order="C")
         Z = np.asarray(atomic_numbers, dtype="u1", order="C")
         M = np.asarray(molecule_ids, dtype="i8", order="C")
         R = np.asarray(stereoisomer_ids, dtype="i8", order="C")
         C = np.asarray(batch_ptr_cumsum, dtype="i8", order="C")
+        Q = np.asarray(total_charge, dtype="f4", order="C")
+        S_spin = np.asarray(total_spin, dtype="f4", order="C")
 
         assert C.shape[0] == M.shape[0] == R.shape[0]
+        assert Q.shape[0] == M.shape[0] and S_spin.shape[0] == M.shape[0]
 
         n_atoms = P.shape[0]
         n_mols = int(C.shape[0])
 
-        # If not, we still attempt to write, but this hints at upstream issues
-        # (e.g., inconsistent system_idx vs embeddings sizing).
         self._ensure_capacity_atoms(n_atoms, growth=4)
         self._ensure_capacity_mols(n_mols, growth=4)
 
@@ -413,23 +395,19 @@ class MoleculeDataset:
             self.targets_atom[a0:a1] = AT
 
         # per-atom writes
-        if E is not None:
-            self.atomic_embeddings[a0:a1, :] = E
-
         self.positions[a0:a1, :] = P
         self.atomic_numbers[a0:a1] = Z
 
         # ptr: extend ends relative to existing sentinel at m0
         self.ptr[m0 + 1 : m1 + 1] = self.ptr[m0] + C
 
-        # Get a new array of structure ids, starting at molecule_cursor
         S = np.arange(0, n_mols) + m0
 
-        # ids
         self.structure_ids[m0:m1] = S
-
         self.molecule_ids[m0:m1] = M
         self.isomer_ids[m0:m1] = R
+        self.total_charge[m0:m1] = Q
+        self.total_spin[m0:m1] = S_spin
 
         if system_targets is not None:
             ST = np.asarray(system_targets, dtype="f4", order="C")
@@ -442,7 +420,6 @@ class MoleculeDataset:
         self._mol_cursor = m1
 
     def get_structure_ids_from_molecule_ids(self, molecule_ids: set):
-        # retrieve all structure_ids, for which the molecule_id is in the molecules ids set
         if not molecule_ids:
             return np.asarray([], dtype="i8")
 
@@ -453,16 +430,14 @@ class MoleculeDataset:
         return retrieved_structure_ids
 
     def shrink_to_fit(self):
-        if self.config.contains_embeddings:
-            self.atomic_embeddings.resize(
-                (self._atom_cursor, self.config.embedding_dim)
-            )
         self.positions.resize((self._atom_cursor, 3))
         self.atomic_numbers.resize((self._atom_cursor,))
         self.ptr.resize((self._mol_cursor + 1,))
         self.structure_ids.resize((self._mol_cursor,))
         self.molecule_ids.resize((self._mol_cursor,))
         self.isomer_ids.resize((self._mol_cursor,))
+        self.total_charge.resize((self._mol_cursor,))
+        self.total_spin.resize((self._mol_cursor,))
 
         if self.targets_system is not None:
             ncols = self.targets_system.shape[1]

@@ -60,16 +60,10 @@ class DatasetReconfigurator:
 
     def _validate_compatibility(self, src: MoleculeDataset) -> None:
         src_cfg = src.config
-        if src.atomic_embeddings.shape[1] != self.new_config.embedding_dim:
-            raise ValueError(
-                "New config embedding_dim does not match source dataset embeddings."
-            )
         if src_cfg.contains_smiles != self.new_config.contains_smiles:
             raise ValueError(
                 "SMILES configuration mismatch between source and requested config."
             )
-        if src_cfg.irreps != self.new_config.irreps:
-            raise ValueError("Irrep configuration must remain unchanged.")
         if self.new_config.contains_smiles and (
             src.smiles is None or src.isomeric_smiles is None
         ):
@@ -121,9 +115,10 @@ class DatasetReconfigurator:
             if a1 == a0 and s1 > s0:
                 continue
 
-            embeddings = np.asarray(src.atomic_embeddings[a0:a1, :])
             positions = np.asarray(src.positions[a0:a1, :])
             atomic_numbers = np.asarray(src.atomic_numbers[a0:a1])
+            total_charge = np.asarray(src.total_charge[s0:s1])
+            total_spin = np.asarray(src.total_spin[s0:s1])
 
             chunk_ptr = src_ptr[s0 : s1 + 1]
             lens = np.diff(chunk_ptr)
@@ -158,12 +153,13 @@ class DatasetReconfigurator:
             )
 
             dst.append_batch(
-                embeddings,
                 positions,
                 atomic_numbers,
                 cum_atoms,
                 new_mol_ids,
                 new_iso_ids,
+                total_charge,
+                total_spin,
                 system_targets,
                 system_masks,
                 atom_targets,

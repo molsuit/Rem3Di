@@ -74,13 +74,12 @@ class DatasetConstructionOrchestrator:
         self.finalize()
 
     def append_batch_to_dataset(self, output_data: DataBatch):
-        embeddings = ensure_numpy_array(output_data.embeddings)
         positions = ensure_numpy_array(output_data.atomic_positions)
         atomic_numbers = ensure_numpy_array(output_data.atomic_numbers)
+        total_charge = ensure_numpy_array(output_data.total_charge)
+        total_spin = ensure_numpy_array(output_data.total_spin)
 
         # Ensure pointer length matches the number of structures in the batch.
-        # If the last system produced zero atoms, `minlength` keeps a trailing 0 count
-        # so the ptr length equals len(structure_ids).
         ptr = ensure_numpy_array(
             system_idx_to_ragged_ptr(
                 output_data.systems_index,
@@ -89,8 +88,6 @@ class DatasetConstructionOrchestrator:
 
         N_atoms_batch = positions.shape[0]
 
-        if embeddings is not None and embeddings.ndim != 2:
-            raise ValueError("embeddings must be 2D [N_atoms, D]")
         if positions.shape != (N_atoms_batch, 3):
             raise ValueError("atomic_positions must be [N_atoms, 3]")
         if atomic_numbers.shape[0] != N_atoms_batch:
@@ -114,12 +111,13 @@ class DatasetConstructionOrchestrator:
             atom_mask = None
 
         self.dataset.append_batch(
-            embeddings,
             positions,
             atomic_numbers,
             ptr,
             molecule_ids,
             stereoisomer_ids,
+            total_charge,
+            total_spin,
             system_targets,
             system_masks,
             atom_target,

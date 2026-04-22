@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, Subset
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
-    pos_emb_getitem,
+    atoms_getitem,
 )
 from threedscriptors.data_handling.dataset_creation.dataset_modification import (
     DatasetReconfigurator,
@@ -178,8 +178,8 @@ class DataloaderBenchmarkResult(BaseModel):
 def _count_atoms(sample: Sample) -> int:
     if sample.padding_mask is not None:
         return int((~sample.padding_mask).sum().item())
-    if sample.embeddings is not None:
-        return int(sample.embeddings.shape[0])
+    if sample.atomic_positions is not None:
+        return int(sample.atomic_positions.shape[0])
     return 0
 
 
@@ -248,7 +248,7 @@ class DataloaderBenchmark:
             raise
 
         self._dataset = MoleculeDataset.open_existing_dataset_from_dir(target_dir)
-        self._training_dataset = TrainingMoleculeDataset(target_dir, pos_emb_getitem)
+        self._training_dataset = TrainingMoleculeDataset(target_dir, atoms_getitem)
         self._lengths = lengths_from_ptr(np.asarray(self._dataset.ptr[:]))
         self._train_indices = self._build_train_indices(len(self._lengths))
 
@@ -360,8 +360,8 @@ class DataloaderBenchmark:
         t0 = perf_counter()
         for i in idxs:
             sample = self._training_dataset[int(i)]
-            if sample.embeddings is not None:
-                total_atoms += sample.embeddings.shape[0]
+            if sample.atomic_positions is not None:
+                total_atoms += sample.atomic_positions.shape[0]
         t1 = perf_counter()
 
         idxs2 = rng.integers(

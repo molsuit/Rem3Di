@@ -26,15 +26,14 @@ class DatasetConcatenation:
         if src_ptr.shape[0] <= 1:
             return next_mol_base, next_iso_base
 
+        n_structs = src_ptr.shape[0] - 1
         lengths = (src_ptr[1:] - src_ptr[:-1]).astype("i8", copy=False)
         C = lengths.cumsum(dtype="i8")
 
-        if ref_cfg.contains_embeddings:
-            E = src.atomic_embeddings[:]
-        else:
-            E = None
         P = src.positions[:]
         Z = src.atomic_numbers[:]
+        Q = np.asarray(src.total_charge[:n_structs])
+        S_spin = np.asarray(src.total_spin[:n_structs])
 
         if ref_cfg.contains_smiles:
             if (
@@ -71,12 +70,13 @@ class DatasetConcatenation:
                 next_iso_base += int(old_iso_ids.max()) + 1
 
         out_ds.append_batch(
-            E,
             P,
             Z,
             C,
             new_mol_ids,
             new_iso_ids,
+            Q,
+            S_spin,
             None,
             None,
             None,
@@ -225,12 +225,10 @@ class DatasetConcatenation:
                     # All structures empty in this chunk; skip append to avoid zero-atom writes
                     continue
 
-                if src.config.contains_embeddings:
-                    E = np.asarray(src.atomic_embeddings[a0:a1, :])
-                else:
-                    E = None
                 P = np.asarray(src.positions[a0:a1, :])
                 Z = np.asarray(src.atomic_numbers[a0:a1])
+                Q = np.asarray(src.total_charge[s0:s1])
+                S_spin = np.asarray(src.total_spin[s0:s1])
 
                 # ptr cumulative ends for chunk
                 chunk_ptr = src_ptr[s0 : s1 + 1]
@@ -250,15 +248,16 @@ class DatasetConcatenation:
                     if mol_ids_chunk.size > 0:
                         mol_max = max(mol_max, int(mol_ids_chunk.max()))
                     if iso_ids_chunk.size > 0:
-                        iso_max = max(iso_max, int(iso_ids_chunk.max()))
+                        iso_max = max(iso_ids_chunk.max(), iso_max)
 
                 out_ds.append_batch(
-                    E,
                     P,
                     Z,
                     C,
                     new_mol_ids,
                     new_iso_ids,
+                    Q,
+                    S_spin,
                     None,
                     None,
                     None,
@@ -300,12 +299,7 @@ class DatasetConcatenation:
         ref_cfg = self.datasets[0].config
         for ds in self.datasets[1:]:
             cfg = ds.config
-            if (
-                cfg.embedding_dim != ref_cfg.embedding_dim
-                or cfg.contains_smiles != ref_cfg.contains_smiles
-                or cfg.irreps != ref_cfg.irreps
-                or cfg.contains_embeddings != ref_cfg.contains_embeddings
-            ):
+            if cfg.contains_smiles != ref_cfg.contains_smiles:
                 return False
         return True
 
@@ -385,19 +379,19 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
         N_total_systems_tasks = len(ref_cfg.tasks.system_cols)
 
         for src in self.datasets:
-            # Load per-atom arrays
-            if src.config.contains_embeddings:
-                E = src.atomic_embeddings[:]
-            else:
-                E = None
-            P = src.positions[:]
-            Z = src.atomic_numbers[:]
-
             # Build cumulative ends per structure from ptr
             src_ptr = src.ptr[:]
             if src_ptr.shape[0] <= 1:
                 # Empty dataset; skip
                 continue
+
+            n_structs = src_ptr.shape[0] - 1
+
+            # Load per-atom arrays
+            P = src.positions[:]
+            Z = src.atomic_numbers[:]
+            Q = np.asarray(src.total_charge[:n_structs])
+            S_spin = np.asarray(src.total_spin[:n_structs])
 
             lengths = (src_ptr[1:] - src_ptr[:-1]).astype("i8", copy=False)
             C = lengths.cumsum(dtype="i8")
@@ -467,12 +461,13 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
             # Create the correct masking for all other targets
 
             out_ds.append_batch(
-                E,
                 P,
                 Z,
                 C,
                 new_mol_ids,
                 new_iso_ids,
+                Q,
+                S_spin,
                 system_targets,
                 system_masks,
                 None,

@@ -12,3 +12,7 @@ training_runs/
 notebooks/
 backed_up_models/
 *.log
+raw_datasets/
+dataset
+uv.lock
+.claude

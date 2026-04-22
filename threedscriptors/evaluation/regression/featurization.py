@@ -12,7 +12,7 @@ from threedscriptors.configuration.architecture_config import (
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
-    pos_emb_getitem,
+    atoms_getitem,
 )
 from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
@@ -93,7 +93,7 @@ class RemediDescriptorCalculator(DescriptorCalculator):
 
     def calculate_descriptors(self, dataset: MoleculeDataset):
         train_ds = TrainingMoleculeDataset.from_molecule_dataset(
-            dataset, get_item=pos_emb_getitem
+            dataset, get_item=atoms_getitem
         )
         descriptors = evaluate_molecular_descriptor_on_dataset(self.model, train_ds)
 

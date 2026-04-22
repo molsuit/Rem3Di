@@ -31,21 +31,20 @@ class TmqmTask(Enum):
 
 class TmqmGenerator(MoleculeGenerator):
     def __init__(
-        self, tmqm_dir: str, batch_size: int, tasks: TmqmTask | list[TmqmTask]
+        self,
+        tmqm_dir: str,
+        batch_size: int,
+        tasks: TmqmTask | list[TmqmTask],
+        max_atoms: int | None = None,
     ):
         self.dir = tmqm_dir
         self.loading_batch_size = batch_size
-        self.tasks = [tasks] if isinstance(TmqmTask) else tasks
+        self.tasks = [tasks] if isinstance(tasks, TmqmTask) else tasks
+        self.max_atoms = max_atoms
 
-    @staticmethod
-    def filter_systems(
-        mol: Atoms, max_atoms: int, can_model_spin_and_charge: bool = False
-    ):
-        if not can_model_spin_and_charge and mol.info["q"] == 0 and mol.info["S"] == 0:
+    def filter_systems(self, mol: Atoms) -> bool:
+        if self.max_atoms is not None and len(mol) > self.max_atoms:
             return False
-        if max_atoms is not None and len(mol) < max_atoms:
-            return False
-
         return True
 
     def open_regression_labels(self):
@@ -54,8 +53,6 @@ class TmqmGenerator(MoleculeGenerator):
         return df
 
     def __iter__(self):
-        # Opens the regression_dataset
-
         xyz_files = sorted(glob.glob(os.path.join(self.dir, "*.xyz")))
 
         if not xyz_files:
@@ -65,18 +62,24 @@ class TmqmGenerator(MoleculeGenerator):
 
         batch_atoms: list[Atoms] = []
         batch_structure_ids: list[StructureID] = []
+        batch_charges: list[float] = []
+        batch_spins: list[float] = []
         targets_buffer: list[float] = []
 
         regression_df = self.open_regression_labels()
 
         for idx, atoms in enumerate(suppl):
-            if self.filter_systems(atoms):
-                batch_atoms.append(atoms)
-                batch_structure_ids.append(
-                    StructureID(structure_id=idx, molecule_id=idx, stereoisomer_id=idx)
-                )
+            if not self.filter_systems(atoms):
+                continue
 
-                targets_buffer.append(regression_df[atoms.info["CSD_code"], :])
+            batch_atoms.append(atoms)
+            batch_structure_ids.append(
+                StructureID(structure_id=idx, molecule_id=idx, stereoisomer_id=idx)
+            )
+            batch_charges.append(float(atoms.info["q"]))
+            batch_spins.append(float(atoms.info["S"]))
+
+            targets_buffer.append(regression_df[atoms.info["CSD_code"], :])
 
             if len(batch_atoms) >= self.loading_batch_size:
                 regression_targets = np.array(targets_buffer)
@@ -86,13 +89,15 @@ class TmqmGenerator(MoleculeGenerator):
                     molecules=batch_atoms,
                     smiles=None,
                     structure_ids=batch_structure_ids,
+                    total_charge=batch_charges,
+                    total_spin=batch_spins,
                     regression_data=RegressionData(
                         targets_system=regression_targets, mask_system=regression_masks
                     ),
                 )
-                batch_atoms, batch_structure_ids, targets_buffer = [], [], []
+                batch_atoms, batch_structure_ids = [], []
+                batch_charges, batch_spins, targets_buffer = [], [], []
 
-        # flush tail
         if batch_atoms:
             regression_targets = np.array(targets_buffer)
             regression_masks = np.ones_like(regression_targets)
@@ -101,6 +106,8 @@ class TmqmGenerator(MoleculeGenerator):
                 molecules=batch_atoms,
                 smiles=None,
                 structure_ids=batch_structure_ids,
+                total_charge=batch_charges,
+                total_spin=batch_spins,
                 regression_data=RegressionData(
                     targets_system=regression_targets, mask_system=regression_masks
                 ),
