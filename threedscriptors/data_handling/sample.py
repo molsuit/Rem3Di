@@ -65,9 +65,7 @@ class Sample:
 
 
 def pretraining_padded_collate_fn(batch: list[Sample]) -> Sample:
-    P_pad = pad_sequence(
-        [s.atomic_positions for s in batch], batch_first=True
-    )
+    P_pad = pad_sequence([s.atomic_positions for s in batch], batch_first=True)
     Nmax = P_pad.size(1)
     lengths = torch.tensor([len(s) for s in batch])
     mask = torch.arange(Nmax).expand(len(batch), Nmax) >= lengths.unsqueeze(1)

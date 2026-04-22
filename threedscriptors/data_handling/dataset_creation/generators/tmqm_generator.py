@@ -58,7 +58,7 @@ class TmqmGenerator(MoleculeGenerator):
         if not xyz_files:
             raise FileNotFoundError(f"No .xyz files found in {self.dir}")
 
-        suppl = chain.from_iterable([iread(p) for p in xyz_files])
+        suppl = chain.from_iterable([iread(p, index=":") for p in xyz_files])
 
         batch_atoms: list[Atoms] = []
         batch_structure_ids: list[StructureID] = []

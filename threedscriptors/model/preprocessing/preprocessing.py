@@ -1,4 +1,5 @@
 import torch
+import torch_sim as ts
 from ase.data import atomic_masses
 from torch import nn
 from torch_sim.models.mace import MaceModel
@@ -109,6 +110,12 @@ def _sample_to_simstate(sample: Sample, r_max: float) -> tuple[SimState, torch.T
         system_extras[SystemExtras.TOTAL_SPIN] = sample.total_spin.to(
             device=device, dtype=dtype
         ).reshape(n_systems)
+    # PolarMACE reads these from the model input dict; stock MACE ignores them.
+    # Default to zero for every system so both paths are safe.
+    system_extras["fermi_level"] = torch.zeros(n_systems, device=device, dtype=dtype)
+    system_extras["external_field"] = torch.zeros(
+        (n_systems, 3), device=device, dtype=dtype
+    )
 
     state = SimState(
         positions=shifted_positions,
@@ -132,14 +139,73 @@ class PreprocessorWithAtomicEmbedding(Preprocessor):
         super().__init__(atomic_preprocessor, geometric_preprocessor)
         self.torch_sim_mace_model = mace_model
 
+    def _run_mace(self, state: SimState) -> torch.Tensor:
+        """Build the MACE input dict directly from the SimState and call the raw model.
+
+        Mirrors torch_sim.MaceModel.forward's data_dict construction but additionally
+        forwards the fermi_level / external_field tensors that PolarMACE requires.
+        torch_sim itself has no knowledge of those keys, so we bypass its forward
+        and route them through state.system_extras here.
+        """
+        m = self.torch_sim_mace_model
+        m._setup_node_attrs(state.atomic_numbers)
+        m._setup_ptr(state.system_idx)
+
+        edge_index, mapping_system, unit_shifts = m.neighbor_list_fn(
+            state.positions,
+            state.row_vector_cell,
+            state.pbc,
+            m.r_max,
+            state.system_idx,
+        )
+        shifts = ts.transforms.compute_cell_shifts(
+            state.row_vector_cell, unit_shifts, mapping_system
+        )
+
+        # Hand MACE a unit cell, not the big neighbor-list container. The
+        # k-space evaluator in PolarMACE builds a grid whose size scales as
+        # (kspace_cutoff * extent / 2π)^3; our non-PBC cells are ~60 Å across,
+        # which blows that up by ~10^3. The neighbor list already used the real
+        # cell above, and unit_shifts are all zero for pbc=False so `shifts`
+        # is zero regardless of cell magnitude. Safe because this repo's
+        # systems are all non-periodic molecules.
+        n_systems = m.ptr.shape[0] - 1
+        eye = torch.eye(3, device=state.positions.device, dtype=state.positions.dtype)
+        unit_cell = eye.unsqueeze(0).expand(n_systems, 3, 3)
+        unit_rcell = (2 * torch.pi) * unit_cell
+        unit_volume = torch.ones(n_systems, device=state.positions.device, dtype=state.positions.dtype)
+
+        data_dict = dict(
+            ptr=m.ptr,
+            node_attrs=m.node_attrs,
+            batch=state.system_idx,
+            pbc=state.pbc,
+            cell=unit_cell,
+            rcell=unit_rcell,
+            volume=unit_volume,
+            positions=state.positions,
+            edge_index=edge_index,
+            unit_shifts=unit_shifts,
+            shifts=shifts,
+            total_charge=state.system_extras.get(SystemExtras.TOTAL_CHARGE),
+            total_spin=state.system_extras.get(SystemExtras.TOTAL_SPIN),
+            fermi_level=state.system_extras.get("fermi_level"),
+            external_field=state.system_extras.get("external_field"),
+        )
+        out = m.model(
+            data_dict,
+            compute_force=m.compute_forces,
+            compute_stress=m.compute_stress,
+        )
+        return out["node_feats"]
+
     def forward(self, sample: Sample) -> PreprocessedSample:
         state, lengths = _sample_to_simstate(
             sample, r_max=float(self.torch_sim_mace_model.r_max)
         )
 
         with torch.inference_mode():
-            out = self.torch_sim_mace_model(state)
-            atomic_embeddings: torch.Tensor = out["node_feats"].detach()
+            atomic_embeddings = self._run_mace(state).detach()
 
         n_systems = lengths.shape[0]
         max_atoms = int(lengths.max().item()) if lengths.numel() > 0 else 0

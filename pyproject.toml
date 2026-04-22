@@ -20,13 +20,12 @@ dependencies = [
     "umap-learn",
     "torch-sim-atomistic",
     "zarr>=2.18.7",
+    "graph-longrange",
+    "cuequivariance-torch>=0.9.1",
+    "cuequivariance>=0.9.1",
+    "cuequivariance-ops-torch-cu13>=0.9.1",
 ]
-[project.optional-dependencies]
-cuequivariance = [
-    "cuequivariance",
-    "cuequivariance-torch",
-    "cuequivariance-ops-torch-cu12"
-]
+
 
 mols  = ["polaris-lib>=0.11.4",
     "molfeat",

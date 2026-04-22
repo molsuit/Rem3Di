@@ -16,3 +16,4 @@ raw_datasets/
 dataset
 uv.lock
 .claude
+.env

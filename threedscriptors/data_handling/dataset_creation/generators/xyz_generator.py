@@ -38,9 +38,9 @@ class XYZMoleculeGenerator(MoleculeGenerator):
 
     def __iter__(self):
         if isinstance(self.xyz_file, list):
-            suppl = chain.from_iterable([iread(p) for p in self.xyz_file])
+            suppl = chain.from_iterable([iread(p, index= ":") for p in self.xyz_file])
         else:
-            suppl = iread(self.xyz_file)
+            suppl = iread(self.xyz_file, index= ":")
 
         batch_atoms: list[Atoms] = []
         batch_structure_ids: list[StructureID] = []

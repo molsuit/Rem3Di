@@ -96,6 +96,9 @@ class MoleculeDatasetAnalysis:
         dataset = self.dataset
         n_struct = dataset.N_structures
 
+        if dataset.isomeric_smiles is None or n_struct == 0:
+            return None
+
         molecules_with_stereo = 0
         for smi in dataset.isomeric_smiles:
             if has_stereocenter(smi):

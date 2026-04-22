@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from time import perf_counter
 
 import numpy as np
@@ -25,7 +26,7 @@ from threedscriptors.data_handling.dataset_creation.utils import (
 class DatasetConstructionOrchestrator:
     def __init__(
         self,
-        pipeline: list[PipelineStage],
+        pipeline: Sequence[PipelineStage],
         batch_generator: MoleculeGenerator,
         construction_config: DatasetCreationConfig,
         dataset_config: DatasetConfig,

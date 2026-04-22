@@ -3,12 +3,10 @@ from pathlib import Path
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.data_handling.dataset_analysis import MoleculeDatasetAnalysis
 
-dataset_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/geom_drugs"
-)
+dataset_dir = Path("/home/steffen/projects/mol_descriptors/dataset/tmqm")
 
 eval_dir = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/dataset_analysis_geom_drugs"
+    "/home/steffen/projects/mol_descriptors/eval_runs/dataset_analysis_tmqm"
 )
 
 

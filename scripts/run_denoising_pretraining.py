@@ -133,7 +133,7 @@ def main():
 
     validation_loader = DataLoader(
         valid_dataset,
-        batch_size=32,
+        batch_size=training_config.batch_size,
         worker_init_fn=worker_init_fn,
         prefetch_factor=4,
         persistent_workers=True,
@@ -151,8 +151,6 @@ def main():
     preprocessor = bundle.preprocessor
     encoder = bundle.encoder
     decoder = bundle.decoder
-
-    preprocessor.to(dtype=torch.float64)
 
     all_params = (
         list(encoder.parameters())
