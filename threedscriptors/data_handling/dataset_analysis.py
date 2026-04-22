@@ -171,18 +171,21 @@ class MoleculeDatasetAnalysis:
         pass
 
     def plot_relaxed_atoms(self, N_max_molecules: int | None = None):
-        molecules = self.dataset.get_all_molecules()
+        molecules = self.dataset.get_all_molecules(N_molecules=N_max_molecules)
+        if not molecules:
+            return
 
         N_horizontal = 3
-        N_vertical = (len(molecules) // 3) + 1
+        N_vertical = (len(molecules) + N_horizontal - 1) // N_horizontal
 
-        fig, axarr = plt.subplots(N_vertical, N_horizontal)
-
+        fig, axarr = plt.subplots(N_vertical, N_horizontal, squeeze=False)
         fig.set_figheight(4 * N_vertical)
         fig.set_figwidth(4 * N_horizontal)
 
         for i, mol in enumerate(molecules):
-            plot_atoms(mol, axarr[i // 3, i % 3])
+            plot_atoms(mol, axarr[i // N_horizontal, i % N_horizontal])
+        for j in range(len(molecules), N_vertical * N_horizontal):
+            fig.delaxes(axarr[j // N_horizontal, j % N_horizontal])
 
         self.results.append(FigureResult(figure=fig, file_name="example_molecules.png"))
 
@@ -200,13 +203,7 @@ class MoleculeDatasetAnalysis:
     def run(self):
         self.print_dataset_properties()
         self.plot_molecule_size_distribution()
-        print(1)
         self.plot_atom_species_histogram()
-        print(2)
-        # self.plot_descriptor_norm_distribution()
-        # print(3)
-        # self.plot_descriptor_mean_std_distribution()
-
         self.plot_relaxed_atoms(100)
         self.plot_heteroatom_distribution()
 
