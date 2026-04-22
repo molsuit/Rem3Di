@@ -1,14 +1,15 @@
 import os
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
-import torch_sim as ts
 from ase import Atoms
-from torch_sim.models.mace import MaceModel
-from torch_sim.optimizers import fire
 from tqdm import tqdm
+
+if TYPE_CHECKING:
+    from torch_sim.models.mace import MaceModel
 
 from threedscriptors.configuration.dataset_config import DatasetCreationConfig
 from threedscriptors.data_handling.dataset_creation.loading_batch import (
@@ -56,6 +57,23 @@ def _per_system_charge_spin(
     return charge, spin
 
 
+def _stack_atoms(
+    molecules: list[Atoms], dtype: torch.dtype
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    atom_counts = [len(m) for m in molecules]
+    positions = torch.from_numpy(
+        np.concatenate([m.get_positions() for m in molecules], axis=0)
+    ).to(dtype=dtype)
+    atomic_numbers = torch.from_numpy(
+        np.concatenate([m.get_atomic_numbers() for m in molecules], axis=0)
+    ).to(dtype=torch.long)
+    system_idx = torch.repeat_interleave(
+        torch.arange(len(molecules), dtype=torch.long),
+        torch.tensor(atom_counts, dtype=torch.long),
+    )
+    return positions, atomic_numbers, system_idx
+
+
 class CopyDataStage(PipelineStage):
     def __init__(self, dtype):
         self._dtype = dtype
@@ -63,17 +81,17 @@ class CopyDataStage(PipelineStage):
     def __call__(self, input_batch: InputBatch, output_batch):
         assert output_batch is None
 
-        state = ts.initialize_state(
-            input_batch.molecules, device="cpu", dtype=self._dtype
+        positions, atomic_numbers, system_idx = _stack_atoms(
+            input_batch.molecules, self._dtype
         )
 
         n_systems = len(input_batch.molecules)
         charge, spin = _per_system_charge_spin(input_batch, n_systems, self._dtype)
 
         output_batch = DataBatch(
-            atomic_positions=state.positions.detach(),
-            atomic_numbers=state.atomic_numbers.detach(),
-            systems_index=state.system_idx.detach(),
+            atomic_positions=positions,
+            atomic_numbers=atomic_numbers,
+            systems_index=system_idx,
             smiles_data=input_batch.smiles,
             structure_ids=input_batch.structure_ids,
             total_charge=charge,
@@ -182,7 +200,7 @@ class ConformerGenerationStage(PipelineStage):
 
 
 class ParallelRelaxStage(PipelineStage):
-    def __init__(self, mace_model: MaceModel, device, dtype, N_steps: int):
+    def __init__(self, mace_model: "MaceModel", device, dtype, N_steps: int):
         self.mace_model = mace_model
 
         self._device = device
@@ -191,6 +209,9 @@ class ParallelRelaxStage(PipelineStage):
         self.N_steps = N_steps
 
     def __call__(self, input_batch, data_batch):
+        import torch_sim as ts
+        from torch_sim.optimizers import fire
+
         state = ts.initialize_state(
             input_batch.molecules, device=self._device, dtype=self._dtype
         )
