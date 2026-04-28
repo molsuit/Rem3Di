@@ -1,32 +1,29 @@
 kind: encoder_decoder
 mace_config:
-  model_path: /share/snw30/projects/mace_model/MACE-OFF24_medium.model
+  model_path: /home/s5f/wedigs.s5f/3DMolecularDescriptors/MACE-POLAR-1-M.model
   device: cuda
-  dtype: float64
+  dtype: float32
   enable_cueq: true
 embedding_preprocess_config:
-  pseudoscalar_dimension: 64
-  chiral_embedding_dimension: 64
-  pseudoscalars: true
+  pseudoscalar_dimension: 0
+  chiral_embedding_dimension: 0
+  pseudoscalars: false
   equivariant_rms_normalization: true
   gated: true
 encoder_config:
   N_layers: 4
   attention_layer_config:
-    dim_feedforward: 1024
+    dim_feedforward: 4096
     dropout: 0.3
-    embedding_dim: 320
     num_heads: 8
   d_geo: 16
   d_pair: 64
 decoder_config:
   N_layers: 4
   attention_layer_config:
-    dim_feedforward: 1024
+    dim_feedforward: 4096
     dropout: 0.3
-    embedding_dim: 320
     num_heads: 8
-  d_descriptor: 320
   d_geo: 16
   d_pair: 64
 positional_encoding_config:
@@ -41,5 +38,4 @@ global_aggregator_config:
     attn_dropout: 0.3
     num_heads: 8
   global_molecular_descriptor_dropout: 0.0
-  input_dim: 320
   output_dim: 320

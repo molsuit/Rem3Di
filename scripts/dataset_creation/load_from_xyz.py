@@ -18,7 +18,7 @@ from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
 
 xyz_files = [
     Path(f)
-    for f in Path("/ptmp/wedigs/remedi/raw_datasets/tmqm").glob("*.xyz")
+    for f in Path("/scratch/s5f/wedigs.s5f/raw_datasets/tmqm").glob("*.xyz")
 ]
 
 
@@ -32,8 +32,8 @@ generator = XYZMoleculeGenerator(
 pipeline = [CopyDataStage(dtype=torch.float64)]
 
 creation_config = DatasetCreationConfig(
-    path=Path("/ptmp/wedigs/remedi/datasets/tmqm"),
-    N_structures=200,
+    path=Path("/scratch/s5f/wedigs.s5f/datasets/tmqm"),
+    N_structures= None,
 )
 dataset_config = DatasetConfig(
     atom_chunk=450,

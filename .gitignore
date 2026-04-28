@@ -17,3 +17,7 @@ dataset
 uv.lock
 .claude
 .env
+CLAUDE.md
+*.model
+*.err
+*.out

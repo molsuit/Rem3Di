@@ -21,9 +21,9 @@ dependencies = [
     "torch-sim-atomistic",
     "zarr==2.18.7",
     "graph-longrange",
-    "cuequivariance-torch>=0.9.1",
-    "cuequivariance>=0.9.1",
-    "cuequivariance-ops-torch-cu13>=0.9.1",
+    "cuequivariance-torch==0.9.1",
+    "cuequivariance==0.9.1",
+    "cuequivariance-ops-torch-cu12==0.9.1",
 ]
 
 
@@ -45,10 +45,16 @@ dev = [
     "pytest",
     "ty>=0.0.32",
 ]
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
 [tool.uv.sources]
 mace-torch = { git = "https://github.com/ACEsuit/mace.git", branch = "main" }
 graph-longrange = { git = "https://github.com/WillBaldwin0/graph_electrostatics.git" }
 torch-sim-atomistic = { git = "https://github.com/TorchSim/torch-sim.git", branch = "main"}
+torch = { index = "pytorch-cu126" }
 
 [tool.ty.environment]
 root = ["./threedscriptors"]

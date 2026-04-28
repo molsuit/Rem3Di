@@ -45,14 +45,14 @@ class MaceConfig(BaseModel):
                 device=self.device,
                 default_dtype=self.dtype,
                 return_raw_model=True,
-                enable_cueq=self.enable_cueq,
+                enable_cueq=False,
             )
         else:
             calc = MACECalculator(
                 model_paths=str(self.model_path),
                 device=self.device,
                 default_dtype=self.dtype,
-                enable_cueq=self.enable_cueq,
+                enable_cueq=False,
             )
             raw = calc.models[0]
 
