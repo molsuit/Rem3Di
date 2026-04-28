@@ -27,6 +27,7 @@ class AttnPool(nn.Module):
     def __init__(
         self,
         d_in,
+        d_out: int | None = None,
         n_heads=4,
         d_hidden=None,
         dropout=0.0,
@@ -38,12 +39,18 @@ class AttnPool(nn.Module):
         assert self.d_hidden % n_heads == 0, "d_hidden must divide n_heads"
 
         self.d_k = self.d_hidden // n_heads
-        self.d_out = d_in
+        self.d_out = d_out if d_out is not None else d_in
         self.scale = self.d_k**-0.5
 
         self.key_proj = nn.Linear(d_in, self.d_hidden, bias=False)
         self.query = nn.Parameter(torch.randn(n_heads, self.d_k))
         nn.init.xavier_uniform_(self.query)
+
+        self.out_proj: nn.Module = (
+            nn.Linear(d_in, self.d_out, bias=False)
+            if self.d_out != d_in
+            else nn.Identity()
+        )
 
         self.dropout = nn.Dropout(dropout)
         self.output_dropout = nn.Dropout(output_dropout) if output_dropout else None
@@ -52,7 +59,7 @@ class AttnPool(nn.Module):
         """
         x        : (B, N, d_in)
         pad_mask : (B, N)  1 for padding, 0 for real tokens
-        returns  : (B, d_in)
+        returns  : (B, d_out)
         """
         B, N, _ = x.shape
 
@@ -70,6 +77,7 @@ class AttnPool(nn.Module):
 
         pooled = torch.einsum("bhn,bnd->bhd", attn, x)
         out = pooled.mean(dim=1)
+        out = self.out_proj(out)
         if self.output_dropout is not None:
             out = self.output_dropout(out)
         return out

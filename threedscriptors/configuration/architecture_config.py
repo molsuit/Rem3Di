@@ -281,6 +281,7 @@ class AttentionAggregatorConfig(BaseModel):
     ) -> nn.Module:
         return AttnPool(
             d_in=input_dim,
+            d_out=output_dim,
             d_hidden=self.head_dim,
             n_heads=self.num_heads,
             dropout=self.attn_dropout or 0.0,

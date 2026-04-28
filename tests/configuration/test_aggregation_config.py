@@ -1,4 +1,5 @@
 import pytest
+import torch
 from pydantic import TypeAdapter, ValidationError
 
 from threedscriptors.configuration.architecture_config import (
@@ -12,6 +13,19 @@ from threedscriptors.model.pooling import AttnPool
 def test_attnpool_bad_divisibility():
     with pytest.raises(AssertionError):
         AttnPool(d_in=10, n_heads=4)  # 10 % 4 => assertion
+
+
+def test_attnpool_projects_to_d_out_when_different():
+    pool = AttnPool(d_in=1024, d_out=320, n_heads=8, d_hidden=64)
+    x = torch.randn(2, 5, 1024)
+    pad_mask = torch.zeros(2, 5, dtype=torch.bool)
+    out = pool(x, pad_mask)
+    assert out.shape == (2, 320)
+
+
+def test_attnpool_identity_when_d_in_equals_d_out():
+    pool = AttnPool(d_in=128, d_out=128, n_heads=8, d_hidden=64)
+    assert isinstance(pool.out_proj, torch.nn.Identity)
 
 
 def test_mean_cfg_roundtrip():
