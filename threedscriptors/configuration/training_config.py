@@ -37,5 +37,6 @@ class TrainingConfig(BaseModel):
     dataset_path: Path
     model_config_path: Path
     output_base: Path
+    training_directory: Path | None = None
     total_steps: int | None = None
     wandb_active: bool = False

@@ -83,9 +83,6 @@ def main():
 
     dataset_path = args.dataset_path if args.dataset_path is not None else training_config.dataset_path
 
-    output_base = training_config.output_base
-    output_base.mkdir(parents=True, exist_ok=True)
-
     full_dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
     ds = TrainingMoleculeDataset(dataset_path, get_item=atoms_getitem, in_memory=True)
 
@@ -96,13 +93,19 @@ def main():
     train_dataset = Subset(ds, train_idx)
     valid_dataset = Subset(ds, val_idx)
 
-    training_idx = len(list(output_base.glob("*/")))
-    now = datetime.now()
-    training_identifier = (
-        f"{training_idx}-{now.strftime('%Y_%m_%d_%H_%M_%S')}-{split_name}"
-    )
-    training_data_dir = output_base / training_identifier
-    training_data_dir.mkdir()
+    if training_config.training_directory is not None:
+        training_data_dir = training_config.training_directory
+        training_data_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        output_base = training_config.output_base
+        output_base.mkdir(parents=True, exist_ok=True)
+        training_idx = len(list(output_base.glob("*/")))
+        now = datetime.now()
+        training_identifier = (
+            f"{training_idx}-{now.strftime('%Y_%m_%d_%H_%M_%S')}-{split_name}"
+        )
+        training_data_dir = output_base / training_identifier
+        training_data_dir.mkdir()
 
     logger = setup_logging(filename=training_data_dir / "logfile.info")
     logger.info("Loaded Dataset")
@@ -124,7 +127,7 @@ def main():
 
     validation_loader = DataLoader(
         valid_dataset,
-        batch_size=32,
+        batch_size=training_config.batch_size,
         worker_init_fn=worker_init_fn,
         prefetch_factor=4,
         persistent_workers=True,

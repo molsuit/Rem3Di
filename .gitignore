@@ -21,3 +21,4 @@ CLAUDE.md
 *.model
 *.err
 *.out
+analysis_output/

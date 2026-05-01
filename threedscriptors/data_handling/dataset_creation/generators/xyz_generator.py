@@ -20,11 +20,18 @@ class XYZMoleculeGenerator(MoleculeGenerator):
         loading_batch_size: int = 100,
         charge_key: str | None = None,
         spin_key: str | None = None,
+        max_atoms: int | None = None,
     ):
         self.xyz_file = xyz_file
         self.loading_batch_size = int(loading_batch_size)
         self.charge_key = charge_key
         self.spin_key = spin_key
+        self.max_atoms = max_atoms
+
+    def filter_systems(self, mol: Atoms) -> bool:
+        if self.max_atoms is not None and len(mol) > self.max_atoms:
+            return False
+        return True
 
     def _read_charge(self, atoms: Atoms) -> float:
         if self.charge_key is None:
@@ -48,6 +55,9 @@ class XYZMoleculeGenerator(MoleculeGenerator):
         batch_spins: list[float] = []
 
         for idx, atoms in enumerate(suppl):
+            if not self.filter_systems(atoms):
+                continue
+
             batch_atoms.append(atoms)
             batch_structure_ids.append(
                 StructureID(structure_id=idx, molecule_id=idx, stereoisomer_id=idx)

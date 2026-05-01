@@ -1,4 +1,4 @@
-batch_size: 192
+batch_size: 128
 dataset_path:
   /scratch/s5f/wedigs.s5f/datasets/tmqm
 epochs: 10
