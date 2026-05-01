@@ -21,15 +21,37 @@ class XYZMoleculeGenerator(MoleculeGenerator):
         charge_key: str | None = None,
         spin_key: str | None = None,
         max_atoms: int | None = None,
+        reject_zero_h: bool = False,
+        min_h_heavy_ratio: float = 0.0,
     ):
         self.xyz_file = xyz_file
         self.loading_batch_size = int(loading_batch_size)
         self.charge_key = charge_key
         self.spin_key = spin_key
         self.max_atoms = max_atoms
+        self.reject_zero_h = reject_zero_h
+        self.min_h_heavy_ratio = float(min_h_heavy_ratio)
+
+        self._n_dropped_size = 0
+        self._n_dropped_zero_h = 0
+        self._n_dropped_low_h = 0
+        self._n_kept = 0
 
     def filter_systems(self, mol: Atoms) -> bool:
         if self.max_atoms is not None and len(mol) > self.max_atoms:
+            self._n_dropped_size += 1
+            return False
+        nums = mol.get_atomic_numbers()
+        n_h = int((nums == 1).sum())
+        n_heavy = int((nums > 1).sum())
+        if n_heavy == 0:
+            self._n_dropped_zero_h += 1
+            return False
+        if self.reject_zero_h and n_h == 0:
+            self._n_dropped_zero_h += 1
+            return False
+        if (n_h / n_heavy) < self.min_h_heavy_ratio:
+            self._n_dropped_low_h += 1
             return False
         return True
 
@@ -58,6 +80,7 @@ class XYZMoleculeGenerator(MoleculeGenerator):
             if not self.filter_systems(atoms):
                 continue
 
+            self._n_kept += 1
             batch_atoms.append(atoms)
             batch_structure_ids.append(
                 StructureID(structure_id=idx, molecule_id=idx, stereoisomer_id=idx)
@@ -85,3 +108,17 @@ class XYZMoleculeGenerator(MoleculeGenerator):
                 total_charge=batch_charges,
                 total_spin=batch_spins,
             )
+
+        total_seen = (
+            self._n_kept
+            + self._n_dropped_size
+            + self._n_dropped_zero_h
+            + self._n_dropped_low_h
+        )
+        print(
+            f"XYZMoleculeGenerator: kept {self._n_kept}/{total_seen}  "
+            f"dropped: size={self._n_dropped_size} "
+            f"zero_h={self._n_dropped_zero_h} "
+            f"low_h={self._n_dropped_low_h} "
+            f"(reject_zero_h={self.reject_zero_h}, min_h_heavy_ratio={self.min_h_heavy_ratio})"
+        )

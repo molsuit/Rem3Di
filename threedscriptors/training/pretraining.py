@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 
 def get_random_mask(padding_mask, masking_probability=0.15):
@@ -45,3 +46,33 @@ def atom_denoising_loss(
 
     loss = 1 / atoms_in_batch * torch.sum(masked_squared_diff) * 1 / noise_level**2
     return loss
+
+
+def vicreg_descriptor_loss(
+    descriptor: torch.Tensor,
+    *,
+    target_std: float = 1.0,
+    eps: float = 1e-4,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """VICReg variance + covariance regularizers on a (B, D) descriptor batch.
+
+    Returns the *unweighted* (variance_loss, covariance_loss); the caller
+    applies weights so each component can be logged separately.
+    """
+    if descriptor.dim() != 2:
+        raise ValueError(
+            f"vicreg_descriptor_loss expects a (B, D) tensor, got {descriptor.shape}"
+        )
+    if descriptor.shape[0] < 2:
+        zero = descriptor.new_zeros(())
+        return zero, zero
+
+    std = descriptor.std(dim=0) + eps
+    variance_loss = F.relu(target_std - std).mean()
+
+    centered = descriptor - descriptor.mean(dim=0, keepdim=True)
+    cov = (centered.T @ centered) / (descriptor.shape[0] - 1)
+    off_diag = cov - torch.diag(torch.diagonal(cov))
+    covariance_loss = off_diag.pow(2).sum() / descriptor.shape[1]
+
+    return variance_loss, covariance_loss

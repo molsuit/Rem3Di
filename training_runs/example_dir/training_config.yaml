@@ -20,3 +20,5 @@ total_steps: null
 training_name: tmc_0
 wandb_active: true
 weight_decay: 0.001
+vicreg:
+  enabled: true

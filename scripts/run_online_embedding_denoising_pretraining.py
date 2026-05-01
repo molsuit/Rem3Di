@@ -28,7 +28,10 @@ from threedscriptors.training.data import (
     worker_init_fn,
 )
 from threedscriptors.training.noise_scheduler import ConstantSchedule, NoiseModule
-from threedscriptors.training.pretraining import atom_denoising_loss
+from threedscriptors.training.pretraining import (
+    atom_denoising_loss,
+    vicreg_descriptor_loss,
+)
 from threedscriptors.training.telemetry import TrainingTelemetry
 import logging
 
@@ -190,10 +193,15 @@ def main():
         print("Training Start")
 
     
+        vicreg_cfg = training_config.vicreg
+
         for epoch in range(training_config.epochs):
             # Initialize task and total train losses
 
             running = torch.zeros((), device=device)
+            running_var = torch.zeros((), device=device)
+            running_cov = torch.zeros((), device=device)
+            running_zmax = torch.zeros((), device=device)
 
             encoder.train()
             decoder.train()
@@ -238,7 +246,27 @@ def main():
                     noise_level=noise_level,
                 )
 
-                denoising_loss.backward()
+                if vicreg_cfg.enabled:
+                    var_loss, cov_loss = vicreg_descriptor_loss(
+                        molecular_descriptor, target_std=vicreg_cfg.target_std
+                    )
+                    total_loss = (
+                        denoising_loss
+                        + vicreg_cfg.variance_weight * var_loss
+                        + vicreg_cfg.covariance_weight * cov_loss
+                    )
+                    running_var += var_loss.detach()
+                    running_cov += cov_loss.detach()
+                else:
+                    total_loss = denoising_loss
+
+                with torch.no_grad():
+                    running_zmax = torch.maximum(
+                        running_zmax,
+                        molecular_descriptor.norm(dim=-1).max().detach(),
+                    )
+
+                total_loss.backward()
 
                 torch.nn.utils.clip_grad_norm_(
                     all_params, max_norm=training_config.max_grad_norm
@@ -304,8 +332,23 @@ def main():
                     * architecture_config.embedding_preprocess_config.output_irreps_dim
                 )).item()
 
+                extra_metrics: dict[str, float] = {
+                    "descriptor_norm_max_train": float(running_zmax.item()),
+                }
+                if vicreg_cfg.enabled:
+                    extra_metrics["vicreg_variance_train"] = float(
+                        (running_var / (batch_index + 1)).item()
+                    )
+                    extra_metrics["vicreg_covariance_train"] = float(
+                        (running_cov / (batch_index + 1)).item()
+                    )
+
                 telemetry.log_pretraining_epoch(
-                    epoch, avg_train_loss, avg_validation_loss, current_lr=lr_scheduler.get_last_lr()[0]
+                    epoch,
+                    avg_train_loss,
+                    avg_validation_loss,
+                    current_lr=lr_scheduler.get_last_lr()[0],
+                    extra_metrics=extra_metrics,
                 )
 
                 if telemetry.best_epoch:

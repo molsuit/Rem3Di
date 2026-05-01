@@ -103,7 +103,14 @@ class TrainingTelemetry:
         if self.wandb_active:
             wandb.log(epoch_train_data)
 
-    def log_pretraining_epoch(self, epoch, train_loss, validation_loss, current_lr):
+    def log_pretraining_epoch(
+        self,
+        epoch,
+        train_loss,
+        validation_loss,
+        current_lr,
+        extra_metrics: dict[str, float] | None = None,
+    ):
         self.check_best_val_epoch(validation_loss)
 
         print(
@@ -116,6 +123,8 @@ class TrainingTelemetry:
             "epoch": epoch + 1,
             "learning_rate": current_lr,
         }
+        if extra_metrics:
+            epoch_data.update(extra_metrics)
 
         self.loss_data.append(epoch_data)
 

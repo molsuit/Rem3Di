@@ -28,6 +28,8 @@ generator = XYZMoleculeGenerator(
     charge_key="q",
     spin_key="S",
     max_atoms=200,
+    reject_zero_h=True,
+    min_h_heavy_ratio=0.1,
 )
 
 pipeline = [CopyDataStage(dtype=torch.float64)]

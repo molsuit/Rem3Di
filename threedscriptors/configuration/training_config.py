@@ -22,6 +22,19 @@ class SplitConfig:
     shuffle: bool = True
 
 
+class VICRegConfig(BaseModel):
+    """Optional VICReg variance + covariance regularizers on the descriptor.
+
+    Defaults follow Bardes et al. 2022 (variance_weight=25, covariance_weight=1,
+    target_std=1.0).
+    """
+
+    enabled: bool = False
+    variance_weight: float = 25.0
+    covariance_weight: float = 1.0
+    target_std: float = 1.0
+
+
 class TrainingConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -40,3 +53,4 @@ class TrainingConfig(BaseModel):
     training_directory: Path | None = None
     total_steps: int | None = None
     wandb_active: bool = False
+    vicreg: VICRegConfig = VICRegConfig()
