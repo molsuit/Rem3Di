@@ -167,7 +167,7 @@ def get_metal_center_type(molecules: list[Atoms]) -> list[int]:
     return centers
 
 
-def get_atomic_num_colors(atomic_nums: int):
+def get_atomic_num_colors(atomic_nums: list[int]):
     colors = [jmol_colors[num] for num in atomic_nums]
 
     color_atomic_symbols = {

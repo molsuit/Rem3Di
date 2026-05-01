@@ -6,46 +6,76 @@ from threedscriptors.configuration.architecture_config import (
     EncoderOnlyArchitectureConfig,
 )
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.evaluation.descriptor_analysis.clustering import UMAPCalculator
-from threedscriptors.evaluation.descriptor_analysis.clustering_task import (
-    DescriptorClusteringTask,
-    DescriptorElementAnalysis,
+from threedscriptors.data_handling.dataset.training_dataset import (
+    TrainingMoleculeDataset,
+    atoms_getitem,
 )
-from threedscriptors.evaluation.evaluation_pipeline import EvalPipelineRunner
+from threedscriptors.evaluation.descriptor_analysis import (
+    CapacityDiagnosticTask,
+    ChemiscopeProjectionTask,
+    DescriptorAnalysisRunner,
+    DescriptorDistributionTask,
+    DescriptorNormalizationConfig,
+    NumAtomsColor,
+    ProjectionConfig,
+    ProjectionPlotTask,
+)
+from threedscriptors.evaluation.evaluation_utils import (
+    evaluate_molecular_descriptor_on_dataset,
+)
 
-dataset_dir = Path(
+DATASET_DIR = Path(
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/geom_drugs"
 )
-model_dir = Path(
+MODEL_DIR = Path(
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/geom_drugs_350k/1-2025_10_12_18_02_05-Train"
 )
-model_name = "GEOM_DRUGS"
-eval_dir = Path(
+OUTPUT_DIR = Path(
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/geom_drugs_pretraining/geom_drugs"
 )
-
-remedi_model = EncoderOnlyArchitectureConfig.from_directory(str(model_dir)).build()
-remedi_model.encoder.load_state_dict(torch.load(f"{model_dir}/encoder.pth"))
-remedi_model.preprocessor.atomic_preprocessor.load_state_dict(
-    torch.load(f"{model_dir}/atomic_preprocessor.pth")
-)
-remedi_model.preprocessor.geometric_preprocessor.load_state_dict(
-    torch.load(f"{model_dir}/geometric_preprocessor.pth")
-)
+MODEL_NAME = "GEOM_DRUGS"
 
 
-dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
+def load_model(model_dir: Path):
+    model = EncoderOnlyArchitectureConfig.from_directory(str(model_dir)).build()
+    model.encoder.load_state_dict(torch.load(model_dir / "encoder.pth"))
+    model.preprocessor.atomic_preprocessor.load_state_dict(
+        torch.load(model_dir / "atomic_preprocessor.pth")
+    )
+    model.preprocessor.geometric_preprocessor.load_state_dict(
+        torch.load(model_dir / "geometric_preprocessor.pth")
+    )
+    return model
 
-clustering_calculator = UMAPCalculator()
-clustering_task = DescriptorClusteringTask(
-    dataset=dataset, clustering_calculator=clustering_calculator
-)
 
-capacity_diagnostic_task = DescriptorElementAnalysis(dataset)
+def main() -> None:
+    model = load_model(MODEL_DIR)
 
-eval_pipeline = EvalPipelineRunner(
-    tasks=[clustering_task, capacity_diagnostic_task], dataset_name="pcqm_benchmark"
-)
+    dataset = MoleculeDataset.open_existing_dataset_from_dir(DATASET_DIR)
+    train_dataset = TrainingMoleculeDataset.from_molecule_dataset(
+        dataset, get_item=atoms_getitem
+    )
 
-eval_pipeline.evaluate(remedi_model, model_name)
-eval_pipeline.output_results(output_directory=eval_dir)
+    descriptors = evaluate_molecular_descriptor_on_dataset(model, train_dataset)
+
+    runner = DescriptorAnalysisRunner(
+        file_prefix=MODEL_NAME,
+        normalization=DescriptorNormalizationConfig(z_score=True, l2_normalize=True),
+        projection=ProjectionConfig(method="umap"),
+        tasks=[
+            CapacityDiagnosticTask(),
+            DescriptorDistributionTask(),
+            ProjectionPlotTask(
+                file_name="umap_num_atoms.png",
+                color_provider=NumAtomsColor(),
+            ),
+            ChemiscopeProjectionTask(file_name="umap.json.gz"),
+        ],
+    )
+
+    results = runner.run(descriptors=descriptors, dataset=dataset)
+    runner.serialize(results, OUTPUT_DIR)
+
+
+if __name__ == "__main__":
+    main()

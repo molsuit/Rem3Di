@@ -1,90 +1,106 @@
-import numpy as np
+from pathlib import Path
+
 import torch
-import umap
 
 from threedscriptors.configuration.architecture_config import (
     EncoderOnlyArchitectureConfig,
 )
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-from threedscriptors.evaluation.clustering import (
-    plot_reduced_dimension,
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+from threedscriptors.data_handling.dataset.training_dataset import (
+    TrainingMoleculeDataset,
+    atoms_getitem,
 )
-from threedscriptors.evaluation.clustering.tmqm_clustering_utils import (
-    get_atomic_num_colors,
-    get_block_colors,
-    get_coordination_numbers,
-    get_metal_center_type,
-    get_tm_colormap,
+from threedscriptors.evaluation.descriptor_analysis import (
+    CapacityDiagnosticTask,
+    ChemiscopeProjectionTask,
+    CoordinationNumberColor,
+    DBlockColor,
+    DescriptorAnalysisRunner,
+    DescriptorDistributionTask,
+    DescriptorNormalizationConfig,
+    MetalCenterAtomicNumberColor,
+    MetalCenterElementColor,
+    NumAtomsColor,
+    ProjectionConfig,
+    ProjectionPlotTask,
+    RegressionTargetColor,
 )
 from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
 )
 
-model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/159-2025_08_19_14_29_24-tmqmpretrained"
-
-
-# model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/144-2025_07_30_14_47_16-TMQM First Run"
-
-model = EncoderOnlyArchitectureConfig.from_directory(model_directory).build()
-model.encoder.load_state_dict(torch.load(f"{model_directory}/encoder.pth"))
-model.preprocessor.atomic_preprocessor.load_state_dict(
-    torch.load(f"{model_directory}/atomic_preprocessor.pth")
+MODEL_DIR = Path(
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/159-2025_08_19_14_29_24-tmqmpretrained"
 )
-model.preprocessor.geometric_preprocessor.load_state_dict(
-    torch.load(f"{model_directory}/geometric_preprocessor.pth")
-)
-
-dataset_directory = (
+DATASET_DIR = Path(
     "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm"
 )
-out_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/tmqm_pretraining/train"
-
-dataset = reload_dataset_pipeline(dataset_directory).build()
-
-descriptors = evaluate_molecular_descriptor_on_dataset(model, dataset)
-descriptors = descriptors.numpy()
-
-
-# Z-score normalization: subtract mean and divide by std for each feature
-descriptors = (descriptors - np.mean(descriptors, axis=0)) / np.std(descriptors, axis=0)
-
-descriptors = descriptors / np.linalg.norm(descriptors, axis=1, keepdims=True)
-
-
-um = umap.UMAP()
-
-emb = um.fit_transform(descriptors)
-
-
-num_atoms = [len(m) for m in dataset.molecules]
-fig = plot_reduced_dimension(emb, color=num_atoms, suptitle="By Number of atoms")
-fig.savefig(f"{out_dir}/number_of_atoms.png", dpi=300)
-
-
-atomic_num = get_metal_center_type(dataset.molecules)
-element_colors, handles = get_atomic_num_colors(atomic_num)
-fig = plot_reduced_dimension(
-    emb, color=element_colors, suptitle="By metal center", handles=handles
-)
-fig.savefig(f"{out_dir}/metal_center_element.png", dpi=300)
-
-block_colors = get_block_colors(atomic_num)
-fig = plot_reduced_dimension(
-    emb, color=dataset.regression_targets[:, 0], suptitle="By homo_lumo_gap"
-)
-fig.savefig(f"{out_dir}/umap_homo_lumo_gap.png", dpi=300)
-
-
-tm_cmap, norm = get_tm_colormap()
-
-fig = plot_reduced_dimension(
-    emb, color=atomic_num, suptitle="By metal center", cmap=tm_cmap, norm=norm
+OUTPUT_DIR = Path(
+    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/tmqm_pretraining/train"
 )
 
-fig.savefig(f"{out_dir}/metal_center_dblock.png", dpi=300)
+
+def load_model(model_dir: Path):
+    model = EncoderOnlyArchitectureConfig.from_directory(str(model_dir)).build()
+    model.encoder.load_state_dict(torch.load(model_dir / "encoder.pth"))
+    model.preprocessor.atomic_preprocessor.load_state_dict(
+        torch.load(model_dir / "atomic_preprocessor.pth")
+    )
+    model.preprocessor.geometric_preprocessor.load_state_dict(
+        torch.load(model_dir / "geometric_preprocessor.pth")
+    )
+    return model
 
 
-cns = get_coordination_numbers(dataset.molecules)
+def main() -> None:
+    model = load_model(MODEL_DIR)
 
-fig = plot_reduced_dimension(emb, color=cns)
-fig.savefig(f"{out_dir}/coordination_number.png", dpi=300)
+    dataset = MoleculeDataset.open_existing_dataset_from_dir(DATASET_DIR)
+    train_dataset = TrainingMoleculeDataset.from_molecule_dataset(
+        dataset, get_item=atoms_getitem
+    )
+
+    descriptors = evaluate_molecular_descriptor_on_dataset(model, train_dataset)
+
+    runner = DescriptorAnalysisRunner(
+        normalization=DescriptorNormalizationConfig(z_score=False, l2_normalize=True),
+        projection=ProjectionConfig(method="umap", center=True),
+        tasks=[
+            CapacityDiagnosticTask(),
+            DescriptorDistributionTask(),
+            ProjectionPlotTask(
+                file_name="number_of_atoms.png",
+                color_provider=NumAtomsColor(),
+            ),
+            ProjectionPlotTask(
+                file_name="metal_center_element.png",
+                color_provider=MetalCenterElementColor(),
+            ),
+            ProjectionPlotTask(
+                file_name="metal_center_dblock.png",
+                color_provider=MetalCenterAtomicNumberColor(),
+            ),
+            ProjectionPlotTask(
+                file_name="metal_center_block.png",
+                color_provider=DBlockColor(),
+            ),
+            ProjectionPlotTask(
+                file_name="coordination_number.png",
+                color_provider=CoordinationNumberColor(),
+            ),
+            #ProjectionPlotTask(
+            #    file_name="umap_homo_lumo_gap.png",
+            #    color_provider=RegressionTargetColor(
+            #        target_index=0, target_name="HOMO-LUMO gap"
+            #    ),
+            #),
+            #ChemiscopeProjectionTask(file_name="umap.json.gz"),
+        ],
+    )
+
+    results = runner.run(descriptors=descriptors, dataset=dataset)
+    runner.serialize(results, OUTPUT_DIR)
+
+
+if __name__ == "__main__":
+    main()
