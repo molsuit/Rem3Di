@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+import traceback
 from pathlib import Path
 
 import numpy as np
 import torch
 from pydantic import BaseModel, ConfigDict
+
+logger = logging.getLogger(__name__)
 
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.evaluation.descriptor_analysis.analysis_tasks import (
@@ -48,7 +52,15 @@ class DescriptorAnalysisRunner(BaseModel):
 
         results: list[EvalResult] = []
         for task in self.tasks:
-            results.extend(task.run(ctx))
+            task_label = type(task).__name__
+            try:
+                results.extend(task.run(ctx))
+            except Exception:
+                logger.error(
+                    "Descriptor analysis task %s failed; continuing.\n%s",
+                    task_label,
+                    traceback.format_exc(),
+                )
         return results
 
     @staticmethod

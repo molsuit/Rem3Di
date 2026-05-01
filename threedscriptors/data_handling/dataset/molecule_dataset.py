@@ -477,6 +477,8 @@ class MoleculeDataset:
             self.atomic_numbers[: ptr[-1]], dtype=np.int64, order="C"
         )
         positions = np.asarray(self.positions[: ptr[-1]], dtype=np.float32, order="C")
+        total_charge = np.asarray(self.total_charge[:n_struct])
+        total_spin = np.asarray(self.total_spin[:n_struct])
 
         molecules: list[Atoms] = []
         append = molecules.append
@@ -484,7 +486,14 @@ class MoleculeDataset:
             start = ptr[idx]
             end = ptr[idx + 1]
             append(
-                Atoms(numbers=atomic_numbers[start:end], positions=positions[start:end])
+                Atoms(
+                    numbers=atomic_numbers[start:end],
+                    positions=positions[start:end],
+                    info={
+                        "total_charge": float(total_charge[idx]),
+                        "total_spin": float(total_spin[idx]),
+                    },
+                )
             )
 
         return molecules

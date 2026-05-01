@@ -11,8 +11,8 @@ from threedscriptors.data_handling.dataset_creation.structure_ids import Structu
 from threedscriptors.data_handling.sample import (
     Sample,
     paired_sample_collate_fn,
-    pretraining_padded_collate_fn,
     sample_collate_fn,
+    yield_molecules_collate_fn,
 )
 from threedscriptors.model.model_output import ModelOutput
 from threedscriptors.model.molecule_difference_regressor import (
@@ -78,7 +78,7 @@ def evaluate_molecular_descriptor_on_dataset(
         batch_size=batch_size,
         shuffle=False,
         drop_last=False,
-        collate_fn=pretraining_padded_collate_fn,
+        collate_fn=yield_molecules_collate_fn,
     )
 
     model.to(device)
