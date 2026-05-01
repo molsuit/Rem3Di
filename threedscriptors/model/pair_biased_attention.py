@@ -74,8 +74,9 @@ class PairBiasedSelfAttention(nn.Module):
 
         # 4) padding mask  (True = pad, False = real atom)
         if mask is not None:
-            logits = logits.masked_fill(mask[:, None, None, :], -1e9)  # mask keys
-            logits = logits.masked_fill(mask[:, None, :, None], -1e9)  # mask queries
+            neg_inf = torch.finfo(logits.dtype).min
+            logits = logits.masked_fill(mask[:, None, None, :], neg_inf)  # mask keys
+            logits = logits.masked_fill(mask[:, None, :, None], neg_inf)  # mask queries
 
         # 5) soft-max → weights
         attn_weights = torch.softmax(logits, dim=-1)  # (B, H, N, N)

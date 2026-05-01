@@ -36,6 +36,10 @@ from torch.profiler import profile, ProfilerActivity
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+import torch._dynamo
+torch._dynamo.config.cache_size_limit = 16
+torch._logging.set_logs(recompiles=True)
+
 from threedscriptors.training.data.samplers import BucketBatchSampler, lengths_from_ptr
 
 
@@ -180,6 +184,9 @@ def main():
         decoder.to(device, dtype = torch.float32)
         preprocessor.to(device)
 
+        encoder = torch.compile(encoder, dynamic=True)
+        decoder = torch.compile(decoder, dynamic=True)
+
         print("Training Start")
 
     
@@ -302,7 +309,7 @@ def main():
                 )
 
                 if telemetry.best_epoch:
-                    torch.save(encoder.state_dict(), f"{training_data_dir}/encoder.pth")
+                    torch.save(encoder._orig_mod.state_dict(), f"{training_data_dir}/encoder.pth")
                     torch.save(
                         preprocessor.atomic_preprocessor.state_dict(),
                         f"{training_data_dir}/atomic_preprocessor.pth",

@@ -70,7 +70,7 @@ class AttnPool(nn.Module):
 
         if pad_mask is not None:
             pad_exp = pad_mask[:, None, :].expand(B, self.n_heads, N)
-            logits = logits.masked_fill(pad_exp == 1, float("-1e9"))
+            logits = logits.masked_fill(pad_exp == 1, torch.finfo(logits.dtype).min)
 
         attn = F.softmax(logits, dim=-1)
         attn = self.dropout(attn)
