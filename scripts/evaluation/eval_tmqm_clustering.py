@@ -12,7 +12,6 @@ from threedscriptors.data_handling.dataset.training_dataset import (
 )
 from threedscriptors.evaluation.descriptor_analysis import (
     CapacityDiagnosticTask,
-    ChemiscopeProjectionTask,
     CoordinationNumberColor,
     DBlockColor,
     DescriptorAnalysisRunner,
@@ -23,7 +22,6 @@ from threedscriptors.evaluation.descriptor_analysis import (
     NumAtomsColor,
     ProjectionConfig,
     ProjectionPlotTask,
-    RegressionTargetColor,
 )
 from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
@@ -88,13 +86,13 @@ def main() -> None:
                 file_name="coordination_number.png",
                 color_provider=CoordinationNumberColor(),
             ),
-            #ProjectionPlotTask(
+            # ProjectionPlotTask(
             #    file_name="umap_homo_lumo_gap.png",
             #    color_provider=RegressionTargetColor(
             #        target_index=0, target_name="HOMO-LUMO gap"
             #    ),
-            #),
-            #ChemiscopeProjectionTask(file_name="umap.json.gz"),
+            # ),
+            # ChemiscopeProjectionTask(file_name="umap.json.gz"),
         ],
     )
 

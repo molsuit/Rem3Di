@@ -86,9 +86,7 @@ class DescriptorDistributionTask(_BaseAnalysisTask):
         fig_values, ax = plt.subplots(figsize=(8, 5))
         ax.hist(
             flat,
-            bins=np.linspace(
-                float(flat.min()), float(flat.max()), self.bins
-            ).tolist(),
+            bins=np.linspace(float(flat.min()), float(flat.max()), self.bins).tolist(),
         )
         if self.log_scale:
             ax.set_yscale("log")

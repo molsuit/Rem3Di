@@ -20,7 +20,7 @@ class QM9PropertyNames(IntEnum):
     alpha = 4  # isotropic polarizability [a0^3]
     epsilon_HOMO = 5  # orbital energy [Ha]
     epsilon_LUMO = 6  # orbital energy [Ha]
-    gap = 7  # HOMO–LUMO gap [Ha]
+    gap = 7  # HOMO-LUMO gap [Ha]
     r2 = 8  # ⟨R²⟩ [a0²]
     zpve = 9  # zero‑point vibrational energy [Ha]
     U0 = 10  # internal energy at 0 K [Ha]

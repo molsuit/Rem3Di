@@ -8,7 +8,7 @@ from pymatgen.analysis.local_env import MinimumDistanceNN
 from pymatgen.io.ase import AseAtomsAdaptor
 
 TM = {
-    # transition metals (d‑block)
+    # transition metals (d-block)
     "Sc",
     "Ti",
     "V",
@@ -27,7 +27,7 @@ TM = {
     "Rh",
     "Pd",
     "Ag",
-    "Lu",  # sometimes considered d‑block as well
+    "Lu",  # sometimes considered d-block as well
     "Hf",
     "Ta",
     "W",
@@ -36,7 +36,7 @@ TM = {
     "Ir",
     "Pt",
     "Au",
-    "Lr",  # 103, sometimes placed with d‑block
+    "Lr",  # 103, sometimes placed with d-block
     "Rf",
     "Db",
     "Sg",
@@ -49,7 +49,7 @@ TM = {
     "Zn",
     "Cd",
     "Hg",
-    # lanthanides (f‑block)
+    # lanthanides (f-block)
     "La",
     "Ce",
     "Pr",
@@ -64,7 +64,7 @@ TM = {
     "Er",
     "Tm",
     "Yb",
-    # actinides (f‑block)
+    # actinides (f-block)
     "Ac",
     "Th",
     "Pa",
@@ -97,11 +97,11 @@ def get_coordination_numbers(molecules: list[Atoms]):
 
 def get_tm_colormap():
     # 1. Define your “zones”
-    Z_green = np.arange(21, 31)  # 21–30
+    Z_green = np.arange(21, 31)  # 21-30
     Z_blue = np.arange(39, 49)  # 29 only
-    Z_red = np.r_[57, np.arange(72, 81)]  # 57 and 72–80
+    Z_red = np.r_[57, np.arange(72, 81)]  # 57 and 72-80
 
-    # 2. Sample each gradient from a built‑in cmap
+    # 2. Sample each gradient from a built-in cmap
     nG = len(Z_green)
     nB = len(Z_blue)
     nR = len(Z_red)
@@ -156,7 +156,7 @@ def get_metal_center_type(molecules: list[Atoms]) -> list[int]:
     centers = []
     for m in molecules:
         nums = m.get_atomic_numbers()
-        # find all in the transition‐metal set
+        # find all in the transition-metal set
         metals = [num for num in nums if num in TM_numbers]
         if len(metals) != 1:
             raise ValueError(

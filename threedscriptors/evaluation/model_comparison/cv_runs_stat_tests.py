@@ -43,9 +43,9 @@ for k, v in runs.items():
 n_repeats = 10
 model_names = list(runs.keys())
 
-# Replace these with your actual lowest‐error values:
+# Replace these with your actual lowest-error values:
 
-# Build a long‐form DataFrame
+# Build a long-form DataFrame
 df = pd.DataFrame(
     {
         "Model": np.repeat(model_names, n_repeats),
@@ -60,15 +60,15 @@ breakpoint()
 aov = pg.rm_anova(data=df, dv="Error", within="Model", subject="Repeat", detailed=True)
 
 
-print("\nRepeated‐Measures ANOVA:")
+print("\nRepeated-Measures ANOVA:")
 print(aov)
 
 # ---------------------------------------------------------------------
-# 3) Tukey HSD Post‐Hoc
+# 3) Tukey HSD Post-Hoc
 # ---------------------------------------------------------------------
 # For two models this is simple, but Pingouin provides pairwise_tukey()
 tukey = pg.pairwise_tukey(data=df, dv="Error", between="Model")
-print("\nTukey HSD Post‐Hoc:")
+print("\nTukey HSD Post-Hoc:")
 print(tukey)
 
 

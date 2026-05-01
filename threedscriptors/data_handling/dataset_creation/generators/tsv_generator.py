@@ -27,7 +27,7 @@ class TSVMoleculeGenerator(MoleculeGenerator):
             self.tsv_file, separator="\t", has_header=True
         ).select("Ligand SMILES")
 
-        # 2) Execute in the streaming engine (memory‐bounded)
+        # 2) Execute in the streaming engine (memory-bounded)
         df = smiles_source.collect(engine="streaming")
 
         batch_smiles = []

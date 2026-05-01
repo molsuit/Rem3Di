@@ -132,7 +132,7 @@ class MoleculeNetGenerator(MoleculeGenerator):
 
         data_source = self.load_regression_data()
 
-        # 2) Execute in the streaming engine (memory‐bounded)
+        # 2) Execute in the streaming engine (memory-bounded)
         df = data_source.collect()
 
         batch_smiles = []

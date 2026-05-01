@@ -12,7 +12,7 @@
 # Notes:
 #   • By default the .gz originals are KEPT.   (Change --keep to --force if
 #     you want them removed.)
-#   • Existing .dat names are never overwritten; duplicates get a –1, –2 … suffix.
+#   • Existing .dat names are never overwritten; duplicates get a -1, -2 … suffix.
 #   • Requires GNU coreutils + GNU gzip (standard on Linux; on macOS use Homebrew).
 
 curl -L "https://static-content.springer.com/esm/art%3A10.1186%2F1758-2946-5-26/MediaObjects/13321_2013_467_MOESM5_ESM.gz" \
