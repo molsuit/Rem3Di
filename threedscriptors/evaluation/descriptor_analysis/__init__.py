@@ -3,7 +3,9 @@ from .analysis_tasks import (
     ChemiscopeProjectionTask,
     DescriptorAnalysisTask,
     DescriptorDistributionTask,
+    HDBSCANClusterTask,
     ProjectionPlotTask,
+    TopNormDescriptorsTask,
 )
 from .clustering import (
     ClusteringCalculator,
@@ -43,6 +45,7 @@ __all__ = [
     "DescriptorAnalysisTask",
     "DescriptorDistributionTask",
     "DescriptorNormalizationConfig",
+    "HDBSCANClusterTask",
     "MetalCenterAtomicNumberColor",
     "MetalCenterElementColor",
     "NumAtomsColor",
@@ -50,6 +53,7 @@ __all__ = [
     "ProjectionConfig",
     "ProjectionPlotTask",
     "RegressionTargetColor",
+    "TopNormDescriptorsTask",
     "UMAPCalculator",
     "plot_reduced_dimension",
     "plot_reduced_dimension_3d",
