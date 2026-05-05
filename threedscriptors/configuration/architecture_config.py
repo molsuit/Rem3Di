@@ -264,6 +264,10 @@ class EmbeddingPreprocessConfig(BaseModel):
 class MeanAggregatorConfig(BaseModel):
     aggregator_type: Literal["mean"] = "mean"
 
+    @property
+    def descriptor_seq_len(self) -> int:
+        return 1
+
     def build(
         self, input_dim: int, output_dim: int, output_dropout: float | None = None
     ) -> nn.Module:
@@ -275,6 +279,10 @@ class AttentionAggregatorConfig(BaseModel):
     num_heads: int
     head_dim: int | None = None
     attn_dropout: float | None = None
+
+    @property
+    def descriptor_seq_len(self) -> int:
+        return 1
 
     def build(
         self, input_dim: int, output_dim: int, output_dropout: float | None = None
@@ -290,13 +298,26 @@ class AttentionAggregatorConfig(BaseModel):
 
 
 class PMAAggregatorConfig(BaseModel):
+    """Set Transformer pooling-by-multihead-attention.
+
+    `head_dim` is the per-head Q/K dim (PyTorch convention); the total Q/K
+    dim is `num_heads * head_dim`. `num_seeds` learnable queries cross-attend
+    to the input set; each seed produces an `output_dim`-dim vector and the
+    aggregator returns the full `(B, num_seeds, output_dim)` sequence so the
+    decoder can cross-attend to each seed independently. `output_dim` must
+    be divisible by `num_heads`.
+    """
+
     aggregator_type: Literal["pma_attention"] = "pma_attention"
     head_dim: int
     num_heads: int = 4
     attn_dropout: float = 0.0
     num_seeds: int = 16
-    reduction: Literal["mean", "sum", "max"] = "mean"
     use_mlp: bool = False
+
+    @property
+    def descriptor_seq_len(self) -> int:
+        return self.num_seeds
 
     def build(
         self, input_dim: int, output_dim: int, output_dropout: float | None = None
@@ -324,6 +345,18 @@ class GlobalAggregatorConfig(BaseModel):
     input_dim: int | None = None
     output_dim: int | None = None
     global_molecular_descriptor_dropout: float | None = None
+
+    @computed_field(return_type=int, repr=True)
+    @property
+    def descriptor_seq_len(self) -> int:
+        return self.aggregator_type_config.descriptor_seq_len
+
+    @computed_field(return_type=int | None, repr=True)
+    @property
+    def descriptor_flat_dim(self) -> int | None:
+        if self.output_dim is None:
+            return None
+        return self.descriptor_seq_len * self.output_dim
 
     def build(self) -> nn.Module:
         assert (
@@ -526,7 +559,9 @@ class RegressionArchitectureConfig(_BaseArchitectureConfig):
 
     @model_validator(mode="after")
     def _cascade_head_dims(self):
-        out_dim = self.global_aggregator_config.output_dim
+        # Heads consume the *flattened* descriptor (num_seeds * output_dim for
+        # PMA; output_dim for single-token aggregators).
+        out_dim = self.global_aggregator_config.descriptor_flat_dim
         for head in self.regression_head_config:
             if head.input_dimensions is None:
                 head.input_dimensions = out_dim

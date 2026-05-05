@@ -325,6 +325,11 @@ class HDBSCANClusterTask(_BaseAnalysisTask):
     alpha: float = 0.7
     figsize: tuple[float, float] = (8, 6)
 
+    cmap_small: str = "tab20"
+    cmap_large: str = "gist_ncar"
+    shuffle_colors: bool = True
+    color_shuffle_seed: int = 0
+
     def run(self, ctx: DescriptorAnalysisContext) -> list[EvalResult]:
         if ctx.projection is None:
             raise ValueError(
@@ -377,13 +382,26 @@ class HDBSCANClusterTask(_BaseAnalysisTask):
                 label=f"noise (n={n_noise})",
             )
 
-        cmap = plt.get_cmap("tab20", max(1, n_clusters))
+        if n_clusters <= 20:
+            cmap = plt.get_cmap(self.cmap_small, max(1, n_clusters))
+            cluster_colors = [cmap(i) for i in range(n_clusters)]
+        else:
+            # Sample evenly across a continuous spectrum so 200+ clusters stay
+            # visually distinguishable; shuffle so adjacent IDs (often spatially
+            # adjacent) get distant hues.
+            cmap = plt.get_cmap(self.cmap_large)
+            sample_points = np.linspace(0.02, 0.98, n_clusters)
+            if self.shuffle_colors:
+                rng = np.random.default_rng(self.color_shuffle_seed)
+                sample_points = rng.permutation(sample_points)
+            cluster_colors = [cmap(p) for p in sample_points]
+
         for i, cid in enumerate(cluster_ids.tolist()):
             mask = labels == cid
             ax.scatter(
                 ctx.projection[mask, 0],
                 ctx.projection[mask, 1],
-                color=cmap(i),
+                color=cluster_colors[i],
                 s=self.point_size,
                 alpha=self.alpha,
                 label=f"{cid} (n={int(mask.sum())})",

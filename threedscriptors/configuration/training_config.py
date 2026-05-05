@@ -2,7 +2,21 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from threedscriptors.configuration.dataloader_config import DataLoaderConfig
+
+
+class CompileConfig(BaseModel):
+    """torch.compile + shape-stability knobs."""
+
+    enabled: bool = True
+    # Round padded atom count up to this multiple to bound the inductor graph
+    # cache. 1 = off; 8 / 16 are typical for FFN-heavy decoders. Pairs with
+    # bucketed batching: with bucket_size choosing a narrow length range and
+    # pad_multiple quantizing the max, inductor sees only a handful of shapes.
+    pad_multiple: int = Field(default=1, gt=0)
+    dynamo_cache_size_limit: int = Field(default=16, gt=0)
 
 
 class SplitStrategy(str, Enum):
@@ -40,7 +54,7 @@ class TrainingConfig(BaseModel):
 
     training_name: str
     run_group: str | None = None
-    batch_size: int
+    dataloader: DataLoaderConfig
     epochs: int
     learning_rate: float
     weight_decay: float
@@ -54,3 +68,4 @@ class TrainingConfig(BaseModel):
     total_steps: int | None = None
     wandb_active: bool = False
     vicreg: VICRegConfig = VICRegConfig()
+    compile: CompileConfig = CompileConfig()

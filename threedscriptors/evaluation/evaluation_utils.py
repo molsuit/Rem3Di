@@ -71,6 +71,8 @@ def evaluate_regression_model_on_dataset(
 def evaluate_molecular_descriptor_on_dataset(
     model: REM3DIModel, dataset: TrainingMoleculeDataset, device="cuda"
 ):
+    """Run the encoder over `dataset` and return descriptors as a flat
+    `(N, L * d_out)` tensor — `L` seed tokens are concatenated per molecule."""
     batch_size = min(64, len(dataset))
 
     dataloader: Iterable[Sample] = DataLoader(
@@ -84,7 +86,9 @@ def evaluate_molecular_descriptor_on_dataset(
     model.to(device)
     model.eval()
 
-    descriptors = torch.zeros(size=(len(dataset), model.encoder.aggregator.d_out))
+    aggregator = model.encoder.aggregator
+    flat_dim = aggregator.seq_len * aggregator.d_out
+    descriptors = torch.zeros(size=(len(dataset), flat_dim))
 
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
@@ -92,7 +96,7 @@ def evaluate_molecular_descriptor_on_dataset(
 
             model_output = model(samples)
             descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
-                model_output.molecular_descriptor
+                model_output.molecular_descriptor.flat
             )
 
     return descriptors
@@ -131,7 +135,8 @@ def evaluate_molecule_difference_on_dataset(
 
             differences[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
                 molecular_difference_regressor(
-                    descriptors, samples.auxillary_data["cmrt"]
+                    descriptors,
+                    samples.auxillary_data["cmrt"],
                 )
             )
 

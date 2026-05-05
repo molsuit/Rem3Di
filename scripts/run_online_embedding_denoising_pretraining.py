@@ -1,12 +1,13 @@
 import argparse
 from datetime import datetime
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import Subset
 
 from threedscriptors.configuration.architecture_config import (
     ArchitectureConfig,
@@ -25,8 +26,8 @@ from threedscriptors.data_handling.sample import (
 )
 from threedscriptors.training.data import (
     DatasetSplitting,
-    worker_init_fn,
 )
+from threedscriptors.training.data.samplers import lengths_from_ptr
 from threedscriptors.training.noise_scheduler import ConstantSchedule, NoiseModule
 from threedscriptors.training.pretraining import (
     atom_denoising_loss,
@@ -40,10 +41,17 @@ from torch.profiler import profile, ProfilerActivity
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 import torch._dynamo
-torch._dynamo.config.cache_size_limit = 16
 torch._logging.set_logs(recompiles=True)
 
-from threedscriptors.training.data.samplers import BucketBatchSampler, lengths_from_ptr
+# nvalchemiops applies @torch.compile to prepare_batch_idx_ptr, which is on the
+# MACE neighbor-list path called every step. Bucket sampling makes the input
+# shapes (total atoms, num molecules) vary, triggering repeated recompiles. The
+# function does ~µs of cumsum/bincount work — not worth compiling. Override the
+# decorated symbol with a dynamo-disabled version before any model is built.
+import nvalchemiops.torch.neighbors.neighbor_utils as _nv_neighbor_utils
+_nv_neighbor_utils.prepare_batch_idx_ptr = torch._dynamo.disable(
+    _nv_neighbor_utils.prepare_batch_idx_ptr
+)
 
 
 def parse_args():
@@ -100,6 +108,10 @@ def main():
     train_dataset = Subset(ds, train_idx)
     valid_dataset = Subset(ds, val_idx)
 
+    all_lengths = lengths_from_ptr(np.asarray(full_dataset.ptr[:]))
+    train_lengths = all_lengths[np.asarray(train_idx, dtype=np.int64)]
+    val_lengths = all_lengths[np.asarray(val_idx, dtype=np.int64)]
+
     if training_config.training_directory is not None:
         training_data_dir = training_config.training_directory
         training_data_dir.mkdir(parents=True, exist_ok=True)
@@ -120,28 +132,17 @@ def main():
     noise_scheduler = ConstantSchedule(training_config.noise_level)
     noise_module = NoiseModule(noise_scheduler)
 
-    training_loader = DataLoader(
+    training_loader = training_config.dataloader.build(
         train_dataset,
-        batch_size=training_config.batch_size,
-        worker_init_fn=worker_init_fn,
-        prefetch_factor=4,
-        persistent_workers=True,
-        pin_memory=True,
-        num_workers=12,
-        shuffle=True,
-        collate_fn=yield_molecules_collate_fn
-    )
-
-    validation_loader = DataLoader(
-        valid_dataset,
-        batch_size=training_config.batch_size,
-        worker_init_fn=worker_init_fn,
-        prefetch_factor=4,
-        persistent_workers=True,
-        pin_memory=True,
-        num_workers=12,
-        shuffle=False,
+        lengths=train_lengths,
         collate_fn=yield_molecules_collate_fn,
+        shuffle=True,
+    )
+    validation_loader = training_config.dataloader.build(
+        valid_dataset,
+        lengths=val_lengths,
+        collate_fn=yield_molecules_collate_fn,
+        shuffle=False,
     )
 
     logger.info("Data Loaders Prepared")
@@ -150,6 +151,11 @@ def main():
     preprocessor = bundle.preprocessor
     encoder = bundle.encoder
     decoder = bundle.decoder
+
+    compile_cfg = training_config.compile
+    torch._dynamo.config.cache_size_limit = compile_cfg.dynamo_cache_size_limit
+    if hasattr(preprocessor, "pad_multiple"):
+        preprocessor.pad_multiple = compile_cfg.pad_multiple
 
     all_params = (
         list(encoder.parameters())
@@ -187,13 +193,23 @@ def main():
         decoder.to(device, dtype = torch.float32)
         preprocessor.to(device)
 
-        encoder = torch.compile(encoder, dynamic=True)
-        decoder = torch.compile(decoder, dynamic=True)
+        if compile_cfg.enabled:
+            encoder = torch.compile(encoder, dynamic=True)
+            decoder = torch.compile(decoder, dynamic=True)
 
         print("Training Start")
 
     
         vicreg_cfg = training_config.vicreg
+
+        # Rolling throughput counters. Logged every WINDOW_STEPS batches so we
+        # have a real atoms/sec number to A/B against, instead of squinting at
+        # the wandb GPU-util plot. The first window includes compile warmup —
+        # ignore it.
+        WINDOW_STEPS = 50
+        global_step = 0
+        window_atoms = 0
+        window_t0 = perf_counter()
 
         for epoch in range(training_config.epochs):
             # Initialize task and total train losses
@@ -211,6 +227,9 @@ def main():
 
             for batch_index, samples in enumerate(training_loader):
                 samples.to_(device)
+                # Capture before preprocessor — it mutates atomic_positions from
+                # flat (total_atoms, 3) to padded (B, N_max, 3).
+                batch_atoms = int(samples.atomic_positions.shape[0])
                 preprocessed_samples: PreprocessedSample = preprocessor(samples)
 
                 input_atomic_embeddings = (
@@ -248,7 +267,7 @@ def main():
 
                 if vicreg_cfg.enabled:
                     var_loss, cov_loss = vicreg_descriptor_loss(
-                        molecular_descriptor, target_std=vicreg_cfg.target_std
+                        molecular_descriptor.flat, target_std=vicreg_cfg.target_std
                     )
                     total_loss = (
                         denoising_loss
@@ -263,7 +282,7 @@ def main():
                 with torch.no_grad():
                     running_zmax = torch.maximum(
                         running_zmax,
-                        molecular_descriptor.norm(dim=-1).max().detach(),
+                        molecular_descriptor.flat.norm(dim=-1).max().detach(),
                     )
 
                 total_loss.backward()
@@ -276,6 +295,21 @@ def main():
                 lr_scheduler.step()
                 optimizer.zero_grad()
                 running += denoising_loss.detach()
+
+                window_atoms += batch_atoms
+                global_step += 1
+                if global_step % WINDOW_STEPS == 0:
+                    dt = perf_counter() - window_t0
+                    telemetry.log_metrics(
+                        {
+                            "atoms_per_s": window_atoms / dt,
+                            "step_ms": 1000.0 * dt / WINDOW_STEPS,
+                            "global_step": global_step,
+                            "epoch_idx": epoch,
+                        }
+                    )
+                    window_atoms = 0
+                    window_t0 = perf_counter()
 
             avg_train_loss = (running / (
                 (batch_index + 1)
@@ -352,7 +386,8 @@ def main():
                 )
 
                 if telemetry.best_epoch:
-                    torch.save(encoder._orig_mod.state_dict(), f"{training_data_dir}/encoder.pth")
+                    encoder_to_save = getattr(encoder, "_orig_mod", encoder)
+                    torch.save(encoder_to_save.state_dict(), f"{training_data_dir}/encoder.pth")
                     torch.save(
                         preprocessor.atomic_preprocessor.state_dict(),
                         f"{training_data_dir}/atomic_preprocessor.pth",
@@ -361,6 +396,11 @@ def main():
                         preprocessor.geometric_preprocessor.state_dict(),
                         f"{training_data_dir}/geometric_preprocessor.pth",
                     )
+
+            # Throw out the partial window so the first window of the next
+            # training epoch isn't polluted with validation/checkpointing time.
+            window_atoms = 0
+            window_t0 = perf_counter()
 
     pyaml.to_yaml_file(
         training_data_dir / "post_training_architecture_config.yaml",

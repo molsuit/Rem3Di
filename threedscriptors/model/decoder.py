@@ -2,6 +2,7 @@ import torch.nn as nn
 
 from threedscriptors.configuration.architecture_config import DecoderConfig
 from threedscriptors.data_handling.sample import PreprocessedSample
+from threedscriptors.model.molecular_descriptor import MolecularDescriptor
 from threedscriptors.model.multihead_self_attention import MultiHeadCrossAttention
 from threedscriptors.model.pair_biased_attention import (
     PairBiasedSelfAttention,
@@ -75,15 +76,22 @@ class TransformerPairDecoder(nn.Module):
             ]
         )
 
-    def forward(self, preprocessed_sample: PreprocessedSample, molecular_descriptor):
+    def forward(
+        self,
+        preprocessed_sample: PreprocessedSample,
+        molecular_descriptor: MolecularDescriptor,
+    ):
         S = preprocessed_sample.preprocessed_atomic_embeddings
         P = preprocessed_sample.initial_pair_representation
+
+        # Cross-attention attends over the full seed sequence (B, L, D).
+        descriptor_tokens = molecular_descriptor.tokens
 
         for layer in self.layers:
             S, P = layer(
                 S,
                 P,
-                molecular_descriptor,
+                descriptor_tokens,
                 preprocessed_sample.geometrical_encoding,
                 preprocessed_sample.padding_mask,
                 preprocessed_sample.pair_mask,

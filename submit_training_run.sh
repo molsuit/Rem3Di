@@ -3,7 +3,7 @@
 #SBATCH --output=slurm-%x-%j.out
 #SBATCH --error=slurm-%x-%j.err
 #SBATCH --gpus=1
-#SBATCH --time=2:00:00
+#SBATCH --time=10:00:00
 
 set -euo pipefail
 

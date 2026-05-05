@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 
 import torch
@@ -30,15 +31,11 @@ from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
 )
 
-MODEL_DIR = Path(
+DEFAULT_MODEL_DIR = Path(
     "/scratch/s5f/wedigs.s5f/training_runs/10-2026_04_28_09_24_50-tmc_0"
-
 )
 DATASET_DIR = Path(
     "/scratch/s5f/wedigs.s5f/datasets/tmqm"
-)
-OUTPUT_DIR = Path(
-    "/scratch/s5f/wedigs.s5f/training_runs/10-2026_04_28_09_24_50-tmc_0/analysis"
 )
 
 
@@ -56,15 +53,22 @@ def load_model(model_dir: Path) -> REM3DIModel:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-dir", type=Path, default=DEFAULT_MODEL_DIR)
+    args = parser.parse_args()
+
+    model_dir: Path = args.model_dir
+    output_dir = model_dir / "analysis"
+
     dataset = MoleculeDataset.open_existing_dataset_from_dir(DATASET_DIR)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    descriptors_path = OUTPUT_DIR / "descriptors.pt"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    descriptors_path = output_dir / "descriptors.pt"
 
     if descriptors_path.exists():
         descriptors = torch.load(descriptors_path)
     else:
-        model = load_model(MODEL_DIR)
+        model = load_model(model_dir)
         train_dataset = TrainingMoleculeDataset.from_molecule_dataset(
             dataset, get_item=atoms_getitem
         )
@@ -127,7 +131,7 @@ def main() -> None:
     )
 
     results = runner.run(descriptors=descriptors, dataset=dataset)
-    runner.serialize(results, OUTPUT_DIR)
+    runner.serialize(results, output_dir)
 
 
 if __name__ == "__main__":

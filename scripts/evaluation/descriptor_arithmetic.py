@@ -53,7 +53,10 @@ smi_4 = "c1ccccc1"
 def smi_to_desc(smi):
     a = get_ase_atoms(smi)
     relax_atoms(a, mace_calc, 0.003, max_steps=1000)
-    return model.get_remedi_descriptor(a), a
+    # Flatten the (1, L, D) seed sequence so downstream arithmetic / cat /
+    # cosine works on a 2D (1, L*D) tensor that matches what
+    # `evaluate_molecular_descriptor_on_dataset` returns.
+    return model.get_remedi_descriptor(a).flat, a
 
 
 desc_0, a0 = smi_to_desc(smi_1)

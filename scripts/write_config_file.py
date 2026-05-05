@@ -52,7 +52,7 @@ decoder_config = DecoderConfig(
     N_layers=4, attention_layer_config=attention_layer_config
 )
 
-pma_aggregator_config = PMAAggregatorConfig(head_dim=320, num_seeds=2)
+pma_aggregator_config = PMAAggregatorConfig(head_dim=64, num_heads=4, num_seeds=2)
 
 global_aggregator_config = GlobalAggregatorConfig(
     aggregator_type_config=pma_aggregator_config,

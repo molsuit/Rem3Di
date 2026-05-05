@@ -82,13 +82,16 @@ class MultiHeadSelfAttention(nn.Module):
 
 class MultiHeadCrossAttention(nn.Module):
     """
-    Multi-head cross self-attention
+    Multi-head cross-attention from atoms to a (set of) molecular descriptors.
 
     Inputs
     ------
-    S : (B, N, d_model)     atom/sequence embeddings
-    M : (B,1, d_descriptor)   aggregated molecular embedding
-    mask : (B, N) Bool      False for *real* atoms, True for padding
+    S : (B, N, d_model)            atom/sequence embeddings
+    M : (B, L, d_descriptor)       descriptor sequence (e.g. PMA seeds).
+                                   A 2D `(B, d_descriptor)` is also accepted
+                                   for single-vector aggregators and treated
+                                   as L=1.
+    mask : (B, N) Bool             True for padding (atom side)
 
     Output
     ------
@@ -112,23 +115,24 @@ class MultiHeadCrossAttention(nn.Module):
         return W(x).view(B, L, self.n_heads, self.d_k).transpose(1, 2)
 
     def forward(self, S, M, mask=None):
-
-        M = M.unsqueeze(dim = 1)
-
+        # M is always (B, L, d_descriptor); aggregators that emit a single
+        # vector use L=1.
         Q = self._proj(self.W_q, S)        # (B, H, N, d_k)
-        K = self._proj(self.W_k, M)        # (B, H, L=1, d_k)
-        V = self._proj(self.W_v, M)        # (B, H, L=1, d_k)
+        K = self._proj(self.W_k, M)        # (B, H, L, d_k)
+        V = self._proj(self.W_v, M)        # (B, H, L, d_k)
 
-        logits = torch.matmul(Q, K.transpose(-1, -2))
+        logits = torch.matmul(Q, K.transpose(-1, -2))   # (B, H, N, L)
         logits = logits / math.sqrt(self.d_k)
 
         if mask is not None:
-            logits = logits.masked_fill(mask[:, None, :, None], torch.finfo(logits.dtype).min)
+            # mask is on the *query* (atom) side, not the descriptor side.
+            logits = logits.masked_fill(
+                mask[:, None, :, None], torch.finfo(logits.dtype).min
+            )
 
         attn = self.dropout(torch.softmax(logits, dim=-1))
 
         S_head = torch.matmul(attn, V)     # (B, H, N, d_k)
         S_head = S_head.transpose(1, 2).contiguous().view(S.size(0), S.size(1), -1)
-
 
         return self.W_o(S_head)

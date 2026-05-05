@@ -129,7 +129,16 @@ class TrainingTelemetry:
         self.loss_data.append(epoch_data)
 
         if self.wandb_active:
-            wandb.log(data=epoch_data, step=epoch)
+            wandb.log(data=epoch_data)
+
+    def log_metrics(self, metrics: dict[str, float]) -> None:
+        """Mid-epoch metric flush (e.g. rolling throughput).
+
+        Auto-steps via wandb's internal counter so it stays monotonic
+        alongside epoch-level logs that don't pin step explicitly.
+        """
+        if self.wandb_active:
+            wandb.log(data=metrics)
 
     def dump_loss_history(self):
         with open(

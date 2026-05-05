@@ -1,17 +1,21 @@
-"""Stage a training dataset onto the compute node's fast local scratch.
+"""Stage a dataset onto the compute node's fast local scratch.
 
 On Isambard-AI compute nodes ``$LOCALDIR`` (≈ ``/local/user/<UID>``) is a
 per-job tmpfs of ~48 GiB. Reading the dataset from there avoids hammering
-shared storage during training.
+shared storage during training/benchmarking.
 
 The staged path is printed on stdout so an sbatch script can capture it via
-``$(...)`` and pass it as ``--dataset_path`` to the training entrypoint;
-informational messages go to stderr.
+``$(...)`` and pass it as ``--dataset_path`` to the entrypoint; informational
+messages go to stderr.
+
+The input yaml only needs a top-level ``dataset_path`` field. Both
+``TrainingConfig`` and ``ProfileBenchmarkConfig`` satisfy that — no pydantic
+validation is performed here so this stager is config-shape-agnostic.
 
 Usage from sbatch::
 
     LOCAL_DATASET_PATH=$(uv run scripts/setup_gpu_job.py "$CFG")
-    srun uv run scripts/run_*.py --training_config "$CFG" \\
+    srun uv run scripts/run_*.py --config "$CFG" \\
                                  --dataset_path "$LOCAL_DATASET_PATH"
 """
 
@@ -23,9 +27,7 @@ import shutil
 import sys
 from pathlib import Path
 
-import pydantic_yaml as pyaml
-
-from threedscriptors.configuration.training_config import TrainingConfig
+import yaml
 
 
 def log(msg: str) -> None:
@@ -35,7 +37,7 @@ def log(msg: str) -> None:
 def localdir() -> Path:
     value = os.environ.get("LOCALDIR")
     if not value:
-        raise EnvironmentError(
+        raise OSError(
             "$LOCALDIR is not set; this helper assumes Isambard-AI environment."
         )
     return Path(value)
@@ -55,15 +57,29 @@ def stage_dataset(source: Path, stage_dir: Path) -> Path:
     return target
 
 
+def read_dataset_path(config_path: Path) -> Path:
+    with config_path.open("r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh)
+    if not isinstance(data, dict) or "dataset_path" not in data:
+        raise KeyError(
+            f"{config_path} does not have a top-level 'dataset_path' field."
+        )
+    return Path(str(data["dataset_path"]).strip())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Stage training dataset to $LOCALDIR on Isambard-AI."
+        description="Stage a dataset to $LOCALDIR on Isambard-AI."
     )
-    parser.add_argument("training_config", type=Path)
+    parser.add_argument(
+        "config",
+        type=Path,
+        help="Path to a yaml with a top-level dataset_path field.",
+    )
     args = parser.parse_args()
 
-    cfg = pyaml.parse_yaml_file_as(TrainingConfig, args.training_config)
-    staged = stage_dataset(cfg.dataset_path, localdir())
+    src = read_dataset_path(args.config)
+    staged = stage_dataset(src, localdir())
     print(staged)
 
 

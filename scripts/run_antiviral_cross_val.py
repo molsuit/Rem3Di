@@ -131,7 +131,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
 
     training_loader = DataLoader(
         train_dataset,
-        batch_size=training_config.batch_size,
+        batch_size=training_config.dataloader.batch_sampling.batch_size,
         shuffle=True,
         drop_last=True,
         pin_memory=True,
@@ -139,7 +139,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
     )
     validation_loader = DataLoader(
         valid_dataset,
-        batch_size=training_config.batch_size,
+        batch_size=training_config.dataloader.batch_sampling.batch_size,
         shuffle=False,
         drop_last=False,
         pin_memory=True,

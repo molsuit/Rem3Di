@@ -131,7 +131,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
 
     training_loader = DataLoader(
         train_dataset,
-        batch_size=training_config.batch_size,
+        batch_size=training_config.dataloader.batch_sampling.batch_size,
         shuffle=True,
         drop_last=True,
         pin_memory=True,
@@ -142,7 +142,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
 
     validation_loader = DataLoader(
         valid_dataset,
-        batch_size=training_config.batch_size,
+        batch_size=training_config.dataloader.batch_sampling.batch_size,
         shuffle=False,
         drop_last=False,
         pin_memory=True,
@@ -167,7 +167,7 @@ for train_idx, val_idx, split_name in dataset_splitting.get_split(
     )
 
     difference_regressor = MolecularDifferenceRegressor(
-        descriptor_input_dim=architecture_config.global_aggregator_config.output_dim,
+        descriptor_input_dim=architecture_config.global_aggregator_config.descriptor_flat_dim,
         aux_input_dim=architecture_config.regression_head_config[
             0
         ].task_config.auxillary_data_dimension,

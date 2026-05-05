@@ -38,4 +38,4 @@ global_aggregator_config:
     attn_dropout: 0.3
     num_heads: 8
   global_molecular_descriptor_dropout: 0.0
-  output_dim: 320
+  output_dim: 64

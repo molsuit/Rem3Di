@@ -13,4 +13,7 @@ source .venv/bin/activate
 
 nvidia-smi --list-gpus
 
-srun uv run --env-file .env scripts/evaluation/eval_tmqm_clustering.py
+MODEL_DIR="$1"
+
+srun uv run --env-file .env scripts/evaluation/eval_tmqm_clustering.py \
+    --model-dir "${MODEL_DIR}"

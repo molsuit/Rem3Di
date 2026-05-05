@@ -11,6 +11,7 @@ from threedscriptors.configuration.architecture_config import (
 from threedscriptors.configuration.data_config import LabelScalingType
 from threedscriptors.data_handling.sample import Sample
 from threedscriptors.model.model_output import ModelOutput
+from threedscriptors.model.molecular_descriptor import MolecularDescriptor
 from threedscriptors.model.pair_encoder import TransformerPairEncoder
 from threedscriptors.model.preprocessing.preprocessing import Preprocessor
 
@@ -144,32 +145,42 @@ class MultitaskHeads(nn.Module):
             {conf.task_name: RegressionHead(conf) for conf in regression_head_configs}
         )
 
-    def forward(self, descriptor, auxillary_data: dict | None = None):
+    def forward(
+        self,
+        descriptor: MolecularDescriptor,
+        auxillary_data: dict | None = None,
+    ):
+        flat = descriptor.flat
         preds = []
 
         for name, head in self.task_heads.items():
             if auxillary_data is not None and name in auxillary_data:
-                aux = auxillary_data[name].to(descriptor.device)
-                input_data = torch.cat((descriptor, aux), dim=1)
+                aux = auxillary_data[name].to(flat.device)
+                input_data = torch.cat((flat, aux), dim=1)
                 preds.append(head(input_data))
             else:
-                preds.append(head(descriptor))
+                preds.append(head(flat))
         # TODO: Make this return a dict of all tasks instead of a stacked tensor to ensure that the task predictions are returned in the correct order. This would require us to also change the way that the dataset yields the regression targets, would also be a dict then. Maybe it should be possible to just assert that the dataset task ordering and the model task ordering are identical.
 
         preds = torch.cat(preds, dim=-1)
 
         return preds
 
-    def inference(self, descriptor, auxillary_data: dict | None = None):
+    def inference(
+        self,
+        descriptor: MolecularDescriptor,
+        auxillary_data: dict | None = None,
+    ):
+        flat = descriptor.flat
         preds = []
 
         for name, head in self.task_heads.items():
             if auxillary_data is not None and name in auxillary_data:
-                aux = auxillary_data[name].to(descriptor.device)
-                input_data = torch.cat((descriptor, aux), dim=1)
+                aux = auxillary_data[name].to(flat.device)
+                input_data = torch.cat((flat, aux), dim=1)
                 preds.append(head.inference(input_data))
             else:
-                preds.append(head.inference(descriptor))
+                preds.append(head.inference(flat))
 
         preds = torch.cat(preds, dim=-1)
 
@@ -215,7 +226,7 @@ class MultiTaskRegressionModel(nn.Module):
             molecular_descriptor=molecular_descriptor, regression_predictions=preds
         )
 
-    def get_molecular_descriptor(self, sample: Sample) -> torch.Tensor:
+    def get_molecular_descriptor(self, sample: Sample) -> MolecularDescriptor:
         preprocessed_sample = self.preprocessor(sample)
 
         molecular_descriptor = self.encoder(preprocessed_sample)

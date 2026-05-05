@@ -1,13 +1,21 @@
-batch_size: 128
-dataset_path:
-  /scratch/s5f/wedigs.s5f/datasets/tmqm
-epochs: 10
-learning_rate: 0.0005
-max_grad_norm: 1.0
-model_config_path: /home/s5f/wedigs.s5f/3DMolecularDescriptors/training_runs/example_dir/architecture_config.yaml
-output_base: /scratch/s5f/wedigs.s5f/training_runs
-noise_level: 0.3
+training_name: tmc_64_dim
 run_group: transition_metal_complexes
+dataloader:
+  batch_sampling:
+    kind: bucket_batch
+    max_atoms_per_batch: 10500
+    max_batch_size: null
+    bucket_size: 512
+  num_workers: 12
+  prefetch_factor: 4
+  persistent_workers: true
+  pin_memory: true
+epochs: 30
+learning_rate: 0.0005
+weight_decay: 0.001
+max_grad_norm: 1.0
+noise_level: 0.3
+total_steps: null
 split_config:
   N_folds: null
   N_repeats: null
@@ -16,9 +24,16 @@ split_config:
   train_val_ratios:
   - 0.8
   - 0.2
-total_steps: null
-training_name: tmc_0
+dataset_path:
+  /scratch/s5f/wedigs.s5f/datasets/tmqm
+model_config_path: /home/s5f/wedigs.s5f/3DMolecularDescriptors/training_runs/example_dir/architecture_config.yaml
+output_base: /scratch/s5f/wedigs.s5f/training_runs
+training_directory: null
 wandb_active: true
-weight_decay: 0.001
 vicreg:
   enabled: true
+  variance_weight: 25.0
+  covariance_weight: 1.0
+  target_std: 1.0
+compile:
+  enabled: false

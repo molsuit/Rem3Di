@@ -13,6 +13,7 @@ from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
 from threedscriptors.model.preprocessing.geometric_preprocessor import (
     PairDistanceMatrixGeometricPreprocessor,
 )
+from threedscriptors.training.data.samplers import quantize_pad_length
 
 _ATOMIC_MASS_TABLE = torch.as_tensor(atomic_masses, dtype=torch.float32)
 
@@ -135,9 +136,15 @@ class PreprocessorWithAtomicEmbedding(Preprocessor):
         mace_model: MaceModel,
         atomic_preprocessor,
         geometric_preprocessor: PairDistanceMatrixGeometricPreprocessor,
+        pad_multiple: int = 1,
     ):
         super().__init__(atomic_preprocessor, geometric_preprocessor)
         self.torch_sim_mace_model = mace_model
+        # Padded atom count is rounded up to a multiple of `pad_multiple` so
+        # torch.compile sees only a small set of distinct shapes. 1 = off.
+        if pad_multiple <= 0:
+            raise ValueError("pad_multiple must be a positive integer.")
+        self.pad_multiple = int(pad_multiple)
 
     def _run_mace(self, state: SimState) -> torch.Tensor:
         """Build the MACE input dict directly from the SimState and call the raw model.
@@ -209,6 +216,8 @@ class PreprocessorWithAtomicEmbedding(Preprocessor):
 
         n_systems = lengths.shape[0]
         max_atoms = int(lengths.max().item()) if lengths.numel() > 0 else 0
+        if max_atoms > 0 and self.pad_multiple > 1:
+            max_atoms = quantize_pad_length(max_atoms, self.pad_multiple)
 
         device = state.positions.device
         atom_dim = state.positions.shape[-1]
