@@ -23,7 +23,7 @@ def log(msg: str) -> None:
     print(f"[submit_job] {msg}", file=sys.stderr, flush=True)
 
 
-def snapshot_configs(training_config_path: Path) -> Path:
+def snapshot_configs(training_config_path: Path) -> tuple[Path, str]:
     training_config = pyaml.parse_yaml_file_as(TrainingConfig, training_config_path)
 
     output_base = training_config.output_base
@@ -45,7 +45,7 @@ def snapshot_configs(training_config_path: Path) -> Path:
     pyaml.to_yaml_file(training_snapshot, training_config)
 
     log(f"Snapshot training directory: {training_directory}")
-    return training_snapshot
+    return training_snapshot, training_config.training_name
 
 
 def main() -> None:
@@ -66,13 +66,18 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    training_snapshot = snapshot_configs(args.training_config)
+    training_snapshot, training_name = snapshot_configs(args.training_config)
 
     if args.no_submit:
         print(training_snapshot)
         return
 
-    cmd = ["sbatch", str(args.sbatch_script), str(training_snapshot)]
+    cmd = [
+        "sbatch",
+        f"--job-name={training_name}",
+        str(args.sbatch_script),
+        str(training_snapshot),
+    ]
     log(" ".join(cmd))
     subprocess.run(cmd, check=True)
 

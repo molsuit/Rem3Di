@@ -11,7 +11,7 @@ dataloader:
   persistent_workers: true
   pin_memory: true
 epochs: 30
-learning_rate: 0.0005
+learning_rate: 0.0003
 weight_decay: 0.001
 max_grad_norm: 1.0
 noise_level: 0.3

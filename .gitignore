@@ -22,3 +22,6 @@ CLAUDE.md
 *.err
 *.out
 analysis_output/
+/submit_*.sh
+dataloading_benchmark/
+threedscriptors/data_handling/dataset_creation/benchmark_dataloader.py
