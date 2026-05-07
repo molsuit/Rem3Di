@@ -10,6 +10,17 @@ embedding_preprocess_config:
   pseudoscalars: false
   equivariant_rms_normalization: true
   gated: true
+  # Subset of MACE message-passing layers to keep. Omit (or set to null) for
+  # all layers; e.g. [0] for the first MP layer only, [1] for the second.
+  mace_layer_indices: null
+  # Atomwise projection applied to the (selected) normalized invariants.
+  # Variants:
+  #   {kind: identity}                                                   - no projection (default)
+  #   {kind: linear, output_dim: <int>, bias: true}
+  #   {kind: mlp, output_dim: <int>, hidden_dimensions: [<int>, ...],
+  #    activation_fn: SiLU, dropout: 0.0}
+  invariant_projection_config:
+    kind: identity
 encoder_config:
   N_layers: 4
   attention_layer_config:

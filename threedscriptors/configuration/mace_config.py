@@ -69,6 +69,18 @@ class MaceConfig(BaseModel):
             )
         return self._irrep_signature
 
+    def get_per_layer_irreps(self) -> list[Irreps]:
+        """Return the irreps emitted by each MACE message-passing layer (product
+        stack) in order. The full product-stack signature is the concatenation of
+        these per-layer irreps; per-layer access is needed by downstream consumers
+        that want to operate on a subset of layers (e.g. only the first or second
+        message passing layer).
+        """
+        raw = self._load_raw_model()
+        return [
+            Irreps(str(p.linear.__dict__["irreps_out"])) for p in raw.products
+        ]
+
     def build_ase_calculator(self) -> MACECalculator:
         from mace.calculators import MACECalculator
         from mace.calculators.foundations_models import mace_off

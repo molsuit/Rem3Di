@@ -163,12 +163,81 @@ InvNormConfig = Annotated[
 ]
 
 
+class IdentityInvariantProjectionConfig(BaseModel):
+    """Pass invariants through unchanged."""
+
+    kind: Literal["identity"] = "identity"
+
+    def output_dim_for(self, input_dim: int) -> int:
+        return input_dim
+
+    def build(self, input_dim: int) -> nn.Module:
+        return nn.Identity()
+
+
+class LinearInvariantProjectionConfig(BaseModel):
+    """Single linear down (or up) projection applied atomwise to the invariants."""
+
+    kind: Literal["linear"] = "linear"
+    output_dim: int
+    bias: bool = True
+
+    def output_dim_for(self, input_dim: int) -> int:
+        return self.output_dim
+
+    def build(self, input_dim: int) -> nn.Module:
+        return nn.Linear(input_dim, self.output_dim, bias=self.bias)
+
+
+class MLPInvariantProjectionConfig(BaseModel):
+    """Multi-layer perceptron projection applied atomwise to the invariants."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    kind: Literal["mlp"] = "mlp"
+    output_dim: int
+    hidden_dimensions: list[int]
+    activation_fn: ActivationFn = torch.nn.SiLU()
+    dropout: float = 0.0
+
+    def output_dim_for(self, input_dim: int) -> int:
+        return self.output_dim
+
+    def build(self, input_dim: int) -> nn.Module:
+        layers: list[nn.Module] = []
+        prev = input_dim
+        for h in self.hidden_dimensions:
+            layers.append(nn.Linear(prev, h))
+            # Each block gets its own activation instance so optional state
+            # (e.g. learnable parameters in custom activations) is not shared.
+            layers.append(type(self.activation_fn)())
+            if self.dropout > 0:
+                layers.append(nn.Dropout(self.dropout))
+            prev = h
+        layers.append(nn.Linear(prev, self.output_dim))
+        return nn.Sequential(*layers)
+
+
+InvariantProjectionConfig = Annotated[
+    IdentityInvariantProjectionConfig
+    | LinearInvariantProjectionConfig
+    | MLPInvariantProjectionConfig,
+    Field(discriminator="kind"),
+]
+
+
 class EmbeddingPreprocessConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # Resolved from the parent architecture's MaceConfig during cascade; can
     # also be set directly (e.g. in unit tests that don't want to load MACE).
     input_irreps: IrrepType | None = None
+    # Per-layer breakdown of `input_irreps` (one entry per MACE product stack
+    # layer). Required for `mace_layer_indices` to take effect; resolved by the
+    # architecture cascade from `MaceConfig.get_per_layer_irreps()` when None.
+    mace_per_layer_irreps: list[IrrepType] | None = None
+    # Subset of MACE message-passing layers to use. None = all layers.
+    mace_layer_indices: list[int] | None = None
     pseudoscalar_dimension: int
     chiral_embedding_dimension: int
     gated: bool = True
@@ -177,6 +246,37 @@ class EmbeddingPreprocessConfig(BaseModel):
     invariant_normalization_config: InvNormConfig = (
         PrecomputedInvariantNormalizationConfig()
     )
+    invariant_projection_config: InvariantProjectionConfig = (
+        IdentityInvariantProjectionConfig()
+    )
+
+    def _check_layer_selection(self) -> None:
+        """Validate `mace_layer_indices` against the per-layer info that is
+        currently available. Safe to call multiple times — defers to the cascade
+        when per-layer info hasn't been populated yet."""
+        if self.mace_layer_indices is None:
+            return
+        if self.mace_per_layer_irreps is None:
+            return
+        n_layers = len(self.mace_per_layer_irreps)
+        for idx in self.mace_layer_indices:
+            if idx < 0 or idx >= n_layers:
+                raise ValueError(
+                    f"mace_layer_indices contains {idx}, out of range "
+                    f"[0, {n_layers}) for the configured MACE layer stack."
+                )
+        if len(set(self.mace_layer_indices)) != len(self.mace_layer_indices):
+            raise ValueError("mace_layer_indices must not contain duplicates.")
+        if self.mace_layer_indices != sorted(self.mace_layer_indices):
+            raise ValueError(
+                "mace_layer_indices must be sorted ascending so the channel "
+                "slice preserves layer order."
+            )
+
+    @model_validator(mode="after")
+    def _validate_layer_selection(self) -> "EmbeddingPreprocessConfig":
+        self._check_layer_selection()
+        return self
 
     @computed_field(return_type=IrrepType, repr=True)
     @property
@@ -206,10 +306,80 @@ class EmbeddingPreprocessConfig(BaseModel):
 
         return sum([i_irrep.dim for i_irrep in invariant_irreps])
 
+    @property
+    def selected_layer_indices(self) -> list[int] | None:
+        """Resolved layer indices, or None when no selection is active.
+
+        Returns None when either `mace_layer_indices` is None (all layers) AND
+        per-layer info is missing; in that case the caller treats the input
+        irreps as already representing the selection.
+        """
+        if self.mace_per_layer_irreps is None:
+            return None
+        if self.mace_layer_indices is None:
+            return list(range(len(self.mace_per_layer_irreps)))
+        return list(self.mace_layer_indices)
+
+    @property
+    def selected_input_irreps(self) -> Irreps:
+        """Concatenation of the per-layer irreps for the selected layers."""
+        idxs = self.selected_layer_indices
+        if idxs is None or self.mace_per_layer_irreps is None:
+            assert self.input_irreps is not None, (
+                "input_irreps must be resolved before reading selected_input_irreps"
+            )
+            return self.input_irreps
+        out = Irreps()
+        for i in idxs:
+            out = out + self.mace_per_layer_irreps[i]
+        return out
+
+    @property
+    def selected_invariant_irreps(self) -> Irreps:
+        _, invariants = get_invariant_indices(self.selected_input_irreps)
+        return invariants
+
+    @property
+    def selected_invariant_dimension(self) -> int:
+        return self.selected_invariant_irreps.dim
+
+    @property
+    def selected_channel_indices(self) -> list[int] | None:
+        """Channel positions in `input_irreps` that correspond to the selected
+        layers. Returns None when no slicing is needed (selection covers all
+        layers contiguously from the start)."""
+        idxs = self.selected_layer_indices
+        if idxs is None or self.mace_per_layer_irreps is None:
+            return None
+        if idxs == list(range(len(self.mace_per_layer_irreps))):
+            return None
+        cursor = 0
+        ranges: list[tuple[int, int]] = []
+        for layer_irreps in self.mace_per_layer_irreps:
+            ranges.append((cursor, cursor + layer_irreps.dim))
+            cursor += layer_irreps.dim
+        return [c for i in idxs for c in range(*ranges[i])]
+
+    @property
+    def projected_invariant_dimension(self) -> int:
+        return self.invariant_projection_config.output_dim_for(
+            self.selected_invariant_dimension
+        )
+
     @computed_field(return_type=IrrepType, repr=True)
     @property
     def output_irreps(self):
-        _, even_invariants = get_invariant_indices(self.input_irreps)
+        # Output is purely l=0 (scalars). The e3nn tuples are (l, parity), not
+        # (l, multiplicity): (0, 1) = even scalar (0e), (0, -1) = pseudoscalar
+        # (0o). Multiplicities are the leading ints (`projected_invariant_dim`
+        # and `chiral_embedding_dimension`). MACE's l>=1 channels are consumed
+        # internally — they feed the chiral embedding model, which contracts
+        # them down to a pseudoscalar before concatenation here. After
+        # projection the invariants no longer correspond to the original MACE
+        # invariant block structure, so we represent them as a single 0e block.
+        even_invariants = Irreps(
+            [(self.projected_invariant_dimension, (0, 1))]
+        )
 
         if self.pseudoscalars:
             odd_invariants_chiral_embedding = Irreps(
@@ -231,6 +401,47 @@ class EmbeddingPreprocessConfig(BaseModel):
         _, irreps = get_invariant_indices(self.input_irreps)
         return irreps
 
+    def _slice_stats_to_selection(
+        self, stats: torch.Tensor
+    ) -> torch.Tensor:
+        """Slice precomputed (full-invariant) stats down to the channels
+        corresponding to the selected layers' invariants.
+
+        Accepts the user-supplied tensor sized either to
+        `selected_invariant_dimension` (already sliced) or to
+        `invariant_irreps.dim` (full invariants — gets sliced here).
+        """
+        full_dim = self.invariant_irreps.dim
+        sel_dim = self.selected_invariant_dimension
+        last = stats.shape[-1]
+        if last == sel_dim:
+            return stats
+        if last != full_dim:
+            raise ValueError(
+                f"Precomputed stats trailing dim {last} matches neither the "
+                f"selected invariant dim ({sel_dim}) nor the full invariant "
+                f"dim ({full_dim})."
+            )
+        if self.mace_per_layer_irreps is None:
+            return stats  # Nothing we can do without per-layer info.
+
+        # Build the slice indices in *invariant-only* coordinates.
+        idxs = self.selected_layer_indices or []
+        cursor = 0
+        layer_inv_ranges: list[tuple[int, int]] = []
+        for layer_irreps in self.mace_per_layer_irreps:
+            _, layer_inv = get_invariant_indices(layer_irreps)
+            layer_dim = layer_inv.dim
+            layer_inv_ranges.append((cursor, cursor + layer_dim))
+            cursor += layer_dim
+        sel_idx = [
+            c
+            for i in idxs
+            for c in range(*layer_inv_ranges[i])
+        ]
+        index = torch.tensor(sel_idx, dtype=torch.long, device=stats.device)
+        return stats.index_select(-1, index)
+
     def build(
         self,
         mean_atomic_embedding: torch.Tensor | None = None,
@@ -241,8 +452,9 @@ class EmbeddingPreprocessConfig(BaseModel):
             PrecomputedInvariantNormalization,
         )
 
+        sel_inv_dim = self.selected_invariant_dimension
         invariant_normalization = self.invariant_normalization_config.build(
-            invariant_dimension=self.invariant_irreps.dim
+            invariant_dimension=sel_inv_dim
         )
 
         if (
@@ -250,14 +462,20 @@ class EmbeddingPreprocessConfig(BaseModel):
             and mean_atomic_embedding is not None
             and std_atomic_embedding is not None
         ):
-            assert mean_atomic_embedding.shape[-1] == self.invariant_irreps.dim
-            invariant_normalization.set_stats(
-                mean=mean_atomic_embedding, std=std_atomic_embedding
-            )
+            mean = self._slice_stats_to_selection(mean_atomic_embedding)
+            std = self._slice_stats_to_selection(std_atomic_embedding)
+            assert mean.shape[-1] == sel_inv_dim
+            invariant_normalization.set_stats(mean=mean, std=std)
+
+        invariant_projection = self.invariant_projection_config.build(
+            input_dim=sel_inv_dim
+        )
 
         return AtomicDescriptorPreprocessor(
             preprocess_config=self,
             invariant_normalization=invariant_normalization,
+            invariant_projection=invariant_projection,
+            selected_channel_indices=self.selected_channel_indices,
         )
 
 
@@ -441,6 +659,16 @@ class _BaseArchitectureConfig(BaseModel):
             self.embedding_preprocess_config.input_irreps = (
                 self.mace_config.get_irrep_signature()
             )
+
+        if (
+            self.embedding_preprocess_config.mace_per_layer_irreps is None
+            and self.mace_config is not None
+        ):
+            self.embedding_preprocess_config.mace_per_layer_irreps = (
+                self.mace_config.get_per_layer_irreps()
+            )
+        # Re-run the layer-selection check now that per-layer info is available.
+        self.embedding_preprocess_config._check_layer_selection()
 
         embed_dim = self.embedding_preprocess_config.output_irreps_dim
         _fill_encoder_dims(
