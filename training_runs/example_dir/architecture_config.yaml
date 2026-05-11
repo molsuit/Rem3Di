@@ -4,6 +4,12 @@ mace_config:
   device: cuda
   dtype: float32
   enable_cueq: true
+  # Forwarded to MaceTorchSimModel.compile_mode.
+  # null      - eager (default; safest, no warmup cost).
+  # default   - torch.compile via inductor; ~1.5-2.5x on PolarMACE forward.
+  # reduce-overhead - default + cudagraphs; best steady-state, ~30-90s warmup
+  #                   and ~1.25x peak VRAM from the wrapper's padded buffers.
+  mace_compile_mode: null
 embedding_preprocess_config:
   pseudoscalar_dimension: 0
   chiral_embedding_dimension: 0

@@ -9,7 +9,7 @@ from ase import Atoms
 from tqdm import tqdm
 
 if TYPE_CHECKING:
-    from torch_sim.models.mace import MaceModel
+    from mace.calculators.mace_torchsim import MaceTorchSimModel
 
 from threedscriptors.configuration.dataset_config import DatasetCreationConfig
 from threedscriptors.data_handling.dataset_creation.loading_batch import (
@@ -200,7 +200,7 @@ class ConformerGenerationStage(PipelineStage):
 
 
 class ParallelRelaxStage(PipelineStage):
-    def __init__(self, mace_model: "MaceModel", device, dtype, N_steps: int):
+    def __init__(self, mace_model: "MaceTorchSimModel", device, dtype, N_steps: int):
         self.mace_model = mace_model
 
         self._device = device

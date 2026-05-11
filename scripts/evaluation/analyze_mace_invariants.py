@@ -93,63 +93,27 @@ def _setup_logging(output_dir: Path) -> None:
 
 
 def _run_mace_on_sample(mace_model, sample: Sample) -> torch.Tensor:
-    """Build a SimState from a flat-batched Sample and return MACE node feats."""
+    """Build a SimState from a flat-batched Sample and return MACE node feats.
+
+    Delegates to the official mace-torch wrapper (MaceTorchSimModel) so that
+    PolarMACE's data_dict (rcell, volume, fermi_level, external_field,
+    density_coefficients) is constructed by the same code path the rest of
+    this repo uses.
+    """
+    from threedscriptors.model.preprocessing.preprocessing import _capture_node_feats
+
     state, _ = _sample_to_simstate(sample, r_max=float(mace_model.r_max))
-
-    m = mace_model
-    m._setup_node_attrs(state.atomic_numbers)
-    m._setup_ptr(state.system_idx)
-
-    edge_index, mapping_system, unit_shifts = m.neighbor_list_fn(
-        state.positions,
-        state.row_vector_cell,
-        state.pbc,
-        m.r_max,
-        state.system_idx,
-    )
-    import torch_sim as ts
-
-    shifts = ts.transforms.compute_cell_shifts(
-        state.row_vector_cell, unit_shifts, mapping_system
-    )
-
-    n_systems = m.ptr.shape[0] - 1
-    eye = torch.eye(3, device=state.positions.device, dtype=state.positions.dtype)
-    unit_cell = eye.unsqueeze(0).expand(n_systems, 3, 3)
-    unit_rcell = (2 * torch.pi) * unit_cell
-    unit_volume = torch.ones(n_systems, device=state.positions.device, dtype=state.positions.dtype)
-
-    from torch_sim.typing import SystemExtras
-
-    data_dict = dict(
-        ptr=m.ptr,
-        node_attrs=m.node_attrs,
-        batch=state.system_idx,
-        pbc=state.pbc,
-        cell=unit_cell,
-        rcell=unit_rcell,
-        volume=unit_volume,
-        positions=state.positions,
-        edge_index=edge_index,
-        unit_shifts=unit_shifts,
-        shifts=shifts,
-        total_charge=state.system_extras.get(SystemExtras.TOTAL_CHARGE),
-        total_spin=state.system_extras.get(SystemExtras.TOTAL_SPIN),
-        fermi_level=state.system_extras.get("fermi_level"),
-        external_field=state.system_extras.get("external_field"),
-    )
-    out = m.model(
-        data_dict,
-        compute_force=m.compute_forces,
-        compute_stress=m.compute_stress,
-    )
-    return out["node_feats"]
+    return _capture_node_feats(mace_model, state)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, required=True,
-                        help="Path to a MaceInvariantAnalysisConfig YAML.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        required=True,
+        help="Path to a MaceInvariantAnalysisConfig YAML.",
+    )
     args = parser.parse_args()
 
     cfg = pyaml.parse_yaml_file_as(MaceInvariantAnalysisConfig, args.config)
@@ -171,8 +135,13 @@ def main() -> None:
     logger.info("Input irreps: %s", input_irreps)
     logger.info("Invariant irreps: %s (dim=%d)", invariant_irreps, invariant_dim)
     for spec in layer_specs:
-        logger.info("  layer %d: invariant indices [%d, %d) (width=%d)",
-                    spec.layer_index, spec.start, spec.stop, spec.width)
+        logger.info(
+            "  layer %d: invariant indices [%d, %d) (width=%d)",
+            spec.layer_index,
+            spec.start,
+            spec.stop,
+            spec.width,
+        )
 
     invariant_idx_t = torch.tensor(invariant_indices, dtype=torch.long, device=device)
 
@@ -180,8 +149,9 @@ def main() -> None:
     pyaml.to_yaml_file(cfg.output_dir / "analysis_config.yaml", cfg)
 
     logger.info("Opening dataset at %s", cfg.dataset_path)
-    dataset = TrainingMoleculeDataset(cfg.dataset_path, get_item=atoms_getitem,
-                                      in_memory=True)
+    dataset = TrainingMoleculeDataset(
+        cfg.dataset_path, get_item=atoms_getitem, in_memory=True
+    )
     logger.info("Dataset size: %d molecules", len(dataset))
 
     loader = DataLoader(
@@ -225,7 +195,7 @@ def main() -> None:
 
             for layer_stat in layer_stats:
                 spec = layer_stat.spec
-                layer_stat.update(invariants[:, spec.start:spec.stop])
+                layer_stat.update(invariants[:, spec.start : spec.stop])
             total_stats.update(invariants)
 
             if (batch_idx + 1) % 25 == 0:
@@ -278,18 +248,27 @@ def main() -> None:
             "Layer %d (width=%d, n=%d): "
             "L2 mean=%.3f std=%.3f  PR=%.2f  R(eps=%.2f)=%.2f bits  "
             "mean_abs_corr=%.3f  H_tot=%.1f  dead=%d",
-            s.layer_index, s.width, s.n_atoms,
-            s.l2_norm_mean, s.l2_norm_std,
-            s.participation_ratio, s.coding_rate_eps, s.coding_rate,
-            s.mean_abs_correlation, s.H_total, s.dead_dims,
+            s.layer_index,
+            s.width,
+            s.n_atoms,
+            s.l2_norm_mean,
+            s.l2_norm_std,
+            s.participation_ratio,
+            s.coding_rate_eps,
+            s.coding_rate,
+            s.mean_abs_correlation,
+            s.H_total,
+            s.dead_dims,
         )
     logger.info(
         "Total invariants (dim=%d): "
         "L2 mean=%.3f std=%.3f  PR=%.2f  R(eps=%.2f)=%.2f bits  mean_abs_corr=%.3f",
         total_summary.invariant_dim,
-        total_summary.l2_norm_mean, total_summary.l2_norm_std,
+        total_summary.l2_norm_mean,
+        total_summary.l2_norm_std,
         total_summary.participation_ratio,
-        total_summary.coding_rate_eps, total_summary.coding_rate,
+        total_summary.coding_rate_eps,
+        total_summary.coding_rate,
         total_summary.mean_abs_correlation,
     )
 

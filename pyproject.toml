@@ -16,7 +16,7 @@ dependencies = [
     "wandb",
     "pydantic",
     "pydantic_yaml",
-    "mace-torch",
+    "mace-torch>=0.3.16",
     "umap-learn",
     "torch-sim-atomistic",
     "zarr==2.18.7",
@@ -52,7 +52,6 @@ url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
 [tool.uv.sources]
-mace-torch = { git = "https://github.com/ACEsuit/mace.git", branch = "main" }
 graph-longrange = { git = "https://github.com/WillBaldwin0/graph_electrostatics.git" }
 torch-sim-atomistic = { git = "https://github.com/TorchSim/torch-sim.git", branch = "main"}
 torch = { index = "pytorch-cu126" }

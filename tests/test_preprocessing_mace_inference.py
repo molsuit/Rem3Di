@@ -1,10 +1,12 @@
-"""Cross-check MaceModel inference in the preprocessor against the ASE calculator.
+"""Cross-check MaceTorchSimModel inference in the preprocessor against the ASE
+calculator.
 
 The `PreprocessorWithAtomicEmbedding` path builds a torch-sim `SimState`
-directly from a batched `Sample` and reads `node_feats` out of the model. The
-ASE `MACECalculator.get_descriptors(..., invariants_only=False)` returns the
-same `node_feats` (concatenation of per-layer products). Running both over the
-same geometry must yield the same descriptors up to floating-point tolerance.
+directly from a batched `Sample` and reads `node_feats` out of the model
+(captured through a forward hook on the underlying mace module). The ASE
+`MACECalculator.get_descriptors(..., invariants_only=False)` returns the same
+`node_feats` (concatenation of per-layer products). Running both over the same
+geometry must yield the same descriptors up to floating-point tolerance.
 """
 
 from __future__ import annotations
@@ -51,7 +53,10 @@ def test_torchsim_matches_ase_descriptors(mol_name: str) -> None:
         enable_cueq=False,
     )
 
-    from threedscriptors.model.preprocessing.preprocessing import _sample_to_simstate
+    from threedscriptors.model.preprocessing.preprocessing import (
+        _capture_node_feats,
+        _sample_to_simstate,
+    )
 
     atoms = molecule(mol_name)
     sample = _sample_from_atoms(atoms, device=device)
@@ -59,8 +64,9 @@ def test_torchsim_matches_ase_descriptors(mol_name: str) -> None:
     torch_sim_model = config.build_torch_sim_model()
     state, _ = _sample_to_simstate(sample, r_max=float(torch_sim_model.r_max))
     with torch.inference_mode():
-        out = torch_sim_model(state)
-    ts_descriptors = out["node_feats"].detach().cpu().numpy()
+        ts_descriptors = (
+            _capture_node_feats(torch_sim_model, state).detach().cpu().numpy()
+        )
 
     ase_calculator = config.build_ase_calculator()
     ase_descriptors = ase_calculator.get_descriptors(atoms, invariants_only=False)
@@ -89,11 +95,11 @@ _POLAR_MODEL_PATH = Path(
 )
 @pytest.mark.parametrize("mol_name", ["H2O", "CH4", "NH3"])
 def test_polar_run_mace_matches_ase(mol_name: str) -> None:
-    """PolarMACE can't go through torch_sim.MaceModel.forward (it requires
-    fermi_level / external_field / rcell / volume, which the wrapper doesn't
-    propagate). PreprocessorWithAtomicEmbedding._run_mace builds the data_dict
-    itself and should match the ASE calculator's node_feats bit-for-bit within
-    float32 tolerance.
+    """PolarMACE goes through the official MaceTorchSimModel wrapper, which
+    auto-builds the PolarMACE-specific data_dict entries (rcell, volume,
+    fermi_level, external_field, density_coefficients). The preprocessor's
+    ``_run_mace`` captures node_feats via a forward hook on the underlying
+    model and must match ASE's node_feats up to float32 tolerance.
 
     The ASE calc is built once to derive the reference data_dict and then
     released before instantiating the torch-sim model, so the PolarMACE weights

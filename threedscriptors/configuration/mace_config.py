@@ -9,7 +9,7 @@ from pydantic import BaseModel, PrivateAttr
 
 if TYPE_CHECKING:
     from mace.calculators.mace import MACECalculator
-    from torch_sim.models.mace import MaceModel
+    from mace.calculators.mace_torchsim import MaceTorchSimModel
 
 
 class MaceConfig(BaseModel):
@@ -24,6 +24,15 @@ class MaceConfig(BaseModel):
     compute_forces: bool = False
     compute_stress: bool = False
     enable_cueq: bool = True
+    # Forwarded to MaceTorchSimModel(compile_mode=...). None = eager (default).
+    # "default" enables torch.compile via inductor; "reduce-overhead" adds
+    # cudagraphs (requires shape-stable padded buffers, which the wrapper
+    # provides via its atom/edge/system budgets). The wrapper pads
+    # (n_atoms, n_edges, n_systems) to multiples of 64 with 1.25x headroom,
+    # so the inductor cache stays small after a couple of warmup recompiles.
+    mace_compile_mode: Literal["default", "reduce-overhead", "max-autotune"] | None = (
+        None
+    )
 
     _raw_model: Any | None = PrivateAttr(default=None)
     _irrep_signature: Irreps | None = PrivateAttr(default=None)
@@ -77,9 +86,7 @@ class MaceConfig(BaseModel):
         message passing layer).
         """
         raw = self._load_raw_model()
-        return [
-            Irreps(str(p.linear.__dict__["irreps_out"])) for p in raw.products
-        ]
+        return [Irreps(str(p.linear.__dict__["irreps_out"])) for p in raw.products]
 
     def build_ase_calculator(self) -> MACECalculator:
         from mace.calculators import MACECalculator
@@ -99,14 +106,21 @@ class MaceConfig(BaseModel):
             enable_cueq=self.enable_cueq,
         )
 
-    def build_torch_sim_model(self) -> MaceModel:
-        from torch_sim.models.mace import MaceModel
+    def build_torch_sim_model(self) -> MaceTorchSimModel:
+        """Build the official mace-torch torch-sim wrapper.
 
-        return MaceModel(
+        Introduced in mace-torch 0.3.16; supersedes torch_sim.models.mace.MaceModel
+        and natively handles PolarMACE-specific data_dict entries (rcell, volume,
+        fermi_level, external_field, density_coefficients).
+        """
+        from mace.calculators.mace_torchsim import MaceTorchSimModel
+
+        return MaceTorchSimModel(
             model=self._load_raw_model(),
             device=torch.device(self.device),
             dtype=self.torch_dtype,
             compute_forces=self.compute_forces,
             compute_stress=self.compute_stress,
             enable_cueq=self.enable_cueq,
+            compile_mode=self.mace_compile_mode,
         )
