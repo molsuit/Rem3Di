@@ -202,7 +202,7 @@ class TopNormDescriptorsTask(_BaseAnalysisTask):
                     n_atoms=int(len(atoms)),
                     descriptor_norm=float(norms[idx]),
                     total_charge=float(atoms.info.get("total_charge", 0.0)),
-                    total_spin=float(atoms.info.get("total_spin", 0.0)),
+                    multiplicity=float(atoms.info.get("multiplicity", 0.0)),
                 )
             )
 
@@ -475,7 +475,7 @@ class _TopNormEntry(BaseModel):
     n_atoms: int
     descriptor_norm: float
     total_charge: float
-    total_spin: float
+    multiplicity: float
 
 
 class _TopNormSummary(BaseModel):
@@ -506,7 +506,7 @@ def _atoms_for_indices(
     n_struct = dataset.N_structures
     ptr = np.asarray(dataset.ptr[: n_struct + 1], dtype=np.int64)
     total_charge = np.asarray(dataset.total_charge[:n_struct])
-    total_spin = np.asarray(dataset.total_spin[:n_struct])
+    multiplicity = np.asarray(dataset.multiplicity[:n_struct])
 
     out: list[Atoms] = []
     for idx in indices:
@@ -519,7 +519,7 @@ def _atoms_for_indices(
                 positions=positions,
                 info={
                     "total_charge": float(total_charge[idx]),
-                    "total_spin": float(total_spin[idx]),
+                    "multiplicity": float(multiplicity[idx]),
                 },
             )
         )

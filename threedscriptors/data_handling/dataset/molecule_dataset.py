@@ -25,7 +25,7 @@ class MoleculeDataset:
         molecule_ids: Array,
         isomer_ids: Array,
         total_charge: Array,
-        total_spin: Array,
+        multiplicity: Array,
         smiles: SmilesStorage | None,
         isomeric_smiles: SmilesStorage | None,
         targets_system: Array | None,
@@ -43,7 +43,7 @@ class MoleculeDataset:
         self.isomer_ids = isomer_ids
 
         self.total_charge = total_charge
-        self.total_spin = total_spin
+        self.multiplicity = multiplicity
 
         self.smiles = smiles
         self.isomeric_smiles = isomeric_smiles
@@ -68,7 +68,7 @@ class MoleculeDataset:
         atomic_numbers = g["atomic_numbers"]
         ptr = g["molecule_ptr"]
         total_charge = g["total_charge"]
-        total_spin = g["total_spin"]
+        multiplicity = g["multiplicity"]
 
         ids = g.require_group("ids")
         mol_id = ids["molecule_id"]
@@ -125,7 +125,7 @@ class MoleculeDataset:
             mol_id,
             stereo_id,
             total_charge,
-            total_spin,
+            multiplicity,
             smiles=smiles,
             isomeric_smiles=isomeric_smiles,
             targets_system=targets_system,
@@ -183,8 +183,8 @@ class MoleculeDataset:
             dtype="f4",
             compressor=compressor,
         )
-        total_spin = g.create(
-            "total_spin",
+        multiplicity = g.create(
+            "multiplicity",
             shape=(0,),
             chunks=(config.molecule_chunk,),
             dtype="f4",
@@ -289,7 +289,7 @@ class MoleculeDataset:
             mol_id,
             stereo_id,
             total_charge,
-            total_spin,
+            multiplicity,
             smiles,
             isomeric_smiles,
             targets_system,
@@ -347,7 +347,7 @@ class MoleculeDataset:
             self.molecule_ids.resize((new_ids_cap,))
             self.isomer_ids.resize((new_ids_cap,))
             self.total_charge.resize((new_ids_cap,))
-            self.total_spin.resize((new_ids_cap,))
+            self.multiplicity.resize((new_ids_cap,))
             if self.targets_system is not None:
                 ncols = self.targets_system.shape[1]
                 self.targets_system.resize((new_ids_cap, ncols))
@@ -361,7 +361,7 @@ class MoleculeDataset:
         molecule_ids,
         stereoisomer_ids,
         total_charge,
-        total_spin,
+        multiplicity,
         system_targets,
         system_masks,
         atom_targets,
@@ -373,10 +373,10 @@ class MoleculeDataset:
         R = np.asarray(stereoisomer_ids, dtype="i8", order="C")
         C = np.asarray(batch_ptr_cumsum, dtype="i8", order="C")
         Q = np.asarray(total_charge, dtype="f4", order="C")
-        S_spin = np.asarray(total_spin, dtype="f4", order="C")
+        S_mult = np.asarray(multiplicity, dtype="f4", order="C")
 
         assert C.shape[0] == M.shape[0] == R.shape[0]
-        assert Q.shape[0] == M.shape[0] and S_spin.shape[0] == M.shape[0]
+        assert Q.shape[0] == M.shape[0] and S_mult.shape[0] == M.shape[0]
 
         n_atoms = P.shape[0]
         n_mols = int(C.shape[0])
@@ -407,7 +407,7 @@ class MoleculeDataset:
         self.molecule_ids[m0:m1] = M
         self.isomer_ids[m0:m1] = R
         self.total_charge[m0:m1] = Q
-        self.total_spin[m0:m1] = S_spin
+        self.multiplicity[m0:m1] = S_mult
 
         if system_targets is not None:
             ST = np.asarray(system_targets, dtype="f4", order="C")
@@ -437,7 +437,7 @@ class MoleculeDataset:
         self.molecule_ids.resize((self._mol_cursor,))
         self.isomer_ids.resize((self._mol_cursor,))
         self.total_charge.resize((self._mol_cursor,))
-        self.total_spin.resize((self._mol_cursor,))
+        self.multiplicity.resize((self._mol_cursor,))
 
         if self.targets_system is not None:
             ncols = self.targets_system.shape[1]
@@ -478,7 +478,7 @@ class MoleculeDataset:
         )
         positions = np.asarray(self.positions[: ptr[-1]], dtype=np.float32, order="C")
         total_charge = np.asarray(self.total_charge[:n_struct])
-        total_spin = np.asarray(self.total_spin[:n_struct])
+        multiplicity = np.asarray(self.multiplicity[:n_struct])
 
         molecules: list[Atoms] = []
         append = molecules.append
@@ -491,7 +491,7 @@ class MoleculeDataset:
                     positions=positions[start:end],
                     info={
                         "total_charge": float(total_charge[idx]),
-                        "total_spin": float(total_spin[idx]),
+                        "multiplicity": float(multiplicity[idx]),
                     },
                 )
             )

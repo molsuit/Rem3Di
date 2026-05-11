@@ -29,7 +29,7 @@ class Sample:
     atomic_numbers: torch.Tensor | None = None
     system_index: torch.Tensor | None = None
     total_charge: torch.Tensor | None = None
-    total_spin: torch.Tensor | None = None
+    multiplicity: torch.Tensor | None = None
 
     def to(self, device: torch.device, non_blocking: bool = True) -> "Sample":
         moved_fields = {
@@ -60,7 +60,7 @@ class Sample:
             atomic_numbers=_pin(self.atomic_numbers),
             system_index=_pin(self.system_index),
             total_charge=_pin(self.total_charge),
-            total_spin=_pin(self.total_spin),
+            multiplicity=_pin(self.multiplicity),
         )
 
 
@@ -100,7 +100,7 @@ def paired_sample_collate_fn(batch: list[tuple["Sample", "Sample"]]):
 
 
 def yield_molecules_collate_fn(batch: list[Sample]) -> Sample:
-    # Concatenate per-atom tensors and per-system charge/spin scalars from each sample
+    # Concatenate per-atom tensors and per-system charge/multiplicity scalars from each sample
     # into a single flat batch suitable for on-the-fly MACE embedding.
 
     atomic_positions = torch.cat([s.atomic_positions for s in batch])
@@ -117,8 +117,8 @@ def yield_molecules_collate_fn(batch: list[Sample]) -> Sample:
     total_charge = torch.stack(
         [torch.as_tensor(s.total_charge, dtype=atomic_positions.dtype) for s in batch]
     )
-    total_spin = torch.stack(
-        [torch.as_tensor(s.total_spin, dtype=atomic_positions.dtype) for s in batch]
+    multiplicity = torch.stack(
+        [torch.as_tensor(s.multiplicity, dtype=atomic_positions.dtype) for s in batch]
     )
 
     return Sample(
@@ -126,7 +126,7 @@ def yield_molecules_collate_fn(batch: list[Sample]) -> Sample:
         atomic_numbers=atomic_numbers,
         system_index=system_idx,
         total_charge=total_charge,
-        total_spin=total_spin,
+        multiplicity=multiplicity,
     )
 
 

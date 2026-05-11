@@ -118,7 +118,7 @@ class DatasetReconfigurator:
             positions = np.asarray(src.positions[a0:a1, :])
             atomic_numbers = np.asarray(src.atomic_numbers[a0:a1])
             total_charge = np.asarray(src.total_charge[s0:s1])
-            total_spin = np.asarray(src.total_spin[s0:s1])
+            multiplicity = np.asarray(src.multiplicity[s0:s1])
 
             chunk_ptr = src_ptr[s0 : s1 + 1]
             lens = np.diff(chunk_ptr)
@@ -159,7 +159,7 @@ class DatasetReconfigurator:
                 new_mol_ids,
                 new_iso_ids,
                 total_charge,
-                total_spin,
+                multiplicity,
                 system_targets,
                 system_masks,
                 atom_targets,

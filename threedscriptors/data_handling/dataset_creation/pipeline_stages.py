@@ -37,24 +37,24 @@ class PipelineStage(ABC):
 type Pipeline = list[PipelineStage]
 
 
-def _per_system_charge_spin(
+def _per_system_charge_multiplicity(
     input_batch: InputBatch, n_systems: int, dtype: torch.dtype
 ) -> tuple[torch.Tensor, torch.Tensor]:
     if input_batch.total_charge is None:
         charge = torch.zeros(n_systems, dtype=dtype)
     else:
         charge = torch.as_tensor(input_batch.total_charge, dtype=dtype)
-    if input_batch.total_spin is None:
-        spin = torch.zeros(n_systems, dtype=dtype)
+    if input_batch.multiplicity is None:
+        mult = torch.zeros(n_systems, dtype=dtype)
     else:
-        spin = torch.as_tensor(input_batch.total_spin, dtype=dtype)
+        mult = torch.as_tensor(input_batch.multiplicity, dtype=dtype)
 
-    if charge.shape[0] != n_systems or spin.shape[0] != n_systems:
+    if charge.shape[0] != n_systems or mult.shape[0] != n_systems:
         raise ValueError(
-            f"total_charge / total_spin must have length {n_systems}, "
-            f"got {charge.shape[0]} / {spin.shape[0]}"
+            f"total_charge / multiplicity must have length {n_systems}, "
+            f"got {charge.shape[0]} / {mult.shape[0]}"
         )
-    return charge, spin
+    return charge, mult
 
 
 def _stack_atoms(
@@ -86,7 +86,9 @@ class CopyDataStage(PipelineStage):
         )
 
         n_systems = len(input_batch.molecules)
-        charge, spin = _per_system_charge_spin(input_batch, n_systems, self._dtype)
+        charge, mult = _per_system_charge_multiplicity(
+            input_batch, n_systems, self._dtype
+        )
 
         output_batch = DataBatch(
             atomic_positions=positions,
@@ -95,7 +97,7 @@ class CopyDataStage(PipelineStage):
             smiles_data=input_batch.smiles,
             structure_ids=input_batch.structure_ids,
             total_charge=charge,
-            total_spin=spin,
+            multiplicity=mult,
             regression_data=input_batch.regression_data,
         )
 
@@ -174,9 +176,9 @@ class ConformerGenerationStage(PipelineStage):
             input_batch.total_charge = [
                 input_batch.total_charge[i] for i in parent_idx_for_regression
             ]
-        if input_batch.total_spin is not None and parent_idx_for_regression:
-            input_batch.total_spin = [
-                input_batch.total_spin[i] for i in parent_idx_for_regression
+        if input_batch.multiplicity is not None and parent_idx_for_regression:
+            input_batch.multiplicity = [
+                input_batch.multiplicity[i] for i in parent_idx_for_regression
             ]
 
         if (

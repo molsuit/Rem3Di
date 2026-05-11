@@ -63,7 +63,7 @@ class TmqmGenerator(MoleculeGenerator):
         batch_atoms: list[Atoms] = []
         batch_structure_ids: list[StructureID] = []
         batch_charges: list[float] = []
-        batch_spins: list[float] = []
+        batch_multiplicities: list[float] = []
         targets_buffer: list[float] = []
 
         regression_df = self.open_regression_labels()
@@ -77,7 +77,11 @@ class TmqmGenerator(MoleculeGenerator):
                 StructureID(structure_id=idx, molecule_id=idx, stereoisomer_id=idx)
             )
             batch_charges.append(float(atoms.info["q"]))
-            batch_spins.append(float(atoms.info["S"]))
+            # tmQM xyz headers carry total spin angular momentum S, but the
+            # downstream MACE / PolarMACE input expects spin multiplicity
+            # 2S+1. Store the multiplicity so a tmQM singlet maps to 1.0 (the
+            # MACE closed-shell default) rather than 0.0.
+            batch_multiplicities.append(2.0 * float(atoms.info["S"]) + 1.0)
 
             targets_buffer.append(regression_df[atoms.info["CSD_code"], :])
 
@@ -90,13 +94,13 @@ class TmqmGenerator(MoleculeGenerator):
                     smiles=None,
                     structure_ids=batch_structure_ids,
                     total_charge=batch_charges,
-                    total_spin=batch_spins,
+                    multiplicity=batch_multiplicities,
                     regression_data=RegressionData(
                         targets_system=regression_targets, mask_system=regression_masks
                     ),
                 )
                 batch_atoms, batch_structure_ids = [], []
-                batch_charges, batch_spins, targets_buffer = [], [], []
+                batch_charges, batch_multiplicities, targets_buffer = [], [], []
 
         if batch_atoms:
             regression_targets = np.array(targets_buffer)
@@ -107,7 +111,7 @@ class TmqmGenerator(MoleculeGenerator):
                 smiles=None,
                 structure_ids=batch_structure_ids,
                 total_charge=batch_charges,
-                total_spin=batch_spins,
+                multiplicity=batch_multiplicities,
                 regression_data=RegressionData(
                     targets_system=regression_targets, mask_system=regression_masks
                 ),

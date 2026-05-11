@@ -131,14 +131,17 @@ def _sample_to_simstate(sample: Sample, r_max: float) -> tuple[SimState, torch.T
     # mace.calculators.mace_torchsim.MaceTorchSimModel reads
     # total_charge/total_spin off the SimState (extras or attributes) and
     # builds the PolarMACE-specific fermi_level / external_field /
-    # rcell / volume / density_coefficients entries itself.
+    # rcell / volume / density_coefficients entries itself. The MACE key is
+    # named "total_spin" but actually consumes spin multiplicity (2S+1) — our
+    # internal field is named `multiplicity` to reflect that; we still write
+    # it under SystemExtras.TOTAL_SPIN because that is the key MACE expects.
     system_extras: dict[str, torch.Tensor] = {}
     if sample.total_charge is not None:
         system_extras[SystemExtras.TOTAL_CHARGE] = sample.total_charge.to(
             device=device, dtype=dtype
         ).reshape(n_systems)
-    if sample.total_spin is not None:
-        system_extras[SystemExtras.TOTAL_SPIN] = sample.total_spin.to(
+    if sample.multiplicity is not None:
+        system_extras[SystemExtras.TOTAL_SPIN] = sample.multiplicity.to(
             device=device, dtype=dtype
         ).reshape(n_systems)
 

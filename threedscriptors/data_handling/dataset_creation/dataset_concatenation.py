@@ -33,7 +33,7 @@ class DatasetConcatenation:
         P = src.positions[:]
         Z = src.atomic_numbers[:]
         Q = np.asarray(src.total_charge[:n_structs])
-        S_spin = np.asarray(src.total_spin[:n_structs])
+        S_mult = np.asarray(src.multiplicity[:n_structs])
 
         if ref_cfg.contains_smiles:
             if (
@@ -76,7 +76,7 @@ class DatasetConcatenation:
             new_mol_ids,
             new_iso_ids,
             Q,
-            S_spin,
+            S_mult,
             None,
             None,
             None,
@@ -228,7 +228,7 @@ class DatasetConcatenation:
                 P = np.asarray(src.positions[a0:a1, :])
                 Z = np.asarray(src.atomic_numbers[a0:a1])
                 Q = np.asarray(src.total_charge[s0:s1])
-                S_spin = np.asarray(src.total_spin[s0:s1])
+                S_mult = np.asarray(src.multiplicity[s0:s1])
 
                 # ptr cumulative ends for chunk
                 chunk_ptr = src_ptr[s0 : s1 + 1]
@@ -257,7 +257,7 @@ class DatasetConcatenation:
                     new_mol_ids,
                     new_iso_ids,
                     Q,
-                    S_spin,
+                    S_mult,
                     None,
                     None,
                     None,
@@ -391,7 +391,7 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
             P = src.positions[:]
             Z = src.atomic_numbers[:]
             Q = np.asarray(src.total_charge[:n_structs])
-            S_spin = np.asarray(src.total_spin[:n_structs])
+            S_mult = np.asarray(src.multiplicity[:n_structs])
 
             lengths = (src_ptr[1:] - src_ptr[:-1]).astype("i8", copy=False)
             C = lengths.cumsum(dtype="i8")
@@ -467,7 +467,7 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
                 new_mol_ids,
                 new_iso_ids,
                 Q,
-                S_spin,
+                S_mult,
                 system_targets,
                 system_masks,
                 None,

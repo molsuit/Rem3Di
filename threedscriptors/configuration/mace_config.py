@@ -24,15 +24,6 @@ class MaceConfig(BaseModel):
     compute_forces: bool = False
     compute_stress: bool = False
     enable_cueq: bool = True
-    # Forwarded to MaceTorchSimModel(compile_mode=...). None = eager (default).
-    # "default" enables torch.compile via inductor; "reduce-overhead" adds
-    # cudagraphs (requires shape-stable padded buffers, which the wrapper
-    # provides via its atom/edge/system budgets). The wrapper pads
-    # (n_atoms, n_edges, n_systems) to multiples of 64 with 1.25x headroom,
-    # so the inductor cache stays small after a couple of warmup recompiles.
-    mace_compile_mode: Literal["default", "reduce-overhead", "max-autotune"] | None = (
-        None
-    )
 
     _raw_model: Any | None = PrivateAttr(default=None)
     _irrep_signature: Irreps | None = PrivateAttr(default=None)
@@ -122,5 +113,4 @@ class MaceConfig(BaseModel):
             compute_forces=self.compute_forces,
             compute_stress=self.compute_stress,
             enable_cueq=self.enable_cueq,
-            compile_mode=self.mace_compile_mode,
         )

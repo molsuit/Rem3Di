@@ -31,13 +31,13 @@ def _sample_from_atoms(atoms: Atoms, device: torch.device) -> Sample:
     )
     system_index = torch.zeros(len(atoms), dtype=torch.long, device=device)
     total_charge = torch.zeros(1, dtype=torch.float64, device=device)
-    total_spin = torch.ones(1, dtype=torch.float64, device=device)
+    multiplicity = torch.ones(1, dtype=torch.float64, device=device)
     return Sample(
         atomic_positions=positions,
         atomic_numbers=atomic_numbers,
         system_index=system_index,
         total_charge=total_charge,
-        total_spin=total_spin,
+        multiplicity=multiplicity,
     )
 
 
@@ -168,7 +168,7 @@ def test_polar_run_mace_matches_ase(mol_name: str) -> None:
         ),
         system_index=torch.zeros(len(atoms), dtype=torch.long, device=device),
         total_charge=torch.zeros(1, dtype=torch.float32, device=device),
-        total_spin=torch.ones(1, dtype=torch.float32, device=device),
+        multiplicity=torch.ones(1, dtype=torch.float32, device=device),
     )
     input_irreps = str(get_mace_model_irrep_signature(torch_sim_model.model))
     emb_cfg = EmbeddingPreprocessConfig(

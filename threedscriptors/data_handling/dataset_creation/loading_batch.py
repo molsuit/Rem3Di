@@ -27,7 +27,7 @@ class InputBatch:
     molecules: list[Atoms] | None
     structure_ids: list[StructureID]
     total_charge: list[float] | None = None
-    total_spin: list[float] | None = None
+    multiplicity: list[float] | None = None
     regression_data: RegressionData | None = None
 
     def __len__(self):
@@ -44,5 +44,5 @@ class DataBatch:
     structure_ids: list[StructureID]
     smiles_data: list[SmilesData] | None
     total_charge: torch.Tensor
-    total_spin: torch.Tensor
+    multiplicity: torch.Tensor
     regression_data: RegressionData | None = None

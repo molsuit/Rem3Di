@@ -18,12 +18,12 @@ def atoms_getitem(ds: "TrainingMoleculeDataset", i: int) -> Sample:
     pos = torch.from_numpy(np.asarray(ds._pos[a0:a1]))
     num = torch.from_numpy(np.asarray(ds._atom_num[a0:a1]))
     charge = torch.tensor(float(ds._charge[i]))
-    spin = torch.tensor(float(ds._spin[i]))
+    mult = torch.tensor(float(ds._multiplicity[i]))
     return Sample(
         atomic_positions=pos,
         atomic_numbers=num,
         total_charge=charge,
-        total_spin=spin,
+        multiplicity=mult,
     )
 
 
@@ -39,7 +39,7 @@ class TrainingMoleculeDataset(Dataset):
         self._pos = None
         self._atom_num = None
         self._charge = None
-        self._spin = None
+        self._multiplicity = None
 
     def __getstate__(self):
         d = dict(self.__dict__)
@@ -49,7 +49,7 @@ class TrainingMoleculeDataset(Dataset):
             _pos=None,
             _atom_num=None,
             _charge=None,
-            _spin=None,
+            _multiplicity=None,
         )
         return d
 
@@ -67,7 +67,7 @@ class TrainingMoleculeDataset(Dataset):
             self._pos = np.array(g["positions"])
             self._atom_num = np.array(g["atomic_numbers"])
             self._charge = np.array(g["total_charge"])
-            self._spin = np.array(g["total_spin"])
+            self._multiplicity = np.array(g["multiplicity"])
             self._group = None
         else:
             store = DirectoryStore(self.root)
@@ -79,7 +79,7 @@ class TrainingMoleculeDataset(Dataset):
             self._pos = g["positions"]
             self._atom_num = g["atomic_numbers"]
             self._charge = g["total_charge"]
-            self._spin = g["total_spin"]
+            self._multiplicity = g["multiplicity"]
 
     def __len__(self):
         self._ensure_open()

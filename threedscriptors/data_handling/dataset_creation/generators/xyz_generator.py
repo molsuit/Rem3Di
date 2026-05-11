@@ -60,10 +60,18 @@ class XYZMoleculeGenerator(MoleculeGenerator):
             return 0.0
         return float(atoms.info[self.charge_key])
 
-    def _read_spin(self, atoms: Atoms) -> float:
+    def _read_multiplicity(self, atoms: Atoms) -> float:
+        """Return the spin multiplicity (2S+1) for one molecule.
+
+        ``spin_key`` names a field on ``atoms.info`` that holds the total spin
+        angular momentum S; this method converts S → 2S+1 so the value stored
+        on the dataset matches what MACE / PolarMACE consume. When no
+        ``spin_key`` is configured we fall back to multiplicity 1.0 (closed
+        shell), matching MACE's documented default.
+        """
         if self.spin_key is None:
-            return 0.0
-        return float(atoms.info[self.spin_key])
+            return 1.0
+        return 2.0 * float(atoms.info[self.spin_key]) + 1.0
 
     def __iter__(self):
         if isinstance(self.xyz_file, list):
@@ -74,7 +82,7 @@ class XYZMoleculeGenerator(MoleculeGenerator):
         batch_atoms: list[Atoms] = []
         batch_structure_ids: list[StructureID] = []
         batch_charges: list[float] = []
-        batch_spins: list[float] = []
+        batch_multiplicities: list[float] = []
 
         for idx, atoms in enumerate(suppl):
             if not self.filter_systems(atoms):
@@ -86,7 +94,7 @@ class XYZMoleculeGenerator(MoleculeGenerator):
                 StructureID(structure_id=idx, molecule_id=idx, stereoisomer_id=idx)
             )
             batch_charges.append(self._read_charge(atoms))
-            batch_spins.append(self._read_spin(atoms))
+            batch_multiplicities.append(self._read_multiplicity(atoms))
 
             if len(batch_atoms) >= self.loading_batch_size:
                 yield InputBatch(
@@ -94,10 +102,10 @@ class XYZMoleculeGenerator(MoleculeGenerator):
                     smiles=None,
                     structure_ids=batch_structure_ids,
                     total_charge=batch_charges,
-                    total_spin=batch_spins,
+                    multiplicity=batch_multiplicities,
                 )
                 batch_atoms, batch_structure_ids = [], []
-                batch_charges, batch_spins = [], []
+                batch_charges, batch_multiplicities = [], []
 
         # flush tail
         if batch_atoms:
@@ -106,7 +114,7 @@ class XYZMoleculeGenerator(MoleculeGenerator):
                 smiles=None,
                 structure_ids=batch_structure_ids,
                 total_charge=batch_charges,
-                total_spin=batch_spins,
+                multiplicity=batch_multiplicities,
             )
 
         total_seen = (

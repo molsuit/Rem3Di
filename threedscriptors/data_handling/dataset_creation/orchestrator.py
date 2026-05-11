@@ -81,7 +81,7 @@ class DatasetConstructionOrchestrator:
         positions = ensure_numpy_array(output_data.atomic_positions)
         atomic_numbers = ensure_numpy_array(output_data.atomic_numbers)
         total_charge = ensure_numpy_array(output_data.total_charge)
-        total_spin = ensure_numpy_array(output_data.total_spin)
+        multiplicity = ensure_numpy_array(output_data.multiplicity)
 
         # Ensure pointer length matches the number of structures in the batch.
         ptr = ensure_numpy_array(
@@ -121,7 +121,7 @@ class DatasetConstructionOrchestrator:
             molecule_ids,
             stereoisomer_ids,
             total_charge,
-            total_spin,
+            multiplicity,
             system_targets,
             system_masks,
             atom_target,
