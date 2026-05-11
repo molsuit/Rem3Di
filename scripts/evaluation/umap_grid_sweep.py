@@ -1,9 +1,10 @@
 """Sweep UMAP hyperparameters on cached descriptors and save scatter plots.
 
-Loads ``descriptors.pt`` from a model's ``analysis/`` directory, L2-normalizes (to
-match :class:`DescriptorAnalysisRunner`'s default), computes metal-center
-colors, then fits a grid of UMAP configurations and saves one PNG per
-combination plus the raw 2D coordinates.
+Loads ``descriptors.pt`` from a model's ``analysis/`` directory, L2-normalizes
+(to match :class:`DescriptorAnalysisRunner`'s default), then fits a grid of
+UMAP configurations. Each projection is rasterized with datashader using
+``count_cat`` aggregation and ``how='eq_hist'`` shading to mitigate
+overplotting saturation in dense regions.
 """
 
 from __future__ import annotations
@@ -13,21 +14,38 @@ import json
 import time
 from pathlib import Path
 
+import datashader as ds
+import datashader.transfer_functions as tf
 import matplotlib
 
 matplotlib.use("Agg")
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 import umap
+from ase.data import chemical_symbols
+from ase.data.colors import jmol_colors
 from matplotlib.lines import Line2D
 
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.evaluation.descriptor_analysis.tmqm_clustering_utils import (
-    get_atomic_num_colors,
-    get_block_colors,
     get_metal_center_type,
 )
+
+BLOCK_DEFINITIONS: dict[str, list[str]] = {
+    "3d": ["Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn"],
+    "4d": ["Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd"],
+    "5d": ["Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg"],
+    "f": ["La"],
+}
+BLOCK_COLOR_KEY: dict[str, str] = {
+    "3d": "#1f77b4",
+    "4d": "#2ca02c",
+    "5d": "#d62728",
+    "f": "#ff7f0e",
+}
 
 
 def _l2_normalize(x: np.ndarray) -> np.ndarray:
@@ -36,36 +54,108 @@ def _l2_normalize(x: np.ndarray) -> np.ndarray:
     return x / norms
 
 
-def _scatter(
+def _build_categories(
+    atomic_nums: list[int],
+) -> tuple[pd.Categorical, dict[str, str], pd.Categorical, dict[str, str]]:
+    symbols = [chemical_symbols[n] for n in atomic_nums]
+    unique_symbols = sorted(set(symbols), key=lambda s: chemical_symbols.index(s))
+    elem_color_key = {
+        s: mcolors.to_hex(jmol_colors[chemical_symbols.index(s)])
+        for s in unique_symbols
+    }
+    elem_categorical = pd.Categorical(symbols, categories=unique_symbols)
+
+    symbol_to_block = {sym: blk for blk, syms in BLOCK_DEFINITIONS.items() for sym in syms}
+    blocks = [symbol_to_block[s] for s in symbols]
+    present_blocks = [b for b in BLOCK_DEFINITIONS if b in set(blocks)]
+    block_color_key = {b: BLOCK_COLOR_KEY[b] for b in present_blocks}
+    block_categorical = pd.Categorical(blocks, categories=present_blocks)
+
+    return elem_categorical, elem_color_key, block_categorical, block_color_key
+
+
+def _datashade_categorical(
     coords: np.ndarray,
-    colors,
-    handles: list[Line2D] | None,
-    title: str,
-    out_path: Path,
-) -> None:
-    fig, ax = plt.subplots(figsize=(7, 7))
-    ax.scatter(
-        coords[:, 0],
-        coords[:, 1],
-        c=colors,
-        s=2,
-        alpha=0.6,
-        rasterized=True,
-        linewidths=0,
+    category: pd.Categorical,
+    color_key: dict[str, str],
+    *,
+    plot_size: int = 1400,
+    how: str = "eq_hist",
+    min_alpha: int = 120,
+    spread_px: int = 2,
+) -> tuple[np.ndarray, tuple[float, float, float, float]]:
+    df = pd.DataFrame(
+        {
+            "x": coords[:, 0].astype(np.float32),
+            "y": coords[:, 1].astype(np.float32),
+            "cat": category,
+        }
     )
+    x_min, x_max = float(df["x"].min()), float(df["x"].max())
+    y_min, y_max = float(df["y"].min()), float(df["y"].max())
+    pad_x = 0.03 * (x_max - x_min + 1e-9)
+    pad_y = 0.03 * (y_max - y_min + 1e-9)
+    canvas = ds.Canvas(
+        plot_width=plot_size,
+        plot_height=plot_size,
+        x_range=(x_min - pad_x, x_max + pad_x),
+        y_range=(y_min - pad_y, y_max + pad_y),
+    )
+    agg = canvas.points(df, "x", "y", ds.count_cat("cat"))
+    img = tf.shade(agg, color_key=color_key, how=how, min_alpha=min_alpha)
+    if spread_px > 0:
+        img = tf.spread(img, px=spread_px)
+    img = tf.set_background(img, "white")
+    return np.asarray(img.to_pil()), (
+        x_min - pad_x,
+        x_max + pad_x,
+        y_min - pad_y,
+        y_max + pad_y,
+    )
+
+
+def _save_plot(
+    rgba: np.ndarray,
+    extent: tuple[float, float, float, float],
+    title: str,
+    color_key: dict[str, str],
+    out_path: Path,
+    *,
+    show_legend: bool = True,
+) -> None:
+    h, w = rgba.shape[:2]
+    dpi = 160
+    fig_w = w / dpi + 2.0
+    fig_h = h / dpi + 1.2
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+    ax.imshow(rgba, extent=extent, origin="upper", interpolation="nearest")
     ax.set_xlabel("UMAP 1")
     ax.set_ylabel("UMAP 2")
     ax.set_title(title)
-    if handles is not None:
+    ax.set_aspect("auto")
+    if show_legend:
+        handles = [
+            Line2D(
+                [],
+                [],
+                marker="o",
+                linestyle="",
+                markersize=7,
+                markerfacecolor=hex_color,
+                markeredgecolor="none",
+                label=label,
+            )
+            for label, hex_color in color_key.items()
+        ]
         ax.legend(
             handles=handles,
             loc="center left",
             bbox_to_anchor=(1.02, 0.5),
             frameon=False,
-            fontsize=7,
+            fontsize=8,
         )
     fig.tight_layout()
-    fig.savefig(out_path, dpi=120, bbox_inches="tight")
+    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -118,6 +208,39 @@ def main() -> None:
         action="store_true",
         help="Also save the 2D projection as .npy alongside each PNG.",
     )
+    parser.add_argument(
+        "--reuse-cached-coords",
+        action="store_true",
+        help="If <output-dir>/<tag>.npy exists, load it and skip the UMAP fit. "
+        "Useful for re-rendering plots when only the plotting code changed.",
+    )
+    parser.add_argument(
+        "--plot-size",
+        type=int,
+        default=1400,
+        help="Datashader canvas size in pixels (square). Output figsize and DPI "
+        "are matched so the saved axes region maps ~1:1 to the canvas.",
+    )
+    parser.add_argument(
+        "--shade-how",
+        type=str,
+        default="cbrt",
+        choices=["eq_hist", "log", "linear", "cbrt"],
+        help="Datashader density transfer function. cbrt = cube-root, gentler "
+        "than eq_hist for many-category categorical data.",
+    )
+    parser.add_argument(
+        "--min-alpha",
+        type=int,
+        default=120,
+        help="Minimum per-point alpha (0-255). Higher = more solid sparse points.",
+    )
+    parser.add_argument(
+        "--spread-px",
+        type=int,
+        default=2,
+        help="Fixed-radius pixel spread (tf.spread). 0 disables.",
+    )
     args = parser.parse_args()
 
     n_neighbors_list = parse_grid(args.n_neighbors, int)
@@ -145,10 +268,9 @@ def main() -> None:
             f"{descriptors.shape[0]} rows."
         )
 
-    print("Computing metal-center colors")
+    print("Building categorical color maps")
     atomic_nums = get_metal_center_type(molecules)
-    element_colors, element_handles = get_atomic_num_colors(atomic_nums)
-    block_colors = get_block_colors(atomic_nums)
+    elem_cat, elem_key, block_cat, block_key = _build_categories(atomic_nums)
 
     grid = [
         (nn, md, m)
@@ -162,50 +284,83 @@ def main() -> None:
     for idx, (nn, md, metric) in enumerate(grid, start=1):
         tag = f"{metric}_nn{nn}_md{md:g}"
         print(f"[{idx}/{len(grid)}] {tag}")
+        cached_path = args.output_dir / f"{tag}.npy"
+        cached = args.reuse_cached_coords and cached_path.exists()
         t0 = time.perf_counter()
-        try:
-            reducer = umap.UMAP(
-                n_components=2,
-                n_neighbors=nn,
-                min_dist=md,
-                metric=metric,
-                random_state=args.random_state,
-            )
-            coords = reducer.fit_transform(descriptors)
-            coords = coords - coords.mean(axis=0, keepdims=True)
+        if cached:
+            coords = np.load(cached_path).astype(np.float64)
+            if coords.shape != (descriptors.shape[0], 2):
+                raise ValueError(
+                    f"Cached coords {cached_path} shape {coords.shape} does not "
+                    f"match descriptors row count {descriptors.shape[0]}"
+                )
             elapsed = time.perf_counter() - t0
-        except Exception as exc:  # noqa: BLE001
-            elapsed = time.perf_counter() - t0
-            print(f"  FAILED in {elapsed:.1f}s: {exc}")
-            log.append(
-                {
-                    "tag": tag,
-                    "n_neighbors": nn,
-                    "min_dist": md,
-                    "metric": metric,
-                    "elapsed_s": elapsed,
-                    "error": repr(exc),
-                }
-            )
-            continue
+            print(f"  loaded cached coords in {elapsed:.2f}s")
+        else:
+            try:
+                reducer = umap.UMAP(
+                    n_components=2,
+                    n_neighbors=nn,
+                    min_dist=md,
+                    metric=metric,
+                    random_state=args.random_state,
+                )
+                coords = reducer.fit_transform(descriptors)
+                coords = coords - coords.mean(axis=0, keepdims=True)
+                elapsed = time.perf_counter() - t0
+            except Exception as exc:
+                elapsed = time.perf_counter() - t0
+                print(f"  FAILED in {elapsed:.1f}s: {exc}")
+                log.append(
+                    {
+                        "tag": tag,
+                        "n_neighbors": nn,
+                        "min_dist": md,
+                        "metric": metric,
+                        "elapsed_s": elapsed,
+                        "error": repr(exc),
+                    }
+                )
+                continue
 
         title = f"UMAP n_neighbors={nn} min_dist={md} metric={metric}"
-        _scatter(
+
+        elem_rgba, elem_extent = _datashade_categorical(
             coords,
-            element_colors,
-            element_handles,
+            elem_cat,
+            elem_key,
+            plot_size=args.plot_size,
+            how=args.shade_how,
+            spread_px=args.spread_px,
+            min_alpha=args.min_alpha,
+        )
+        _save_plot(
+            elem_rgba,
+            elem_extent,
             f"{title} (metal element)",
+            elem_key,
             args.output_dir / f"{tag}_element.png",
         )
-        _scatter(
+
+        block_rgba, block_extent = _datashade_categorical(
             coords,
-            block_colors,
-            None,
+            block_cat,
+            block_key,
+            plot_size=args.plot_size,
+            how=args.shade_how,
+            spread_px=args.spread_px,
+            min_alpha=args.min_alpha,
+        )
+        _save_plot(
+            block_rgba,
+            block_extent,
             f"{title} (d-block)",
+            block_key,
             args.output_dir / f"{tag}_block.png",
         )
-        if args.save_coords:
-            np.save(args.output_dir / f"{tag}.npy", coords.astype(np.float32))
+
+        if args.save_coords and not cached:
+            np.save(cached_path, coords.astype(np.float32))
 
         log.append(
             {
@@ -214,6 +369,7 @@ def main() -> None:
                 "min_dist": md,
                 "metric": metric,
                 "elapsed_s": elapsed,
+                "cached": cached,
                 "x_range": [float(coords[:, 0].min()), float(coords[:, 0].max())],
                 "y_range": [float(coords[:, 1].min()), float(coords[:, 1].max())],
             }
