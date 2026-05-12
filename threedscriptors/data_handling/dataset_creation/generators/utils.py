@@ -3,7 +3,7 @@ from rdkit import Chem
 MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 
 
-def filter_mol(mol: Chem.Mol, require_3D=False, max_atoms: int | None = None) -> bool:  # noqa: C901
+def filter_mol(mol: Chem.Mol, require_3D=False, max_atoms: int | None = None) -> bool:
     """Return True if mol passes all filters, otherwise False."""
     try:
         if mol is None:
@@ -23,13 +23,8 @@ def filter_mol(mol: Chem.Mol, require_3D=False, max_atoms: int | None = None) ->
         ):
             return False
 
-        if Chem.GetFormalCharge(mol) != 0:
-            return False
-
         for a in mol.GetAtoms():
             if a.GetSymbol() not in MACE_OFF_ELEMENTS:
-                return False
-            if a.GetNumRadicalElectrons() != 0:
                 return False
             if a.GetIsotope() != 0:
                 return False

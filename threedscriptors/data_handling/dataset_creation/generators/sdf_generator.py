@@ -35,6 +35,8 @@ class SDFMoleculeGenerator(MoleculeGenerator):
         batch_atoms: list[Atoms] = []
         batch_smiles: list[SmilesData] = []
         batch_structure_ids: list[StructureID] = []
+        batch_charges: list[float] = []
+        batch_multiplicities: list[float] = []
 
         for idx, mol in enumerate(suppl):
             if filter_mol(mol, require_3D=True):
@@ -49,6 +51,16 @@ class SDFMoleculeGenerator(MoleculeGenerator):
 
                 atoms = Atoms(symbols=symbols, positions=pos, info={"smiles": smiles})
 
+                # SDF stores formal charges per atom (and optional M  RAD radical
+                # entries). Total charge is the molecule-level sum; spin
+                # multiplicity is 2S+1 where 2S equals the total number of
+                # unpaired electrons across atoms.
+                total_charge = float(Chem.GetFormalCharge(mol))
+                n_radical_electrons = sum(
+                    a.GetNumRadicalElectrons() for a in mol.GetAtoms()
+                )
+                multiplicity = float(n_radical_electrons + 1)
+
                 batch_atoms.append(atoms)
                 batch_smiles.append(
                     SmilesData(
@@ -60,14 +72,19 @@ class SDFMoleculeGenerator(MoleculeGenerator):
                 batch_structure_ids.append(
                     StructureID(structure_id=idx, molecule_id=idx, stereoisomer_id=idx)
                 )
+                batch_charges.append(total_charge)
+                batch_multiplicities.append(multiplicity)
 
                 if len(batch_atoms) >= self.loading_batch_size:
                     yield InputBatch(
                         molecules=batch_atoms,
                         smiles=batch_smiles,
                         structure_ids=batch_structure_ids,
+                        total_charge=batch_charges,
+                        multiplicity=batch_multiplicities,
                     )
                     batch_atoms, batch_smiles, batch_structure_ids = [], [], []
+                    batch_charges, batch_multiplicities = [], []
 
         # flush tail
         if batch_atoms:
@@ -75,4 +92,6 @@ class SDFMoleculeGenerator(MoleculeGenerator):
                 molecules=batch_atoms,
                 smiles=batch_smiles,
                 structure_ids=batch_structure_ids,
+                total_charge=batch_charges,
+                multiplicity=batch_multiplicities,
             )

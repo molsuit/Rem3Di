@@ -20,7 +20,9 @@ embedding_preprocess_config:
   #   {kind: mlp, output_dim: <int>, hidden_dimensions: [<int>, ...],
   #    activation_fn: SiLU, dropout: 0.0}
   invariant_projection_config:
-    kind: identity
+    kind: linear
+    output_dim: 256
+    bias: false
 encoder_config:
   N_layers: 4
   attention_layer_config:

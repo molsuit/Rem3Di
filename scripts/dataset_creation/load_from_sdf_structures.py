@@ -16,14 +16,14 @@ from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
 )
 
-sdf_files = "/scratch/public/snw30/dataset/pcqm/pcqm4m-v2-train.sdf"
+sdf_file = Path("/scratch/s5f/wedigs.s5f/raw_datasets/pcqm4m/pcqm4m-v2-train.sdf")
 
-mol_generator = SDFMoleculeGenerator(sdf_file=sdf_files, loading_batch_size=10000)
+mol_generator = SDFMoleculeGenerator(sdf_file=sdf_file, loading_batch_size=10000)
 
 copy_data = CopyDataStage(dtype=torch.float64)
 
 creation_config = DatasetCreationConfig(
-    path=Path("/scratch/public/snw30/dataset/pcqm/pcqm_only_structures_3_5_M"),
+    path=Path("/scratch/s5f/wedigs.s5f/datasets/pcqm4m/pcqm_only_structures_3_5_M"),
     N_structures=3_500_000,
 )
 dataset_config = DatasetConfig(
