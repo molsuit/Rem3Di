@@ -20,14 +20,13 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.colors as mcolors
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
 import umap
 from ase.data import chemical_symbols
 from ase.data.colors import jmol_colors
-from matplotlib.lines import Line2D
+from datashader.utils import export_image
 
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.evaluation.descriptor_analysis.tmqm_clustering_utils import (
@@ -82,8 +81,9 @@ def _datashade_categorical(
     plot_size: int = 1400,
     how: str = "eq_hist",
     min_alpha: int = 120,
-    spread_px: int = 2,
-) -> tuple[np.ndarray, tuple[float, float, float, float]]:
+    spread_threshold: float = 0.5,
+    spread_max_px: int = 4,
+) -> tf.Image:
     df = pd.DataFrame(
         {
             "x": coords[:, 0].astype(np.float32),
@@ -103,60 +103,19 @@ def _datashade_categorical(
     )
     agg = canvas.points(df, "x", "y", ds.count_cat("cat"))
     img = tf.shade(agg, color_key=color_key, how=how, min_alpha=min_alpha)
-    if spread_px > 0:
-        img = tf.spread(img, px=spread_px)
-    img = tf.set_background(img, "white")
-    return np.asarray(img.to_pil()), (
-        x_min - pad_x,
-        x_max + pad_x,
-        y_min - pad_y,
-        y_max + pad_y,
+    if spread_max_px > 0:
+        img = tf.dynspread(img, threshold=spread_threshold, max_px=spread_max_px)
+    return tf.set_background(img, "white")
+
+
+def _save_image(img: tf.Image, out_path: Path) -> None:
+    export_image(
+        img,
+        filename=out_path.stem,
+        fmt=".png",
+        background="white",
+        export_path=str(out_path.parent),
     )
-
-
-def _save_plot(
-    rgba: np.ndarray,
-    extent: tuple[float, float, float, float],
-    title: str,
-    color_key: dict[str, str],
-    out_path: Path,
-    *,
-    show_legend: bool = True,
-) -> None:
-    h, w = rgba.shape[:2]
-    dpi = 160
-    fig_w = w / dpi + 2.0
-    fig_h = h / dpi + 1.2
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
-    ax.imshow(rgba, extent=extent, origin="upper", interpolation="nearest")
-    ax.set_xlabel("UMAP 1")
-    ax.set_ylabel("UMAP 2")
-    ax.set_title(title)
-    ax.set_aspect("auto")
-    if show_legend:
-        handles = [
-            Line2D(
-                [],
-                [],
-                marker="o",
-                linestyle="",
-                markersize=7,
-                markerfacecolor=hex_color,
-                markeredgecolor="none",
-                label=label,
-            )
-            for label, hex_color in color_key.items()
-        ]
-        ax.legend(
-            handles=handles,
-            loc="center left",
-            bbox_to_anchor=(1.02, 0.5),
-            frameon=False,
-            fontsize=8,
-        )
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
 
 
 def parse_grid(arg: str, cast) -> list:
@@ -224,10 +183,9 @@ def main() -> None:
     parser.add_argument(
         "--shade-how",
         type=str,
-        default="cbrt",
+        default="eq_hist",
         choices=["eq_hist", "log", "linear", "cbrt"],
-        help="Datashader density transfer function. cbrt = cube-root, gentler "
-        "than eq_hist for many-category categorical data.",
+        help="Datashader density transfer function.",
     )
     parser.add_argument(
         "--min-alpha",
@@ -236,10 +194,17 @@ def main() -> None:
         help="Minimum per-point alpha (0-255). Higher = more solid sparse points.",
     )
     parser.add_argument(
-        "--spread-px",
+        "--spread-threshold",
+        type=float,
+        default=0.5,
+        help="tf.dynspread threshold: minimum fraction of adjacent non-empty pixels "
+        "before spreading stops growing.",
+    )
+    parser.add_argument(
+        "--spread-max-px",
         type=int,
-        default=2,
-        help="Fixed-radius pixel spread (tf.spread). 0 disables.",
+        default=4,
+        help="tf.dynspread max pixel radius. 0 disables spreading.",
     )
     args = parser.parse_args()
 
@@ -249,35 +214,51 @@ def main() -> None:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Loading descriptors from {args.descriptors_path}")
-    raw = torch.load(args.descriptors_path, map_location="cpu")
-    if isinstance(raw, torch.Tensor):
-        descriptors = raw.detach().cpu().numpy()
-    else:
-        descriptors = np.asarray(raw)
-    descriptors = descriptors.astype(np.float64, copy=False)
-    print(f"Descriptors shape: {descriptors.shape}")
-    descriptors = _l2_normalize(descriptors)
-
-    print(f"Loading dataset from {args.dataset_dir}")
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(args.dataset_dir)
-    molecules = dataset.get_all_molecules()
-    if len(molecules) != descriptors.shape[0]:
-        raise ValueError(
-            f"Dataset has {len(molecules)} molecules but descriptors has "
-            f"{descriptors.shape[0]} rows."
-        )
-
-    print("Building categorical color maps")
-    atomic_nums = get_metal_center_type(molecules)
-    elem_cat, elem_key, block_cat, block_key = _build_categories(atomic_nums)
-
     grid = [
         (nn, md, m)
         for m in metric_list
         for nn in n_neighbors_list
         for md in min_dist_list
     ]
+    all_cached = args.reuse_cached_coords and all(
+        (args.output_dir / f"{metric}_nn{nn}_md{md:g}.npy").exists()
+        for (nn, md, metric) in grid
+    )
+
+    atomic_nums_cache = args.output_dir / "metal_atomic_nums.npy"
+    descriptors: np.ndarray | None = None
+    atomic_nums: list[int]
+
+    if all_cached and atomic_nums_cache.exists():
+        print(f"All UMAP configs cached and {atomic_nums_cache.name} present; "
+              "skipping descriptors and dataset loading")
+        atomic_nums = np.load(atomic_nums_cache).tolist()
+    else:
+        print(f"Loading descriptors from {args.descriptors_path}")
+        raw = torch.load(args.descriptors_path, map_location="cpu")
+        if isinstance(raw, torch.Tensor):
+            descriptors = raw.detach().cpu().numpy()
+        else:
+            descriptors = np.asarray(raw)
+        descriptors = descriptors.astype(np.float64, copy=False)
+        print(f"Descriptors shape: {descriptors.shape}")
+        descriptors = _l2_normalize(descriptors)
+
+        print(f"Loading dataset from {args.dataset_dir}")
+        dataset = MoleculeDataset.open_existing_dataset_from_dir(args.dataset_dir)
+        molecules = dataset.get_all_molecules()
+        if len(molecules) != descriptors.shape[0]:
+            raise ValueError(
+                f"Dataset has {len(molecules)} molecules but descriptors has "
+                f"{descriptors.shape[0]} rows."
+            )
+        atomic_nums = get_metal_center_type(molecules)
+        np.save(atomic_nums_cache, np.asarray(atomic_nums, dtype=np.int32))
+
+    print("Building categorical color maps")
+    elem_cat, elem_key, block_cat, block_key = _build_categories(atomic_nums)
+    expected_rows = len(atomic_nums)
+
     print(f"Sweeping {len(grid)} UMAP configurations")
 
     log = []
@@ -289,14 +270,19 @@ def main() -> None:
         t0 = time.perf_counter()
         if cached:
             coords = np.load(cached_path).astype(np.float64)
-            if coords.shape != (descriptors.shape[0], 2):
+            if coords.shape != (expected_rows, 2):
                 raise ValueError(
                     f"Cached coords {cached_path} shape {coords.shape} does not "
-                    f"match descriptors row count {descriptors.shape[0]}"
+                    f"match expected row count {expected_rows}"
                 )
             elapsed = time.perf_counter() - t0
             print(f"  loaded cached coords in {elapsed:.2f}s")
         else:
+            if descriptors is None:
+                raise RuntimeError(
+                    "Descriptors were not loaded but a UMAP fit is required for "
+                    f"{tag}. This indicates a stale cache state."
+                )
             try:
                 reducer = umap.UMAP(
                     n_components=2,
@@ -323,41 +309,29 @@ def main() -> None:
                 )
                 continue
 
-        title = f"UMAP n_neighbors={nn} min_dist={md} metric={metric}"
-
-        elem_rgba, elem_extent = _datashade_categorical(
+        elem_img = _datashade_categorical(
             coords,
             elem_cat,
             elem_key,
             plot_size=args.plot_size,
             how=args.shade_how,
-            spread_px=args.spread_px,
+            spread_threshold=args.spread_threshold,
+            spread_max_px=args.spread_max_px,
             min_alpha=args.min_alpha,
         )
-        _save_plot(
-            elem_rgba,
-            elem_extent,
-            f"{title} (metal element)",
-            elem_key,
-            args.output_dir / f"{tag}_element.png",
-        )
+        _save_image(elem_img, args.output_dir / f"{tag}_element.png")
 
-        block_rgba, block_extent = _datashade_categorical(
+        block_img = _datashade_categorical(
             coords,
             block_cat,
             block_key,
             plot_size=args.plot_size,
             how=args.shade_how,
-            spread_px=args.spread_px,
+            spread_threshold=args.spread_threshold,
+            spread_max_px=args.spread_max_px,
             min_alpha=args.min_alpha,
         )
-        _save_plot(
-            block_rgba,
-            block_extent,
-            f"{title} (d-block)",
-            block_key,
-            args.output_dir / f"{tag}_block.png",
-        )
+        _save_image(block_img, args.output_dir / f"{tag}_block.png")
 
         if args.save_coords and not cached:
             np.save(cached_path, coords.astype(np.float32))

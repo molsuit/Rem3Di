@@ -1,32 +1,219 @@
+from __future__ import annotations
+
+import logging
 import os
+import time
 from collections import Counter
+from collections.abc import Iterable, Iterator
+from concurrent.futures import ProcessPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 from ase.data import chemical_symbols
 from ase.visualize.plot import plot_atoms
-from matplotlib.figure import Figure
-from rdkit import Chem
+from pydantic import BaseModel, ConfigDict, Field
+from rdkit import Chem, RDLogger
+from rdkit.Chem import Crippen, Descriptors
 from rdkit.Chem import rdMolDescriptors as rdMD
+from rdkit.Chem.Scaffolds import MurckoScaffold
 
+from threedscriptors.configuration.dataset_analysis_config import (
+    MoleculeDatasetAnalysisConfig,
+)
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.evaluation.results import FigureResult
+from threedscriptors.evaluation.results import (
+    EvalResult,
+    FigureResult,
+    PydanticResult,
+)
+
+log = logging.getLogger(__name__)
 
 
-def has_stereocenter(iso_smi):
-    # make sure stereochem is perceived from 2D/SMILES
+# ---------- Descriptor workers (top-level for pickle-ability) ----------
 
-    mol = Chem.MolFromSmiles(iso_smi)
+# Disable verbose RDKit warnings in workers.
+RDLogger.DisableLog("rdApp.*")
+
+
+class _MolDescriptors(BaseModel):
+    """RDKit-derived per-molecule descriptors."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mw: float | None = None
+    logp: float | None = None
+    tpsa: float | None = None
+    hbd: int | None = None
+    hba: int | None = None
+    rot_bonds: int | None = None
+    n_rings: int | None = None
+    n_aromatic_rings: int | None = None
+    n_heavy_atoms: int | None = None
+    has_stereo: bool | None = None
+    scaffold: str | None = None
+    valid: bool = True
+
+
+def _compute_descriptors(smiles: str) -> _MolDescriptors:
+    """Single-SMILES descriptor pass. Top-level so multiprocessing can pickle it."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return _MolDescriptors(valid=False)
     Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
-    n_assigned = rdMD.CalcNumAtomStereoCenters(mol)
-    return n_assigned > 0
+    try:
+        scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+    except Exception:
+        scaffold = ""
+    return _MolDescriptors(
+        mw=float(Descriptors.MolWt(mol)),
+        logp=float(Crippen.MolLogP(mol)),
+        tpsa=float(rdMD.CalcTPSA(mol)),
+        hbd=int(rdMD.CalcNumHBD(mol)),
+        hba=int(rdMD.CalcNumHBA(mol)),
+        rot_bonds=int(rdMD.CalcNumRotatableBonds(mol)),
+        n_rings=int(rdMD.CalcNumRings(mol)),
+        n_aromatic_rings=int(rdMD.CalcNumAromaticRings(mol)),
+        n_heavy_atoms=int(mol.GetNumHeavyAtoms()),
+        has_stereo=bool(rdMD.CalcNumAtomStereoCenters(mol) > 0),
+        scaffold=scaffold,
+        valid=True,
+    )
+
+
+# ---------- Summary stats Pydantic results ----------
+
+
+class DistributionStats(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    n: int
+    mean: float | None = None
+    std: float | None = None
+    min: float | None = None
+    p05: float | None = None
+    p25: float | None = None
+    p50: float | None = None
+    p75: float | None = None
+    p95: float | None = None
+    max: float | None = None
+
+    @classmethod
+    def from_array(cls, x: np.ndarray) -> DistributionStats:
+        x = np.asarray(x, dtype=np.float64).ravel()
+        x = x[np.isfinite(x)]
+        if x.size == 0:
+            return cls(n=0)
+        q = np.quantile(x, [0.05, 0.25, 0.5, 0.75, 0.95])
+        return cls(
+            n=int(x.size),
+            mean=float(x.mean()),
+            std=float(x.std()),
+            min=float(x.min()),
+            p05=float(q[0]),
+            p25=float(q[1]),
+            p50=float(q[2]),
+            p75=float(q[3]),
+            p95=float(q[4]),
+            max=float(x.max()),
+        )
+
+
+class TargetColumnStats(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    column_index: int
+    name: str | None = None
+    coverage: float
+    distribution: DistributionStats
+
+
+class BitBirchSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    n_input_smiles: int = 0
+    n_fingerprints: int = 0
+    n_clusters: int = 0
+    singleton_clusters: int = 0
+    largest_cluster: int = 0
+    cluster_size_distribution: DistributionStats = Field(
+        default_factory=lambda: DistributionStats(n=0)
+    )
+    notes: str | None = None
+
+
+class DatasetSummary(BaseModel):
+    """Top-level analysis summary serialized as a single yaml."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_structures: int
+    n_molecules: int
+    n_atoms: int
+    stereocentre_ratio: float | None = None
+    atoms_per_structure: DistributionStats
+    heteroatoms_per_structure: DistributionStats
+    atom_species_counts: dict[str, int]
+    charge_distribution: DistributionStats
+    multiplicity_distribution: DistributionStats
+    drug_likeness: dict[str, DistributionStats] = Field(default_factory=dict)
+    lipinski_ro5_pass_fraction: float | None = None
+    n_unique_scaffolds: int | None = None
+    top_scaffolds: list[tuple[str, int]] = Field(default_factory=list)
+    target_columns_system: list[TargetColumnStats] = Field(default_factory=list)
+    target_columns_atom: list[TargetColumnStats] = Field(default_factory=list)
+    bitbirch: BitBirchSummary | None = None
+    timings_seconds: dict[str, float] = Field(default_factory=dict)
+
+
+# ---------- Utilities ----------
+
+
+@contextmanager
+def _timed(name: str, timings: dict[str, float]) -> Iterator[None]:
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - t0
+        timings[name] = elapsed
+        log.info("%s took %.2fs", name, elapsed)
+
+
+def _iter_smiles(smiles_iter: Iterable[str]) -> Iterator[str]:
+    """Yield non-empty SMILES strings."""
+    for s in smiles_iter:
+        if s:
+            yield s
+
+
+def _bblean_available() -> bool:
+    try:
+        import bblean  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+# ---------- MoleculeDatasetAnalysis ----------
 
 
 class MoleculeDatasetAnalysis:
-    def __init__(self, dataset: MoleculeDataset):
+    def __init__(
+        self,
+        dataset: MoleculeDataset,
+        config: MoleculeDatasetAnalysisConfig | None = None,
+    ):
         self.dataset = dataset
-        self.results: list[FigureResult] = []
+        self.config = config or MoleculeDatasetAnalysisConfig()
+        self.results: list[EvalResult] = []
+        self._timings: dict[str, float] = {}
+        self._rng = np.random.default_rng(self.config.random_seed)
+
+    # ----- Atom-/structure-level metrics (chunked) -----
 
     def molecule_sizes(self) -> np.ndarray:
         """Per-structure atom counts streamed from ragged pointer."""
@@ -42,176 +229,500 @@ class MoleculeDatasetAnalysis:
         offset = 0
         while offset < n_struct:
             end = min(offset + chunk_len, n_struct)
-            # include sentinel at end for diff
             ptr_chunk = np.asarray(ptr[offset : end + 1], dtype=np.int64)
             sizes[offset:end] = np.diff(ptr_chunk)
             offset = end
-
         return sizes
 
-    def atom_species(self, chunk_len: int | None = None) -> np.ndarray:
+    def atom_species(self) -> dict[int, int]:
         n_atoms = self.dataset.N_atoms
         if n_atoms == 0:
             return {}
 
         atomic_numbers = self.dataset.atomic_numbers
-        if chunk_len is None:
-            chunk_len = getattr(atomic_numbers, "chunks", (n_atoms,))[0]
-        chunk_len = max(1, min(chunk_len, n_atoms))
+        chunk_len = max(
+            1,
+            min(self.config.atom_chunk_size, n_atoms),
+        )
 
         counts: Counter[int] = Counter()
         offset = 0
         while offset < n_atoms:
             end = min(offset + chunk_len, n_atoms)
             chunk = np.asarray(atomic_numbers[offset:end], dtype=np.int64)
-            if chunk.size == 0:
-                offset = end
-                continue
-            unique, chunk_counts = np.unique(chunk, return_counts=True)
-            counts.update(
-                dict(zip(unique.tolist(), chunk_counts.tolist(), strict=False))
-            )
+            if chunk.size:
+                unique, c = np.unique(chunk, return_counts=True)
+                counts.update(dict(zip(unique.tolist(), c.tolist(), strict=False)))
             offset = end
+        return {int(z): int(c) for z, c in counts.items()}
 
-        return {int(n): int(c) for n, c in counts.items()}
-
-    def get_heteroatom_count_per_molecule_distribution(self):
+    def heteroatom_counts_per_structure(self) -> np.ndarray:
+        """Stream atomic_numbers + ptr in chunks so we never hold all atoms in RAM."""
         n_struct = self.dataset.N_structures
         if n_struct == 0:
             return np.asarray([], dtype=np.int64)
 
-        ptr = np.asarray(self.dataset.ptr[: n_struct + 1], dtype=np.int64)
-        total_atoms = int(ptr[-1]) if ptr.size else 0
-        if total_atoms == 0:
-            return np.zeros(n_struct, dtype=np.int64)
+        ptr_arr = self.dataset.ptr
+        atomic_numbers = self.dataset.atomic_numbers
+        atom_chunk = max(1, self.config.atom_chunk_size)
 
-        atomic_numbers = np.asarray(self.dataset.atomic_numbers[:total_atoms])
-        hetero_mask = (atomic_numbers != 1) & (atomic_numbers != 6)
-        hetero_counts = np.add.reduceat(
-            hetero_mask.astype(np.int64, copy=False), ptr[:-1]
-        )
-        return hetero_counts
+        out = np.zeros(n_struct, dtype=np.int64)
+        struct_chunk = max(1, self.config.structure_chunk_size)
 
-    def get_fraction_molecules_with_stereocentres(self):
-        dataset = self.dataset
-        n_struct = dataset.N_structures
+        offset = 0
+        while offset < n_struct:
+            end = min(offset + struct_chunk, n_struct)
+            ptr_chunk = np.asarray(ptr_arr[offset : end + 1], dtype=np.int64)
+            atom_start = int(ptr_chunk[0])
+            atom_end = int(ptr_chunk[-1])
+            if atom_end == atom_start:
+                offset = end
+                continue
+            # Stream atoms for this structure chunk in atom_chunk slices,
+            # then combine with reduceat over the local ptr.
+            local_ptr = ptr_chunk - atom_start
+            mask = np.empty(atom_end - atom_start, dtype=np.int8)
+            sub = 0
+            while sub < atom_end - atom_start:
+                sub_end = min(sub + atom_chunk, atom_end - atom_start)
+                a_chunk = np.asarray(
+                    atomic_numbers[atom_start + sub : atom_start + sub_end]
+                )
+                mask[sub:sub_end] = ((a_chunk != 1) & (a_chunk != 6)).astype(np.int8)
+                sub = sub_end
+            out[offset:end] = np.add.reduceat(mask.astype(np.int64), local_ptr[:-1])
+            offset = end
+        return out
 
-        if dataset.isomeric_smiles is None or n_struct == 0:
-            return None
+    # ----- SMILES / RDKit metrics -----
 
-        molecules_with_stereo = 0
-        for smi in dataset.isomeric_smiles:
-            if has_stereocenter(smi):
-                molecules_with_stereo += 1
+    def _unique_smiles(self) -> list[str]:
+        """Return deduplicated isomeric SMILES (one per molecule_id)."""
+        store = self.dataset.isomeric_smiles
+        if store is None:
+            return []
+        smiles = list(_iter_smiles(store))
+        # Dedup while preserving order.
+        seen: set[str] = set()
+        unique: list[str] = []
+        for s in smiles:
+            if s not in seen:
+                seen.add(s)
+                unique.append(s)
+        return unique
 
-        return molecules_with_stereo / n_struct
+    def _sample_smiles(self, smiles: list[str]) -> list[str]:
+        cap = self.config.rdkit_subsample
+        if cap is None or len(smiles) <= cap:
+            return smiles
+        idx = self._rng.choice(len(smiles), size=cap, replace=False)
+        idx.sort()
+        return [smiles[int(i)] for i in idx]
 
-    def plot_heteroatom_distribution(self):
-        hetero_counts = self.get_heteroatom_count_per_molecule_distribution()
-        hetero_counts = np.asarray(hetero_counts, dtype=np.int64).ravel()
+    def compute_rdkit_descriptors(
+        self, smiles: list[str]
+    ) -> list[_MolDescriptors]:
+        if not smiles:
+            return []
+        workers = max(1, self.config.rdkit_n_workers)
+        if workers == 1 or len(smiles) < 1000:
+            return [_compute_descriptors(s) for s in smiles]
+        # chunksize tuned to keep IPC overhead low for many small jobs
+        chunksize = max(64, len(smiles) // (workers * 32) or 1)
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            return list(pool.map(_compute_descriptors, smiles, chunksize=chunksize))
 
-        fig, ax = plt.subplots(figsize=(12, 4))
-        if hetero_counts.size > 0:
-            unique_counts, frequencies = np.unique(hetero_counts, return_counts=True)
-            ax.bar(
-                unique_counts, frequencies, align="center", width=0.8, color="#55a868"
-            )
-            ax.set_xlabel("Heteroatoms per molecule")
-            ax.set_ylabel("Number of molecules")
-            ax.set_title("Distribution of heteroatoms per molecule")
-            ax.set_xticks(unique_counts)
-            ax.grid(axis="y", alpha=0.2, linewidth=0.5)
-        else:
-            ax.text(0.5, 0.5, "No molecules available", ha="center", va="center")
-            ax.axis("off")
+    # ----- Plots -----
 
-        fig.tight_layout()
-        result = FigureResult(figure=fig, file_name="heteroatom_distribution.png")
-        self.results.append(result)
-        return result
-
-    def plot_atom_species_histogram(self):
-        atom_species = self.atom_species(chunk_len=100_000)
-
-        if not atom_species:
-            return
-
-        # Sort species by descending frequency for readability
-        sorted_species = sorted(
-            atom_species.items(), key=lambda item: item[1], reverse=True
-        )
-        labels = [
-            chemical_symbols[atomic_number] for atomic_number, _ in sorted_species
-        ]
-        counts = [count for _, count in sorted_species]
-
+    def plot_molecule_size_distribution(self, sizes: np.ndarray) -> None:
         fig, ax = plt.subplots()
-        ax.bar(labels, counts)
+        if sizes.size:
+            ax.hist(sizes, bins="auto", color="#4c72b0")
+        ax.set_xlabel("Atoms per structure")
+        ax.set_ylabel("Frequency")
+        ax.set_title("Molecule size distribution")
+        fig.tight_layout()
+        self.results.append(
+            FigureResult(figure=fig, file_name=Path("molecule_size_distribution.png"))
+        )
+
+    def plot_atom_species_histogram(self, species_counts: dict[int, int]) -> None:
+        if not species_counts:
+            return
+        items = sorted(species_counts.items(), key=lambda kv: kv[1], reverse=True)
+        labels = [chemical_symbols[z] for z, _ in items]
+        counts = [c for _, c in items]
+        fig, ax = plt.subplots()
+        ax.bar(labels, counts, color="#dd8452")
         ax.set_xlabel("Atomic species")
         ax.set_ylabel("Frequency")
+        ax.set_yscale("log")
         ax.set_title("Atom species frequency")
         fig.tight_layout()
-
         self.results.append(
-            FigureResult(figure=fig, file_name="atom_species_histogram.png")
+            FigureResult(figure=fig, file_name=Path("atom_species_histogram.png"))
         )
 
-    def plot_molecule_size_distribution(self) -> Figure:
-        sizes = self.molecule_sizes()
-        fig = plt.figure()
-        plt.hist(sizes, bins="auto")
-        plt.xlabel("Atoms per structure")
-        plt.ylabel("Frequency")
-
+    def plot_heteroatom_distribution(self, hetero_counts: np.ndarray) -> None:
+        fig, ax = plt.subplots(figsize=(12, 4))
+        if hetero_counts.size:
+            unique, freq = np.unique(hetero_counts, return_counts=True)
+            ax.bar(unique, freq, align="center", width=0.8, color="#55a868")
+            ax.set_xlabel("Heteroatoms per structure")
+            ax.set_ylabel("Number of structures")
+            ax.set_title("Heteroatom distribution")
+            ax.grid(axis="y", alpha=0.2, linewidth=0.5)
+        else:
+            ax.text(0.5, 0.5, "No structures available", ha="center", va="center")
+            ax.axis("off")
+        fig.tight_layout()
         self.results.append(
-            FigureResult(figure=fig, file_name="molecule_size_distribution.png")
+            FigureResult(figure=fig, file_name=Path("heteroatom_distribution.png"))
         )
 
-    def plot_regression_task_distribution(self):
-        pass
+    def plot_charge_multiplicity(self) -> None:
+        n_struct = self.dataset.N_structures
+        if n_struct == 0:
+            return
+        charges = np.asarray(self.dataset.total_charge[:n_struct])
+        mults = np.asarray(self.dataset.multiplicity[:n_struct])
 
-    def plot_relaxed_atoms(self, N_max_molecules: int | None = None):
-        molecules = self.dataset.get_all_molecules(N_molecules=N_max_molecules)
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+        if charges.size:
+            u, c = np.unique(np.round(charges).astype(np.int64), return_counts=True)
+            axes[0].bar(u, c, color="#4c72b0")
+        axes[0].set_xlabel("Total charge")
+        axes[0].set_ylabel("Frequency")
+        axes[0].set_title("Charge distribution")
+
+        if mults.size:
+            u, c = np.unique(np.round(mults).astype(np.int64), return_counts=True)
+            axes[1].bar(u, c, color="#c44e52")
+        axes[1].set_xlabel("Multiplicity")
+        axes[1].set_ylabel("Frequency")
+        axes[1].set_title("Multiplicity distribution")
+        fig.tight_layout()
+        self.results.append(
+            FigureResult(figure=fig, file_name=Path("charge_multiplicity.png"))
+        )
+
+    def plot_descriptor_distributions(
+        self, descriptors: list[_MolDescriptors]
+    ) -> dict[str, DistributionStats]:
+        """Plot drug-likeness panels and return per-descriptor stats."""
+        if not descriptors:
+            return {}
+        fields = [
+            ("mw", "Molecular weight (Da)"),
+            ("logp", "LogP"),
+            ("tpsa", "TPSA (Å²)"),
+            ("hbd", "H-bond donors"),
+            ("hba", "H-bond acceptors"),
+            ("rot_bonds", "Rotatable bonds"),
+            ("n_rings", "Ring count"),
+            ("n_aromatic_rings", "Aromatic rings"),
+            ("n_heavy_atoms", "Heavy atoms"),
+        ]
+
+        stats: dict[str, DistributionStats] = {}
+        fig, axes = plt.subplots(3, 3, figsize=(14, 10))
+        for ax, (attr, label) in zip(axes.ravel(), fields, strict=False):
+            values = np.asarray(
+                [getattr(d, attr) for d in descriptors if getattr(d, attr) is not None],
+                dtype=np.float64,
+            )
+            stats[attr] = DistributionStats.from_array(values)
+            if values.size:
+                ax.hist(values, bins=50, color="#4c72b0")
+            ax.set_title(label)
+            ax.set_ylabel("Count")
+        fig.suptitle(f"Drug-likeness descriptors (n={len(descriptors)} unique mols)")
+        fig.tight_layout()
+        self.results.append(
+            FigureResult(figure=fig, file_name=Path("drug_likeness_distributions.png"))
+        )
+        return stats
+
+    def plot_relaxed_atoms(self, n_max: int | None = None) -> None:
+        n_max = n_max or self.config.max_example_molecules
+        molecules = self.dataset.get_all_molecules(N_molecules=n_max)
         if not molecules:
             return
-
-        N_horizontal = 3
-        N_vertical = (len(molecules) + N_horizontal - 1) // N_horizontal
-
-        fig, axarr = plt.subplots(N_vertical, N_horizontal, squeeze=False)
-        fig.set_figheight(4 * N_vertical)
-        fig.set_figwidth(4 * N_horizontal)
-
+        n_horizontal = 3
+        n_vertical = (len(molecules) + n_horizontal - 1) // n_horizontal
+        fig, axarr = plt.subplots(n_vertical, n_horizontal, squeeze=False)
+        fig.set_figheight(4 * n_vertical)
+        fig.set_figwidth(4 * n_horizontal)
         for i, mol in enumerate(molecules):
-            plot_atoms(mol, axarr[i // N_horizontal, i % N_horizontal])
-        for j in range(len(molecules), N_vertical * N_horizontal):
-            fig.delaxes(axarr[j // N_horizontal, j % N_horizontal])
+            plot_atoms(mol, axarr[i // n_horizontal, i % n_horizontal])
+        for j in range(len(molecules), n_vertical * n_horizontal):
+            fig.delaxes(axarr[j // n_horizontal, j % n_horizontal])
+        self.results.append(FigureResult(figure=fig, file_name=Path("example_molecules.png")))
 
-        self.results.append(FigureResult(figure=fig, file_name="example_molecules.png"))
+    # ----- Targets EDA -----
 
-    def print_dataset_properties(self):
-        n_molecules = self.dataset.N_molecules
-        n_structures = self.dataset.N_structures
+    def _target_column_stats(
+        self,
+        targets: np.ndarray,
+        masks: np.ndarray | None,
+        prefix: str,
+    ) -> list[TargetColumnStats]:
+        if targets is None or targets.shape[0] == 0:
+            return []
+        n_rows, n_cols = targets.shape
+        if masks is None:
+            masks = np.ones_like(targets, dtype=bool)
+        else:
+            masks = masks.astype(bool, copy=False)
+
+        out: list[TargetColumnStats] = []
+        for j in range(n_cols):
+            col = targets[:, j]
+            mask_col = masks[:, j]
+            valid = col[mask_col]
+            coverage = float(mask_col.sum()) / float(n_rows) if n_rows else 0.0
+            out.append(
+                TargetColumnStats(
+                    column_index=j,
+                    name=f"{prefix}_{j}",
+                    coverage=coverage,
+                    distribution=DistributionStats.from_array(valid),
+                )
+            )
+        return out
+
+    def target_stats(self) -> tuple[list[TargetColumnStats], list[TargetColumnStats]]:
+        n_struct = self.dataset.N_structures
         n_atoms = self.dataset.N_atoms
+        sys_stats: list[TargetColumnStats] = []
+        atom_stats: list[TargetColumnStats] = []
+        if self.dataset.targets_system is not None and n_struct:
+            t = np.asarray(self.dataset.targets_system[:n_struct])
+            m = (
+                np.asarray(self.dataset.mask_system[:n_struct])
+                if self.dataset.mask_system is not None
+                else None
+            )
+            sys_stats = self._target_column_stats(t, m, "sys")
+        if self.dataset.targets_atom is not None and n_atoms:
+            t = np.asarray(self.dataset.targets_atom[:n_atoms])
+            m = (
+                np.asarray(self.dataset.mask_atom[:n_atoms])
+                if self.dataset.mask_atom is not None
+                else None
+            )
+            atom_stats = self._target_column_stats(t, m, "atom")
+        return sys_stats, atom_stats
 
-        stereocentre_ratio = self.get_fraction_molecules_with_stereocentres()
+    # ----- BitBIRCH clustering -----
 
-        print(
-            f"N_molecules={n_molecules}, N_structures={n_structures}, N_atoms={n_atoms}, stereocentre_ratio={stereocentre_ratio}"
+    def run_bitbirch(self, smiles: list[str]) -> BitBirchSummary:
+        cfg = self.config.bitbirch
+        if not cfg.enabled:
+            return BitBirchSummary(enabled=False, notes="disabled by config")
+        if not smiles:
+            return BitBirchSummary(enabled=True, notes="no SMILES available")
+        if not _bblean_available():
+            return BitBirchSummary(
+                enabled=True,
+                notes="bblean not installed (install with `uv sync --extra cluster`)",
+            )
+
+        import bblean  # local import keeps it optional
+
+        if cfg.max_molecules is not None and len(smiles) > cfg.max_molecules:
+            idx = self._rng.choice(len(smiles), size=cfg.max_molecules, replace=False)
+            idx.sort()
+            smi_subset = [smiles[int(i)] for i in idx]
+        else:
+            smi_subset = smiles
+
+        log.info(
+            "BitBIRCH: fingerprinting %d SMILES (kind=%s, n_features=%d)",
+            len(smi_subset),
+            cfg.fingerprint_kind,
+            cfg.n_features,
+        )
+        result = bblean.fps_from_smiles(
+            smi_subset,
+            kind=cfg.fingerprint_kind,
+            n_features=cfg.n_features,
+            pack=True,
+            skip_invalid=True,
+        )
+        # `skip_invalid=True` returns a tuple (fps, indices); else just fps.
+        if isinstance(result, tuple):
+            fps, _kept_idx = result
+            n_fps = int(fps.shape[0]) if fps is not None else 0
+            log.info(
+                "BitBIRCH: %d/%d SMILES survived fingerprinting", n_fps, len(smi_subset)
+            )
+        else:
+            fps = result
+            n_fps = int(fps.shape[0]) if fps is not None else 0
+
+        if fps is None or n_fps == 0:
+            return BitBirchSummary(
+                enabled=True,
+                n_input_smiles=len(smi_subset),
+                notes="no valid fingerprints produced",
+            )
+
+        tree = bblean.BitBirch(
+            threshold=cfg.threshold,
+            branching_factor=cfg.branching_factor,
+            merge_criterion=cfg.merge_criterion,
+            tolerance=cfg.tolerance,
+        )
+        tree.fit(fps)
+        clusters = tree.get_cluster_mol_ids()
+        sizes = np.asarray([len(c) for c in clusters], dtype=np.int64)
+
+        # Cluster-size histogram figure
+        fig, ax = plt.subplots(figsize=(8, 4))
+        if sizes.size:
+            ax.hist(sizes, bins=min(50, max(5, int(np.sqrt(sizes.size)))), color="#8172b3")
+            ax.set_yscale("log")
+        ax.set_xlabel("Molecules per cluster")
+        ax.set_ylabel("Cluster count (log)")
+        ax.set_title(
+            f"BitBIRCH clusters (n={sizes.size}, threshold={cfg.threshold:.2f},"
+            f" kind={cfg.fingerprint_kind})"
+        )
+        fig.tight_layout()
+        self.results.append(
+            FigureResult(figure=fig, file_name=Path("bitbirch_cluster_sizes.png"))
         )
 
-    def run(self):
-        self.print_dataset_properties()
-        self.plot_molecule_size_distribution()
-        self.plot_atom_species_histogram()
-        self.plot_relaxed_atoms(100)
-        self.plot_heteroatom_distribution()
+        return BitBirchSummary(
+            enabled=True,
+            n_input_smiles=len(smi_subset),
+            n_fingerprints=n_fps,
+            n_clusters=int(sizes.size),
+            singleton_clusters=int((sizes == 1).sum()),
+            largest_cluster=int(sizes.max()) if sizes.size else 0,
+            cluster_size_distribution=DistributionStats.from_array(sizes),
+        )
 
-    def output(self, output_dir: Path):
+    # ----- Orchestration -----
+
+    def run(self) -> DatasetSummary:
+        timings = self._timings
+        ds = self.dataset
+
+        n_struct = ds.N_structures
+        n_mols = ds.N_molecules
+        n_atoms = ds.N_atoms
+        log.info(
+            "Analysing dataset: N_structures=%d, N_molecules=%d, N_atoms=%d",
+            n_struct,
+            n_mols,
+            n_atoms,
+        )
+
+        with _timed("molecule_sizes", timings):
+            sizes = self.molecule_sizes()
+        self.plot_molecule_size_distribution(sizes)
+
+        with _timed("atom_species", timings):
+            species_counts = self.atom_species()
+        self.plot_atom_species_histogram(species_counts)
+
+        with _timed("heteroatom_counts", timings):
+            hetero = self.heteroatom_counts_per_structure()
+        self.plot_heteroatom_distribution(hetero)
+
+        with _timed("charge_multiplicity", timings):
+            self.plot_charge_multiplicity()
+
+        with _timed("example_molecules", timings):
+            self.plot_relaxed_atoms()
+
+        # SMILES-derived metrics
+        descriptors: list[_MolDescriptors] = []
+        drug_stats: dict[str, DistributionStats] = {}
+        stereo_ratio: float | None = None
+        top_scaffolds: list[tuple[str, int]] = []
+        n_unique_scaffolds: int | None = None
+        ro5_pass_fraction: float | None = None
+        bb_summary: BitBirchSummary | None = None
+
+        unique_smiles: list[str] = []
+        if ds.isomeric_smiles is not None:
+            with _timed("collect_unique_smiles", timings):
+                unique_smiles = self._unique_smiles()
+            log.info("Collected %d unique SMILES", len(unique_smiles))
+
+        if unique_smiles:
+            with _timed("rdkit_descriptors", timings):
+                sample = self._sample_smiles(unique_smiles)
+                descriptors = self.compute_rdkit_descriptors(sample)
+            valid = [d for d in descriptors if d.valid]
+            if valid:
+                drug_stats = self.plot_descriptor_distributions(valid)
+                stereo_ratio = float(
+                    sum(1 for d in valid if d.has_stereo) / len(valid)
+                )
+                scaffold_counter: Counter[str] = Counter(
+                    d.scaffold for d in valid if d.scaffold
+                )
+                n_unique_scaffolds = len(scaffold_counter)
+                top_scaffolds = scaffold_counter.most_common(self.config.top_n_scaffolds)
+                ro5_pass_fraction = float(
+                    sum(
+                        1
+                        for d in valid
+                        if (d.mw or 0) <= 500
+                        and (d.logp or 0) <= 5
+                        and (d.hbd or 0) <= 5
+                        and (d.hba or 0) <= 10
+                    )
+                    / len(valid)
+                )
+
+            with _timed("bitbirch", timings):
+                bb_summary = self.run_bitbirch(unique_smiles)
+
+        with _timed("targets", timings):
+            sys_stats, atom_stats = self.target_stats()
+
+        charges = (
+            np.asarray(ds.total_charge[:n_struct]) if n_struct else np.asarray([])
+        )
+        mults = (
+            np.asarray(ds.multiplicity[:n_struct]) if n_struct else np.asarray([])
+        )
+
+        summary = DatasetSummary(
+            n_structures=n_struct,
+            n_molecules=n_mols,
+            n_atoms=n_atoms,
+            stereocentre_ratio=stereo_ratio,
+            atoms_per_structure=DistributionStats.from_array(sizes),
+            heteroatoms_per_structure=DistributionStats.from_array(hetero),
+            atom_species_counts={
+                chemical_symbols[z]: c for z, c in species_counts.items()
+            },
+            charge_distribution=DistributionStats.from_array(charges),
+            multiplicity_distribution=DistributionStats.from_array(mults),
+            drug_likeness=drug_stats,
+            lipinski_ro5_pass_fraction=ro5_pass_fraction,
+            n_unique_scaffolds=n_unique_scaffolds,
+            top_scaffolds=top_scaffolds,
+            target_columns_system=sys_stats,
+            target_columns_atom=atom_stats,
+            bitbirch=bb_summary,
+            timings_seconds=dict(timings),
+        )
+
+        self.results.append(
+            PydanticResult(file_name=Path("dataset_summary.yaml"), obj=summary)
+        )
+        return summary
+
+    def output(self, output_dir: Path | str) -> None:
         if isinstance(output_dir, str):
             output_dir = Path(output_dir)
-
         os.makedirs(output_dir, exist_ok=True)
-
         for result in self.results:
             result.serialize_to(output_dir)
