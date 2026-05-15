@@ -3,6 +3,24 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class BitBirchUmapConfig(BaseModel):
+    """UMAP projection of BitBIRCH fingerprints, colored by cluster id."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    sample_size: int | None = 200_000
+    """Cap on fingerprints fed to UMAP. UMAP scales poorly past a few 100k."""
+    n_neighbors: int = Field(50, ge=2)
+    min_dist: float = Field(0.1, ge=0.0, le=1.0)
+    metric: Literal["jaccard", "hamming", "euclidean", "cosine"] = "jaccard"
+    random_state: int = 42
+    top_clusters_colored: int = Field(20, ge=1)
+    """How many largest clusters get distinct colors. Smaller ones go grey."""
+    plot_size: int = 1600
+    """Datashader canvas size (square pixels)."""
+
+
 class BitBirchConfig(BaseModel):
     """BitBIRCH clustering configuration (used when bblean is installed)."""
 
@@ -17,6 +35,7 @@ class BitBirchConfig(BaseModel):
     tolerance: float | None = None
     max_molecules: int | None = 1_000_000
     """Cap on number of unique SMILES fed to BitBIRCH. None = use all."""
+    umap: BitBirchUmapConfig = Field(default_factory=BitBirchUmapConfig)
 
 
 class MoleculeDatasetAnalysisConfig(BaseModel):

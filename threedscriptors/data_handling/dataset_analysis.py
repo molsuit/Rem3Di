@@ -29,6 +29,46 @@ from threedscriptors.evaluation.results import (
     PydanticResult,
 )
 
+
+class _NpzResult(EvalResult):
+    """Serializable bundle of numpy arrays written as a single .npz."""
+
+    result_type: str = "npz"
+    arrays: dict[str, np.ndarray]
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+
+    def serialize_to(self, directory: Path) -> dict:
+        output_path = directory / self.file_name
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Build positional kwarg dict; np.savez_compressed accepts **kwds: ArrayLike.
+        arrays: dict[str, np.ndarray] = dict(self.arrays)
+        np.savez_compressed(str(output_path), **arrays)  # ty: ignore[invalid-argument-type]
+        return {"path": str(output_path)}
+
+
+class _DatashaderImageResult(EvalResult):
+    """Datashader tf.Image saved as PNG."""
+
+    result_type: str = "datashader_image"
+    image: object  # tf.Image; kept loose to avoid datashader import at module load
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+
+    def serialize_to(self, directory: Path) -> dict:
+        from datashader.utils import export_image
+
+        output_path = directory / self.file_name
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        export_image(
+            self.image,
+            filename=output_path.stem,
+            fmt=".png",
+            background="white",
+            export_path=str(output_path.parent),
+        )
+        return {"path": str(output_path)}
+
 log = logging.getLogger(__name__)
 
 
@@ -130,6 +170,19 @@ class TargetColumnStats(BaseModel):
     distribution: DistributionStats
 
 
+class BitBirchUmapSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    n_points: int = 0
+    n_neighbors: int = 0
+    min_dist: float = 0.0
+    metric: str = ""
+    top_clusters_colored: int = 0
+    fit_seconds: float | None = None
+    notes: str | None = None
+
+
 class BitBirchSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -142,6 +195,7 @@ class BitBirchSummary(BaseModel):
     cluster_size_distribution: DistributionStats = Field(
         default_factory=lambda: DistributionStats(n=0)
     )
+    umap: BitBirchUmapSummary | None = None
     notes: str | None = None
 
 
@@ -578,6 +632,11 @@ class MoleculeDatasetAnalysis:
         clusters = tree.get_cluster_mol_ids()
         sizes = np.asarray([len(c) for c in clusters], dtype=np.int64)
 
+        # row -> cluster id assignment (row indices into the fps array)
+        row_cluster = np.full(n_fps, -1, dtype=np.int64)
+        for cid, rows in enumerate(clusters):
+            row_cluster[np.asarray(rows, dtype=np.int64)] = cid
+
         # Cluster-size histogram figure
         fig, ax = plt.subplots(figsize=(8, 4))
         if sizes.size:
@@ -594,6 +653,8 @@ class MoleculeDatasetAnalysis:
             FigureResult(figure=fig, file_name=Path("bitbirch_cluster_sizes.png"))
         )
 
+        umap_summary = self._bitbirch_umap(fps, row_cluster, sizes)
+
         return BitBirchSummary(
             enabled=True,
             n_input_smiles=len(smi_subset),
@@ -602,6 +663,179 @@ class MoleculeDatasetAnalysis:
             singleton_clusters=int((sizes == 1).sum()),
             largest_cluster=int(sizes.max()) if sizes.size else 0,
             cluster_size_distribution=DistributionStats.from_array(sizes),
+            umap=umap_summary,
+        )
+
+    def _bitbirch_umap(
+        self,
+        fps: np.ndarray,
+        row_cluster: np.ndarray,
+        cluster_sizes: np.ndarray,
+    ) -> BitBirchUmapSummary:
+        """Project BitBIRCH fingerprints to 2D with UMAP and datashade by cluster id.
+
+        - Stratified subsample: keep all members of the top-N largest clusters,
+          fill the remaining budget uniformly from the rest. This guarantees the
+          biggest clusters are visible even when sample_size << n_fps.
+        - UMAP runs on unpacked binary features with Jaccard distance by default.
+        - Datashader renders categorical colors for top-N; everything else is grey.
+        """
+        cfg = self.config.bitbirch.umap
+        if not cfg.enabled:
+            return BitBirchUmapSummary(
+                enabled=False, notes="disabled by config"
+            )
+
+        n_fps = int(fps.shape[0])
+        if n_fps == 0:
+            return BitBirchUmapSummary(enabled=True, notes="no fingerprints")
+
+        top_n = min(cfg.top_clusters_colored, int(cluster_sizes.size))
+        top_cids = np.argsort(cluster_sizes)[-top_n:][::-1] if top_n > 0 else np.asarray([], dtype=np.int64)
+        top_set = set(int(c) for c in top_cids)
+
+        cap = cfg.sample_size if cfg.sample_size is not None else n_fps
+        cap = min(cap, n_fps)
+
+        top_rows = np.where(np.isin(row_cluster, np.asarray(list(top_set), dtype=np.int64)))[0] if top_set else np.asarray([], dtype=np.int64)
+        # Cap top-cluster contribution to half of the budget to keep balance.
+        top_budget = min(top_rows.size, max(1, cap // 2))
+        if top_rows.size > top_budget:
+            top_rows = self._rng.choice(top_rows, size=top_budget, replace=False)
+        rest_rows = np.setdiff1d(np.arange(n_fps), top_rows, assume_unique=False)
+        rest_budget = max(0, cap - int(top_rows.size))
+        if rest_rows.size > rest_budget:
+            rest_rows = self._rng.choice(rest_rows, size=rest_budget, replace=False)
+        sample_rows = np.concatenate([top_rows, rest_rows]).astype(np.int64)
+        sample_rows.sort()
+
+        import bblean  # local import; we only get here if bblean was available
+        n_features = self.config.bitbirch.n_features
+        unpacked = bblean.unpack_fingerprints(fps[sample_rows], n_features=n_features)
+
+        try:
+            import umap
+        except Exception as exc:
+            return BitBirchUmapSummary(
+                enabled=True, notes=f"umap-learn import failed: {exc!r}"
+            )
+
+        log.info(
+            "BitBIRCH UMAP: fitting %d points (n_neighbors=%d, metric=%s)",
+            sample_rows.size,
+            cfg.n_neighbors,
+            cfg.metric,
+        )
+        t0 = time.perf_counter()
+        try:
+            reducer = umap.UMAP(
+                n_components=2,
+                n_neighbors=cfg.n_neighbors,
+                min_dist=cfg.min_dist,
+                metric=cfg.metric,
+                random_state=cfg.random_state,
+            )
+            coords = reducer.fit_transform(unpacked.astype(np.float32, copy=False))
+        except Exception as exc:
+            return BitBirchUmapSummary(
+                enabled=True,
+                n_points=int(sample_rows.size),
+                notes=f"UMAP fit failed: {exc!r}",
+            )
+        elapsed = time.perf_counter() - t0
+
+        self._render_bitbirch_umap(coords, row_cluster[sample_rows], top_cids, cfg.plot_size)
+
+        # Save coords so users can re-render without refitting.
+        coords_path = Path("bitbirch_umap_coords.npz")
+        self.results.append(
+            _NpzResult(
+                file_name=coords_path,
+                arrays={
+                    "coords": coords.astype(np.float32),
+                    "cluster_id": row_cluster[sample_rows].astype(np.int64),
+                    "row_index": sample_rows.astype(np.int64),
+                    "top_cluster_ids": top_cids.astype(np.int64),
+                },
+            )
+        )
+
+        return BitBirchUmapSummary(
+            enabled=True,
+            n_points=int(sample_rows.size),
+            n_neighbors=cfg.n_neighbors,
+            min_dist=cfg.min_dist,
+            metric=cfg.metric,
+            top_clusters_colored=int(top_n),
+            fit_seconds=float(elapsed),
+        )
+
+    def _render_bitbirch_umap(
+        self,
+        coords: np.ndarray,
+        cluster_ids: np.ndarray,
+        top_cids: np.ndarray,
+        plot_size: int,
+    ) -> None:
+        import datashader as ds
+        import datashader.transfer_functions as tf
+        import matplotlib.colors as mcolors
+        import pandas as pd
+
+        # Label points: top clusters keep their numeric id (as str), rest get "other".
+        top_lookup = {int(c): f"c{int(c)}" for c in top_cids}
+        labels = np.asarray(
+            ["other" if int(c) not in top_lookup else top_lookup[int(c)] for c in cluster_ids]
+        )
+
+        categories = ["other", *(top_lookup[int(c)] for c in top_cids)]
+        cat = pd.Categorical(labels, categories=categories)
+
+        cmap = plt.colormaps.get_cmap("tab20")
+        color_key: dict[str, str] = {"other": "#cccccc"}
+        for i, c in enumerate(top_cids):
+            color_key[top_lookup[int(c)]] = mcolors.to_hex(cmap(i % cmap.N))
+
+        df = pd.DataFrame(
+            {
+                "x": coords[:, 0].astype(np.float32),
+                "y": coords[:, 1].astype(np.float32),
+                "cat": cat,
+            }
+        )
+        x_min, x_max = float(df["x"].min()), float(df["x"].max())
+        y_min, y_max = float(df["y"].min()), float(df["y"].max())
+        pad_x = 0.03 * (x_max - x_min + 1e-9)
+        pad_y = 0.03 * (y_max - y_min + 1e-9)
+        canvas = ds.Canvas(
+            plot_width=plot_size,
+            plot_height=plot_size,
+            x_range=(x_min - pad_x, x_max + pad_x),
+            y_range=(y_min - pad_y, y_max + pad_y),
+        )
+        agg = canvas.points(df, "x", "y", ds.count_cat("cat"))
+        img = tf.shade(agg, color_key=color_key, how="eq_hist", min_alpha=180)
+        img = tf.dynspread(img, threshold=0.6, max_px=4)
+        img = tf.set_background(img, "white")
+
+        self.results.append(
+            _DatashaderImageResult(
+                file_name=Path("bitbirch_umap.png"),
+                image=img,
+            )
+        )
+
+        # Legend figure (small, separate file) so users can identify clusters.
+        legend_fig, ax = plt.subplots(figsize=(4, max(2.0, 0.25 * (len(top_cids) + 1))))
+        handles = [
+            plt.Line2D([0], [0], marker="o", color=color_key[name], linestyle="", label=name)
+            for name in categories
+        ]
+        ax.legend(handles=handles, loc="center", frameon=False, ncol=1)
+        ax.axis("off")
+        legend_fig.tight_layout()
+        self.results.append(
+            FigureResult(figure=legend_fig, file_name=Path("bitbirch_umap_legend.png"))
         )
 
     # ----- Orchestration -----

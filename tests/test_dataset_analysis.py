@@ -5,6 +5,7 @@ import pytest
 
 from threedscriptors.configuration.dataset_analysis_config import (
     BitBirchConfig,
+    BitBirchUmapConfig,
     MoleculeDatasetAnalysisConfig,
 )
 from threedscriptors.configuration.dataset_config import DatasetConfig
@@ -169,6 +170,7 @@ def test_bitbirch_runs_when_available(tmp_path: Path):
             branching_factor=10,
             merge_criterion="diameter",
             max_molecules=None,
+            umap=BitBirchUmapConfig(enabled=False),
         ),
     )
     analysis = MoleculeDatasetAnalysis(dataset, config=config)
@@ -177,3 +179,59 @@ def test_bitbirch_runs_when_available(tmp_path: Path):
     assert summary.bitbirch.enabled is True
     assert summary.bitbirch.n_input_smiles == len(smiles)
     assert summary.bitbirch.n_clusters >= 1
+    assert summary.bitbirch.umap is not None and summary.bitbirch.umap.enabled is False
+
+
+def test_bitbirch_umap_projection_runs(tmp_path: Path):
+    pytest.importorskip("bblean")
+    pytest.importorskip("umap")
+
+    rng = np.random.default_rng(0)
+    # Build a diverse-enough set so UMAP with low n_neighbors converges.
+    seed_smiles = [
+        "CCO", "CCN", "CCC", "CCCO", "CCCN", "CCCC", "CCCCO", "CCCCN",
+        "c1ccccc1", "c1ccncc1", "c1ccoc1", "c1ccsc1",
+        "Cc1ccccc1", "Nc1ccccc1", "Oc1ccccc1", "Clc1ccccc1",
+        "C1CCCCC1", "C1CCNCC1", "C1CCOCC1", "C1CCSCC1",
+    ]
+    smiles = seed_smiles * 4  # 80 entries; UMAP handles this fine
+    rng.shuffle(smiles)
+    dataset = _build_small_dataset(tmp_path / "ds", smiles, structures_per_mol=1)
+
+    config = MoleculeDatasetAnalysisConfig(
+        rdkit_subsample=None,
+        rdkit_n_workers=1,
+        max_example_molecules=2,
+        bitbirch=BitBirchConfig(
+            enabled=True,
+            fingerprint_kind="ecfp4",
+            n_features=512,
+            threshold=0.65,
+            branching_factor=10,
+            merge_criterion="diameter",
+            max_molecules=None,
+            umap=BitBirchUmapConfig(
+                enabled=True,
+                sample_size=None,
+                n_neighbors=5,
+                min_dist=0.1,
+                metric="jaccard",
+                top_clusters_colored=5,
+                plot_size=300,
+                random_state=0,
+            ),
+        ),
+    )
+    analysis = MoleculeDatasetAnalysis(dataset, config=config)
+    summary = analysis.run()
+    assert summary.bitbirch is not None
+    assert summary.bitbirch.umap is not None
+    assert summary.bitbirch.umap.enabled is True
+    assert summary.bitbirch.umap.n_points > 0
+    assert summary.bitbirch.umap.metric == "jaccard"
+
+    out_dir = tmp_path / "out"
+    analysis.output(out_dir)
+    assert (out_dir / "bitbirch_umap.png").exists()
+    assert (out_dir / "bitbirch_umap_legend.png").exists()
+    assert (out_dir / "bitbirch_umap_coords.npz").exists()
