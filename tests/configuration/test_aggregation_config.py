@@ -20,7 +20,8 @@ def test_attnpool_projects_to_d_out_when_different():
     x = torch.randn(2, 5, 1024)
     pad_mask = torch.zeros(2, 5, dtype=torch.bool)
     out = pool(x, pad_mask)
-    assert out.shape == (2, 320)
+    # AttnPool returns a length-1 descriptor sequence (B, 1, d_out).
+    assert out.shape == (2, 1, 320)
 
 
 def test_attnpool_identity_when_d_in_equals_d_out():
@@ -32,6 +33,17 @@ def test_mean_cfg_roundtrip():
     cfg = MeanAggregatorConfig()
     assert cfg.aggregator_type == "mean"
     assert '"aggregator_type":"mean"' in cfg.model_dump_json()
+
+
+def test_mean_cfg_build_honors_output_dim():
+    # Regression for the `agg_mean` ablation crash: build() must produce a
+    # module that emits `output_dim` (64), not `input_dim` (256), so the
+    # decoder cross-attention (wired for output_dim) matches.
+    pool = MeanAggregatorConfig().build(input_dim=256, output_dim=64)
+    x = torch.randn(2, 5, 256)
+    mask = torch.zeros(2, 5, dtype=torch.bool)
+    out = pool(x, mask)
+    assert out.shape == (2, 1, 64)
 
 
 def test_attention_cfg_success():

@@ -11,6 +11,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "torch>=2.5.1",
+    # Explicit so `uv sync` always installs it: torch's cu126 wheels need
+    # libcusparseLt.so.0 at `import torch`, and relying on transitive
+    # resolution left it missing on the nodes that crashed the ablation.
+    "nvidia-cusparselt-cu12",
     "ase>=3.24.0",
     "rdkit>=2024.9.4",
     "wandb",

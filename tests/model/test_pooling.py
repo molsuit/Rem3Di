@@ -54,3 +54,21 @@ def test_mean_pool_shape_and_dtype():
     # MeanPool now returns a length-1 descriptor sequence (B, 1, D).
     assert out.shape == (B, 1, D), f"Output shape {out.shape} != {(B, 1, D)}"
     assert out.dtype == S.dtype, f"Output dtype {out.dtype} != {S.dtype}"
+
+
+def test_mean_pool_projects_to_d_out_when_different():
+    # Regression: the `agg_mean` ablation run crashed because MeanPool emitted
+    # d_in (256) while the decoder cross-attention was wired for output_dim
+    # (64). MeanPool must project to d_out, like AttnPool.
+    B, N = 2, 5
+    pool = MeanPool(d_in=256, d_out=64)
+    S = torch.randn(B, N, 256)
+    mask = torch.zeros(B, N, dtype=torch.bool)
+    out = pool(S, mask)
+    assert out.shape == (B, 1, 64)
+    assert pool.d_out == 64
+
+
+def test_mean_pool_identity_when_d_in_equals_d_out():
+    pool = MeanPool(d_in=128, d_out=128)
+    assert isinstance(pool.out_proj, torch.nn.Identity)

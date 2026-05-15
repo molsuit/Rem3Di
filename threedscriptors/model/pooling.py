@@ -8,9 +8,22 @@ from torch import nn
 class MeanPool(nn.Module):
     seq_len: int = 1
 
-    def __init__(self, d_in: int, output_dropout: float | None = None):
+    def __init__(
+        self,
+        d_in: int,
+        d_out: int | None = None,
+        output_dropout: float | None = None,
+    ):
         super().__init__()
-        self.d_out = d_in
+        self.d_out = d_out if d_out is not None else d_in
+        # Mirror AttnPool: project the pooled vector to the requested
+        # descriptor dim so the downstream decoder cross-attention (wired for
+        # `output_dim`) matches. Identity when no projection is needed.
+        self.out_proj: nn.Module = (
+            nn.Linear(d_in, self.d_out, bias=False)
+            if self.d_out != d_in
+            else nn.Identity()
+        )
         self.output_dropout = nn.Dropout(output_dropout) if output_dropout else None
 
     def forward(self, S: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -21,6 +34,7 @@ class MeanPool(nn.Module):
         descriptor_sum = (S * inv_mask_expanded).sum(dim=1)
         counts = inv_mask_expanded.sum(dim=1)
         out = descriptor_sum / counts
+        out = self.out_proj(out)
         if self.output_dropout is not None:
             out = self.output_dropout(out)
         return out.unsqueeze(1)

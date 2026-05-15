@@ -489,7 +489,9 @@ class MeanAggregatorConfig(BaseModel):
     def build(
         self, input_dim: int, output_dim: int, output_dropout: float | None = None
     ) -> nn.Module:
-        return MeanPool(d_in=input_dim, output_dropout=output_dropout)
+        return MeanPool(
+            d_in=input_dim, d_out=output_dim, output_dropout=output_dropout
+        )
 
 
 class AttentionAggregatorConfig(BaseModel):
