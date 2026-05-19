@@ -115,7 +115,8 @@ def deepchem_scaffold_split(
         3. Sort scaffold groups by (size, first-index) descending — the
            first-index tiebreaker reproduces DeepChem / Hu et al. exactly.
         4. Assign each scaffold group greedily to train, else val, else test,
-           keeping ≤ train_frac · n in train, ≤ (train+val)_frac · n in train ∪ val.
+           keeping <= train_frac * n in train, <= (train+val)_frac * n in
+           train + val.
     """
     scaffolds: dict[str, list[int]] = defaultdict(list)
     for i, smi in enumerate(smiles):

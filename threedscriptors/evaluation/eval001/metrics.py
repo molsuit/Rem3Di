@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.stats import spearmanr
 from sklearn.metrics import (
     average_precision_score,
     mean_absolute_error,
@@ -10,7 +11,6 @@ from sklearn.metrics import (
     r2_score,
     roc_auc_score,
 )
-from scipy.stats import spearmanr
 
 
 @dataclass(frozen=True)

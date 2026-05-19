@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem
 
-
 TaskType = Literal["regression", "binary", "multilabel"]
 SplitVariant = Literal["tdc_default", "random", "scaffold"]
 
@@ -212,7 +211,9 @@ def canonical_smiles_polar(smiles: str) -> str | None:
     Use this when looking up raw-release SMILES against any zarr built with the
     POLAR pipeline (see `threedscriptors/data_handling/dataset_creation/generators/utils.py:standardize_mol`).
     """
-    from threedscriptors.data_handling.dataset_creation.generators.utils import standardize_mol
+    from threedscriptors.data_handling.dataset_creation.generators.utils import (
+        standardize_mol,
+    )
 
     mol = Chem.MolFromSmiles(str(smiles))
     if mol is None:
@@ -251,7 +252,7 @@ def load_moleculenet_raw(
 
     counts = {
         "n_source_rows": int(total_rows),
-        "n_valid_smiles": int(len(smiles)),
+        "n_valid_smiles": len(smiles),
         "n_invalid_or_duplicate": int(total_rows - len(smiles)),
     }
     return smiles, y, counts

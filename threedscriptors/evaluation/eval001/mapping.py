@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from pathlib import Path
-from collections import defaultdict, deque
 import json
+from collections import defaultdict, deque
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from rdkit import Chem
 
-from threedscriptors.evaluation.eval001.datasets import canonical_smiles
 from threedscriptors.data_handling.dataset_creation.generators.utils import (
     MACE_OFF_ELEMENTS,
     MACE_POLAR_ELEMENTS,
     filter_mol,
     standardize_mol,
 )
+from threedscriptors.evaluation.eval001.datasets import canonical_smiles
 
 
 def is_polar_standardisation(config: dict, *, auto_path: str, auto_token: str) -> bool:
@@ -189,7 +189,7 @@ def reconstruct_tdc_source_to_zarr(
 
     source_to_zarr: dict[int, int] = {}
     missing_keys: list[tuple[int, tuple[str, float]]] = []
-    for zarr_idx, (smi, y) in enumerate(zip(zarr_smiles, zarr_targets)):
+    for zarr_idx, (smi, y) in enumerate(zip(zarr_smiles, zarr_targets, strict=True)):
         y_float = float(y)
         options = candidates.get(smi, [])
         if not options:

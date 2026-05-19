@@ -11,7 +11,6 @@ from sklearn.preprocessing import StandardScaler
 
 from threedscriptors.evaluation.eval001.metrics import (
     binary_metric,
-    multilabel_macro_auroc,
     regression_metric,
 )
 

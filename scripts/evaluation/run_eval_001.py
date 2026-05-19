@@ -26,11 +26,6 @@ from threedscriptors.evaluation.eval001.heads import (
     fit_predict_regression,
     validate_mlp_device,
 )
-from threedscriptors.evaluation.eval001.metrics import (
-    binary_metric,
-    multilabel_macro_auroc,
-    regression_metric,
-)
 from threedscriptors.evaluation.eval001.mapping import (
     is_polar_standardisation,
     load_moleculenet_source_to_zarr,
@@ -43,12 +38,16 @@ from threedscriptors.evaluation.eval001.mapping import (
     tdc_mapping_for_task,
     tdc_source_to_zarr,
 )
+from threedscriptors.evaluation.eval001.metrics import (
+    binary_metric,
+    multilabel_macro_auroc,
+    regression_metric,
+)
 from threedscriptors.evaluation.eval001.splits import (
     deepchem_scaffold_split,
     random_train_val_test_split,
     scaffold_train_val_test_split,
 )
-
 
 DEFAULT_CONFIG = Path("configs/eval/2026-04-27_eval_001_mumo_core.yaml")
 
@@ -323,8 +322,8 @@ def run_tdc(config: dict, args) -> list[dict]:
         X_unique = compute_ecfp(unique_smiles_list)
         ecfp_cache = {smi: X_unique[i] for i, smi in enumerate(unique_smiles_list)}
 
-        def ecfp_for(series: pd.Series) -> np.ndarray:
-            return np.stack([ecfp_cache[s] for s in series.astype(str).tolist()])
+        def ecfp_for(series: pd.Series, _cache: dict = ecfp_cache) -> np.ndarray:
+            return np.stack([_cache[s] for s in series.astype(str).tolist()])
 
         X_test = ecfp_for(test_df["Drug"])
         for head in args.heads:
