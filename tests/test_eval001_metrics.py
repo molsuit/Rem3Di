@@ -27,8 +27,8 @@ def test_regression_metric_supports_spearman():
 
 
 def test_tdc_official_metric_registry_matches_imbalanced_tasks():
-    assert TDC_TASK_BY_NAME["CYP2C9_Veith"].mumo_metric == "AUPRC"
-    assert TDC_TASK_BY_NAME["CYP2D6_Veith"].mumo_metric == "AUPRC"
-    assert TDC_TASK_BY_NAME["CYP3A4_Veith"].mumo_metric == "AUPRC"
-    assert TDC_TASK_BY_NAME["VDss_Lombardo"].mumo_metric == "Spearman"
+    assert TDC_TASK_BY_NAME["CYP2C9_Veith"].panel_metric == "AUPRC"
+    assert TDC_TASK_BY_NAME["CYP2D6_Veith"].panel_metric == "AUPRC"
+    assert TDC_TASK_BY_NAME["CYP3A4_Veith"].panel_metric == "AUPRC"
+    assert TDC_TASK_BY_NAME["VDss_Lombardo"].panel_metric == "Spearman"
     assert len(TDC_TASK_BY_NAME) == 22

@@ -12,6 +12,20 @@ on the TDC ADMET-Group and MoleculeNet panels with apples-to-apples fairness:
   below `coverage_thresholds` is flagged `coverage_limited` and must be excluded
   from win counts — it is reported, not silently imputed.
 
+## Relationship to `evaluation/regression/`
+
+EVAL-001 is intentionally a **standalone leaderboard-parity panel**, not built on
+the `evaluation/regression/` `Learner` / `CrossValidation` framework. That
+framework is repeated-k-fold CV on a single dataset; EVAL-001 needs the opposite
+paradigm — fixed *official* train/valid/test splits (PyTDC `admet_group`,
+deterministic DeepChem scaffold), a bring-your-own-`.npz` descriptor contract,
+and per-cell coverage accounting — so its `heads.py` / `metrics.py` / `splits.py`
+are deliberately self-contained for reproducible leaderboard parity with zero
+coupling. It **does reuse** the existing descriptor extraction
+(`evaluation/regression/featurization.py` `RemediDescriptorCalculator` and
+`evaluation_utils.evaluate_molecular_descriptor_on_dataset`), so REM3DI
+descriptors are identical to the regression pipeline's for the same checkpoint.
+
 ## Install
 
 ```bash

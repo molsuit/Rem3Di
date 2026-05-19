@@ -126,10 +126,9 @@ class SourceToZarrResolution(NamedTuple):
 def _molnet_scaffold(args, smiles, seed):
     """Pick the MolNet split based on --molnet-splitter flag.
     'deepchem' (default) = canonical Hu et al. 2020 / Uni-Mol 2023 scaffold protocol.
-    'legacy' = our custom Bemis-Murcko seeded splitter (pre-publication-grade).
-    'random' = random 80/10/10 split (MuMo headline / MoLFormer regression panel
-               convention; weaker than scaffold but produces alternative supervisor-
-               facing numbers).
+    'legacy' = custom Bemis-Murcko seeded splitter (pre-publication-grade).
+    'random' = random 80/10/10 split (weaker than scaffold; a non-publication
+               -grade alternative only, not comparable to scaffold-split work).
     """
     splitter = getattr(args, "molnet_splitter", "deepchem")
     if splitter == "random":
@@ -173,7 +172,7 @@ def _append_tdc_official_skip(
             dataset=spec.name,
             task=spec.short_name,
             split_variant="tdc_default",
-            metric_name=spec.mumo_metric,
+            metric_name=spec.panel_metric,
             metric_mode="tdc_official",
             row=row_name,
             head=head,
@@ -336,25 +335,25 @@ def run_tdc(config: dict, args) -> list[dict]:
                     spec.task_type, head, X_train, y_train, X_val, y_val, X_test, int(seed), mlp_cfg
                 )
                 pred_by_seed.append(np.asarray(fit.predictions))
-                mumo_metric = _metric_for_task(spec.task_type, spec.mumo_metric, y_test, fit.predictions)
+                panel_metric = _metric_for_task(spec.task_type, spec.panel_metric, y_test, fit.predictions)
                 rows.append(
                     _result_row(
                         suite="tdc",
                         dataset=spec.name,
                         task=spec.short_name,
                         split_variant="tdc_default",
-                        metric_name=mumo_metric.metric_name,
-                        metric_mode="mumo_table",
+                        metric_name=panel_metric.metric_name,
+                        metric_mode="panel",
                         row="ECFP",
                         head=head,
                         seed=seed,
-                        value=mumo_metric.value,
+                        value=panel_metric.value,
                         n_train=len(train_df),
                         n_val=len(val_df),
                         n_test=len(test_df),
-                        n_labels=mumo_metric.n_labels,
-                        n_labels_scored=mumo_metric.n_labels_scored,
-                        notes=fit.notes or mumo_metric.notes,
+                        n_labels=panel_metric.n_labels,
+                        n_labels_scored=panel_metric.n_labels_scored,
+                        notes=fit.notes or panel_metric.notes,
                     )
                 )
 
@@ -384,7 +383,7 @@ def run_tdc(config: dict, args) -> list[dict]:
                                 dataset=spec.name,
                                 task=spec.short_name,
                                 split_variant="tdc_default",
-                                metric_name=spec.mumo_metric,
+                                metric_name=spec.panel_metric,
                                 metric_mode="tdc_official",
                                 row="ECFP",
                                 head=head,
@@ -498,29 +497,29 @@ def run_tdc_cached(config: dict, args) -> list[dict]:
                     mlp_cfg,
                 )
                 pred_by_seed.append(np.asarray(fit.predictions))
-                mumo_metric = _metric_for_task(spec.task_type, spec.mumo_metric, y_test, fit.predictions)
+                panel_metric = _metric_for_task(spec.task_type, spec.panel_metric, y_test, fit.predictions)
                 rows.append(
                     _result_row(
                         suite="tdc",
                         dataset=spec.name,
                         task=spec.short_name,
                         split_variant="tdc_default",
-                        metric_name=mumo_metric.metric_name,
-                        metric_mode="mumo_table",
+                        metric_name=panel_metric.metric_name,
+                        metric_mode="panel",
                         row=row_name,
                         head=head,
                         seed=seed,
-                        value=mumo_metric.value,
+                        value=panel_metric.value,
                         n_train=int(train_mask.sum()),
                         n_val=int(val_mask.sum()),
                         n_test=len(test_df),
-                        n_labels=mumo_metric.n_labels,
-                        n_labels_scored=mumo_metric.n_labels_scored,
+                        n_labels=panel_metric.n_labels,
+                        n_labels_scored=panel_metric.n_labels_scored,
                         coverage=coverage,
                         coverage_limited=coverage_limited,
                         descriptor_cache=str(cache_path),
                         notes=";".join(
-                            n for n in [mapping_note, fit.notes or mumo_metric.notes] if n
+                            n for n in [mapping_note, fit.notes or panel_metric.notes] if n
                         ),
                     )
                 )
@@ -575,7 +574,7 @@ def run_tdc_cached(config: dict, args) -> list[dict]:
                             dataset=spec.name,
                             task=spec.short_name,
                             split_variant="tdc_default",
-                            metric_name=spec.mumo_metric,
+                            metric_name=spec.panel_metric,
                             metric_mode="tdc_official",
                             row=row_name,
                             head=head,
@@ -629,7 +628,7 @@ def run_moleculenet(config: dict, args) -> list[dict]:
                         task=spec.task,
                         split_variant=spec.split_variant,
                         metric_name=metric.metric_name,
-                        metric_mode="mumo_table",
+                        metric_mode="panel",
                         row="ECFP",
                         head=head,
                         seed=seed,
@@ -733,7 +732,7 @@ def run_moleculenet_cached(config: dict, args) -> list[dict]:
                         task=spec.task,
                         split_variant=spec.split_variant,
                         metric_name=metric.metric_name,
-                        metric_mode="mumo_table",
+                        metric_mode="panel",
                         row=row_name,
                         head=head,
                         seed=seed,
@@ -799,10 +798,10 @@ def main() -> None:
         help="Split strategy for MoleculeNet tasks. "
              "'deepchem' (default) = Hu 2020 / Uni-Mol 2023 deterministic "
              "scaffold split with include_chirality=True (publication-grade). "
-             "'legacy' = our custom Bemis-Murcko seeded splitter (reproduces "
-             "historical shards pre-2026-05-12). "
-             "'random' = stratified random 80/10/10, matches MuMo headline + "
-             "MoLFormer regression panel conventions.",
+             "'legacy' = custom Bemis-Murcko seeded splitter (the earlier "
+             "non-deterministic behaviour; kept for back-compat). "
+             "'random' = stratified random 80/10/10 (weaker than scaffold; a "
+             "non-publication-grade alternative only).",
     )
     parser.add_argument(
         "--standardisation",
@@ -815,7 +814,7 @@ def main() -> None:
              "this explicitly when evaluating on non-standard cache paths so "
              "the raw→zarr SMILES lookup is not silently mismatched.",
     )
-    parser.add_argument("--metric-mode", choices=["all", "tdc_official", "mumo_table"], default="all")
+    parser.add_argument("--metric-mode", choices=["all", "tdc_official", "panel"], default="all")
     parser.add_argument(
         "--allow-official-coverage-imputation",
         action="store_true",

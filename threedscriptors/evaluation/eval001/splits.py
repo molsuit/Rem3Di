@@ -63,7 +63,7 @@ def scaffold_train_val_test_split(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Legacy custom scaffold splitter (Bemis-Murcko + seeded greedy bin-pack).
     Use `deepchem_scaffold_split` for publication-grade evaluation matching
-    MolCLR / Uni-Mol / GraphMVP / MuMo convention."""
+    the MolCLR / Uni-Mol / GraphMVP scaffold-split convention."""
     groups: dict[str, list[int]] = defaultdict(list)
     for i, smi in enumerate(smiles):
         groups[_scaffold_key(smi)].append(i)

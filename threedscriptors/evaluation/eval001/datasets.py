@@ -18,7 +18,7 @@ class TdcTaskSpec:
     name: str
     short_name: str
     task_type: TaskType
-    mumo_metric: str
+    panel_metric: str
     official_metric_hint: str
 
 
@@ -52,9 +52,8 @@ TDC_TASKS: tuple[TdcTaskSpec, ...] = (
     TdcTaskSpec("Caco2_Wang", "Caco-2", "regression", "MAE", "MAE"),
     TdcTaskSpec("PPBR_AZ", "PPBR", "regression", "MAE", "MAE"),
     TdcTaskSpec("Lipophilicity_AstraZeneca", "Lipophilicity", "regression", "MAE", "MAE"),
-    # Added 2026-05-04 for EXP-055: present in EXP-049/050/051b's 23-task panel
-    # but missing from the original EVAL-001 TDC list. PyTDC admet_group exposes
-    # this as a regression task (aqueous solubility).
+    # Solubility_AqSolDB: aqueous-solubility regression task exposed by PyTDC
+    # admet_group; included so this matches the standard TDC ADMET task set.
     TdcTaskSpec("Solubility_AqSolDB", "Solubility", "regression", "MAE", "MAE"),
     TdcTaskSpec("VDss_Lombardo", "VDss", "regression", "Spearman", "Spearman"),
     TdcTaskSpec("Half_Life_Obach", "Half-life", "regression", "Spearman", "Spearman"),
