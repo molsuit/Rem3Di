@@ -33,39 +33,38 @@ def read_npz_cache(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
 def compute_rem3di_from_zarr(
     dataset_path: Path,
     checkpoint_path: Path,
-    *,
-    batch_size: int = 64,
-    num_workers: int = 0,
-    progress_every_batches: int | None = 50,
 ) -> np.ndarray:
+    """Extract REM3DI descriptors for every structure in a native zarr.
+
+    Uses macepolar's canonical ``RemediDescriptorCalculatorConfig`` so the
+    descriptors produced here are bit-identical to the ones Steffen's
+    regression pipeline produces from the same checkpoint — there is no
+    second, drift-prone reimplementation of the model loader in EVAL-001.
+
+    ``checkpoint_path`` is a macepolar training-run directory containing
+    ``post_training_architecture_config.yaml`` plus ``encoder.pth``,
+    ``atomic_preprocessor.pth`` and ``geometric_preprocessor.pth`` (the
+    layout written by macepolar's training entrypoints). Runs on CUDA:
+    macepolar's ``evaluate_molecular_descriptor_on_dataset`` defaults to
+    ``device="cuda"`` and does not parameterise the device, matching the
+    regression-eval path — produce REM3DI caches on a GPU host.
+    """
     os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
     from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-    from threedscriptors.evaluation.regression.featurization import RemediDescriptorCalculator
-    from threedscriptors.model.model_builder import ModelBuilder
-
-    ds = MoleculeDataset.open_existing_dataset_from_dir(dataset_path, load_smiles=False)
-    model = ModelBuilder.from_directory(str(checkpoint_path)).build_remedi_model()
-    calc = RemediDescriptorCalculator(
-        model,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=False,
-        persistent_workers=False,
-        progress_every_batches=progress_every_batches,
+    from threedscriptors.evaluation.regression.featurization import (
+        RemediDescriptorCalculatorConfig,
     )
-    return calc.calculate_descriptors(ds)
 
-
-def rem3di_checkpoint_uses_structural_prior(checkpoint_path: Path) -> bool:
-    from threedscriptors.model.model_builder import ModelBuilder
-
-    model = ModelBuilder.from_directory(str(checkpoint_path)).build_remedi_model()
-    return model.structural_prior is not None
+    ds = MoleculeDataset.open_existing_dataset_from_dir(Path(dataset_path))
+    calc = RemediDescriptorCalculatorConfig(
+        model_dir=Path(checkpoint_path)
+    ).get_descriptor_calculator()
+    return np.asarray(calc.calculate_descriptors(ds), dtype=np.float32)
 
 
 def compute_ecfp_from_zarr(dataset_path: Path) -> np.ndarray:
     os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
     from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 
-    ds = MoleculeDataset.open_existing_dataset_from_dir(dataset_path, load_smiles=True)
+    ds = MoleculeDataset.open_existing_dataset_from_dir(Path(dataset_path))
     return compute_ecfp(ds.get_smiles_per_structure())

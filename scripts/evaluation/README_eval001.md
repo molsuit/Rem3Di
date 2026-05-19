@@ -89,15 +89,21 @@ or zarr lives on a custom path, pass `--standardisation off24|polar`
 explicitly** — guessing wrong silently scores ~40–60 % of charged-molecule
 tasks (BACE-S, ClinTox, hERG) while still reporting a number.
 
-## Scope on this branch (`fb638/add-eval-001-pipeline`, base `macepolar`)
+## Scope on this branch (`fb638/add-eval-pipeline`, base `macepolar`)
 
-- **Supported:** ECFP, and bring-your-own descriptors via the `.npz` contract
-  above.
-- **Not ported:** the REM3DI-checkpoint extraction convenience
-  (`descriptors.compute_rem3di_from_zarr`) needs
-  `threedscriptors.model.model_builder`, which does not exist on `macepolar`.
-  Produce your descriptors with your own model and `write_npz_cache` instead —
-  that is the intended path for evaluating your own model.
+- **Supported:** ECFP; bring-your-own descriptors via the `.npz` contract
+  above; and REM3DI-checkpoint extraction via
+  `descriptors.compute_rem3di_from_zarr(dataset_path, checkpoint_path)`.
+- **REM3DI extraction is ported to the `macepolar` model API.** It reuses
+  macepolar's canonical `RemediDescriptorCalculatorConfig`, so the descriptors
+  are bit-identical to the regression pipeline's for the same checkpoint (no
+  second model-loader to drift). `checkpoint_path` is a macepolar training-run
+  directory holding `post_training_architecture_config.yaml` +
+  `encoder.pth` + `atomic_preprocessor.pth` + `geometric_preprocessor.pth`.
+  It runs on **CUDA** (macepolar's `evaluate_molecular_descriptor_on_dataset`
+  defaults `device="cuda"` and is not parameterised) — produce REM3DI caches
+  on a GPU host, then run the CPU-side `run_eval_001.py` against the cache.
+  The bring-your-own `.npz` contract remains available for any other model.
 
 ## What this branch changed in shared code (for review)
 
