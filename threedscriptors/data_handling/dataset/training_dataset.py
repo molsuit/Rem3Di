@@ -5,7 +5,6 @@ import numpy as np
 import torch
 import zarr
 from torch.utils.data import Dataset
-from zarr import DirectoryStore, LRUStoreCache
 
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.data_handling.sample import Sample
@@ -70,9 +69,10 @@ class TrainingMoleculeDataset(Dataset):
             self._multiplicity = np.array(g["multiplicity"])
             self._group = None
         else:
-            store = DirectoryStore(self.root)
-            store = LRUStoreCache(store, max_size=2**29)
-            g = zarr.open_group(store=store, mode="r")
+            # zarr v3 sharded reads pull a byte-range out of a shard file;
+            # the OS page cache covers repeated access to hot shards (zarr v3
+            # has no LRUStoreCache equivalent).
+            g = zarr.open_group(self.root, mode="r")
             self._group = g
 
             self._ptr = g["molecule_ptr"]
@@ -96,11 +96,4 @@ class TrainingMoleculeDataset(Dataset):
         *,
         get_item: GetItemFn = atoms_getitem,
     ) -> "TrainingMoleculeDataset":
-        store = dataset.positions.store
-        while hasattr(store, "store"):
-            store = store.store
-        if not isinstance(store, DirectoryStore):
-            raise TypeError(
-                f"TrainingMoleculeDataset requires a DirectoryStore, got {type(store)}"
-            )
-        return cls(Path(store.path), get_item=get_item)
+        return cls(Path(dataset.path), get_item=get_item)

@@ -7,6 +7,9 @@ import numpy as np
 from threedscriptors.configuration.dataset_config import DatasetConfig
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.data_handling.dataset.tasks import TaskConfig, TaskSet
+from threedscriptors.data_handling.dataset_creation.shard_aligned_writer import (
+    ShardAlignedWriter,
+)
 
 
 class DatasetConcatenation:
@@ -16,12 +19,13 @@ class DatasetConcatenation:
 
     def _append_dataset_to_target(
         self,
-        out_ds: MoleculeDataset,
+        writer: ShardAlignedWriter,
         ref_cfg: DatasetConfig,
         src: MoleculeDataset,
         next_mol_base: int,
         next_iso_base: int,
     ) -> tuple[int, int]:
+        out_ds = writer.ds
         src_ptr = np.asarray(src.ptr[:], dtype=np.int64)
         if src_ptr.shape[0] <= 1:
             return next_mol_base, next_iso_base
@@ -69,7 +73,7 @@ class DatasetConcatenation:
             if old_iso_ids.size > 0:
                 next_iso_base += int(old_iso_ids.max()) + 1
 
-        out_ds.append_batch(
+        writer.append_batch(
             P,
             Z,
             C,
@@ -90,13 +94,14 @@ class DatasetConcatenation:
         # Arrays are backed by zarr; we stream per-dataset to keep it fast.
 
         out_ds, ref_cfg = self._create_target_dataset()
+        writer = ShardAlignedWriter(out_ds)
 
         # For non-smiles case, maintain running id offsets to avoid collisions
         next_mol_base = 0
         next_iso_base = 0
         for src in self.datasets:
             next_mol_base, next_iso_base = self._append_dataset_to_target(
-                out_ds, ref_cfg, src, next_mol_base, next_iso_base
+                writer, ref_cfg, src, next_mol_base, next_iso_base
             )
 
         # Finalize storage files
@@ -104,7 +109,7 @@ class DatasetConcatenation:
             out_ds.smiles.close()
             out_ds.isomeric_smiles.close()
 
-        out_ds.shrink_to_fit()
+        writer.finalize()
 
         return out_ds
 
@@ -122,6 +127,7 @@ class DatasetConcatenation:
         """
 
         out_ds, ref_cfg = self._copy_first_dataset(overwrite=overwrite)
+        writer = ShardAlignedWriter(out_ds)
 
         if ref_cfg.contains_smiles:
             next_mol_base = 0
@@ -132,14 +138,14 @@ class DatasetConcatenation:
 
         for src in self.datasets[1:]:
             next_mol_base, next_iso_base = self._append_dataset_to_target(
-                out_ds, ref_cfg, src, next_mol_base, next_iso_base
+                writer, ref_cfg, src, next_mol_base, next_iso_base
             )
 
         if ref_cfg.contains_smiles:
             out_ds.smiles.close()
             out_ds.isomeric_smiles.close()
 
-        out_ds.shrink_to_fit()
+        writer.finalize()
         return out_ds
 
     def _copy_first_dataset(
@@ -151,15 +157,7 @@ class DatasetConcatenation:
         assert self._check_dataset_compatible()
 
         first_ds = self.datasets[0]
-        store = getattr(first_ds.positions, "store", None)
-        source_dir = getattr(store, "path", None)
-        if source_dir is None:
-            raise ValueError(
-                "First dataset store path unavailable; copy-first concatenation "
-                "requires directory-backed datasets."
-            )
-
-        source_path = Path(source_dir).resolve()
+        source_path = Path(first_ds.path).resolve()
         dest_path = Path(self.new_dataset_dir).expanduser()
         dest_abs = dest_path.resolve(strict=False)
 
@@ -183,7 +181,7 @@ class DatasetConcatenation:
         out_ds = MoleculeDataset.open_existing_dataset_from_dir(dest_path)
         return out_ds, out_ds.config
 
-    def concatenate_datasets_chunked(
+    def concatenate_datasets_chunked(  # noqa: C901  (pre-existing streaming complexity, unchanged by the writer refactor)
         self, structures_per_chunk: int = 50_000, smiles_batch: int = 50_000
     ) -> MoleculeDataset:
         """
@@ -192,6 +190,7 @@ class DatasetConcatenation:
         """
 
         out_ds, ref_cfg = self._create_target_dataset()
+        writer = ShardAlignedWriter(out_ds)
 
         next_mol_base = 0
         next_iso_base = 0
@@ -250,7 +249,7 @@ class DatasetConcatenation:
                     if iso_ids_chunk.size > 0:
                         iso_max = max(iso_ids_chunk.max(), iso_max)
 
-                out_ds.append_batch(
+                writer.append_batch(
                     P,
                     Z,
                     C,
@@ -274,7 +273,7 @@ class DatasetConcatenation:
             out_ds.smiles.close()
             out_ds.isomeric_smiles.close()
 
-        out_ds.shrink_to_fit()
+        writer.finalize()
         return out_ds
 
     @staticmethod
@@ -375,6 +374,7 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
 
     def concatenate_datasets(self):
         out_ds, ref_cfg = self._create_target_dataset()
+        writer = ShardAlignedWriter(out_ds)
 
         N_total_systems_tasks = len(ref_cfg.tasks.system_cols)
 
@@ -460,7 +460,7 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
 
             # Create the correct masking for all other targets
 
-            out_ds.append_batch(
+            writer.append_batch(
                 P,
                 Z,
                 C,
@@ -473,3 +473,10 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
                 None,
                 None,
             )
+
+        if ref_cfg.contains_smiles:
+            out_ds.smiles.close()
+            out_ds.isomeric_smiles.close()
+
+        writer.finalize()
+        return out_ds

@@ -18,15 +18,15 @@ from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
 
 xyz_files = [
     Path(f)
-    for f in Path("/scratch/s5f/wedigs.s5f/raw_datasets/tmqm").glob("*.xyz")
+    for f in Path("/scratch/s5f/wedigs.s5f/raw_datasets/omol25_4M_train_tmcs").glob("*.extxyz")
 ]
 
 
 generator = XYZMoleculeGenerator(
     xyz_file=xyz_files,
-    loading_batch_size=100,
-    charge_key="q",
-    spin_key="S",
+    loading_batch_size=10000,
+    charge_key="charge",
+    spin_key="spin",
     max_atoms=200,
     reject_zero_h=True,
     min_h_heavy_ratio=0.1,
@@ -35,14 +35,13 @@ generator = XYZMoleculeGenerator(
 pipeline = [CopyDataStage(dtype=torch.float64)]
 
 creation_config = DatasetCreationConfig(
-    path=Path("/scratch/s5f/wedigs.s5f/datasets/tmqm"),
+    path=Path("/scratch/s5f/wedigs.s5f/datasets/omol25_tmcs"),
     N_structures= None,
 )
-dataset_config = DatasetConfig(
-    atom_chunk=450,
-    molecule_chunk=50,
-    contains_smiles=False,
-)
+# Defaults shard correctly (small read chunks, few on-disk shard files);
+# the old atom_chunk=450/molecule_chunk=50 were a one-file-per-chunk
+# workaround that no longer applies under zarr v3 sharding.
+dataset_config = DatasetConfig(contains_smiles=False)
 
 orchestrator = DatasetConstructionOrchestrator(
     pipeline=pipeline,

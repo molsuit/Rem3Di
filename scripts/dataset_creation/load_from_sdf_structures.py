@@ -26,10 +26,10 @@ creation_config = DatasetCreationConfig(
     path=Path("/scratch/s5f/wedigs.s5f/datasets/pcqm4m/pcqm_only_structures_3_5_M"),
     N_structures=3_500_000,
 )
-dataset_config = DatasetConfig(
-    atom_chunk=450,
-    molecule_chunk=50,
-)
+# Defaults shard correctly (small read chunks, few on-disk shard files);
+# the old atom_chunk=450/molecule_chunk=50 were a one-file-per-chunk
+# workaround that no longer applies under zarr v3 sharding.
+dataset_config = DatasetConfig()
 
 orchestrator = DatasetConstructionOrchestrator(
     pipeline=[copy_data],

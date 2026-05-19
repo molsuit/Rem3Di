@@ -48,13 +48,13 @@ def _make_xyz_file(path: Path, atoms_list: list[Atoms]) -> None:
 
 
 def test_xyz_generator_reads_charge_and_spin_from_info(tmp_path: Path) -> None:
-    a1 = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]])
+    a1 = Atoms("CH4", positions=np.zeros((5, 3)))
     a1.info["q"] = 1
-    a1.info["S"] = 2
+    a1.info["spin"] = 2  # doublet (multiplicity, OMol25 convention)
 
-    a2 = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]])
+    a2 = Atoms("H2O", positions=np.zeros((3, 3)))
     a2.info["q"] = -1
-    a2.info["S"] = 0
+    a2.info["spin"] = 1  # singlet
 
     xyz_path = tmp_path / "mols.xyz"
     _make_xyz_file(xyz_path, [a1, a2])
@@ -63,19 +63,20 @@ def test_xyz_generator_reads_charge_and_spin_from_info(tmp_path: Path) -> None:
         xyz_file=xyz_path,
         loading_batch_size=10,
         charge_key="q",
-        spin_key="S",
+        spin_key="spin",
     )
     batches = list(gen)
     assert len(batches) == 1
     batch = batches[0]
 
-    # spin_key is read as total spin S and stored as multiplicity = 2S+1.
+    # spin_key already holds the multiplicity (2S+1) and is read verbatim,
+    # matching the OMol25 convention.
     assert batch.total_charge == [1.0, -1.0]
-    assert batch.multiplicity == [5.0, 1.0]
+    assert batch.multiplicity == [2.0, 1.0]
 
 
 def test_xyz_generator_defaults_to_closed_shell_without_keys(tmp_path: Path) -> None:
-    atoms = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]])
+    atoms = Atoms("CH4", positions=np.zeros((5, 3)))
     xyz_path = tmp_path / "mols.xyz"
     _make_xyz_file(xyz_path, [atoms])
 
@@ -133,13 +134,13 @@ def test_copy_data_stage_defaults_when_input_missing() -> None:
 
 
 def test_orchestrator_round_trip_persists_charge_and_spin(tmp_path: Path) -> None:
-    a1 = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]])
+    a1 = Atoms("CH4", positions=np.zeros((5, 3)))
     a1.info["q"] = 1
-    a1.info["S"] = 2
+    a1.info["spin"] = 2
 
-    a2 = Atoms("OH", positions=[[0, 0, 0], [0, 0, 0.97]])
+    a2 = Atoms("H2O", positions=np.zeros((3, 3)))
     a2.info["q"] = -1
-    a2.info["S"] = 1
+    a2.info["spin"] = 3
 
     xyz_path = tmp_path / "src.xyz"
     _make_xyz_file(xyz_path, [a1, a2])
@@ -152,7 +153,7 @@ def test_orchestrator_round_trip_persists_charge_and_spin(tmp_path: Path) -> Non
             xyz_file=xyz_path,
             loading_batch_size=10,
             charge_key="q",
-            spin_key="S",
+            spin_key="spin",
         ),
         construction_config=DatasetCreationConfig(path=out_dir, N_structures=10),
         dataset_config=DatasetConfig(
@@ -163,25 +164,25 @@ def test_orchestrator_round_trip_persists_charge_and_spin(tmp_path: Path) -> Non
 
     reopened = MoleculeDataset.open_existing_dataset_from_dir(out_dir)
     assert reopened.N_structures == 2
-    assert reopened.N_atoms == 4
+    assert reopened.N_atoms == 8
 
     n = reopened.N_structures
     np.testing.assert_allclose(
         np.asarray(reopened.total_charge[:n]), np.array([1.0, -1.0], dtype="f4")
     )
-    # spin_key="S" with S=2 / S=1 -> multiplicity 2S+1 = 5.0 / 3.0
+    # spin_key already holds multiplicity -> read verbatim (2.0 / 3.0)
     np.testing.assert_allclose(
-        np.asarray(reopened.multiplicity[:n]), np.array([5.0, 3.0], dtype="f4")
+        np.asarray(reopened.multiplicity[:n]), np.array([2.0, 3.0], dtype="f4")
     )
 
 
 def test_atoms_getitem_returns_charge_and_spin_per_sample(tmp_path: Path) -> None:
-    a1 = Atoms("H2", positions=[[0, 0, 0], [0, 0, 0.74]])
+    a1 = Atoms("CH4", positions=np.zeros((5, 3)))
     a1.info["q"] = 1
-    a1.info["S"] = 2
-    a2 = Atoms("OH", positions=[[0, 0, 0], [0, 0, 0.97]])
+    a1.info["spin"] = 2
+    a2 = Atoms("H2O", positions=np.zeros((3, 3)))
     a2.info["q"] = 0
-    a2.info["S"] = 1
+    a2.info["spin"] = 3
 
     xyz_path = tmp_path / "src.xyz"
     _make_xyz_file(xyz_path, [a1, a2])
@@ -193,7 +194,7 @@ def test_atoms_getitem_returns_charge_and_spin_per_sample(tmp_path: Path) -> Non
             xyz_file=xyz_path,
             loading_batch_size=10,
             charge_key="q",
-            spin_key="S",
+            spin_key="spin",
         ),
         construction_config=DatasetCreationConfig(path=out_dir, N_structures=10),
         dataset_config=DatasetConfig(
@@ -207,13 +208,13 @@ def test_atoms_getitem_returns_charge_and_spin_per_sample(tmp_path: Path) -> Non
     sample0 = train_ds[0]
     sample1 = train_ds[1]
 
-    assert sample0.atomic_positions.shape == (2, 3)
-    assert sample1.atomic_positions.shape == (2, 3)
+    assert sample0.atomic_positions.shape == (5, 3)
+    assert sample1.atomic_positions.shape == (3, 3)
 
     torch.testing.assert_close(sample0.total_charge, torch.tensor(1.0))
-    torch.testing.assert_close(sample0.multiplicity, torch.tensor(5.0))  # 2*2+1
+    torch.testing.assert_close(sample0.multiplicity, torch.tensor(2.0))  # verbatim
     torch.testing.assert_close(sample1.total_charge, torch.tensor(0.0))
-    torch.testing.assert_close(sample1.multiplicity, torch.tensor(3.0))  # 2*1+1
+    torch.testing.assert_close(sample1.multiplicity, torch.tensor(3.0))  # verbatim
 
 
 def test_yield_molecules_collate_batches_charge_and_spin() -> None:

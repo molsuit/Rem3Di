@@ -210,6 +210,12 @@ def main():
         global_step = 0
         window_atoms = 0
         window_t0 = perf_counter()
+        # Rolling VICReg accumulators, reset each throughput window so the
+        # mid-epoch flush shows the var/cov *trajectory* rather than an
+        # epoch-cumulative average that smooths over early collapse.
+        window_var = torch.zeros((), device=device)
+        window_cov = torch.zeros((), device=device)
+        window_vc_steps = 0
 
         for epoch in range(training_config.epochs):
             # Initialize task and total train losses
@@ -276,6 +282,9 @@ def main():
                     )
                     running_var += var_loss.detach()
                     running_cov += cov_loss.detach()
+                    window_var += var_loss.detach()
+                    window_cov += cov_loss.detach()
+                    window_vc_steps += 1
                 else:
                     total_loss = denoising_loss
 
@@ -300,16 +309,25 @@ def main():
                 global_step += 1
                 if global_step % WINDOW_STEPS == 0:
                     dt = perf_counter() - window_t0
-                    telemetry.log_metrics(
-                        {
-                            "atoms_per_s": window_atoms / dt,
-                            "step_ms": 1000.0 * dt / WINDOW_STEPS,
-                            "global_step": global_step,
-                            "epoch_idx": epoch,
-                        }
-                    )
+                    window_metrics: dict[str, float] = {
+                        "atoms_per_s": window_atoms / dt,
+                        "step_ms": 1000.0 * dt / WINDOW_STEPS,
+                        "global_step": global_step,
+                        "epoch_idx": epoch,
+                    }
+                    if vicreg_cfg.enabled and window_vc_steps > 0:
+                        window_metrics["vicreg_variance_train_window"] = float(
+                            (window_var / window_vc_steps).item()
+                        )
+                        window_metrics["vicreg_covariance_train_window"] = float(
+                            (window_cov / window_vc_steps).item()
+                        )
+                    telemetry.log_metrics(window_metrics)
                     window_atoms = 0
                     window_t0 = perf_counter()
+                    window_var = torch.zeros((), device=device)
+                    window_cov = torch.zeros((), device=device)
+                    window_vc_steps = 0
 
             avg_train_loss = (running / (
                 (batch_index + 1)
@@ -317,6 +335,8 @@ def main():
             )).item()
 
             running = torch.zeros((), device=device)
+            running_var_val = torch.zeros((), device=device)
+            running_cov_val = torch.zeros((), device=device)
             encoder.eval()
             decoder.eval()
             preprocessor.eval()
@@ -338,6 +358,14 @@ def main():
                     )
 
                     molecular_descriptor = encoder(preprocessed_val_samples)
+
+                    if vicreg_cfg.enabled:
+                        var_loss_val, cov_loss_val = vicreg_descriptor_loss(
+                            molecular_descriptor.flat,
+                            target_std=vicreg_cfg.target_std,
+                        )
+                        running_var_val += var_loss_val
+                        running_cov_val += cov_loss_val
 
                     noised_preprocessing_sample = PreprocessedSample(
                         preprocessed_atomic_embeddings=noised_embeddings,
@@ -375,6 +403,12 @@ def main():
                     )
                     extra_metrics["vicreg_covariance_train"] = float(
                         (running_cov / (batch_index + 1)).item()
+                    )
+                    extra_metrics["vicreg_variance_val"] = float(
+                        (running_var_val / (batch_idx + 1)).item()
+                    )
+                    extra_metrics["vicreg_covariance_val"] = float(
+                        (running_cov_val / (batch_idx + 1)).item()
                     )
 
                 telemetry.log_pretraining_epoch(

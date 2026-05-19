@@ -5,9 +5,9 @@ import numpy as np
 import pydantic_yaml as pyd_yaml
 import zarr
 from ase import Atoms
-from numcodecs import Blosc
 from zarr import Array
-from zarr.convenience import consolidate_metadata
+from zarr.codecs import BloscCodec, BloscShuffle
+from zarr.storage import LocalStore
 
 from threedscriptors.configuration.dataset_config import DatasetConfig
 from threedscriptors.data_handling.dataset.smiles_storage import SmilesStorage
@@ -33,7 +33,9 @@ class MoleculeDataset:
         targets_atom: Array | None,
         mask_atom: Array | None,
         config: DatasetConfig,
+        root: Path,
     ):
+        self.path = Path(root)
         self.positions = positions
         self.atomic_numbers = atomic_numbers
         self.ptr = ptr
@@ -55,13 +57,11 @@ class MoleculeDataset:
 
         self.config = config
 
-        self._mol_cursor = int(self.ptr.shape[0]) - 1
-        self._atom_cursor = int(np.asarray(self.ptr[self._mol_cursor]))
-
     @classmethod
     def open_existing_dataset_from_dir(cls, path: Path):
         """Open an existing on-disk dataset created by create_empty_dataset."""
-        store = zarr.DirectoryStore(str(path))
+        path = Path(path)
+        store = LocalStore(path)
         g = zarr.open_group(store=store, mode="r+")
 
         positions = g["positions"]
@@ -70,7 +70,7 @@ class MoleculeDataset:
         total_charge = g["total_charge"]
         multiplicity = g["multiplicity"]
 
-        ids = g.require_group("ids")
+        ids = g["ids"]
         mol_id = ids["molecule_id"]
         stereo_id = ids["stereoisomer_id"]
         struct_id = ids["structure_id"]
@@ -133,6 +133,7 @@ class MoleculeDataset:
             targets_atom=targets_atom,
             mask_atom=mask_atom,
             config=config,
+            root=path,
         )
 
     def _structure_atom_span(self, i: int) -> tuple[int, int]:
@@ -143,77 +144,64 @@ class MoleculeDataset:
 
     @classmethod
     def create_empty_dataset(cls, path: Path, config: DatasetConfig):
+        path = Path(path)
         os.makedirs(path, exist_ok=True)
 
-        compressor = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE)
+        compressor = BloscCodec(cname="zstd", clevel=5, shuffle=BloscShuffle.shuffle)
 
-        store = zarr.DirectoryStore(path)
-        g = zarr.group(store=store, overwrite=True)
+        store = LocalStore(path)
+        g = zarr.create_group(store=store, overwrite=True)
 
-        positions = g.create(
-            "positions",
-            shape=(0, 3),
-            chunks=(config.atom_chunk, 3),
-            dtype="f4",
-            compressor=compressor,
-        )
-        atomic_numbers = g.create(
-            "atomic_numbers",
-            shape=(0,),
-            chunks=(config.atom_chunk,),
-            dtype="u1",
-            compressor=compressor,
+        a_cps = config.atom_chunks_per_shard
+        m_cps = config.molecule_chunks_per_shard
+
+        def _mk(grp, name, shape, chunk0, cps, dtype, axis1: int | None = None):
+            """Create a sharded array.
+
+            ``chunk0`` is the chunk size along the growable (first) axis; the
+            shard groups ``cps`` such chunks into one on-disk file. zarr
+            requires the shard shape to be a whole multiple of the chunk
+            shape, which holds by construction here (cps on axis 0, 1x on the
+            fixed axis 1).
+            """
+            if axis1 is None:
+                chunks, shards = (chunk0,), (chunk0 * cps,)
+            else:
+                chunks, shards = (chunk0, axis1), (chunk0 * cps, axis1)
+            return grp.create_array(
+                name=name,
+                shape=shape,
+                chunks=chunks,
+                shards=shards,
+                dtype=dtype,
+                compressors=compressor,
+            )
+
+        positions = _mk(g, "positions", (0, 3), config.atom_chunk, a_cps, "f4", 3)
+        atomic_numbers = _mk(
+            g, "atomic_numbers", (0,), config.atom_chunk, a_cps, "u1"
         )
 
         # ragged pointer
-        ptr = g.create(
-            "molecule_ptr",
-            shape=(1,),
-            chunks=(config.molecule_chunk,),
-            dtype="i8",
-            compressor=compressor,
-        )
+        ptr = _mk(g, "molecule_ptr", (1,), config.molecule_chunk, m_cps, "i8")
         ptr[:] = 0
 
         # per-structure scalars
-        total_charge = g.create(
-            "total_charge",
-            shape=(0,),
-            chunks=(config.molecule_chunk,),
-            dtype="f4",
-            compressor=compressor,
+        total_charge = _mk(
+            g, "total_charge", (0,), config.molecule_chunk, m_cps, "f4"
         )
-        multiplicity = g.create(
-            "multiplicity",
-            shape=(0,),
-            chunks=(config.molecule_chunk,),
-            dtype="f4",
-            compressor=compressor,
+        multiplicity = _mk(
+            g, "multiplicity", (0,), config.molecule_chunk, m_cps, "f4"
         )
 
         # ID section
         ids = g.require_group("ids")
-        mol_id = ids.create(
-            "molecule_id",
-            shape=(0,),
-            chunks=(config.molecule_chunk,),
-            dtype="i8",
-            compressor=compressor,
+        mol_id = _mk(ids, "molecule_id", (0,), config.molecule_chunk, m_cps, "i8")
+        stereo_id = _mk(
+            ids, "stereoisomer_id", (0,), config.molecule_chunk, m_cps, "i8"
         )
-        stereo_id = ids.create(
-            "stereoisomer_id",
-            shape=(0,),
-            chunks=(config.molecule_chunk,),
-            dtype="i8",
-            compressor=compressor,
-        )
-
-        struct_id = ids.create(
-            "structure_id",
-            shape=(0,),
-            chunks=(config.molecule_chunk,),
-            dtype="i8",
-            compressor=compressor,
+        struct_id = _mk(
+            ids, "structure_id", (0,), config.molecule_chunk, m_cps, "i8"
         )
 
         smiles = None
@@ -246,40 +234,26 @@ class MoleculeDataset:
             Natom = len(config.tasks.atom_cols)
 
             if Nsys > 0:
-                targets_system = tasks_grp.create(
-                    "targets_system",
-                    shape=(0, Nsys),
-                    chunks=(config.molecule_chunk, max(1, Nsys)),
-                    dtype="f4",
-                    compressor=compressor,
+                targets_system = _mk(
+                    tasks_grp, "targets_system", (0, Nsys),
+                    config.molecule_chunk, m_cps, "f4", max(1, Nsys),
                 )
-                mask_system = tasks_grp.create(
-                    "mask_system",
-                    shape=(0, Nsys),
-                    chunks=(config.molecule_chunk, max(1, Nsys)),
-                    dtype="u1",
-                    compressor=compressor,
+                mask_system = _mk(
+                    tasks_grp, "mask_system", (0, Nsys),
+                    config.molecule_chunk, m_cps, "u1", max(1, Nsys),
                 )
 
             if Natom > 0:
-                targets_atom = tasks_grp.create(
-                    "targets_atom",
-                    shape=(0, Natom),
-                    chunks=(config.atom_chunk, max(1, Natom)),
-                    dtype="f4",
-                    compressor=compressor,
+                targets_atom = _mk(
+                    tasks_grp, "targets_atom", (0, Natom),
+                    config.atom_chunk, a_cps, "f4", max(1, Natom),
                 )
-                mask_atom = tasks_grp.create(
-                    "mask_atom",
-                    shape=(0, Natom),
-                    chunks=(config.atom_chunk, max(1, Natom)),
-                    dtype="u1",
-                    compressor=compressor,
+                mask_atom = _mk(
+                    tasks_grp, "mask_atom", (0, Natom),
+                    config.atom_chunk, a_cps, "u1", max(1, Natom),
                 )
 
         pyd_yaml.to_yaml_file(path / "dataset_config.yaml", config)
-
-        consolidate_metadata(str(path))
 
         return cls(
             positions,
@@ -297,15 +271,19 @@ class MoleculeDataset:
             targets_atom,
             mask_atom,
             config,
+            root=path,
         )
 
     @property
     def N_structures(self) -> int:
-        return int(self._mol_cursor)
+        # ptr has length N_structures + 1 (leading 0 sentinel). Valid once
+        # the dataset has been finalized (ShardAlignedWriter.finalize).
+        return int(self.ptr.shape[0]) - 1
 
     @property
     def N_atoms(self) -> int:
-        return int(self._atom_cursor)
+        # ptr is cumulative; the last entry is the total atom count.
+        return int(np.asarray(self.ptr[self.ptr.shape[0] - 1]))
 
     @property
     def N_molecules(self) -> int:
@@ -317,108 +295,6 @@ class MoleculeDataset:
     def __len__(self):
         return self.N_structures
 
-    def _ensure_capacity_atoms(
-        self, extra_atoms: int, growth: float = 1.5, min_slack: int = 100_000
-    ):
-        need = self._atom_cursor + extra_atoms
-        cur = int(self.positions.shape[0])
-        if need > cur:
-            new_cap = max(need, int(cur * growth) + min_slack)
-            self.positions.resize((new_cap, 3))
-            self.atomic_numbers.resize((new_cap,))
-            if self.targets_atom is not None:
-                ncols = self.targets_atom.shape[1]
-                self.targets_atom.resize((new_cap, ncols))
-                self.mask_atom.resize((new_cap, ncols))
-
-    def _ensure_capacity_mols(
-        self, extra_mols: int, growth: float = 1.5, min_slack: int = 10_000
-    ):
-        need_ptr = self._mol_cursor + extra_mols + 1
-        cur_ptr = int(self.ptr.shape[0])
-        if need_ptr > cur_ptr:
-            new_ptr_cap = max(need_ptr, int(cur_ptr * growth) + min_slack)
-            self.ptr.resize((new_ptr_cap,))
-        need_ids = self._mol_cursor + extra_mols
-        cur_ids = int(self.structure_ids.shape[0])
-        if need_ids > cur_ids:
-            new_ids_cap = max(need_ids, int(cur_ids * growth) + (min_slack - 1))
-            self.structure_ids.resize((new_ids_cap,))
-            self.molecule_ids.resize((new_ids_cap,))
-            self.isomer_ids.resize((new_ids_cap,))
-            self.total_charge.resize((new_ids_cap,))
-            self.multiplicity.resize((new_ids_cap,))
-            if self.targets_system is not None:
-                ncols = self.targets_system.shape[1]
-                self.targets_system.resize((new_ids_cap, ncols))
-                self.mask_system.resize((new_ids_cap, ncols))
-
-    def append_batch(
-        self,
-        positions,
-        atomic_numbers,
-        batch_ptr_cumsum,  # length = n_mols, cumulative ends (no leading 0)
-        molecule_ids,
-        stereoisomer_ids,
-        total_charge,
-        multiplicity,
-        system_targets,
-        system_masks,
-        atom_targets,
-        atom_masks,
-    ):
-        P = np.asarray(positions, dtype="f4", order="C")
-        Z = np.asarray(atomic_numbers, dtype="u1", order="C")
-        M = np.asarray(molecule_ids, dtype="i8", order="C")
-        R = np.asarray(stereoisomer_ids, dtype="i8", order="C")
-        C = np.asarray(batch_ptr_cumsum, dtype="i8", order="C")
-        Q = np.asarray(total_charge, dtype="f4", order="C")
-        S_mult = np.asarray(multiplicity, dtype="f4", order="C")
-
-        assert C.shape[0] == M.shape[0] == R.shape[0]
-        assert Q.shape[0] == M.shape[0] and S_mult.shape[0] == M.shape[0]
-
-        n_atoms = P.shape[0]
-        n_mols = int(C.shape[0])
-
-        self._ensure_capacity_atoms(n_atoms, growth=4)
-        self._ensure_capacity_mols(n_mols, growth=4)
-
-        a0, a1 = self._atom_cursor, self._atom_cursor + n_atoms
-        m0, m1 = self._mol_cursor, self._mol_cursor + n_mols
-
-        if atom_targets is not None:
-            AT = np.asarray(atom_targets, dtype="f4", order="C")
-            AM = np.asarray(atom_masks, dtype="i8", order="C")
-
-            self.mask_atom[a0:a1] = AM
-            self.targets_atom[a0:a1] = AT
-
-        # per-atom writes
-        self.positions[a0:a1, :] = P
-        self.atomic_numbers[a0:a1] = Z
-
-        # ptr: extend ends relative to existing sentinel at m0
-        self.ptr[m0 + 1 : m1 + 1] = self.ptr[m0] + C
-
-        S = np.arange(0, n_mols) + m0
-
-        self.structure_ids[m0:m1] = S
-        self.molecule_ids[m0:m1] = M
-        self.isomer_ids[m0:m1] = R
-        self.total_charge[m0:m1] = Q
-        self.multiplicity[m0:m1] = S_mult
-
-        if system_targets is not None:
-            ST = np.asarray(system_targets, dtype="f4", order="C")
-            SM = np.asarray(system_masks, dtype="i8", order="C")
-
-            self.targets_system[m0:m1] = ST
-            self.mask_system[m0:m1] = SM
-
-        self._atom_cursor = a1
-        self._mol_cursor = m1
-
     def get_structure_ids_from_molecule_ids(self, molecule_ids: set):
         if not molecule_ids:
             return np.asarray([], dtype="i8")
@@ -428,25 +304,6 @@ class MoleculeDataset:
         struct_ids = np.asarray(self.structure_ids[:])
         retrieved_structure_ids = struct_ids[mask]
         return retrieved_structure_ids
-
-    def shrink_to_fit(self):
-        self.positions.resize((self._atom_cursor, 3))
-        self.atomic_numbers.resize((self._atom_cursor,))
-        self.ptr.resize((self._mol_cursor + 1,))
-        self.structure_ids.resize((self._mol_cursor,))
-        self.molecule_ids.resize((self._mol_cursor,))
-        self.isomer_ids.resize((self._mol_cursor,))
-        self.total_charge.resize((self._mol_cursor,))
-        self.multiplicity.resize((self._mol_cursor,))
-
-        if self.targets_system is not None:
-            ncols = self.targets_system.shape[1]
-            self.targets_system.resize((self._mol_cursor, ncols))
-            self.mask_system.resize((self._mol_cursor, ncols))
-        if self.targets_atom is not None:
-            ncols = self.targets_atom.shape[1]
-            self.targets_atom.resize((self._atom_cursor, ncols))
-            self.mask_atom.resize((self._atom_cursor, ncols))
 
     def get_smiles_per_structure(self):
         if self.smiles is None:

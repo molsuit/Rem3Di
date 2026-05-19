@@ -23,7 +23,7 @@ dependencies = [
     "mace-torch>=0.3.16",
     "umap-learn",
     "torch-sim-atomistic",
-    "zarr==2.18.7",
+    "zarr>=3.2",
     "graph-longrange",
     "cuequivariance-torch==0.9.1",
     "cuequivariance==0.9.1",

@@ -63,15 +63,18 @@ class XYZMoleculeGenerator(MoleculeGenerator):
     def _read_multiplicity(self, atoms: Atoms) -> float:
         """Return the spin multiplicity (2S+1) for one molecule.
 
-        ``spin_key`` names a field on ``atoms.info`` that holds the total spin
-        angular momentum S; this method converts S → 2S+1 so the value stored
-        on the dataset matches what MACE / PolarMACE consume. When no
+        ``spin_key`` names a field on ``atoms.info`` that already holds the
+        spin multiplicity (2S+1), not the total spin S. This matches the
+        OMol25 convention, where ``spin`` is the multiplicity passed to ORCA
+        (verified against ``s_squared``: ``spin=1`` ↔ ⟨S²⟩=0 singlet,
+        ``spin=2`` ↔ ⟨S²⟩≈0.75 doublet) and is exactly the quantity MACE /
+        PolarMACE consume. The value is read through verbatim. When no
         ``spin_key`` is configured we fall back to multiplicity 1.0 (closed
         shell), matching MACE's documented default.
         """
         if self.spin_key is None:
             return 1.0
-        return 2.0 * float(atoms.info[self.spin_key]) + 1.0
+        return float(atoms.info[self.spin_key])
 
     def __iter__(self):
         if isinstance(self.xyz_file, list):

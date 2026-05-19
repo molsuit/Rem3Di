@@ -15,6 +15,9 @@ from threedscriptors.data_handling.dataset_analysis import (
     MoleculeDatasetAnalysis,
     _compute_descriptors,
 )
+from threedscriptors.data_handling.dataset_creation.shard_aligned_writer import (
+    ShardAlignedWriter,
+)
 
 
 def _build_small_dataset(
@@ -25,6 +28,7 @@ def _build_small_dataset(
     """Build a minimal on-disk dataset with `structures_per_mol` copies per SMILES."""
     cfg = DatasetConfig(atom_chunk=64, molecule_chunk=16, contains_smiles=True)
     dataset = MoleculeDataset.create_empty_dataset(path=tmp_path, config=cfg)
+    writer = ShardAlignedWriter(dataset)
 
     # Fake atomic data: each structure has 5 atoms (e.g., C, O, N, H, H)
     species = np.array([6, 8, 7, 1, 1], dtype=np.uint8)
@@ -42,7 +46,7 @@ def _build_small_dataset(
     charges = np.zeros(n_structures, dtype=np.float32)
     mults = np.ones(n_structures, dtype=np.float32)
 
-    dataset.append_batch(
+    writer.append_batch(
         positions=all_positions,
         atomic_numbers=all_species,
         batch_ptr_cumsum=ptr_cumsum,
@@ -55,7 +59,7 @@ def _build_small_dataset(
         atom_targets=None,
         atom_masks=None,
     )
-    dataset.shrink_to_fit()
+    writer.finalize()
 
     # Append the SMILES separately (one per unique molecule).
     if dataset.smiles is not None:

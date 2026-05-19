@@ -16,6 +16,9 @@ from threedscriptors.data_handling.dataset_creation import (
 )
 from threedscriptors.data_handling.dataset_creation.generators import MoleculeGenerator
 from threedscriptors.data_handling.dataset_creation.loading_batch import SmilesData
+from threedscriptors.data_handling.dataset_creation.shard_aligned_writer import (
+    ShardAlignedWriter,
+)
 from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 from threedscriptors.data_handling.dataset_creation.utils import (
     ensure_numpy_array,
@@ -35,10 +38,13 @@ class DatasetConstructionOrchestrator:
         self.batch_generator = batch_generator
         self.construction_config = construction_config
 
-        # Initialize empty zarr dataset
+        # Initialize empty zarr dataset + its shard-aligned writer. The
+        # writer owns the build-time buffering so each shard file is written
+        # exactly once (MoleculeDataset itself is pure storage).
         self.dataset = MoleculeDataset.create_empty_dataset(
             self.construction_config.path, dataset_config
         )
+        self.writer = ShardAlignedWriter(self.dataset)
 
         # Timing accumulators
         self._stage_times: dict[str, float] = {}
@@ -71,7 +77,7 @@ class DatasetConstructionOrchestrator:
 
             if (
                 self.construction_config.N_structures is not None
-                and self.dataset.N_structures > self.construction_config.N_structures
+                and self.writer.n_structures > self.construction_config.N_structures
             ):
                 break
 
@@ -114,7 +120,7 @@ class DatasetConstructionOrchestrator:
             atom_target = None
             atom_mask = None
 
-        self.dataset.append_batch(
+        self.writer.append_batch(
             positions,
             atomic_numbers,
             ptr,
@@ -159,7 +165,7 @@ class DatasetConstructionOrchestrator:
             self.dataset.smiles.close()
             self.dataset.isomeric_smiles.close()
 
-        self.dataset.shrink_to_fit()
+        self.writer.finalize()
 
         # Print simple timing summary
         if self._num_batches > 0:
