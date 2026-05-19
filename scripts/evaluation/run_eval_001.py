@@ -49,8 +49,6 @@ from threedscriptors.evaluation.eval001.splits import (
     scaffold_train_val_test_split,
 )
 
-DEFAULT_CONFIG = Path("configs/eval/2026-04-27_eval_001_mumo_core.yaml")
-
 RESULT_COLUMNS = (
     "suite", "dataset", "task", "split_variant", "metric_name", "metric_mode",
     "row", "head", "seed", "value", "value_std", "n_train", "n_val", "n_test",
@@ -766,7 +764,14 @@ def run_moleculenet_cached(config: dict, args) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run EVAL-001 raw/zarr evaluation shards.")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        required=True,
+        help="EVAL-001 YAML config. Copy configs/eval/eval_001_template.yaml, "
+             "fill the <PLACEHOLDER> paths, then pass it here "
+             "(see scripts/evaluation/README_eval001.md).",
+    )
     parser.add_argument("--suite", choices=["tdc", "moleculenet", "all"], default="all")
     parser.add_argument("--descriptor", default="ECFP")
     parser.add_argument("--datasets", nargs="+", default=None)
@@ -864,7 +869,8 @@ def main() -> None:
 
     if args.output is None:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        args.output = Path(config["paths"]["shard_root"]) / stamp / "shards" / "ecfp_raw.csv"
+        fname = f"{args.descriptor}_{args.suite}.csv"
+        args.output = Path(config["paths"]["shard_root"]) / stamp / "shards" / fname
     args.output.parent.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(rows, columns=list(RESULT_COLUMNS))
     df.to_csv(args.output, index=False)
