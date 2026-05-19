@@ -96,7 +96,7 @@ def moleculenet_specs(raw_root: Path) -> tuple[MoleculeNetTaskSpec, ...]:
             target_columns=("FDA_APPROVED", "CT_TOX"),
             task_type="multilabel",
             metric="macro-AUROC",
-            split_variant="random",
+            split_variant="scaffold",
         ),
         MoleculeNetTaskSpec(
             dataset="SIDER",
@@ -134,7 +134,7 @@ def moleculenet_specs(raw_root: Path) -> tuple[MoleculeNetTaskSpec, ...]:
             ),
             task_type="multilabel",
             metric="macro-AUROC",
-            split_variant="random",
+            split_variant="scaffold",
         ),
         MoleculeNetTaskSpec(
             dataset="Tox21",
@@ -157,7 +157,7 @@ def moleculenet_specs(raw_root: Path) -> tuple[MoleculeNetTaskSpec, ...]:
             ),
             task_type="multilabel",
             metric="macro-AUROC",
-            split_variant="random",
+            split_variant="scaffold",
         ),
         MoleculeNetTaskSpec(
             dataset="ESOL",
@@ -167,7 +167,7 @@ def moleculenet_specs(raw_root: Path) -> tuple[MoleculeNetTaskSpec, ...]:
             target_columns=("solubility",),
             task_type="regression",
             metric="RMSE",
-            split_variant="random",
+            split_variant="scaffold",
         ),
         MoleculeNetTaskSpec(
             dataset="Lipophilicity",
@@ -177,7 +177,7 @@ def moleculenet_specs(raw_root: Path) -> tuple[MoleculeNetTaskSpec, ...]:
             target_columns=("lipophilicity",),
             task_type="regression",
             metric="RMSE",
-            split_variant="random",
+            split_variant="scaffold",
         ),
         MoleculeNetTaskSpec(
             dataset="FreeSolv",
@@ -187,7 +187,7 @@ def moleculenet_specs(raw_root: Path) -> tuple[MoleculeNetTaskSpec, ...]:
             target_columns=("hydration_free_energy",),
             task_type="regression",
             metric="RMSE",
-            split_variant="random",
+            split_variant="scaffold",
         ),
     )
 
