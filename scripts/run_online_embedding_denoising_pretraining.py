@@ -70,6 +70,36 @@ def parse_args():
         default=None,
         help="Optional override for the dataset path (e.g. compute-node-staged data).",
     )
+    parser.add_argument(
+        "--max_train",
+        type=int,
+        default=None,
+        help="Optional cap on the number of training structures for smoke runs.",
+    )
+    parser.add_argument(
+        "--max_val",
+        type=int,
+        default=None,
+        help="Optional cap on the number of validation structures for smoke runs.",
+    )
+    parser.add_argument(
+        "--max_epochs",
+        type=int,
+        default=None,
+        help="Optional epoch override for smoke runs.",
+    )
+    parser.add_argument(
+        "--max_train_batches",
+        type=int,
+        default=None,
+        help="Optional cap on training batches per epoch for smoke runs.",
+    )
+    parser.add_argument(
+        "--max_val_batches",
+        type=int,
+        default=None,
+        help="Optional cap on validation batches per epoch for smoke runs.",
+    )
     return parser.parse_args()
 
 def setup_logging(filename, level: int = logging.INFO) -> logging.Logger:
@@ -92,6 +122,8 @@ def main():
     np.random.seed(0)
 
     training_config = pyaml.parse_yaml_file_as(TrainingConfig, args.training_config)
+    if args.max_epochs is not None:
+        training_config.epochs = args.max_epochs
     architecture_config = pyaml.parse_yaml_file_as(
         ArchitectureConfig, training_config.model_config_path
     )
@@ -105,6 +137,10 @@ def main():
     train_idx, val_idx, split_name = next(
         splitting.get_split(training_config.split_config)
     )
+    if args.max_train is not None:
+        train_idx = train_idx[: args.max_train]
+    if args.max_val is not None:
+        val_idx = val_idx[: args.max_val]
     train_dataset = Subset(ds, train_idx)
     valid_dataset = Subset(ds, val_idx)
 
@@ -128,6 +164,15 @@ def main():
 
     logger = setup_logging(filename=training_data_dir / "logfile.info")
     logger.info("Loaded Dataset")
+    logger.info(
+        "Smoke caps: max_train=%s max_val=%s max_epochs=%s "
+        "max_train_batches=%s max_val_batches=%s",
+        args.max_train,
+        args.max_val,
+        args.max_epochs,
+        args.max_train_batches,
+        args.max_val_batches,
+    )
 
     noise_scheduler = ConstantSchedule(training_config.noise_level)
     noise_module = NoiseModule(noise_scheduler)
@@ -232,6 +277,11 @@ def main():
             optimizer.zero_grad()
 
             for batch_index, samples in enumerate(training_loader):
+                if (
+                    args.max_train_batches is not None
+                    and batch_index >= args.max_train_batches
+                ):
+                    break
                 samples.to_(device)
                 # Capture before preprocessor — it mutates atomic_positions from
                 # flat (total_atoms, 3) to padded (B, N_max, 3).
@@ -343,6 +393,11 @@ def main():
 
             with torch.no_grad():
                 for batch_idx, val_samples in enumerate(validation_loader):
+                    if (
+                        args.max_val_batches is not None
+                        and batch_idx >= args.max_val_batches
+                    ):
+                        break
                     val_samples.to_(device)
                     preprocessed_val_samples: PreprocessedSample = preprocessor(
                         val_samples

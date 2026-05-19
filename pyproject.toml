@@ -41,6 +41,19 @@ mols  = ["polaris-lib>=0.11.4",
 cluster = [
     "bblean>=0.10.3",
 ]
+# EVAL-001 benchmark panel (scripts/evaluation/run_eval_001.py). lightgbm is an
+# eager import in eval001.heads; PyTDC is needed for the TDC ADMET suite. The
+# rest are imported at module level by eval001 and pinned here for a
+# reproducible eval install (otherwise only present transitively). ECFP also
+# needs molfeat from the `mols` extra: `uv sync --extra mols --extra eval`.
+eval = [
+    "lightgbm>=4.6.0",
+    "PyTDC",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "pyyaml",
+]
 
 [build-system]
 requires = ["hatchling"]

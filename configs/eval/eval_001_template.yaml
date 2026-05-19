@@ -1,0 +1,47 @@
+# EVAL-001 config template — copy to e.g. configs/eval/eval_001_local.yaml,
+# fill the <PLACEHOLDER> paths for your machine, then:
+#   python scripts/evaluation/run_eval_001.py --config configs/eval/eval_001_local.yaml ...
+#
+# Only the keys below are consumed by run_eval_001.py. Task selection is via
+# the --datasets / --limit CLI flags (defaults to the full EVAL-001 panel).
+
+eval_id: EVAL-001
+
+paths:
+  # TDC ADMET zarr datasets, one subdir per benchmark (e.g. <tdc_root>/BBB_Martins/zarr).
+  # Built by your dataset_creation TDC generator.
+  tdc_root: <PLACEHOLDER>/tdc_admet
+  # PyTDC's own benchmark-group cache (auto-downloaded on first run if absent).
+  tdc_cache: <PLACEHOLDER>/tdc_admet/_tdc_cache
+
+  # MoleculeNet raw release CSVs (the unmodified DeepChem/MoleculeNet downloads).
+  moleculenet_raw_root: <PLACEHOLDER>/raw_datasets/molecule_net
+  # MoleculeNet zarr datasets + source_index_mapping.json, one subdir per task.
+  moleculenet_output_root: <PLACEHOLDER>/eval001_moleculenet
+
+  # Where bring-your-own / ECFP descriptor caches live:
+  #   <descriptor_cache_root>/<dataset>/<row>.npz   (see README_eval001.md)
+  descriptor_cache_root: evaluation_results/eval_001/descriptors
+  # Where the result shard CSV is written (when --output is not given).
+  shard_root: evaluation_results/eval_001
+
+tdc:
+  # PyTDC ADMET-Group official protocol uses 5 seeds; keep 5 for leaderboard parity.
+  seeds: [1, 2, 3, 4, 5]
+
+moleculenet:
+  seeds: [0, 1, 2, 3, 4]
+
+# A model x task cell is flagged coverage_limited (excluded from fair win
+# counts) if the scored fraction of the official test split is below these.
+coverage_thresholds:
+  regression: 0.98
+  classification: 0.95
+
+heads:
+  # device / allow_cpu_mlp are overridden by --mlp-device / --allow-cpu-mlp.
+  mlp:
+    device: cuda
+    allow_cpu_mlp: false
+    max_epochs: 100
+    early_stop_patience: 10
