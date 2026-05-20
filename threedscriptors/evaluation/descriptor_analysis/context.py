@@ -75,7 +75,9 @@ class DescriptorAnalysisContext:
 
     ``descriptors`` is the normalized matrix used for projection / metrics.
     ``descriptors_raw`` is kept around so capacity diagnostics see the
-    untouched representation.
+    untouched representation. ``sample_indices`` maps each descriptor row to
+    its index in ``dataset`` when descriptors were computed on a subset of the
+    dataset (None ⇒ identity, descriptors cover the full dataset in order).
     """
 
     dataset: MoleculeDataset
@@ -83,6 +85,7 @@ class DescriptorAnalysisContext:
     descriptors_raw: np.ndarray
     projection: np.ndarray | None = None
     file_prefix: str = ""
+    sample_indices: np.ndarray | None = None
     cache: dict[str, object] = field(default_factory=dict)
 
     @classmethod
@@ -93,10 +96,20 @@ class DescriptorAnalysisContext:
         normalization: DescriptorNormalizationConfig | None = None,
         projection_config: ProjectionConfig | None = None,
         file_prefix: str = "",
+        sample_indices: np.ndarray | None = None,
     ) -> DescriptorAnalysisContext:
         raw = _to_numpy(descriptors).astype(np.float64, copy=False)
         normalizer = normalization or DescriptorNormalizationConfig()
         normalized = normalizer.apply(raw)
+
+        indices = None
+        if sample_indices is not None:
+            indices = np.ascontiguousarray(sample_indices, dtype=np.int64)
+            if indices.shape != (normalized.shape[0],):
+                raise ValueError(
+                    f"sample_indices shape {indices.shape} does not match "
+                    f"({normalized.shape[0]},) descriptor rows"
+                )
 
         projection = None
         if projection_config is not None:
@@ -108,7 +121,15 @@ class DescriptorAnalysisContext:
             descriptors_raw=raw,
             projection=projection,
             file_prefix=file_prefix,
+            sample_indices=indices,
         )
+
+    def to_dataset_indices(self, subset_idx: np.ndarray) -> np.ndarray:
+        """Map descriptor-row indices to their indices in ``dataset``."""
+        subset_idx = np.asarray(subset_idx, dtype=np.int64)
+        if self.sample_indices is None:
+            return subset_idx
+        return self.sample_indices[subset_idx]
 
     def file_name(self, name: str) -> Path:
         if not self.file_prefix or name.startswith(self.file_prefix):

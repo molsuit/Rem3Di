@@ -30,6 +30,7 @@ dependencies = [
     "cuequivariance-ops-torch-cu12==0.9.1",
     "pymatgen>=2026.3.23",
     "datashader>=0.19.0",
+    "chemiscope>=1.0.3",
 ]
 
 

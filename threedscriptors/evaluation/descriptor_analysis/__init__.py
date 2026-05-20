@@ -1,8 +1,13 @@
 from .analysis_tasks import (
     CapacityDiagnosticTask,
+    ChemiscopeClusterTask,
     ChemiscopeProjectionTask,
+    ClusterAxisAnalysisTask,
+    ClusterChemicalFingerprintTask,
+    ClusterGranularitySweepTask,
     DescriptorAnalysisTask,
     DescriptorDistributionTask,
+    DescriptorStructureBenchmarkTask,
     HDBSCANClusterTask,
     ProjectionPlotTask,
     TopNormDescriptorsTask,
@@ -35,7 +40,11 @@ from .runner import DescriptorAnalysisRunner
 
 __all__ = [
     "CapacityDiagnosticTask",
+    "ChemiscopeClusterTask",
     "ChemiscopeProjectionTask",
+    "ClusterAxisAnalysisTask",
+    "ClusterChemicalFingerprintTask",
+    "ClusterGranularitySweepTask",
     "ClusteringCalculator",
     "ColorProvider",
     "CoordinationNumberColor",
@@ -45,6 +54,7 @@ __all__ = [
     "DescriptorAnalysisTask",
     "DescriptorDistributionTask",
     "DescriptorNormalizationConfig",
+    "DescriptorStructureBenchmarkTask",
     "HDBSCANClusterTask",
     "MetalCenterAtomicNumberColor",
     "MetalCenterElementColor",
