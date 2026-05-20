@@ -1,10 +1,11 @@
 from rdkit import Chem
-from rdkit.Chem.SaltRemover import SaltRemover
 from rdkit.Chem.MolStandardize import rdMolStandardize
+from rdkit.Chem.SaltRemover import SaltRemover
 
+from threedscriptors.data_handling.dataset.tasks import ElementSet
 
 # MACE-OFF24 element coverage — drug-like organic subset.
-MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
+MACE_OFF_ELEMENTS: set[str] = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 
 # MACE-POLAR-1-M element coverage — atomic numbers 1..83 (H through Bi).
 # Verified 2026-05-03 by introspecting the model's atomic_numbers buffer.
@@ -20,7 +21,16 @@ _PERIODIC_TABLE_SYMBOLS = (
     "La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu "
     "Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi"
 ).split()
-MACE_POLAR_ELEMENTS = set(_PERIODIC_TABLE_SYMBOLS)
+MACE_POLAR_ELEMENTS: set[str] = set(_PERIODIC_TABLE_SYMBOLS)
+
+
+def resolve_element_set(preset: ElementSet) -> set[str]:
+    """Resolve an :class:`ElementSet` preset to the concrete element symbol set."""
+    if preset is ElementSet.mace_off:
+        return MACE_OFF_ELEMENTS
+    if preset is ElementSet.mace_polar:
+        return MACE_POLAR_ELEMENTS
+    raise ValueError(f"Unknown ElementSet: {preset!r}")
 
 
 # Module-level singletons for repeated standardization calls.

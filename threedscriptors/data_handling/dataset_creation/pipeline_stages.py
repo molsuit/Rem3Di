@@ -109,12 +109,20 @@ class ConformerGenerationStage(PipelineStage):
         self.config = dataset_creation_config
 
         self.num_workers = os.cpu_count()
+        # Per-stage running totals across all batches; orchestrator reads this
+        # at finalize for the build summary.
+        from threedscriptors.data_handling.dataset_creation.build_stats import (
+            StageStats,
+        )
+
+        self.stats = StageStats()
 
     def __call__(self, input_batch: InputBatch, data_batch: DataBatch):
         molecules: list[Atoms] = []
         smiles_list: list[SmilesData] = []
         structure_ids: list[StructureID] = []
         parent_idx_for_regression: list[int] = []
+        self.stats.n_attempted += len(input_batch.smiles)
 
         # Submit independent molecules to the pool
         futures = {}
@@ -162,10 +170,13 @@ class ConformerGenerationStage(PipelineStage):
                             )
                         )
                         parent_idx_for_regression.append(mol_i)
+                    self.stats.n_emitted += 1
 
                 except ValueError as ve:
+                    self.stats.n_value_errors += 1
                     tqdm.write(f"[skip] {isomeric_smiles}: {ve}")
                 except Exception as e:
+                    self.stats.n_other_errors += 1
                     tqdm.write(f"[error] {isomeric_smiles}: {e!r}")
 
         input_batch.molecules = molecules
@@ -187,16 +198,16 @@ class ConformerGenerationStage(PipelineStage):
         ):
             idx = np.asarray(parent_idx_for_regression, dtype=np.int64)
             rd = input_batch.regression_data
+            new_rd_kwargs: dict = {}
             if rd.targets_system is not None:
-                new_targets = rd.targets_system[idx, :]
-                new_masks = rd.mask_system[idx, :]
+                new_rd_kwargs["targets_system"] = rd.targets_system[idx, :]
+                new_rd_kwargs["mask_system"] = rd.mask_system[idx, :]
             if rd.targets_atom is not None:
                 raise NotImplementedError
+            if rd.split is not None:
+                new_rd_kwargs["split"] = rd.split[idx]
 
-            input_batch.regression_data = RegressionData(
-                targets_system=new_targets,
-                mask_system=new_masks,
-            )
+            input_batch.regression_data = RegressionData(**new_rd_kwargs)
 
         return input_batch, data_batch
 

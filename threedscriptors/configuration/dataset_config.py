@@ -2,7 +2,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from threedscriptors.data_handling.dataset.tasks import TaskSet
+from threedscriptors.data_handling.dataset.tasks import ElementSet, TaskSet
 
 
 class DatasetCreationConfig(BaseModel):
@@ -15,6 +15,15 @@ class DatasetCreationConfig(BaseModel):
     N_sampled_conformers: int = 1
     max_embed_attempts: int = 500
     max_MMFF_steps: int = 500
+
+    # Molecule-standardization toggles applied before filter_mol in the
+    # benchmark generators. Defaults strip common counter-ions and
+    # neutralize formal charges so multi-fragment salt rows (HCl / Na+ / ...)
+    # survive ingest as their neutral drug form instead of being rejected
+    # outright by the single-fragment gate.
+    strip_salts: bool = True
+    neutralize: bool = True
+    element_set: ElementSet = ElementSet.mace_off
 
 
 class DatasetConfig(BaseModel):

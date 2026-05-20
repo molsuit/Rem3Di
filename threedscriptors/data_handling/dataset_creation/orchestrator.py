@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from time import perf_counter
 
@@ -24,6 +25,8 @@ from threedscriptors.data_handling.dataset_creation.utils import (
     ensure_numpy_array,
     system_idx_to_ragged_ptr,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class DatasetConstructionOrchestrator:
@@ -114,11 +117,13 @@ class DatasetConstructionOrchestrator:
             system_masks = output_data.regression_data.mask_system
             atom_target = output_data.regression_data.targets_atom
             atom_mask = output_data.regression_data.mask_atom
+            split = output_data.regression_data.split
         else:
             system_targets = None
             system_masks = None
             atom_target = None
             atom_mask = None
+            split = None
 
         self.writer.append_batch(
             positions,
@@ -132,6 +137,7 @@ class DatasetConstructionOrchestrator:
             system_masks,
             atom_target,
             atom_mask,
+            split,
         )
 
     def get_mol_ids_for_batch(
@@ -166,19 +172,49 @@ class DatasetConstructionOrchestrator:
             self.dataset.isomeric_smiles.close()
 
         self.writer.finalize()
+        self._log_build_summary()
 
-        # Print simple timing summary
+    def _log_build_summary(self) -> None:
+        """Aggregate generator + stage stats + timings into one INFO block.
+
+        Whether the generator and stages expose stats is optional — anything
+        without a ``load_stats`` / ``stats`` attribute is silently skipped, so
+        non-benchmark generators (e.g. TmqmGenerator) still produce a clean
+        log.
+        """
+        lines: list[str] = ["dataset build summary:"]
+
+        gen_stats = getattr(self.batch_generator, "load_stats", None)
+        if gen_stats is not None:
+            lines.append(
+                f"  generator {type(self.batch_generator).__name__}: "
+                f"{gen_stats.summary()}"
+            )
+
+        for stage in self.pipeline:
+            stage_stats = getattr(stage, "stats", None)
+            if stage_stats is not None:
+                lines.append(
+                    f"  stage {type(stage).__name__}: {stage_stats.summary()}"
+                )
+
+        lines.append(f"  zarr structures written: {self.writer.n_structures}")
+
         if self._num_batches > 0:
-            per_batch_append = self._append_time / self._num_batches
-            # Order stages by total time (descending)
+            lines.append(
+                f"  timings ({self._num_batches} batches, per-stage total / per-batch):"
+            )
             ordered = sorted(
                 self._stage_times.items(), key=lambda x: x[1], reverse=True
             )
-            print("Dataset construction timing summary:")
             for name, total in ordered:
-                print(
-                    f"  Stage {name}: {total:.3f}s total ({total / self._num_batches:.4f}s/batch)"
+                lines.append(
+                    f"    {name}: {total:.3f}s ({total / self._num_batches:.4f}s/batch)"
                 )
-            print(
-                f"  Append: {self._append_time:.3f}s total ({per_batch_append:.4f}s/batch)"
+            per_batch_append = self._append_time / self._num_batches
+            lines.append(
+                f"    Append: {self._append_time:.3f}s "
+                f"({per_batch_append:.4f}s/batch)"
             )
+
+        logger.info("\n".join(lines))

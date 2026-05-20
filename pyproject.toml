@@ -31,6 +31,7 @@ dependencies = [
     "pymatgen>=2026.3.23",
     "datashader>=0.19.0",
     "chemiscope>=1.0.3",
+    "PyTDC>=0.3.6",
 ]
 
 
@@ -42,14 +43,14 @@ mols  = ["polaris-lib>=0.11.4",
 cluster = [
     "bblean>=0.10.3",
 ]
-# EVAL-001 benchmark panel (scripts/evaluation/run_eval_001.py). lightgbm is an
-# eager import in eval001.heads; PyTDC is needed for the TDC ADMET suite. The
-# rest are imported at module level by eval001 and pinned here for a
-# reproducible eval install (otherwise only present transitively). ECFP also
-# needs molfeat from the `mols` extra: `uv sync --extra mols --extra eval`.
+# Descriptor-probe benchmark panel
+# (scripts/evaluation/run_benchmark_eval.py + scripts/dataset_creation/
+# build_benchmark_dataset.py). lightgbm is the LightGBMLearner backend; PyTDC
+# drives the TDC ADMET ingest. The rest are pinned for a reproducible eval
+# install (otherwise only present transitively). ECFP also needs molfeat from
+# the `mols` extra: `uv sync --extra mols --extra eval`.
 eval = [
     "lightgbm>=4.6.0",
-    "PyTDC",
     "pandas",
     "scipy",
     "scikit-learn",

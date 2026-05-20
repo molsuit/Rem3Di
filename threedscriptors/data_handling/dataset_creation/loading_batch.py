@@ -13,6 +13,9 @@ class RegressionData:
     mask_system: np.ndarray | None = None
     targets_atom: np.ndarray | None = None
     mask_atom: np.ndarray | None = None
+    # Per-structure split codes (see Split enum). Rides inside RegressionData
+    # so ConformerGenerationStage replicates it per conformer for free.
+    split: np.ndarray | None = None
 
 
 @dataclass

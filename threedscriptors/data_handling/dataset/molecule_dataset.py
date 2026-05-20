@@ -32,6 +32,7 @@ class MoleculeDataset:
         mask_system: Array | None,
         targets_atom: Array | None,
         mask_atom: Array | None,
+        split: Array | None,
         config: DatasetConfig,
         root: Path,
     ):
@@ -54,6 +55,9 @@ class MoleculeDataset:
         self.mask_system = mask_system
         self.targets_atom = targets_atom
         self.mask_atom = mask_atom
+        # Per-structure literature split (uint8 Split codes). None when the
+        # dataset was created without the tasks group.
+        self.split = split
 
         self.config = config
 
@@ -108,9 +112,11 @@ class MoleculeDataset:
                 tasks_grp["targets_atom"] if "targets_atom" in tasks_grp else None
             )
             mask_atom = tasks_grp["mask_atom"] if "mask_atom" in tasks_grp else None
+            split = tasks_grp["split"] if "split" in tasks_grp else None
 
         else:
-            targets_system, targets_atom, mask_atom, mask_system = (
+            targets_system, targets_atom, mask_atom, mask_system, split = (
+                None,
                 None,
                 None,
                 None,
@@ -132,6 +138,7 @@ class MoleculeDataset:
             mask_system=mask_system,
             targets_atom=targets_atom,
             mask_atom=mask_atom,
+            split=split,
             config=config,
             root=path,
         )
@@ -226,9 +233,17 @@ class MoleculeDataset:
         mask_system = None
         targets_atom = None
         mask_atom = None
+        split = None
 
         if config.tasks is not None:
             tasks_grp = g.require_group("tasks")
+
+            # Per-structure literature split; written for every molecule by the
+            # ShardAlignedWriter (defaults to Split.unassigned when a generator
+            # supplies no split).
+            split = _mk(
+                tasks_grp, "split", (0,), config.molecule_chunk, m_cps, "u1"
+            )
 
             Nsys = len(config.tasks.system_cols)
             Natom = len(config.tasks.atom_cols)
@@ -270,6 +285,7 @@ class MoleculeDataset:
             mask_system,
             targets_atom,
             mask_atom,
+            split,
             config,
             root=path,
         )

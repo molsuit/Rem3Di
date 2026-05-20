@@ -22,6 +22,7 @@ from __future__ import annotations
 import numpy as np
 
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+from threedscriptors.data_handling.dataset.tasks import Split
 
 
 class ShardAlignedWriter:
@@ -54,6 +55,7 @@ class ShardAlignedWriter:
         self._buf_mult: list[np.ndarray] = []
         self._buf_tsys: list[np.ndarray] = []
         self._buf_msys: list[np.ndarray] = []
+        self._buf_split: list[np.ndarray] = []
 
     # -- logical progress (the orchestrator's N_structures cap reads this) --
     @property
@@ -78,6 +80,7 @@ class ShardAlignedWriter:
         system_masks,
         atom_targets,
         atom_masks,
+        split=None,
     ) -> None:
         P = np.asarray(positions, dtype="f4", order="C")
         Z = np.asarray(atomic_numbers, dtype="u1", order="C")
@@ -129,6 +132,19 @@ class ShardAlignedWriter:
             )
             self._buf_msys.append(np.asarray(system_masks, dtype="u1", order="C"))
 
+        # Buffer a split code per molecule whenever the dataset carries a split
+        # array, defaulting absent splits to Split.unassigned so the buffer
+        # stays aligned with the molecule axis.
+        if self.ds.split is not None:
+            if split is None:
+                split = np.full(n_mols, Split.unassigned.value, dtype="u1")
+            split = np.asarray(split, dtype="u1", order="C")
+            if split.shape[0] != n_mols:
+                raise ValueError(
+                    f"split must have length {n_mols}, got {split.shape[0]}"
+                )
+            self._buf_split.append(split)
+
         self._atom_cursor += n_atoms
         self._mol_cursor += n_mols
 
@@ -157,6 +173,8 @@ class ShardAlignedWriter:
         ds.isomer_ids.resize((self._mol_cursor,))
         ds.total_charge.resize((self._mol_cursor,))
         ds.multiplicity.resize((self._mol_cursor,))
+        if ds.split is not None:
+            ds.split.resize((self._mol_cursor,))
         if ds.targets_system is not None:
             ncols = ds.targets_system.shape[1]
             ds.targets_system.resize((self._mol_cursor, ncols))
@@ -242,6 +260,8 @@ class ShardAlignedWriter:
         has_sys = ds.targets_system is not None
         tsys = np.concatenate(self._buf_tsys, axis=0) if has_sys else None
         msys = np.concatenate(self._buf_msys, axis=0) if has_sys else None
+        has_split = ds.split is not None
+        spl = np.concatenate(self._buf_split, axis=0) if has_split else None
         off = 0
         while self._mol_flushed < self._mol_cursor:
             stop = self._next_stop(
@@ -276,6 +296,9 @@ class ShardAlignedWriter:
                 ds.mask_system.resize((stop, ncols))
                 ds.targets_system[b:stop] = tsys[off : off + n]
                 ds.mask_system[b:stop] = msys[off : off + n]
+            if has_split:
+                ds.split.resize((stop,))
+                ds.split[b:stop] = spl[off : off + n]
             off += n
             self._mol_flushed = stop
         self._buf_sizes = [sizes[off:]]
@@ -286,3 +309,5 @@ class ShardAlignedWriter:
         if has_sys:
             self._buf_tsys = [tsys[off:]]
             self._buf_msys = [msys[off:]]
+        if has_split:
+            self._buf_split = [spl[off:]]
