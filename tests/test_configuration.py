@@ -11,6 +11,7 @@ from threedscriptors.configuration.architecture_config import (
     EmbeddingPreprocessConfig,
     EncoderConfig,
     EncoderDecoderArchitectureConfig,
+    EncoderOnlyArchitectureConfig,
     GlobalAggregatorConfig,
     MeanAggregatorConfig,
     RegressionArchitectureConfig,
@@ -237,6 +238,20 @@ def test_encoder_decoder_yaml_parses_against_current_schema():
     assert isinstance(cfg, EncoderDecoderArchitectureConfig)
     assert cfg.encoder_config.attention_layer_config.embedding_dim == 256
     assert cfg.decoder_config.d_descriptor == 256
+
+
+def test_encoder_only_from_encoder_yaml_strips_decoder(tmp_path):
+    src = (
+        resources.files("tests") / "test_architecture_config_encoder_decoder.yaml"
+    )
+    target = tmp_path / "post_training_architecture_config.yaml"
+    target.write_bytes(src.read_bytes())
+
+    cfg = EncoderOnlyArchitectureConfig.from_encoder_yaml(tmp_path)
+
+    assert isinstance(cfg, EncoderOnlyArchitectureConfig)
+    assert cfg.kind == "encoder_only"
+    assert cfg.encoder_config.attention_layer_config.embedding_dim == 256
 
 
 def test_model_reconstruction():

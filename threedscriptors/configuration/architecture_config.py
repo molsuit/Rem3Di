@@ -2,11 +2,13 @@ import importlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal, Self
 
 import pydantic_yaml as pyaml
 import torch
 import torch.nn as nn
+import yaml
 from e3nn.o3 import Irreps
 from pydantic import (
     BaseModel,
@@ -723,6 +725,26 @@ class _BaseArchitectureConfig(BaseModel):
 
 class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):
     kind: Literal["encoder_only"] = "encoder_only"
+
+    @classmethod
+    def from_encoder_yaml(cls, directory: str | Path, trained: bool = True) -> Self:
+        """Load encoder + preprocessor from a checkpoint, ignoring decoder fields.
+
+        Pretraining writes ``kind: encoder_decoder`` configs; descriptor probes
+        only need the encoder half. This reads the yaml as a dict, strips the
+        decoder block, and forces ``kind: encoder_only`` so the same checkpoint
+        directory can be consumed without staging a patched config on disk.
+        """
+        filename = (
+            "post_training_architecture_config.yaml"
+            if trained
+            else "architecture_config.yaml"
+        )
+        with open(Path(directory) / filename) as fh:
+            data = yaml.safe_load(fh)
+        data.pop("decoder_config", None)
+        data["kind"] = "encoder_only"
+        return cls.model_validate(data)
 
     def build(
         self,

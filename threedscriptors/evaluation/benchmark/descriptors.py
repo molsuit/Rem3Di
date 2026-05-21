@@ -104,7 +104,7 @@ class RemediCalculator(DescriptorCalculator):
             EncoderOnlyArchitectureConfig,
         )
 
-        cfg = EncoderOnlyArchitectureConfig.from_directory(str(self.model_dir))
+        cfg = EncoderOnlyArchitectureConfig.from_encoder_yaml(self.model_dir)
         model = cfg.build()
         model.encoder.load_state_dict(torch.load(self.model_dir / "encoder.pth"))
         model.preprocessor.atomic_preprocessor.load_state_dict(
