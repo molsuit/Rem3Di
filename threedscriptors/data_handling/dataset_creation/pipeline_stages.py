@@ -11,10 +11,19 @@ from tqdm import tqdm
 if TYPE_CHECKING:
     from mace.calculators.mace_torchsim import MaceTorchSimModel
 
-from threedscriptors.configuration.dataset_config import DatasetCreationConfig
+from threedscriptors.configuration.dataset_config import (
+    DatasetCreationConfig,
+    FilterAtomsStageConfig,
+    FilterMoleculeStageConfig,
+)
+from threedscriptors.data_handling.dataset_creation.build_stats import LoadStats
 from threedscriptors.data_handling.dataset_creation.conformer_timing import (
     ConformerTimingRecord,
     write_timings_jsonl,
+)
+from threedscriptors.data_handling.dataset_creation.generators.utils import (
+    apply_smiles_filter,
+    resolve_element_set,
 )
 from threedscriptors.data_handling.dataset_creation.loading_batch import (
     DataBatch,
@@ -26,6 +35,51 @@ from threedscriptors.data_handling.dataset_creation.structure_ids import Structu
 from threedscriptors.data_handling.dataset_creation.utils import embed_one_smiles
 
 
+def _slice_regression(rd: RegressionData, idx: np.ndarray) -> RegressionData:
+    """Reindex a RegressionData by row indices (system axis).
+
+    ``idx`` may be empty; numpy handles the zero-length slice naturally.
+    Atom-axis targets stay unsupported (matches the existing pipeline).
+    """
+    new: dict = {}
+    if rd.targets_system is not None:
+        assert rd.mask_system is not None, "targets_system without mask_system"
+        new["targets_system"] = rd.targets_system[idx, :]
+        new["mask_system"] = rd.mask_system[idx, :]
+    if rd.targets_atom is not None:
+        raise NotImplementedError(
+            "Atom-axis target reindexing inside filter stages is not implemented"
+        )
+    if rd.split is not None:
+        new["split"] = rd.split[idx]
+    return RegressionData(**new)
+
+
+def _reindex_in_place(input_batch: InputBatch, kept_idx: list[int]) -> None:
+    """Shrink every per-system list/array on ``input_batch`` to ``kept_idx``.
+
+    Used by the two filter stages so they share the parallel-array bookkeeping.
+    Touches ``structure_ids``, ``smiles``, ``raw_smiles``, ``molecules``,
+    ``total_charge``, ``multiplicity``, and ``regression_data``.
+    """
+    input_batch.structure_ids = [input_batch.structure_ids[i] for i in kept_idx]
+    if input_batch.molecules is not None:
+        input_batch.molecules = [input_batch.molecules[i] for i in kept_idx]
+    if input_batch.smiles is not None:
+        input_batch.smiles = [input_batch.smiles[i] for i in kept_idx]
+    if input_batch.raw_smiles is not None:
+        input_batch.raw_smiles = [input_batch.raw_smiles[i] for i in kept_idx]
+    if input_batch.total_charge is not None:
+        input_batch.total_charge = [input_batch.total_charge[i] for i in kept_idx]
+    if input_batch.multiplicity is not None:
+        input_batch.multiplicity = [input_batch.multiplicity[i] for i in kept_idx]
+    if input_batch.regression_data is not None:
+        idx_arr = np.asarray(kept_idx, dtype=np.int64)
+        input_batch.regression_data = _slice_regression(
+            input_batch.regression_data, idx_arr
+        )
+
+
 class PipelineStage(ABC):
     @abstractmethod
     def __init__(self):
@@ -34,7 +88,7 @@ class PipelineStage(ABC):
     @abstractmethod
     def __call__(
         self, input_batch: InputBatch, data_batch: DataBatch | None = None
-    ) -> tuple[InputBatch, DataBatch]:
+    ) -> tuple[InputBatch, DataBatch | None]:
         pass
 
 
@@ -321,3 +375,120 @@ class EnantiomaiPairConformalSamplingStage(PipelineStage):
 class MolecularDynamicsConformalSampling(PipelineStage):
     # Sample Conformers from MD simulation
     pass
+
+
+class FilterMoleculeStage(PipelineStage):
+    """SMILES-side filter: parse → standardize → filter → canonicalize → dedupe.
+
+    Consumes ``input_batch.raw_smiles`` (raw SMILES strings the generator
+    yielded without filtering) and produces ``input_batch.smiles``
+    (canonicalized ``SmilesData``). Reindexes every per-system parallel array
+    (``regression_data``, ``total_charge``, ``multiplicity``,
+    ``structure_ids``) to the surviving rows.
+
+    The internal ``_seen`` set persists across calls, so when a generator
+    emits multiple batches in priority order (e.g. ``TdcGenerator`` emits
+    train → valid → test), the first occurrence of a duplicate SMILES wins
+    even across batch boundaries.
+    """
+
+    def __init__(self, config: FilterMoleculeStageConfig):
+        self.config = config
+        self.allowed_elements = resolve_element_set(config.element_set)
+        self._seen: set[str] = set()
+        self.load_stats = LoadStats()
+
+    def __call__(
+        self, input_batch: InputBatch, data_batch: DataBatch | None = None
+    ) -> tuple[InputBatch, DataBatch | None]:
+        if input_batch.raw_smiles is None:
+            raise ValueError(
+                "FilterMoleculeStage requires `raw_smiles` on the InputBatch; "
+                "got None. Generators feeding this stage must yield raw "
+                "SMILES strings rather than pre-built SmilesData."
+            )
+
+        cfg = self.config
+        kept_smiles, kept_idx = apply_smiles_filter(
+            input_batch.raw_smiles,
+            max_atoms=cfg.max_atoms,
+            allowed_elements=self.allowed_elements,
+            allow_charged=cfg.allow_charged,
+            allow_radicals=cfg.allow_radicals,
+            allow_isotopes=cfg.allow_isotopes,
+            allow_multifragment=cfg.allow_multifragment,
+            strip_salts=cfg.strip_salts,
+            neutralize=cfg.neutralize,
+            dedupe=cfg.dedupe,
+            seen=self._seen,
+            stats=self.load_stats,
+        )
+
+        _reindex_in_place(input_batch, kept_idx)
+        input_batch.smiles = kept_smiles
+        input_batch.raw_smiles = None
+        return input_batch, data_batch
+
+
+class FilterAtomsStage(PipelineStage):
+    """Atoms-side filter: enforce size, hydrogen-coverage, element-set gates.
+
+    Operates on ``input_batch.molecules`` (a list of ``ase.Atoms`` straight
+    out of an XYZ / SDF / tmQM generator) without re-parsing SMILES. Element
+    coverage is checked against atomic numbers; SDF-style ``require_3D`` is
+    implicit because Atoms only exist when coordinates do.
+    """
+
+    def __init__(self, config: FilterAtomsStageConfig):
+        self.config = config
+        self._allowed_numbers: set[int] | None = None
+        if config.element_set is not None:
+            from rdkit import Chem as _Chem
+
+            pt = _Chem.GetPeriodicTable()
+            self._allowed_numbers = {
+                pt.GetAtomicNumber(s) for s in resolve_element_set(config.element_set)
+            }
+        self.load_stats = LoadStats()
+
+    def __call__(
+        self, input_batch: InputBatch, data_batch: DataBatch | None = None
+    ) -> tuple[InputBatch, DataBatch | None]:
+        if input_batch.molecules is None:
+            raise ValueError(
+                "FilterAtomsStage requires `molecules` on the InputBatch; "
+                "got None."
+            )
+
+        cfg = self.config
+        stats = self.load_stats
+        kept_idx: list[int] = []
+
+        for i, atoms in enumerate(input_batch.molecules):
+            stats.n_raw_rows += 1
+            n_total = len(atoms)
+            if cfg.max_atoms is not None and n_total > cfg.max_atoms:
+                stats.n_filtered_out += 1
+                continue
+            nums = atoms.get_atomic_numbers()
+            n_h = int((nums == 1).sum())
+            n_heavy = int((nums > 1).sum())
+            if n_heavy == 0:
+                stats.n_filtered_out += 1
+                continue
+            if cfg.reject_zero_h and n_h == 0:
+                stats.n_filtered_out += 1
+                continue
+            if cfg.min_h_heavy_ratio > 0.0 and (n_h / n_heavy) < cfg.min_h_heavy_ratio:
+                stats.n_filtered_out += 1
+                continue
+            if self._allowed_numbers is not None and not all(
+                int(z) in self._allowed_numbers for z in nums
+            ):
+                stats.n_filtered_out += 1
+                continue
+            kept_idx.append(i)
+
+        stats.n_kept += len(kept_idx)
+        _reindex_in_place(input_batch, kept_idx)
+        return input_batch, data_batch

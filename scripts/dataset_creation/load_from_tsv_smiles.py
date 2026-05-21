@@ -5,6 +5,7 @@ import torch
 from threedscriptors.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
+    FilterMoleculeStageConfig,
 )
 from threedscriptors.data_handling.dataset_creation.generators.tsv_generator import (
     TSVMoleculeGenerator,
@@ -15,6 +16,7 @@ from threedscriptors.data_handling.dataset_creation.orchestrator import (
 from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
     ConformerGenerationStage,
     CopyDataStage,
+    FilterMoleculeStage,
 )
 
 tsv_path = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/raw_data/BindingDB_All.tsv"
@@ -31,10 +33,11 @@ dataset_config = DatasetConfig()
 
 mol_generator = TSVMoleculeGenerator(tsv_file=tsv_path, batch_size=4)
 
+filter_stage = FilterMoleculeStage(config=FilterMoleculeStageConfig())
 conformal_stage = ConformerGenerationStage(dataset_creation_config=creation_config)
 copy_data = CopyDataStage(dtype=torch.float32)
 
-pipeline = [conformal_stage, copy_data]
+pipeline = [filter_stage, conformal_stage, copy_data]
 
 
 orchestrator = DatasetConstructionOrchestrator(

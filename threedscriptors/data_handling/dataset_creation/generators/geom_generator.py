@@ -12,7 +12,7 @@ import numpy as np
 from ase import Atoms
 from rdkit import Chem
 
-from threedscriptors.data_handling.dataset_creation import StructureID
+from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 from threedscriptors.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
 )
@@ -70,6 +70,14 @@ class GeomGenerator(MoleculeGenerator):
         """
         Worker: read one pickle, run all filters, and return a list of tuples:
         (mol_id, conf_id, canonical_smiles, atomic_numbers (list[int]), positions (ndarray))
+
+        GeomGenerator is intentionally exempt from ``FilterMoleculeStage``:
+        the worker filters BEFORE shipping conformer arrays back through the
+        ProcessPoolExecutor pickle boundary, so rejected molecules never pay
+        the IPC cost for their (up to ~hundreds of) conformer payloads.
+        Moving this filter to the main thread would force all conformer data
+        across the boundary unconditionally — measurable build-time
+        regression on the full GEOM-Drugs panel.
         """
         mol_id, mol_path, boltzmann_weight_threshold, max_atoms = args
 

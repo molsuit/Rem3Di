@@ -30,22 +30,17 @@ class TmqmTask(Enum):
 
 
 class TmqmGenerator(MoleculeGenerator):
+    """Stream raw tmQM Atoms; size gate lives in ``FilterAtomsStage``."""
+
     def __init__(
         self,
         tmqm_dir: str,
         batch_size: int,
         tasks: TmqmTask | list[TmqmTask],
-        max_atoms: int | None = None,
     ):
         self.dir = tmqm_dir
         self.loading_batch_size = batch_size
         self.tasks = [tasks] if isinstance(tasks, TmqmTask) else tasks
-        self.max_atoms = max_atoms
-
-    def filter_systems(self, mol: Atoms) -> bool:
-        if self.max_atoms is not None and len(mol) > self.max_atoms:
-            return False
-        return True
 
     def open_regression_labels(self):
         label_file = os.path.join(self.dir, "tmQM_y.csv")
@@ -69,9 +64,6 @@ class TmqmGenerator(MoleculeGenerator):
         regression_df = self.open_regression_labels()
 
         for idx, atoms in enumerate(suppl):
-            if not self.filter_systems(atoms):
-                continue
-
             batch_atoms.append(atoms)
             batch_structure_ids.append(
                 StructureID(structure_id=idx, molecule_id=idx, stereoisomer_id=idx)

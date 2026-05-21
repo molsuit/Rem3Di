@@ -5,6 +5,7 @@ import torch
 from threedscriptors.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
+    FilterMoleculeStageConfig,
 )
 from threedscriptors.data_handling.dataset.tasks import (
     TaskSet,
@@ -19,6 +20,7 @@ from threedscriptors.data_handling.dataset_creation.orchestrator import (
 from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
     ConformerGenerationStage,
     CopyDataStage,
+    FilterMoleculeStage,
 )
 
 dataset_name = "antiviral_potency"
@@ -34,12 +36,13 @@ creation_config = DatasetCreationConfig(
 
 task_configs = get_polaris_task_configs(dataset_name)
 
-gen = PolarisGenerator(dataset_name=dataset_name, batch_size=500, max_atoms=100)
+gen = PolarisGenerator(dataset_name=dataset_name, batch_size=500)
 
+filter_stage = FilterMoleculeStage(config=FilterMoleculeStageConfig(max_atoms=100))
 conformal_stage = ConformerGenerationStage(dataset_creation_config=creation_config)
 copy_data = CopyDataStage(dtype=torch.float64)
 
-pipeline = [conformal_stage, copy_data]
+pipeline = [filter_stage, conformal_stage, copy_data]
 
 dataset_config = DatasetConfig(
     atom_chunk=450,

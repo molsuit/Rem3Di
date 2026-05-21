@@ -17,7 +17,6 @@ moleculenet_raw_root: <PLACEHOLDER>/raw_datasets/molecule_net
 tdc_cache: <PLACEHOLDER>/tdc_admet_cache
 
 batch_size: 256
-max_atoms: 100
 n_sampled_conformers: 1
 # ETKDG retry budget per conformer. 200 covers essentially anything ETKDG can
 # embed; raising this rarely improves yield and disproportionately inflates
@@ -33,10 +32,14 @@ mmff_non_bonded_thresh: 100.0
 # eval can re-derive the train/valid partition per seed without rebuilding.
 tdc_train_valid_seed: 1
 
-# Molecule-standardization toggles applied before filter_mol in the generators.
-# Defaults strip salts and neutralize charges so multi-fragment salt rows (HCl
-# / Na+ / ...) survive as their neutral drug form. Element gate is selectable
-# via element_set: `mace_off` (organic drug subset) or `mace_polar` (Z=1..83).
-strip_salts: true
-neutralize: true
-element_set: mace_off
+# SMILES filter stage (parse / standardize / filter / canonicalize / dedupe).
+# Defaults strip salts and neutralize charges so multi-fragment salt rows
+# (HCl / Na+ / ...) survive as their neutral drug form. Element gate is
+# selectable via element_set: `mace_off` (organic drug subset) or `mace_polar`
+# (Z=1..83). `max_atoms` caps drug-sized molecules.
+filter:
+  max_atoms: 100
+  element_set: mace_off
+  strip_salts: true
+  neutralize: true
+  dedupe: true

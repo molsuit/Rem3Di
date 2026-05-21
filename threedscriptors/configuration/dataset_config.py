@@ -1,8 +1,62 @@
 from pathlib import Path
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from threedscriptors.data_handling.dataset.tasks import ElementSet, TaskSet
+
+
+class FilterMoleculeStageConfig(BaseModel):
+    """Knobs for the SMILES-side filter stage.
+
+    Owned end-to-end by ``FilterMoleculeStage``: parse → standardize → filter
+    → canonicalize → dedupe. Generators yield raw SMILES; the stage produces
+    the clean ``SmilesData`` the rest of the pipeline consumes.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["smiles_filter"] = "smiles_filter"
+
+    max_atoms: int | None = 100
+    element_set: ElementSet = ElementSet.mace_off
+
+    allow_charged: bool = True
+    allow_radicals: bool = True
+    allow_isotopes: bool = False
+    allow_multifragment: bool = False
+
+    strip_salts: bool = True
+    neutralize: bool = True
+
+    dedupe: bool = True
+
+
+class FilterAtomsStageConfig(BaseModel):
+    """Knobs for the Atoms-side filter stage (XYZ / tmQM / SDF sources).
+
+    Operates on ``ase.Atoms`` directly: structures arriving from extxyz / SDF
+    already carry coordinates, so this stage just checks size + element +
+    hydrogen-coverage gates without re-parsing SMILES.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["atoms_filter"] = "atoms_filter"
+
+    max_atoms: int | None = None
+    # None means "do not check elements" — useful when the source is curated
+    # (e.g. tmQM) and would otherwise reject every transition-metal complex.
+    element_set: ElementSet | None = None
+
+    reject_zero_h: bool = False
+    min_h_heavy_ratio: float = 0.0
+
+
+FilterStageConfig = Annotated[
+    FilterMoleculeStageConfig | FilterAtomsStageConfig,
+    Field(discriminator="kind"),
+]
 
 
 class DatasetCreationConfig(BaseModel):
@@ -23,15 +77,6 @@ class DatasetCreationConfig(BaseModel):
     # already includes every atom pair for drug-sized molecules and is ~5x
     # cheaper per BFGS step than the previous 500.0 setting on large systems.
     mmff_non_bonded_thresh: float = 100.0
-
-    # Molecule-standardization toggles applied before filter_mol in the
-    # benchmark generators. Defaults strip common counter-ions and
-    # neutralize formal charges so multi-fragment salt rows (HCl / Na+ / ...)
-    # survive ingest as their neutral drug form instead of being rejected
-    # outright by the single-fragment gate.
-    strip_salts: bool = True
-    neutralize: bool = True
-    element_set: ElementSet = ElementSet.mace_off
 
 
 class DatasetConfig(BaseModel):

@@ -12,6 +12,7 @@ import pydantic
 import pydantic_yaml as pyd_yaml
 import pytest
 
+from threedscriptors.configuration.dataset_config import FilterMoleculeStageConfig
 from threedscriptors.data_handling.dataset.tasks import ElementSet
 from threedscriptors.data_handling.dataset_creation.build_config import (
     BenchmarkBuildConfig,
@@ -57,21 +58,23 @@ def test_tdc_cache_required(tmp_path: Path) -> None:
 
 def test_standardization_defaults_and_roundtrip(tmp_path: Path) -> None:
     default = _minimal(tmp_path)
-    assert default.strip_salts is True
-    assert default.neutralize is True
-    assert default.element_set is ElementSet.mace_off
+    assert default.filter.strip_salts is True
+    assert default.filter.neutralize is True
+    assert default.filter.element_set is ElementSet.mace_off
 
     overridden = _minimal(
         tmp_path,
-        strip_salts=False,
-        neutralize=False,
-        element_set=ElementSet.mace_polar,
+        filter=FilterMoleculeStageConfig(
+            strip_salts=False,
+            neutralize=False,
+            element_set=ElementSet.mace_polar,
+        ),
     )
     path = tmp_path / "build.yaml"
     pyd_yaml.to_yaml_file(path, overridden)
     loaded = pyd_yaml.parse_yaml_file_as(BenchmarkBuildConfig, path)
     assert loaded == overridden
-    assert loaded.element_set is ElementSet.mace_polar
+    assert loaded.filter.element_set is ElementSet.mace_polar
 
 
 def test_resolve_element_set_maps_to_concrete_sets() -> None:

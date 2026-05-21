@@ -1,9 +1,15 @@
-"""MoleculeNetGenerator: canonicalize/filter/dedupe + materialized split."""
+"""MoleculeNetGenerator: canonicalize/filter/dedupe + materialized split.
+
+MoleculeNet still does its own filter (via ``apply_smiles_filter``) so that
+the deterministic DeepChem scaffold split sees the same kept set the rest of
+the pipeline writes. Filter knobs ride on a ``FilterMoleculeStageConfig``.
+"""
 
 from __future__ import annotations
 
 import numpy as np
 
+from threedscriptors.configuration.dataset_config import FilterMoleculeStageConfig
 from threedscriptors.data_handling.benchmarks import (
     BenchmarkTask,
     MoleculeNetBenchmark,
@@ -38,6 +44,10 @@ def _benchmark() -> MoleculeNetBenchmark:
         tasks=[BenchmarkTask(name="y", task_type=TaskType.regression)],
         metric="RMSE",
     )
+
+
+def _filter(**overrides) -> FilterMoleculeStageConfig:
+    return FilterMoleculeStageConfig(**overrides)
 
 
 def test_generator_filters_dedupes_and_splits(tmp_path):
@@ -79,7 +89,10 @@ def test_strip_salts_recovers_drug_half(tmp_path):
         "smiles,y\nOc1ccccc1.[Cl-],1.5\nCCC,2.5\n"
     )
     gen = MoleculeNetGenerator(
-        _benchmark(), tmp_path, batch_size=10, strip_salts=True, neutralize=True
+        _benchmark(),
+        tmp_path,
+        batch_size=10,
+        filter_config=_filter(strip_salts=True, neutralize=True),
     )
     (batch,) = list(gen)
     smiles = [s.isomeric_smiles for s in batch.smiles]
@@ -92,7 +105,10 @@ def test_no_strip_drops_multi_fragment_salt(tmp_path):
         "smiles,y\nOc1ccccc1.[Cl-],1.5\nCCC,2.5\n"
     )
     gen = MoleculeNetGenerator(
-        _benchmark(), tmp_path, batch_size=10, strip_salts=False, neutralize=False
+        _benchmark(),
+        tmp_path,
+        batch_size=10,
+        filter_config=_filter(strip_salts=False, neutralize=False),
     )
     (batch,) = list(gen)
     smiles = [s.isomeric_smiles for s in batch.smiles]
@@ -104,7 +120,10 @@ def test_neutralize_collapses_charged_form(tmp_path):
     # Acetate anion (single fragment, charge=-1) -> acetic acid when uncharged.
     (tmp_path / "toy.csv").write_text("smiles,y\nCC(=O)[O-],1.0\n")
     gen = MoleculeNetGenerator(
-        _benchmark(), tmp_path, batch_size=10, strip_salts=False, neutralize=True
+        _benchmark(),
+        tmp_path,
+        batch_size=10,
+        filter_config=_filter(strip_salts=False, neutralize=True),
     )
     (batch,) = list(gen)
     assert [s.isomeric_smiles for s in batch.smiles] == ["CC(=O)O"]
@@ -134,13 +153,19 @@ def test_element_set_mace_polar_accepts_silicon(tmp_path):
     (tmp_path / "toy.csv").write_text("smiles,y\nCC[SiH3],1.0\nCCC,2.0\n")
 
     gen_off = MoleculeNetGenerator(
-        _benchmark(), tmp_path, batch_size=10, element_set=ElementSet.mace_off
+        _benchmark(),
+        tmp_path,
+        batch_size=10,
+        filter_config=_filter(element_set=ElementSet.mace_off),
     )
     (batch_off,) = list(gen_off)
     assert [s.isomeric_smiles for s in batch_off.smiles] == ["CCC"]
 
     gen_polar = MoleculeNetGenerator(
-        _benchmark(), tmp_path, batch_size=10, element_set=ElementSet.mace_polar
+        _benchmark(),
+        tmp_path,
+        batch_size=10,
+        filter_config=_filter(element_set=ElementSet.mace_polar),
     )
     smiles_polar = [s.isomeric_smiles for b in gen_polar for s in b.smiles]
     assert any("Si" in s for s in smiles_polar)

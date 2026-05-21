@@ -5,6 +5,7 @@ import torch
 from threedscriptors.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
+    FilterAtomsStageConfig,
 )
 from threedscriptors.data_handling.dataset_creation.generators.xyz_generator import (
     XYZMoleculeGenerator,
@@ -14,6 +15,7 @@ from threedscriptors.data_handling.dataset_creation.orchestrator import (
 )
 from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
+    FilterAtomsStage,
 )
 
 xyz_files = [
@@ -27,12 +29,16 @@ generator = XYZMoleculeGenerator(
     loading_batch_size=10000,
     charge_key="charge",
     spin_key="spin",
-    max_atoms=200,
-    reject_zero_h=True,
-    min_h_heavy_ratio=0.1,
 )
 
-pipeline = [CopyDataStage(dtype=torch.float64)]
+filter_stage = FilterAtomsStage(
+    config=FilterAtomsStageConfig(
+        max_atoms=200,
+        reject_zero_h=True,
+        min_h_heavy_ratio=0.1,
+    )
+)
+pipeline = [filter_stage, CopyDataStage(dtype=torch.float64)]
 
 creation_config = DatasetCreationConfig(
     path=Path("/scratch/s5f/wedigs.s5f/datasets/omol25_tmcs"),

@@ -1,17 +1,9 @@
 from pathlib import Path
 
-from rdkit import Chem
-
 from threedscriptors.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
 )
-from threedscriptors.data_handling.dataset_creation.generators.utils import (
-    filter_mol,
-)
-from threedscriptors.data_handling.dataset_creation.loading_batch import (
-    InputBatch,
-    SmilesData,
-)
+from threedscriptors.data_handling.dataset_creation.loading_batch import InputBatch
 from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 
 
@@ -24,53 +16,25 @@ def open_smiles_file(path: Path):
 
 
 class SmilesMoleculeGenerator(MoleculeGenerator):
-    def __init__(self, smiles: list[str], batch_size: int, max_atoms: int):
+    """Yield raw SMILES batches; filtering is owned by ``FilterMoleculeStage``."""
+
+    def __init__(self, smiles: list[str], batch_size: int):
         self.smiles = smiles
         self.batch_size = batch_size
-        self.max_atoms = max_atoms
 
     def __iter__(self):
-        idx = 0
-
-        batch_smiles = []
-        batch_structure_ids = []
-
-        # 3) Slice into batches and yield one SMILES at a time
-        for _i, smi in enumerate(self.smiles):
-            if smi is None:
-                continue
-
-            mol = Chem.MolFromSmiles(smi)
-            if filter_mol(mol, max_atoms=self.max_atoms):
-                smiles = Chem.MolToSmiles(
-                    Chem.RemoveAllHs(mol), isomericSmiles=True, canonical=True
-                )
-
-                batch_smiles.append(
-                    SmilesData(
-                        nonisomeric_smiles=Chem.CanonSmiles(smiles, useChiral=False),
-                        isomeric_smiles=smiles,
-                    )
-                )
-
-                batch_structure_ids.append(
-                    StructureID(structure_id=idx, molecule_id=idx, stereoisomer_id=idx)
-                )
-                idx += 1
-
-            if len(batch_smiles) >= self.batch_size:
-                yield InputBatch(
-                    molecules=None,
-                    smiles=batch_smiles,
-                    structure_ids=batch_structure_ids,
-                    regression_data=None,
-                )
-                batch_smiles = []
-                batch_structure_ids = []
-
-        yield InputBatch(
-            molecules=None,
-            smiles=batch_smiles,
-            structure_ids=batch_structure_ids,
-            regression_data=None,
-        )
+        bs = self.batch_size
+        n = len(self.smiles)
+        for start in range(0, n, bs):
+            end = min(start + bs, n)
+            raw: list[str | None] = list(self.smiles[start:end])
+            structure_ids = [
+                StructureID(structure_id=j, molecule_id=j, stereoisomer_id=j)
+                for j in range(start, end)
+            ]
+            yield InputBatch(
+                smiles=None,
+                molecules=None,
+                raw_smiles=raw,
+                structure_ids=structure_ids,
+            )

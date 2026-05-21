@@ -1,11 +1,15 @@
 """MoleculeNet generator — one conformer per SMILES, split materialized.
 
-Driven by a :class:`MoleculeNetBenchmark` from the pydantic registry: reads
-the raw release CSV, standardizes/canonicalizes/filters/de-duplicates SMILES,
-computes the deterministic DeepChem scaffold split over exactly the kept
-SMILES, and emits ``InputBatch`` items carrying targets + per-structure split
-codes. The conformer pipeline then generates a single conformer per SMILES.
-No cross-zarr SMILES lookup.
+Driven by a :class:`MoleculeNetBenchmark` from the pydantic registry: reads the
+raw release CSV, runs the shared ``apply_smiles_filter`` helper, computes the
+deterministic DeepChem scaffold split over exactly the kept SMILES, and emits
+``InputBatch`` items carrying targets + per-structure split codes.
+
+MoleculeNet does not route through ``FilterMoleculeStage`` because the scaffold
+split is a *global* operation over the surviving SMILES set, whereas the stage
+runs per-batch. We share the filter *logic* via ``apply_smiles_filter`` so the
+parse / standardize / canonicalize / dedupe rules stay identical to the rest
+of the SMILES sources.
 """
 
 from __future__ import annotations
@@ -14,18 +18,16 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from rdkit import Chem
 
+from threedscriptors.configuration.dataset_config import FilterMoleculeStageConfig
 from threedscriptors.data_handling.benchmarks import MoleculeNetBenchmark
-from threedscriptors.data_handling.dataset.tasks import ElementSet
 from threedscriptors.data_handling.dataset_creation.build_stats import LoadStats
 from threedscriptors.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
 )
 from threedscriptors.data_handling.dataset_creation.generators.utils import (
-    filter_mol,
+    apply_smiles_filter,
     resolve_element_set,
-    standardize_mol,
 )
 from threedscriptors.data_handling.dataset_creation.loading_batch import (
     InputBatch,
@@ -46,28 +48,22 @@ class MoleculeNetGenerator(MoleculeGenerator):
         raw_root: Path,
         *,
         batch_size: int = 256,
-        max_atoms: int = 100,
         train_frac: float = 0.8,
         val_frac: float = 0.1,
-        strip_salts: bool = True,
-        neutralize: bool = True,
-        element_set: ElementSet = ElementSet.mace_off,
+        filter_config: FilterMoleculeStageConfig | None = None,
     ) -> None:
         self.benchmark = benchmark
         self.csv_path = Path(raw_root) / benchmark.csv_name
         self.batch_size = batch_size
-        self.max_atoms = max_atoms
         self.train_frac = train_frac
         self.val_frac = val_frac
-        self.strip_salts = strip_salts
-        self.neutralize = neutralize
-        self.element_set = element_set
+        self.filter_config = filter_config or FilterMoleculeStageConfig()
         self.load_stats = LoadStats()
 
     def _load(
         self,
     ) -> tuple[list[SmilesData], list[str], np.ndarray, np.ndarray]:
-        """Canonicalize/filter/dedupe; return kept SMILES + target/mask matrices."""
+        """Canonicalize / filter / dedupe; return kept SMILES + target/mask matrices."""
         b = self.benchmark
         task_cols = [t.column for t in b.tasks]
         df = pd.read_csv(self.csv_path, usecols=[b.smiles_column, *task_cols])
@@ -79,48 +75,27 @@ class MoleculeNetGenerator(MoleculeGenerator):
         )
         smiles_raw = df[b.smiles_column].tolist()
 
-        smiles_data: list[SmilesData] = []
-        kept_iso: list[str] = []
-        target_rows: list[np.ndarray] = []
-        seen: set[str] = set()
-        allowed_elements = resolve_element_set(self.element_set)
-        stats = self.load_stats
-        stats.n_raw_rows = len(smiles_raw)
-        for i, smi in enumerate(smiles_raw):
-            if smi is None:
-                stats.n_invalid_smiles += 1
-                continue
-            mol = Chem.MolFromSmiles(smi)
-            mol = standardize_mol(
-                mol, strip_salts=self.strip_salts, neutralize=self.neutralize
-            )
-            if mol is None:
-                stats.n_invalid_smiles += 1
-                continue
-            if not filter_mol(
-                mol, max_atoms=self.max_atoms, allowed_elements=allowed_elements
-            ):
-                stats.n_filtered_out += 1
-                continue
-            iso = Chem.MolToSmiles(
-                Chem.RemoveAllHs(mol), isomericSmiles=True, canonical=True
-            )
-            if iso in seen:
-                stats.n_duplicates += 1
-                continue
-            seen.add(iso)
-            smiles_data.append(
-                SmilesData(
-                    nonisomeric_smiles=Chem.CanonSmiles(iso, useChiral=False),
-                    isomeric_smiles=iso,
-                )
-            )
-            kept_iso.append(iso)
-            target_rows.append(targets_all[i])
-        stats.n_kept = len(kept_iso)
+        cfg = self.filter_config
+        allowed_elements = resolve_element_set(cfg.element_set)
+        self.load_stats = LoadStats()
+        smiles_data, kept_idx = apply_smiles_filter(
+            smiles_raw,
+            max_atoms=cfg.max_atoms,
+            allowed_elements=allowed_elements,
+            allow_charged=cfg.allow_charged,
+            allow_radicals=cfg.allow_radicals,
+            allow_isotopes=cfg.allow_isotopes,
+            allow_multifragment=cfg.allow_multifragment,
+            strip_salts=cfg.strip_salts,
+            neutralize=cfg.neutralize,
+            dedupe=cfg.dedupe,
+            stats=self.load_stats,
+        )
 
-        targets = np.asarray(target_rows, dtype=np.float64).reshape(
-            -1, len(task_cols)
+        kept_iso = [sd.isomeric_smiles for sd in smiles_data]
+        idx_arr = np.asarray(kept_idx, dtype=np.int64) if kept_idx else np.empty(0, dtype=np.int64)
+        targets = targets_all[idx_arr] if kept_idx else np.empty(
+            (0, len(task_cols)), dtype=float
         )
         masks = (~np.isnan(targets)).astype(np.uint8)
         return smiles_data, kept_iso, targets, masks

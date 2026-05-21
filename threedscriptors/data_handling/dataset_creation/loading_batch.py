@@ -32,11 +32,23 @@ class InputBatch:
     total_charge: list[float] | None = None
     multiplicity: list[float] | None = None
     regression_data: RegressionData | None = None
+    # Raw SMILES strings yielded by SMILES-text generators (TDC, Polaris,
+    # SmilesList, TSV). ``FilterMoleculeStage`` consumes this list,
+    # produces ``smiles: list[SmilesData]`` from the survivors, and clears
+    # ``raw_smiles`` back to None. ``None`` entries inside the list are
+    # treated as invalid rows by the stage. Generators that emit
+    # pre-filtered SmilesData (e.g. MoleculeNet, which couples
+    # filter+scaffold-split) leave this as None at the batch level.
+    raw_smiles: list[str | None] | None = None
 
     def __len__(self):
-        if self.molecules is None:
-            return 0
-        return len(self.molecules)
+        if self.molecules is not None:
+            return len(self.molecules)
+        if self.smiles is not None:
+            return len(self.smiles)
+        if self.raw_smiles is not None:
+            return len(self.raw_smiles)
+        return 0
 
 
 @dataclass

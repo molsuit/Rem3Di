@@ -10,7 +10,7 @@ subdirectory.
 Usage::
 
     uv run python scripts/dataset_creation/build_benchmark_dataset.py \\
-        --config configs/dataset_creation/benchmarks.yaml
+        --config configs/dataset_creation/benchmarks_local.yaml
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ from threedscriptors.data_handling.dataset_creation.orchestrator import (
 from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
     ConformerGenerationStage,
     CopyDataStage,
+    FilterMoleculeStage,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,24 +58,20 @@ def _make_generator(
     benchmark: MoleculeNetBenchmark | TdcBenchmark, cfg: BenchmarkBuildConfig
 ):
     if isinstance(benchmark, MoleculeNetBenchmark):
+        # MoleculeNet does filter + scaffold-split together (see generator
+        # docstring) so it doesn't route through FilterMoleculeStage. It
+        # still shares the filter knobs via FilterMoleculeStageConfig.
         return MoleculeNetGenerator(
             benchmark,
             cfg.moleculenet_raw_root,
             batch_size=cfg.batch_size,
-            max_atoms=cfg.max_atoms,
-            strip_salts=cfg.strip_salts,
-            neutralize=cfg.neutralize,
-            element_set=cfg.element_set,
+            filter_config=cfg.filter,
         )
     return TdcGenerator(
         benchmark,
         cfg.tdc_cache,
         batch_size=cfg.batch_size,
-        max_atoms=cfg.max_atoms,
         seed=cfg.tdc_train_valid_seed,
-        strip_salts=cfg.strip_salts,
-        neutralize=cfg.neutralize,
-        element_set=cfg.element_set,
     )
 
 
@@ -96,9 +93,6 @@ def build_one(
         max_MMFF_steps=cfg.max_mmff_steps,
         mmff_non_bonded_thresh=cfg.mmff_non_bonded_thresh,
         N_sampled_conformers=cfg.n_sampled_conformers,
-        strip_salts=cfg.strip_salts,
-        neutralize=cfg.neutralize,
-        element_set=cfg.element_set,
     )
     dataset_config = DatasetConfig(
         atom_chunk=cfg.atom_chunk,
@@ -113,6 +107,10 @@ def build_one(
         ConformerGenerationStage(dataset_creation_config=creation_config),
         CopyDataStage(dtype=torch.float64),
     ]
+    # Only TDC routes through FilterMoleculeStage; MoleculeNet filters inside
+    # the generator alongside scaffold-split (apply_smiles_filter is shared).
+    if isinstance(benchmark, TdcBenchmark):
+        pipeline.insert(0, FilterMoleculeStage(config=cfg.filter))
 
     logger.info("%s: building -> %s", benchmark.dataset_id, zarr_path)
     DatasetConstructionOrchestrator(

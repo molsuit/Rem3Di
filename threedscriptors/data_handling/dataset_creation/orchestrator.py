@@ -56,10 +56,13 @@ class DatasetConstructionOrchestrator:
 
     def build_dataset(self):
         for input_batch in self.batch_generator:
-            if input_batch.molecules == [] and input_batch.smiles == []:
+            if len(input_batch) == 0 and (
+                input_batch.raw_smiles is None or len(input_batch.raw_smiles) == 0
+            ):
                 continue
 
             output_data = None
+            skipped = False
 
             for stage in self.pipeline:
                 t0 = perf_counter()
@@ -67,12 +70,25 @@ class DatasetConstructionOrchestrator:
                 dt = perf_counter() - t0
                 name = stage.__class__.__name__
                 self._stage_times[name] = self._stage_times.get(name, 0.0) + dt
+                # A filter stage may drop every row in the batch; downstream
+                # stages (CopyDataStage's _stack_atoms) can't handle empties,
+                # so bail out and move to the next generator batch.
+                if len(input_batch) == 0 and (
+                    input_batch.raw_smiles is None
+                    or len(input_batch.raw_smiles) == 0
+                ):
+                    skipped = True
+                    break
+
+            if skipped:
+                continue
 
             t0 = perf_counter()
 
             # if torch.isnan(output_data.embeddings).any():
             #    breakpoint()
 
+            assert output_data is not None, "no DataBatch produced by the pipeline"
             self.append_batch_to_dataset(output_data)
             self._append_time += perf_counter() - t0
 

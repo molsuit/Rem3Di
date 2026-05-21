@@ -1,8 +1,11 @@
-"""TdcGenerator: official PyTDC split materialized, dedupe (first split wins).
+"""TdcGenerator + FilterMoleculeStage: official PyTDC split, dedupe (first split wins).
 
 PyTDC's network download is mocked: `_split_frames` is the only PyTDC touch
 point, so stubbing it exercises the canonicalize/filter/dedupe/split-code
-logic we own without fetching the leaderboard cache.
+logic without fetching the leaderboard cache. The generator now emits raw
+SMILES per batch in train→valid→test priority order; FilterMoleculeStage
+owns parse / standardize / filter / canonicalize / dedupe, and its persistent
+``_seen`` set carries the "first split wins" semantics across batches.
 """
 
 from __future__ import annotations
@@ -10,10 +13,14 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from threedscriptors.configuration.dataset_config import FilterMoleculeStageConfig
 from threedscriptors.data_handling.benchmarks import get_benchmark
 from threedscriptors.data_handling.dataset.tasks import Split
 from threedscriptors.data_handling.dataset_creation.generators.tdc_generator import (
     TdcGenerator,
+)
+from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+    FilterMoleculeStage,
 )
 
 
@@ -31,12 +38,27 @@ def _frames():
     ]
 
 
+def _run(gen, stage):
+    """Run all generator batches through the filter stage, return filtered batches."""
+    out = []
+    for batch in gen:
+        filtered, _ = stage(batch, None)
+        if filtered.smiles:
+            out.append(filtered)
+    return out
+
+
+def _default_stage(**overrides) -> FilterMoleculeStage:
+    return FilterMoleculeStage(config=FilterMoleculeStageConfig(**overrides))
+
+
 def test_official_split_materialized_and_dedup(monkeypatch):
     bench = get_benchmark("LD50_Zhu")  # single-task regression TdcBenchmark
     gen = TdcGenerator(bench, tdc_cache="/unused", batch_size=2)
     monkeypatch.setattr(gen, "_split_frames", _frames)
+    stage = _default_stage()
 
-    batches = list(gen)
+    batches = _run(gen, stage)
     smiles = [s.isomeric_smiles for b in batches for s in b.smiles]
     targets = np.concatenate([b.regression_data.targets_system for b in batches])
     split = np.concatenate([b.regression_data.split for b in batches])
@@ -85,16 +107,18 @@ def test_strip_salts_recovers_drug_half(monkeypatch):
             )
         ],
     )
-    (batch,) = list(gen)
+    stage = _default_stage(strip_salts=True, neutralize=True)
+    (batch,) = _run(gen, stage)
     assert [s.isomeric_smiles for s in batch.smiles] == ["Oc1ccccc1"]
 
 
 def test_load_stats_count_each_rejection_class(monkeypatch):
     gen = TdcGenerator(get_benchmark("LD50_Zhu"), tdc_cache="/unused")
     monkeypatch.setattr(gen, "_split_frames", _frames)
-    list(gen)
+    stage = _default_stage()
+    _run(gen, stage)
 
-    s = gen.load_stats
+    s = stage.load_stats
     # _frames totals: 7 rows = 4 unique valid kept + 1 dup CCO + 1 invalid + 1 methane.
     assert s.n_raw_rows == 7
     assert s.n_invalid_smiles == 1
@@ -107,13 +131,27 @@ def test_load_stats_count_each_rejection_class(monkeypatch):
     )
 
 
-def test_no_strip_drops_multi_fragment_salt(monkeypatch):
-    gen = TdcGenerator(
-        get_benchmark("LD50_Zhu"),
-        tdc_cache="/unused",
-        strip_salts=False,
-        neutralize=False,
+def test_patch_tdc_print_sys_idempotent_and_installs_callable():
+    """PyTDC 0.x ships ``tdc/utils/split.py:create_scaffold_split`` with a
+    NameError fallback (``print_sys`` not imported). The patch must install a
+    callable + be safe to call twice (we invoke it in every _split_frames)."""
+    import tdc.utils.split as _split
+
+    from threedscriptors.data_handling.dataset_creation.generators import (
+        tdc_generator,
     )
+
+    if hasattr(_split, "print_sys"):
+        del _split.print_sys
+    tdc_generator._patch_tdc_print_sys()
+    assert callable(_split.print_sys)
+    first = _split.print_sys
+    tdc_generator._patch_tdc_print_sys()
+    assert _split.print_sys is first  # no double-install
+
+
+def test_no_strip_drops_multi_fragment_salt(monkeypatch):
+    gen = TdcGenerator(get_benchmark("LD50_Zhu"), tdc_cache="/unused")
     monkeypatch.setattr(
         gen,
         "_split_frames",
@@ -126,5 +164,6 @@ def test_no_strip_drops_multi_fragment_salt(monkeypatch):
             )
         ],
     )
-    (batch,) = list(gen)
+    stage = _default_stage(strip_salts=False, neutralize=False)
+    (batch,) = _run(gen, stage)
     assert [s.isomeric_smiles for s in batch.smiles] == ["CCC"]

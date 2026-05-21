@@ -1,8 +1,12 @@
+from collections.abc import Iterable
+
 from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
 from rdkit.Chem.SaltRemover import SaltRemover
 
 from threedscriptors.data_handling.dataset.tasks import ElementSet
+from threedscriptors.data_handling.dataset_creation.build_stats import LoadStats
+from threedscriptors.data_handling.dataset_creation.loading_batch import SmilesData
 
 # MACE-OFF24 element coverage — drug-like organic subset.
 MACE_OFF_ELEMENTS: set[str] = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
@@ -128,3 +132,108 @@ def filter_mol(
         return True
     except Exception:
         return False
+
+
+def _classify_one_smiles(
+    smi: str | None,
+    *,
+    max_atoms: int | None,
+    allowed_elements: set[str],
+    allow_charged: bool,
+    allow_radicals: bool,
+    allow_isotopes: bool,
+    allow_multifragment: bool,
+    strip_salts: bool,
+    neutralize: bool,
+) -> tuple[str, str | None]:
+    """Parse → standardize → filter → canonicalize one SMILES.
+
+    Returns ``(verdict, iso)`` where ``verdict`` is one of
+    ``"invalid" | "filtered" | "kept"`` and ``iso`` is the canonical isomeric
+    SMILES when the verdict is ``"kept"`` (else ``None``).
+    """
+    if smi is None:
+        return "invalid", None
+    mol = Chem.MolFromSmiles(smi)
+    mol = standardize_mol(mol, strip_salts=strip_salts, neutralize=neutralize)
+    if mol is None:
+        return "invalid", None
+    if not filter_mol(
+        mol,
+        max_atoms=max_atoms,
+        allowed_elements=allowed_elements,
+        allow_charged=allow_charged,
+        allow_radicals=allow_radicals,
+        allow_isotopes=allow_isotopes,
+        allow_multifragment=allow_multifragment,
+    ):
+        return "filtered", None
+    iso = Chem.MolToSmiles(
+        Chem.RemoveAllHs(mol), isomericSmiles=True, canonical=True
+    )
+    return "kept", iso
+
+
+def apply_smiles_filter(
+    raw_smiles: Iterable[str | None],
+    *,
+    max_atoms: int | None,
+    allowed_elements: set[str],
+    allow_charged: bool = True,
+    allow_radicals: bool = True,
+    allow_isotopes: bool = False,
+    allow_multifragment: bool = False,
+    strip_salts: bool = False,
+    neutralize: bool = False,
+    dedupe: bool = True,
+    seen: set[str] | None = None,
+    stats: LoadStats | None = None,
+) -> tuple[list[SmilesData], list[int]]:
+    """Parse → standardize → filter → canonicalize → dedupe.
+
+    Returns ``(kept_smiles_data, kept_indices)`` where ``kept_indices[k]`` is
+    the row index into ``raw_smiles`` for ``kept_smiles_data[k]``. ``seen``
+    is a caller-owned set used for dedupe; pass the same set across multiple
+    calls to dedupe across batches with first-occurrence-wins semantics (this
+    is how ``TdcGenerator`` keeps train > valid > test priority across the
+    pyTDC frames). ``stats`` is an optional accumulator updated in place.
+    """
+    if seen is None:
+        seen = set()
+    local_stats = stats if stats is not None else LoadStats()
+    kept_data: list[SmilesData] = []
+    kept_indices: list[int] = []
+    for i, smi in enumerate(raw_smiles):
+        local_stats.n_raw_rows += 1
+        verdict, iso = _classify_one_smiles(
+            smi,
+            max_atoms=max_atoms,
+            allowed_elements=allowed_elements,
+            allow_charged=allow_charged,
+            allow_radicals=allow_radicals,
+            allow_isotopes=allow_isotopes,
+            allow_multifragment=allow_multifragment,
+            strip_salts=strip_salts,
+            neutralize=neutralize,
+        )
+        if verdict == "invalid":
+            local_stats.n_invalid_smiles += 1
+            continue
+        if verdict == "filtered":
+            local_stats.n_filtered_out += 1
+            continue
+        assert iso is not None
+        if dedupe and iso in seen:
+            local_stats.n_duplicates += 1
+            continue
+        if dedupe:
+            seen.add(iso)
+        kept_data.append(
+            SmilesData(
+                nonisomeric_smiles=Chem.CanonSmiles(iso, useChiral=False),
+                isomeric_smiles=iso,
+            )
+        )
+        kept_indices.append(i)
+    local_stats.n_kept += len(kept_indices)
+    return kept_data, kept_indices

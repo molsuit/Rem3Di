@@ -5,6 +5,7 @@ import torch
 from threedscriptors.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
+    FilterMoleculeStageConfig,
 )
 from threedscriptors.data_handling.dataset_creation.generators.smiles_list_generator import (
     SmilesMoleculeGenerator,
@@ -16,6 +17,7 @@ from threedscriptors.data_handling.dataset_creation.orchestrator import (
 from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
     ConformerGenerationStage,
     CopyDataStage,
+    FilterMoleculeStage,
 )
 
 smiles_file = Path(
@@ -33,12 +35,13 @@ creation_config = DatasetCreationConfig(
 )
 
 
-gen = SmilesMoleculeGenerator(smiles, batch_size=500, max_atoms=100)
+gen = SmilesMoleculeGenerator(smiles, batch_size=500)
 
+filter_stage = FilterMoleculeStage(config=FilterMoleculeStageConfig(max_atoms=100))
 conformal_stage = ConformerGenerationStage(dataset_creation_config=creation_config)
 copy_data = CopyDataStage(dtype=torch.float64)
 
-pipeline = [conformal_stage, copy_data]
+pipeline = [filter_stage, conformal_stage, copy_data]
 
 dataset_config = DatasetConfig(
     atom_chunk=450,
