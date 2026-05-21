@@ -1,0 +1,23 @@
+# Local benchmark dataset-build config — invoked by
+# `scripts/dataset_creation/build_benchmark_dataset.py`. Builds every
+# registered MoleculeNet + TDC ADMET benchmark; re-running is idempotent
+# (datasets whose zarr subdir already exists are skipped).
+
+output_root: /scratch/s5f/wedigs.s5f/datasets/benchmarks
+moleculenet_raw_root: /scratch/s5f/wedigs.s5f/raw_datasets/molecule_net
+tdc_cache: /scratch/s5f/wedigs.s5f/datasets/tdc_cache
+
+batch_size: 256
+n_sampled_conformers: 1
+max_embed_attempts: 200
+max_mmff_steps: 100
+mmff_non_bonded_thresh: 100.0
+
+tdc_train_valid_seed: 1
+
+filter:
+  max_atoms: 100
+  element_set: mace_off
+  strip_salts: true
+  neutralize: true
+  dedupe: true

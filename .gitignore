@@ -23,4 +23,3 @@ CLAUDE.md
 *.out
 analysis_output/
 /submit_*.sh
-configs
