@@ -2,7 +2,7 @@ from collections.abc import Iterable
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 from threedscriptors.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
@@ -69,19 +69,36 @@ def evaluate_regression_model_on_dataset(
 
 
 def evaluate_molecular_descriptor_on_dataset(
-    model: REM3DIModel, dataset: TrainingMoleculeDataset, device="cuda"
+    model: REM3DIModel,
+    dataset: Dataset,
+    device="cuda",
+    *,
+    batch_size: int = 64,
+    num_workers: int = 0,
+    prefetch_factor: int | None = None,
 ):
     """Run the encoder over `dataset` and return descriptors as a flat
-    `(N, L * d_out)` tensor — `L` seed tokens are concatenated per molecule."""
-    batch_size = min(64, len(dataset))
+    `(N, L * d_out)` tensor — `L` seed tokens are concatenated per molecule.
 
-    dataloader: Iterable[Sample] = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        drop_last=False,
-        collate_fn=yield_molecules_collate_fn,
-    )
+    Raise ``num_workers`` to overlap zarr reads / sample featurization with the
+    encoder forward pass; the existing TrainingMoleculeDataset rebuilds its
+    zarr handles per-worker via ``__getstate__``/``__setstate__``.
+    """
+    batch_size = min(batch_size, len(dataset))
+
+    dataloader_kwargs: dict = {
+        "batch_size": batch_size,
+        "shuffle": False,
+        "drop_last": False,
+        "collate_fn": yield_molecules_collate_fn,
+        "num_workers": num_workers,
+    }
+    if num_workers > 0:
+        dataloader_kwargs["persistent_workers"] = True
+        if prefetch_factor is not None:
+            dataloader_kwargs["prefetch_factor"] = prefetch_factor
+
+    dataloader: Iterable[Sample] = DataLoader(dataset, **dataloader_kwargs)
 
     model.to(device)
     model.eval()
