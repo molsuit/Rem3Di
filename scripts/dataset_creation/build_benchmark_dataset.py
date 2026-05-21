@@ -94,6 +94,7 @@ def build_one(
         path=zarr_path,
         max_embed_attempts=cfg.max_embed_attempts,
         max_MMFF_steps=cfg.max_mmff_steps,
+        mmff_non_bonded_thresh=cfg.mmff_non_bonded_thresh,
         N_sampled_conformers=cfg.n_sampled_conformers,
         strip_salts=cfg.strip_salts,
         neutralize=cfg.neutralize,
@@ -136,7 +137,10 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = pyd_yaml.parse_yaml_file_as(BenchmarkBuildConfig, args.config)
+    selected = cfg.only_datasets
     for bench in (*MOLECULENET_BENCHMARKS, *TDC_BENCHMARKS):
+        if selected is not None and bench.dataset_id not in selected:
+            continue
         build_one(bench, cfg)
 
 

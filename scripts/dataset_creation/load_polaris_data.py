@@ -29,8 +29,6 @@ creation_config = DatasetCreationConfig(
         f"/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/{dataset_name}"
     ),
     N_structures=10000,
-    max_embed_attempts=10_000,
-    max_MMFF_steps=100,
 )
 
 

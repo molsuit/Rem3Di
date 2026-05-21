@@ -19,8 +19,15 @@ tdc_cache: <PLACEHOLDER>/tdc_admet_cache
 batch_size: 256
 max_atoms: 100
 n_sampled_conformers: 1
-max_embed_attempts: 10000
+# ETKDG retry budget per conformer. 200 covers essentially anything ETKDG can
+# embed; raising this rarely improves yield and disproportionately inflates
+# wall time on pathological molecules.
+max_embed_attempts: 200
 max_mmff_steps: 100
+# MMFF94 non-bonded cutoff in Å. 100.0 (RDKit default) already includes every
+# atom pair for drug-sized molecules; raising this only inflates per-step cost
+# on large systems.
+mmff_non_bonded_thresh: 100.0
 
 # PyTDC `get_train_valid_split` default seed. The test fold is fixed by TDC;
 # eval can re-derive the train/valid partition per seed without rebuilding.

@@ -28,15 +28,35 @@ class BenchmarkBuildConfig(BaseModel):
     moleculenet_raw_root: Path
     tdc_cache: Path
 
-    # Per-build knobs shared across datasets.
+    # Per-build knobs shared across datasets. Conformer-gen defaults are the
+    # values validated by the CYP timing experiment (slurm-4686108): three
+    # CYP_Veith benchmarks went from 5.2h to 10min wall-time vs. the prior
+    # 10000/500/500 combination, with identical (~99%) yield. Per-mol
+    # ETKDG/MMFF timing distributions are persisted alongside each zarr as
+    # ``conformer_timings.jsonl`` (see ``ConformerGenerationStage``).
     batch_size: int = 256
     max_atoms: int = 100
     n_sampled_conformers: int = 1
-    max_embed_attempts: int = 10_000
+    # ETKDG retry budget per conformer. 200 succeeds on essentially everything
+    # ETKDG can solve; the legacy 10_000 default routinely sat in the tens of
+    # thousands on pathological CYP rows and ate >30 min of wall time per mol.
+    max_embed_attempts: int = 200
+    # MMFF94 BFGS step cap per conformer.
     max_mmff_steps: int = 100
+    # MMFF94 non-bonded interaction cutoff in Å. RDKit's default (100.0)
+    # already covers every atom pair for drug-sized molecules; the previous
+    # 500.0 setting built an effectively all-pairs neighbor list and inflated
+    # per-step cost on large systems for no chemical benefit.
+    mmff_non_bonded_thresh: float = 100.0
     # PyTDC ``get_train_valid_split`` default seed (test fold stays fixed). Eval
     # can re-derive the train/valid partition per seed without touching the zarr.
     tdc_train_valid_seed: int = 1
+
+    # Optional allow-list of benchmark ``dataset_id``s. ``None`` (default) keeps
+    # the legacy "build every registered benchmark" behavior. Setting it lets
+    # an experiment yaml target a subset (e.g. just the CYP datasets) without
+    # touching the registry or pre-populating skip-marker dirs.
+    only_datasets: list[str] | None = None
 
     # Molecule-standardization toggles forwarded to DatasetCreationConfig and
     # to the benchmark generators (standardize_mol → filter_mol). Defaults mirror

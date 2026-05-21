@@ -172,6 +172,15 @@ class DatasetConstructionOrchestrator:
             self.dataset.isomeric_smiles.close()
 
         self.writer.finalize()
+
+        # Duck-typed per-stage flush hook: any stage exposing ``flush_timings``
+        # (currently only ``ConformerGenerationStage``) gets its build artifact
+        # written into the zarr dir before the summary is logged.
+        for stage in self.pipeline:
+            flush = getattr(stage, "flush_timings", None)
+            if callable(flush):
+                flush()
+
         self._log_build_summary()
 
     def _log_build_summary(self) -> None:

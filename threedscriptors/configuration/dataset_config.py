@@ -13,8 +13,16 @@ class DatasetCreationConfig(BaseModel):
     relaxation_steps: int | None = None
     N_structures: int | None = None
     N_sampled_conformers: int = 1
-    max_embed_attempts: int = 500
-    max_MMFF_steps: int = 500
+    # ETKDG retry budget per conformer. 200 is the validated production value
+    # (see ``BenchmarkBuildConfig`` for the empirical justification); raising
+    # it disproportionately inflates the wall-time tail on pathological mols.
+    max_embed_attempts: int = 200
+    # MMFF94 BFGS step cap per conformer.
+    max_MMFF_steps: int = 100
+    # MMFF94 non-bonded interaction cutoff in Å. RDKit's default (100.0)
+    # already includes every atom pair for drug-sized molecules and is ~5x
+    # cheaper per BFGS step than the previous 500.0 setting on large systems.
+    mmff_non_bonded_thresh: float = 100.0
 
     # Molecule-standardization toggles applied before filter_mol in the
     # benchmark generators. Defaults strip common counter-ions and

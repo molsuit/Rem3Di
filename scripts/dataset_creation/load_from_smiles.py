@@ -30,8 +30,6 @@ creation_config = DatasetCreationConfig(
         "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pharma"
     ),
     N_structures=len(smiles),
-    max_embed_attempts=10_000,
-    max_MMFF_steps=100,
 )
 
 

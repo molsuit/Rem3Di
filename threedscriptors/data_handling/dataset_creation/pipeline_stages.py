@@ -12,6 +12,10 @@ if TYPE_CHECKING:
     from mace.calculators.mace_torchsim import MaceTorchSimModel
 
 from threedscriptors.configuration.dataset_config import DatasetCreationConfig
+from threedscriptors.data_handling.dataset_creation.conformer_timing import (
+    ConformerTimingRecord,
+    write_timings_jsonl,
+)
 from threedscriptors.data_handling.dataset_creation.loading_batch import (
     DataBatch,
     InputBatch,
@@ -116,6 +120,8 @@ class ConformerGenerationStage(PipelineStage):
         )
 
         self.stats = StageStats()
+        # Per-molecule timing records, dumped to JSONL by ``flush_timings``.
+        self._timing_records: list[ConformerTimingRecord] = []
 
     def __call__(self, input_batch: InputBatch, data_batch: DataBatch):
         molecules: list[Atoms] = []
@@ -135,49 +141,21 @@ class ConformerGenerationStage(PipelineStage):
                     self.config.N_sampled_conformers,
                     self.config.max_embed_attempts,
                     self.config.max_MMFF_steps,
+                    self.config.mmff_non_bonded_thresh,
                 )
                 futures[fut] = mol_i
 
             for fut in as_completed(futures):
                 mol_i = futures[fut]
-                isomeric_smiles = input_batch.smiles[mol_i].isomeric_smiles
-                nonisomeric_smiles = input_batch.smiles[mol_i].nonisomeric_smiles
-                molecule_data_id = input_batch.structure_ids[mol_i].molecule_id
-                stereoisomer_id = input_batch.structure_ids[mol_i].stereoisomer_id
-
-                try:
-                    iso_smi, noniso_smi, positions, atomic_numbers = fut.result()
-                    K = positions.shape[0]
-
-                    for k in range(K):
-                        atoms = Atoms(
-                            positions=positions[k],
-                            numbers=atomic_numbers,
-                            pbc=[0, 0, 0],
-                        )
-                        molecules.append(atoms)
-                        smiles_list.append(
-                            SmilesData(
-                                isomeric_smiles=isomeric_smiles,
-                                nonisomeric_smiles=nonisomeric_smiles,
-                            )
-                        )
-                        structure_ids.append(
-                            StructureID(
-                                structure_id=-1,
-                                molecule_id=molecule_data_id,
-                                stereoisomer_id=stereoisomer_id,
-                            )
-                        )
-                        parent_idx_for_regression.append(mol_i)
-                    self.stats.n_emitted += 1
-
-                except ValueError as ve:
-                    self.stats.n_value_errors += 1
-                    tqdm.write(f"[skip] {isomeric_smiles}: {ve}")
-                except Exception as e:
-                    self.stats.n_other_errors += 1
-                    tqdm.write(f"[error] {isomeric_smiles}: {e!r}")
+                self._collect_one(
+                    fut,
+                    mol_i=mol_i,
+                    input_batch=input_batch,
+                    molecules=molecules,
+                    smiles_list=smiles_list,
+                    structure_ids=structure_ids,
+                    parent_idx_for_regression=parent_idx_for_regression,
+                )
 
         input_batch.molecules = molecules
         input_batch.smiles = smiles_list
@@ -210,6 +188,97 @@ class ConformerGenerationStage(PipelineStage):
             input_batch.regression_data = RegressionData(**new_rd_kwargs)
 
         return input_batch, data_batch
+
+    def _collect_one(
+        self,
+        fut,
+        *,
+        mol_i: int,
+        input_batch: InputBatch,
+        molecules: list[Atoms],
+        smiles_list: list[SmilesData],
+        structure_ids: list[StructureID],
+        parent_idx_for_regression: list[int],
+    ) -> None:
+        """Drain one worker future, record its timing, and append its confs."""
+        isomeric_smiles = input_batch.smiles[mol_i].isomeric_smiles
+        nonisomeric_smiles = input_batch.smiles[mol_i].nonisomeric_smiles
+        molecule_data_id = input_batch.structure_ids[mol_i].molecule_id
+        stereoisomer_id = input_batch.structure_ids[mol_i].stereoisomer_id
+
+        try:
+            result = fut.result()
+        except Exception as e:
+            # Worker process died / pickling error / etc. — synthesize a
+            # record so the artifact still accounts for the molecule.
+            self.stats.n_other_errors += 1
+            self._timing_records.append(
+                ConformerTimingRecord(
+                    isomeric_smiles=isomeric_smiles,
+                    n_atoms=-1,
+                    n_confs_requested=int(self.config.N_sampled_conformers),
+                    n_confs_emitted=0,
+                    t_embed_s=0.0,
+                    t_mmff_s=0.0,
+                    status="other_error",
+                    error_msg=repr(e),
+                )
+            )
+            tqdm.write(f"[error] {isomeric_smiles}: {e!r}")
+            return
+
+        self._timing_records.append(result.timing)
+
+        if result.timing.status != "ok":
+            # Match the legacy ValueError-vs-other split: parse failures are
+            # "value_error"; embed/MMFF failures fall into n_other_errors.
+            if result.timing.status == "value_error":
+                self.stats.n_value_errors += 1
+                tqdm.write(f"[skip] {isomeric_smiles}: {result.timing.error_msg}")
+            else:
+                self.stats.n_other_errors += 1
+                tqdm.write(
+                    f"[error] {isomeric_smiles}: "
+                    f"{result.timing.status} ({result.timing.error_msg})"
+                )
+            return
+
+        positions = result.positions
+        atomic_numbers = result.atomic_numbers
+        assert positions is not None and atomic_numbers is not None
+        for k in range(positions.shape[0]):
+            molecules.append(
+                Atoms(
+                    positions=positions[k],
+                    numbers=atomic_numbers,
+                    pbc=[0, 0, 0],
+                )
+            )
+            smiles_list.append(
+                SmilesData(
+                    isomeric_smiles=isomeric_smiles,
+                    nonisomeric_smiles=nonisomeric_smiles,
+                )
+            )
+            structure_ids.append(
+                StructureID(
+                    structure_id=-1,
+                    molecule_id=molecule_data_id,
+                    stereoisomer_id=stereoisomer_id,
+                )
+            )
+            parent_idx_for_regression.append(mol_i)
+        self.stats.n_emitted += 1
+
+    def flush_timings(self) -> None:
+        """Serialize the accumulated per-mol timing records next to the zarr.
+
+        Idempotent: if no records have been collected (e.g. an entirely empty
+        build) the file is still emitted as a zero-length JSONL so downstream
+        tools can rely on the path existing.
+        """
+        out_path = self.config.path / "conformer_timings.jsonl"
+        write_timings_jsonl(self._timing_records, out_path)
 
 
 class ParallelRelaxStage(PipelineStage):
