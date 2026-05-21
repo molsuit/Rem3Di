@@ -48,12 +48,21 @@ class DescriptorNormalizationConfig(BaseModel):
 
 
 class ProjectionConfig(BaseModel):
-    """Configures the 2D projection cached on the context."""
+    """Configures the 2D projection cached on the context.
+
+    UMAP defaults match the settled descriptor-visualization recipe
+    (``cosine`` / ``n_neighbors=30`` / ``min_dist=0``, seed 0) so the chemiscope
+    viewer, the analysis-dir PNGs, and any cross-model comparison share one
+    deterministic layout. Override per-task for one-off experiments.
+    """
 
     method: Literal["umap", "pca"] = "umap"
     n_components: int = 2
     center: bool = True
-    random_state: int | None = Field(default=None)
+    metric: str = "cosine"
+    n_neighbors: int = 30
+    min_dist: float = 0.0
+    random_state: int | None = Field(default=0)
 
     def compute(self, descriptors: np.ndarray) -> np.ndarray:
         tensor = torch.from_numpy(np.ascontiguousarray(descriptors))
@@ -62,9 +71,14 @@ class ProjectionConfig(BaseModel):
                 tensor, k=self.n_components
             )
         else:
-            calculator = UMAPCalculator()
-            projection = calculator.get_dimensionality_reduction(
-                tensor, k=self.n_components, centered=self.center
+            projection = UMAPCalculator.get_dimensionality_reduction(
+                tensor,
+                k=self.n_components,
+                centered=self.center,
+                metric=self.metric,
+                n_neighbors=self.n_neighbors,
+                min_dist=self.min_dist,
+                random_state=self.random_state,
             )
         return np.asarray(projection)
 

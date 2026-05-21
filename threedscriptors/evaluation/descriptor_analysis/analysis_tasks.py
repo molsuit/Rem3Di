@@ -50,41 +50,50 @@ def compute_hdbscan_labels(
     min_cluster_size: int,
     min_samples: int | None,
     cluster_selection_epsilon: float,
+    use_raw_descriptors: bool = False,
 ) -> np.ndarray:
     """HDBSCAN cluster labels (-1 = noise) on the descriptors.
 
     ``reducer="umap"`` clusters a higher-dimensional clustering UMAP (cached on
     the context by its parameters, so the figures / chemiscope / fingerprints
     share one embedding). ``reducer="none"`` runs HDBSCAN directly on the
-    (already L2-normalized) descriptors with the Euclidean metric — on unit
-    vectors that is monotonic with cosine, so it is the cosine clustering with
-    no UMAP distortion in the loop. This isolates whether a lack of chemical
-    clusters is intrinsic to the descriptor or introduced by the UMAP step.
+    descriptors with the Euclidean metric.
+
+    ``use_raw_descriptors=True`` clusters the *unnormalized* descriptors so the
+    vector norms carry signal — meaningful only with ``cluster_metric=
+    "euclidean"`` (cosine and L2-normalized euclidean would both ignore the
+    norm, making them equivalent to the canonical cosine path). The default
+    ``False`` uses the runner's normalized descriptors so the canonical
+    cosine-on-unit-vectors protocol is unchanged.
     """
     from sklearn.cluster import HDBSCAN
+
+    descriptors = ctx.descriptors_raw if use_raw_descriptors else ctx.descriptors
 
     # Cache the fit labels per (reducer, mcs, *params) so the sweep and the
     # fingerprint at the same setting don't refit HDBSCAN twice — that doubled
     # the no-UMAP cost and burned the slurm time budget on the previous run.
+    # ``use_raw_descriptors`` is in the key so the canonical and the
+    # euclidean-on-raw variants don't collide.
     labels_key = (
         f"hdbscan_labels:{reducer}:{cluster_n_components}:{cluster_n_neighbors}:"
         f"{cluster_min_dist}:{cluster_metric}:{random_state}:{min_cluster_size}:"
-        f"{min_samples}:{cluster_selection_epsilon}"
+        f"{min_samples}:{cluster_selection_epsilon}:raw={use_raw_descriptors}"
     )
     cached_labels = ctx.cache.get(labels_key)
     if cached_labels is not None:
         return cast("np.ndarray", cached_labels)
 
     if reducer == "none":
-        # 108k x 64 L2-normalized descriptors → ball_tree handles this near
-        # O(n log n); auto-selection at D=64 can fall back to brute O(n^2).
+        # 108k x 64 floats → ball_tree handles this near O(n log n);
+        # auto-selection at D=64 can fall back to brute O(n^2).
         labels = HDBSCAN(
             min_cluster_size=min_cluster_size,
             min_samples=min_samples,
             cluster_selection_epsilon=cluster_selection_epsilon,
             metric="euclidean",
             algorithm="ball_tree",
-        ).fit_predict(np.ascontiguousarray(ctx.descriptors))
+        ).fit_predict(np.ascontiguousarray(descriptors))
         ctx.cache[labels_key] = labels
         return labels
 
@@ -92,7 +101,7 @@ def compute_hdbscan_labels(
 
     cache_key = (
         f"hdbscan_cluster_umap:{cluster_n_components}:{cluster_n_neighbors}:"
-        f"{cluster_min_dist}:{cluster_metric}:{random_state}"
+        f"{cluster_min_dist}:{cluster_metric}:{random_state}:raw={use_raw_descriptors}"
     )
     cluster_embedding = ctx.cache.get(cache_key)
     if cluster_embedding is None:
@@ -102,7 +111,7 @@ def compute_hdbscan_labels(
             min_dist=cluster_min_dist,
             metric=cluster_metric,
             random_state=random_state,
-        ).fit_transform(ctx.descriptors)
+        ).fit_transform(descriptors)
         ctx.cache[cache_key] = cluster_embedding
 
     labels = HDBSCAN(
@@ -122,6 +131,11 @@ class _ClusterTaskBase(_BaseAnalysisTask):
     cluster_n_neighbors: int = 30
     cluster_min_dist: float = 0.0
     cluster_metric: str = "cosine"
+    use_raw_descriptors: bool = False
+    """Cluster on ``ctx.descriptors_raw`` (pre-normalization) so the vector
+    norm carries signal. Only meaningful when paired with
+    ``cluster_metric="euclidean"`` — cosine and L2-normalized Euclidean both
+    discard the norm, making them equivalent to the canonical path."""
 
     min_samples: int | None = None
     cluster_selection_epsilon: float = 0.0
@@ -141,6 +155,7 @@ class _ClusterTaskBase(_BaseAnalysisTask):
             min_cluster_size=min_cluster_size,
             min_samples=self.min_samples,
             cluster_selection_epsilon=self.cluster_selection_epsilon,
+            use_raw_descriptors=self.use_raw_descriptors,
         )
 
 
@@ -592,9 +607,13 @@ class ChemiscopeClusterTask(_ClusterTaskBase):
 
         for mcs in self.min_cluster_sizes:
             labels = self._labels(ctx, mcs)
+            # Store as ints (not 'c{id}'/'noise' strings) so the chemiscope
+            # viewer accepts them as a numeric color axis — its categorical
+            # color picker is capped at a handful of unique values and would
+            # silently drop a property with hundreds of cluster ids.
             properties[f"cluster_mcs{mcs}"] = col(
-                [_cluster_label_str(int(x)) for x in labels],
-                f"HDBSCAN cluster id (min_cluster_size={mcs}); 'noise' = -1",
+                [int(x) for x in labels],
+                f"HDBSCAN cluster id (min_cluster_size={mcs}); -1 = noise",
             )
 
         properties.update(
@@ -1009,6 +1028,7 @@ class DescriptorStructureBenchmarkTask(_ClusterTaskBase):
                 cluster_n_neighbors=self.cluster_n_neighbors,
                 cluster_min_dist=self.cluster_min_dist,
                 cluster_metric=self.cluster_metric,
+                use_raw_descriptors=self.use_raw_descriptors,
                 random_state=self.random_state,
                 canonical_min_cluster_size=self.canonical_min_cluster_size,
                 chemistry_axes=list(self.chemistry_axes),
@@ -1343,6 +1363,7 @@ class _BenchmarkProtocol(BaseModel):
     cluster_n_neighbors: int
     cluster_min_dist: float
     cluster_metric: str
+    use_raw_descriptors: bool = False
     random_state: int | None
     canonical_min_cluster_size: int
     chemistry_axes: list[str]

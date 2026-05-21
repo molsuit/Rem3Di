@@ -95,8 +95,8 @@ def main() -> None:
                 drop_outlier_quantile=0.99,
                 file_name="capacity_diagnostic_no_outliers.yaml",
             ),
-            DescriptorDistributionTask(),
-            TopNormDescriptorsTask(n_top=10),
+            # DescriptorDistributionTask(),
+            # TopNormDescriptorsTask(n_top=10),
             ProjectionPlotTask(
                 file_name="number_of_atoms.png",
                 color_provider=NumAtomsColor(),
@@ -117,62 +117,71 @@ def main() -> None:
                 file_name="coordination_number.png",
                 color_provider=CoordinationNumberColor(),
             ),
-            # Single-file benchmark scorecard — the headline cross-model
-            # comparable artifact. See the docstring of
-            # DescriptorStructureBenchmarkTask for the protocol.
-            DescriptorStructureBenchmarkTask(),
-            *(
-                HDBSCANClusterTask(
-                    min_cluster_size=mcs,
-                    figure_file_name=f"hdbscan_clusters_mcs{mcs}.png",
-                    summary_file_name=f"hdbscan_clusters_mcs{mcs}.yaml",
-                )
-                for mcs in (50, 200, 1000, 5000)
-            ),
-            # Coarse mcs collapses to one mega-cluster; the chemically coherent
-            # structure lives at small mcs. Sweep to find the purity-optimal
-            # granularity, then fingerprint each candidate. Run both with the
-            # clustering-UMAP and directly on the 64-D descriptors (no UMAP) to
-            # tell whether weak chemical clustering is intrinsic to the
-            # descriptor or introduced by the UMAP compression.
-            *(
-                ClusterGranularitySweepTask(
-                    cluster_reducer=reducer,
-                    min_cluster_sizes=[25, 50, 100],
-                    summary_file_name=f"cluster_granularity_sweep_{tag}.yaml",
-                )
-                for reducer, tag in (("umap", "umap"), ("none", "noumap"))
-            ),
-            *(
-                ClusterChemicalFingerprintTask(
-                    cluster_reducer=reducer,
-                    min_cluster_size=mcs,
-                    summary_file_name=f"cluster_fingerprint_{tag}_mcs{mcs}.yaml",
-                )
-                for reducer, tag in (("umap", "umap"), ("none", "noumap"))
-                for mcs in (25, 50, 100)
-            ),
-            # For each clustering granularity, ask which chemical axis (metal
-            # block, geometry, ligand motif, donor element, …) best explains
-            # that partition — not just whether donor-set works.
-            *(
-                ClusterAxisAnalysisTask(
-                    cluster_reducer=reducer,
-                    min_cluster_size=mcs,
-                    summary_file_name=f"cluster_axis_{tag}_mcs{mcs}.yaml",
-                )
-                for reducer, tag in (("umap", "umap"), ("none", "noumap"))
-                for mcs in (25, 50, 100)
-            ),
-            # One viewer to manually inspect cluster chemistry on the settled
-            # UMAP: the small granularities switchable; heavy per-element /
-            # formula columns dropped to keep the JSON viewer-loadable.
-            ChemiscopeClusterTask(
-                min_cluster_sizes=[25, 50, 100],
-                default_color_mcs=50,
-                include_heavy_properties=False,
-                file_name="chemiscope_clusters.json.gz",
-            ),
+            # # Single-file benchmark scorecard — the headline cross-model
+            # # comparable artifact. See the docstring of
+            # # DescriptorStructureBenchmarkTask for the protocol.
+            # DescriptorStructureBenchmarkTask(),
+            # # Companion variant: cluster on raw (unnormalized) descriptors with
+            # # euclidean UMAP so the vector norm enters the partition. Lets you
+            # # ask whether descriptor magnitude carries chemical signal that the
+            # # canonical cosine path discards.
+            # DescriptorStructureBenchmarkTask(
+            #     cluster_metric="euclidean",
+            #     use_raw_descriptors=True,
+            #     summary_file_name="descriptor_structure_benchmark_euclidean_raw.yaml",
+            # ),
+            # *(
+            #     HDBSCANClusterTask(
+            #         min_cluster_size=mcs,
+            #         figure_file_name=f"hdbscan_clusters_mcs{mcs}.png",
+            #         summary_file_name=f"hdbscan_clusters_mcs{mcs}.yaml",
+            #     )
+            #     for mcs in (50, 200, 1000, 5000)
+            # ),
+            # # Coarse mcs collapses to one mega-cluster; the chemically coherent
+            # # structure lives at small mcs. Sweep to find the purity-optimal
+            # # granularity, then fingerprint each candidate. Run both with the
+            # # clustering-UMAP and directly on the 64-D descriptors (no UMAP) to
+            # # tell whether weak chemical clustering is intrinsic to the
+            # # descriptor or introduced by the UMAP compression.
+            # *(
+            #     ClusterGranularitySweepTask(
+            #         cluster_reducer=reducer,
+            #         min_cluster_sizes=[25, 50, 100],
+            #         summary_file_name=f"cluster_granularity_sweep_{tag}.yaml",
+            #     )
+            #     for reducer, tag in (("umap", "umap"), ("none", "noumap"))
+            # ),
+            # *(
+            #     ClusterChemicalFingerprintTask(
+            #         cluster_reducer=reducer,
+            #         min_cluster_size=mcs,
+            #         summary_file_name=f"cluster_fingerprint_{tag}_mcs{mcs}.yaml",
+            #     )
+            #     for reducer, tag in (("umap", "umap"), ("none", "noumap"))
+            #     for mcs in (25, 50, 100)
+            # ),
+            # # For each clustering granularity, ask which chemical axis (metal
+            # # block, geometry, ligand motif, donor element, …) best explains
+            # # that partition — not just whether donor-set works.
+            # *(
+            #     ClusterAxisAnalysisTask(
+            #         cluster_reducer=reducer,
+            #         min_cluster_size=mcs,
+            #         summary_file_name=f"cluster_axis_{tag}_mcs{mcs}.yaml",
+            #     )
+            #     for reducer, tag in (("umap", "umap"), ("none", "noumap"))
+            #     for mcs in (25, 50, 100)
+            # ),
+            # # One viewer to manually inspect cluster chemistry on the settled
+            # # UMAP: the small granularities switchable; heavy per-element /
+            # # formula columns dropped to keep the JSON viewer-loadable.
+            # ChemiscopeClusterTask(
+            #     min_cluster_sizes=[25, 50, 100],
+            #     default_color_mcs=50,
+            #     include_heavy_properties=False,
+            #     file_name="chemiscope_clusters.json.gz",
+            # ),
         ],
     )
 

@@ -246,9 +246,12 @@ def test_chemiscope_cluster_task_bundles_clusterings_and_chemistry(monkeypatch):
     # Heavy / high-cardinality columns are dropped by default.
     assert "donor_set" not in props
     assert "formula" not in props
-    assert props["cluster_mcs200"]["values"] == [
-        "c0", "c0", "c1", "c1", "noise", "c0"
-    ]
+    # Cluster ids are stored as numerics (-1 = noise; chemiscope coerces ints
+    # to floats internally) so the viewer treats them as an uncapped color
+    # axis instead of a categorical one capped at ~5 unique values.
+    cluster_values = props["cluster_mcs200"]["values"]
+    assert cluster_values == [0, 0, 1, 1, -1, 0]
+    assert all(not isinstance(v, str) for v in cluster_values)
     assert data["settings"]["map"]["color"]["property"] == "cluster_mcs200"
     # Features computed once and cached for downstream tasks.
     assert "metal_env_features" in ctx.cache
@@ -453,6 +456,29 @@ def test_descriptor_structure_benchmark_scorecard(monkeypatch):
     assert report.n_pure_islands["total"] == 2
     # The sweep is a separate Pareto, not the headline; both mcs values appear.
     assert {r.min_cluster_size for r in report.sweep} == {2, 4}
+
+
+def test_descriptor_structure_benchmark_records_raw_variant(monkeypatch):
+    # The euclidean-on-raw companion benchmark must flag use_raw_descriptors
+    # in its protocol so it's never silently compared against the canonical
+    # cosine scorecard.
+    mols = [_ferrocene() for _ in range(4)] + [_phosphine() for _ in range(4)]
+    monkeypatch.setattr(
+        analysis_tasks,
+        "compute_hdbscan_labels",
+        lambda *a, **k: np.array([0, 0, 0, 0, 1, 1, 1, 1]),
+    )
+    ctx = _make_ctx(mols)
+    (result,) = DescriptorStructureBenchmarkTask(
+        cluster_metric="euclidean",
+        use_raw_descriptors=True,
+        canonical_min_cluster_size=2,
+        sweep_min_cluster_sizes=[2],
+        pure_island_min_size=2,
+    ).run(ctx)
+    report = result.obj
+    assert report.protocol.use_raw_descriptors is True
+    assert report.protocol.cluster_metric == "euclidean"
 
 
 def test_descriptor_structure_benchmark_rejects_unknown_axis(monkeypatch):
