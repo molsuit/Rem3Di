@@ -1,4 +1,3 @@
-
 class SimilarityScreeningTask(BaseEvalTask):
     def __init__(self, dataset):
         super().__init__()

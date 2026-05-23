@@ -16,9 +16,7 @@ if TYPE_CHECKING:
     from threedscriptors.configuration.data_config import DatasetConfig, TaskConfig
 
 
-
 def get_molecular_weight(molecules: list[Atoms]):
-
     return [sum(m.get_masses()) for m in molecules]
 
 
@@ -137,7 +135,6 @@ def get_relaxed_conformers(
 def count_atoms_from_smiles(
     smiles_iterator, heavy_atoms_only=False, max_num_molecules=np.inf
 ) -> int:
-
     # Returns the max and sum of the atoms from smiles
 
     atom_count = []
@@ -263,7 +260,7 @@ def rmsd(A, B):
     # SVD
     V, S, Wt = np.linalg.svd(C)
 
-    # ensure right‐handed coordinate system
+    # ensure right-handed coordinate system
     d = np.sign(np.linalg.det(V @ Wt))
     U = V @ np.diag([1, 1, d]) @ Wt
 
@@ -341,16 +338,3 @@ def mol_is_fragmented(mol, *, ignore_hs=True) -> bool:
     # tuple of tuples of atom indices per fragment
     frags = rdmolops.GetMolFrags(m, asMols=False)
     return len(frags) > 1
-
-
-def get_transition_matrix(mol):
-    A = rdmolops.GetAdjacencyMatrix(mol)
-    # Get the adjacency matrix,
-
-    A_self = A + np.eye(A.shape[0])
-
-    deg = A_self.sum(axis=1)
-    D_inv = np.diag(1.0 / deg)
-    T = D_inv @ A_self
-
-    return T

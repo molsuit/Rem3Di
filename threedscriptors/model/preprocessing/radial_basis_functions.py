@@ -10,7 +10,10 @@ class BesselBasisFunctions(nn.Module):
       e_n(d) = sqrt(2 / cutoff) * sin(n * pi * d / cutoff) / d
     for n = 1, ..., N_radial_basis_functions.
     """
-    def __init__(self, N_radial_basis_functions: int, distance_cutoff: float, eps: float = 1e-8):
+
+    def __init__(
+        self, N_radial_basis_functions: int, distance_cutoff: float, eps: float = 1e-8
+    ):
         super().__init__()
         self.N_radial = N_radial_basis_functions
         self.cutoff = distance_cutoff
@@ -21,7 +24,9 @@ class BesselBasisFunctions(nn.Module):
         self.register_buffer("n_idx", n)
 
         # precompute the overall normalization sqrt(2 / cutoff)
-        self.register_buffer("norm", torch.tensor(math.sqrt(2.0 / self.cutoff), dtype=torch.float32))
+        self.register_buffer(
+            "norm", torch.tensor(math.sqrt(2.0 / self.cutoff), dtype=torch.float32)
+        )
 
     def forward(self, distances: torch.Tensor) -> torch.Tensor:
         """
@@ -32,15 +37,13 @@ class BesselBasisFunctions(nn.Module):
         # ensure no exact zero for stability
         d = distances.clamp(min=self.eps).unsqueeze(-1)  # shape [..., 1]
         # compute sin(n π d / cutoff) for each n
-        arg = self.n_idx * math.pi * d / self.cutoff      # shape [..., N_radial]
-        rbf = self.norm * torch.sin(arg) / d               # shape [..., N_radial]
+        arg = self.n_idx * math.pi * d / self.cutoff  # shape [..., N_radial]
+        rbf = self.norm * torch.sin(arg) / d  # shape [..., N_radial]
         return rbf
 
 
 class GaussianBasisFunctions(nn.Module):
-
     def __init__(self, N_radial_basis_functions: int, distance_cutoff: float):
-
         super().__init__()
 
         self.N_radial_basis_functions = N_radial_basis_functions
@@ -55,7 +58,6 @@ class GaussianBasisFunctions(nn.Module):
         self.register_buffer("widths", widths)
 
     def forward(self, distances):
-
         rbf = torch.exp(
             -0.5 * ((distances[..., None] - self.centers) / self.widths) ** 2
         )

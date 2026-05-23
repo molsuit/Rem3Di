@@ -1,15 +1,20 @@
 import pytest
 import torch
 
-# Import your module
-# from your_package.pma import PMAAggregator
-from threedscriptors.model.pooling import PMAAggregator  
+from threedscriptors.model.multihead_self_attention import MultiHeadCrossAttention
+from threedscriptors.model.pooling import PMAAggregator
 
 
-def _make_model(d_in=32, d_out=64, num_heads=4, head_dim=64, k_seeds=3, dropout=0.0, use_mlp=True):
-    # head_dim is total Q/K dim; must be divisible by num_heads
-    assert head_dim % num_heads == 0
-    assert d_out % num_heads == 0
+def _make_model(
+    d_in=32,
+    d_out=64,
+    num_heads=4,
+    head_dim=16,
+    k_seeds=2,
+    dropout=0.0,
+    use_mlp=True,
+):
+    # head_dim is per-head Q/K dim. d_out must be divisible by num_heads.
     return PMAAggregator(
         d_in=d_in,
         d_out=d_out,
@@ -25,69 +30,79 @@ def _finite_tensor(*tensors):
     return all(torch.isfinite(t).all().item() for t in tensors)
 
 
-@pytest.mark.parametrize("B,N,d_in,d_out,H,head_dim,k_seeds", [
-    (2, 11, 32, 64, 4, 64, 3),
-    (1,  5, 48, 96, 8, 64, 1),
-    (4, 17, 16, 32, 2, 32, 4),
-])
+@pytest.mark.parametrize(
+    "B,N,d_in,d_out,H,head_dim,k_seeds",
+    [
+        (2, 11, 32, 64, 4, 16, 3),
+        (1, 5, 48, 96, 8, 8, 1),
+        (4, 17, 16, 32, 2, 32, 4),
+    ],
+)
 @pytest.mark.parametrize("use_mlp", [False, True])
-def test_forward_backward_cpu(B,N,d_in,d_out,H,head_dim,k_seeds,use_mlp):
+def test_forward_backward_cpu(B, N, d_in, d_out, H, head_dim, k_seeds, use_mlp):
     torch.manual_seed(0)
     device = torch.device("cpu")
 
-    model = _make_model(d_in, d_out, H, head_dim, k_seeds, dropout=0.0, use_mlp=use_mlp).to(device)
+    model = _make_model(
+        d_in, d_out, H, head_dim, k_seeds, dropout=0.0, use_mlp=use_mlp
+    ).to(device)
     S = torch.randn(B, N, d_in, device=device, dtype=torch.float32, requires_grad=True)
-    padding_mask = torch.zeros(B, N, dtype=torch.bool, device=device)  # no padding
+    padding_mask = torch.zeros(B, N, dtype=torch.bool, device=device)
 
     out = model(S, padding_mask)
-    assert out.shape == (B, d_out)
+    assert out.shape == (B, k_seeds, d_out)
     assert _finite_tensor(out), "NaN/Inf in forward output"
 
-    loss = (out ** 2).mean()
+    loss = (out**2).mean()
     loss.backward()
 
-    # Gradients on inputs and parameters should be finite and (mostly) nonzero
     assert S.grad is not None and _finite_tensor(S.grad), "Bad/None grad on inputs"
-    # at least some gradient entries should be non-zero
     assert (S.grad.abs() > 0).any().item(), "Zero gradient everywhere on inputs"
 
     n_param_with_grad = sum(p.grad is not None for p in model.parameters())
     assert n_param_with_grad > 0, "No parameter gradients propagated"
-    assert all(_finite_tensor(p.grad) for p in model.parameters() if p.grad is not None), "Param grad has NaN/Inf"
+    assert all(
+        _finite_tensor(p.grad) for p in model.parameters() if p.grad is not None
+    ), "Param grad has NaN/Inf"
 
 
-@pytest.mark.parametrize("B,N,d_in,d_out,H,head_dim,k_seeds", [
-    (3, 10, 32, 64, 4, 64, 2),
-])
-def test_with_partial_padding_mask(B,N,d_in,d_out,H,head_dim,k_seeds):
+@pytest.mark.parametrize(
+    "B,N,d_in,d_out,H,head_dim,k_seeds",
+    [
+        (3, 10, 32, 64, 4, 16, 2),
+    ],
+)
+def test_with_partial_padding_mask(B, N, d_in, d_out, H, head_dim, k_seeds):
     torch.manual_seed(123)
     device = torch.device("cpu")
 
     model = _make_model(d_in, d_out, H, head_dim, k_seeds).to(device)
     S = torch.randn(B, N, d_in, device=device, requires_grad=True)
 
-    # Mask last 3 tokens of each sequence
     padding_mask = torch.zeros(B, N, dtype=torch.bool, device=device)
     padding_mask[:, -3:] = True
 
     out = model(S, padding_mask)
-    assert out.shape == (B, d_out)
+    assert out.shape == (B, k_seeds, d_out)
     assert _finite_tensor(out), "NaN/Inf in forward output with padding"
 
     loss = out.pow(2).mean()
     loss.backward()
     assert S.grad is not None and _finite_tensor(S.grad)
-    assert (S.grad[:, :-3, :].abs().sum() > 0).item(), "Unmasked positions should affect the loss"
+    assert (
+        S.grad[:, :-3, :].abs().sum() > 0
+    ).item(), "Unmasked positions should affect the loss"
 
 
-@pytest.mark.parametrize("B,N,d_in,d_out,H,head_dim,k_seeds", [
-    (2, 7, 24, 48, 4, 64, 3),
-])
-def test_all_keys_masked_row_is_safe(B,N,d_in,d_out,H,head_dim,k_seeds):
-    """
-    One batch item has *all* positions masked. This must not produce NaNs.
-    For that row, gradients wrt inputs should be (close to) zero.
-    """
+@pytest.mark.parametrize(
+    "B,N,d_in,d_out,H,head_dim,k_seeds",
+    [
+        (2, 7, 24, 48, 4, 16, 2),
+    ],
+)
+def test_all_keys_masked_row_is_safe(B, N, d_in, d_out, H, head_dim, k_seeds):
+    """Fully-masked row must not produce NaNs and must not propagate gradient
+    back through the padded inputs."""
     torch.manual_seed(7)
     device = torch.device("cpu")
 
@@ -95,19 +110,88 @@ def test_all_keys_masked_row_is_safe(B,N,d_in,d_out,H,head_dim,k_seeds):
     S = torch.randn(B, N, d_in, device=device, requires_grad=True)
 
     padding_mask = torch.zeros(B, N, dtype=torch.bool, device=device)
-    padding_mask[0, :] = True  # first item fully masked
+    padding_mask[0, :] = True
 
     out = model(S, padding_mask)
-    assert out.shape == (B, d_out)
+    assert out.shape == (B, k_seeds, d_out)
     assert _finite_tensor(out), "NaN/Inf when an entire row is masked"
 
     loss = out.pow(2).mean()
     loss.backward()
     assert S.grad is not None and _finite_tensor(S.grad)
 
-    # Gradients for the fully-masked item should be (near) zero
     masked_grad_norm = S.grad[0].norm().item()
-    assert masked_grad_norm < 1e-6, f"Expected ~0 grad for fully masked row, got {masked_grad_norm}"
+    assert (
+        masked_grad_norm < 1e-6
+    ), f"Expected ~0 grad for fully masked row, got {masked_grad_norm}"
+
+
+def test_padding_invariance():
+    """Output for the unpadded portion must be identical regardless of how many
+    PAD tokens are appended."""
+    torch.manual_seed(11)
+    B, N, d_in, d_out, H, head_dim, k_seeds = 2, 6, 16, 32, 2, 8, 3
+
+    model = _make_model(d_in, d_out, H, head_dim, k_seeds, use_mlp=False).eval()
+
+    real = torch.randn(B, N, d_in)
+    padded = torch.cat([real, torch.randn(B, 4, d_in) * 100.0], dim=1)
+    pad_mask = torch.zeros(B, N + 4, dtype=torch.bool)
+    pad_mask[:, N:] = True
+
+    no_pad_mask = torch.zeros(B, N, dtype=torch.bool)
+
+    with torch.no_grad():
+        out_real = model(real, no_pad_mask)
+        out_pad = model(padded, pad_mask)
+
+    assert torch.allclose(out_real, out_pad, atol=1e-5), (
+        "PAD tokens leaked into the pooled output"
+    )
+
+
+def test_seeds_produce_different_outputs():
+    """Different seeds should yield different summary tokens — otherwise
+    multiple seeds add no information over k=1."""
+    torch.manual_seed(3)
+    B, N, d_in, d_out, H, head_dim, k_seeds = 2, 8, 16, 32, 2, 8, 4
+
+    model = _make_model(d_in, d_out, H, head_dim, k_seeds).eval()
+    S = torch.randn(B, N, d_in)
+    pad_mask = torch.zeros(B, N, dtype=torch.bool)
+
+    with torch.no_grad():
+        out = model(S, pad_mask)
+
+    diffs = [
+        (out[:, i] - out[:, j]).abs().max().item()
+        for i in range(k_seeds)
+        for j in range(i + 1, k_seeds)
+    ]
+    assert max(diffs) > 1e-3, "Seeds collapsed to identical outputs"
+
+
+def test_cross_attention_with_pma_seeds():
+    """Decoder cross-attention should accept the (B, k_seeds, d_descriptor)
+    output of PMA directly."""
+    torch.manual_seed(0)
+    B, N, d_in, d_out, H, head_dim, k_seeds = 2, 6, 16, 32, 2, 8, 4
+
+    pma = _make_model(d_in, d_out, H, head_dim, k_seeds, use_mlp=False).eval()
+
+    S = torch.randn(B, N, d_in)
+    pad_mask = torch.zeros(B, N, dtype=torch.bool)
+
+    M = pma(S, pad_mask)
+    assert M.shape == (B, k_seeds, d_out)
+
+    cross = MultiHeadCrossAttention(
+        d_model=d_in, d_descriptor=d_out, n_heads=2, dropout=0.0
+    ).eval()
+    atoms = torch.randn(B, N, d_in)
+    out = cross(atoms, M, mask=pad_mask)
+    assert out.shape == (B, N, d_in)
+    assert _finite_tensor(out)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -115,20 +199,20 @@ def test_cuda_forward_backward_and_amp():
     torch.manual_seed(42)
     device = torch.device("cuda")
 
-    d_in, d_out, H, head_dim, k_seeds = 32, 64, 4, 64, 3
-    model = _make_model(d_in, d_out, H, head_dim, k_seeds, dropout=0.0, use_mlp=True).to(device)
+    d_in, d_out, H, head_dim, k_seeds = 32, 64, 4, 16, 3
+    model = _make_model(
+        d_in, d_out, H, head_dim, k_seeds, dropout=0.0, use_mlp=True
+    ).to(device)
     S = torch.randn(2, 13, d_in, device=device, requires_grad=True)
     padding_mask = torch.zeros(2, 13, dtype=torch.bool, device=device)
 
-    # FP32 path
     out = model(S, padding_mask)
-    assert out.shape == (2, d_out)
+    assert out.shape == (2, k_seeds, d_out)
     assert _finite_tensor(out)
     loss = out.pow(2).mean()
     loss.backward()
     assert S.grad is not None and _finite_tensor(S.grad)
 
-    # AMP path
     S2 = torch.randn(2, 13, d_in, device=device, requires_grad=True)
     padding_mask2 = torch.zeros(2, 13, dtype=torch.bool, device=device)
 
@@ -145,16 +229,10 @@ def test_cuda_forward_backward_and_amp():
     scaler.step(optimizer)
     scaler.update()
 
-    # grads should exist and be finite
     assert S2.grad is not None and _finite_tensor(S2.grad)
 
 
 def test_bad_configuration_raises():
-    """
-    head_dim must be divisible by num_heads and yield d_k>0;
-    d_out must be divisible by num_heads.
-    """
+    # d_out not divisible by num_heads
     with pytest.raises(AssertionError):
-        _ = _make_model(d_in=16, d_out=63, num_heads=4, head_dim=64, k_seeds=2)  # d_out not divisible
-    with pytest.raises(AssertionError):
-        _ = _make_model(d_in=16, d_out=64, num_heads=8, head_dim=30, k_seeds=2)  # 30%8!=0
+        _ = _make_model(d_in=16, d_out=63, num_heads=4, head_dim=16, k_seeds=2)

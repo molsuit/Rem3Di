@@ -10,40 +10,47 @@ from threedscriptors.data_handling.mol_id import StructureID
 
 MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 
-def load_pcqm(pcqm_file: Path, N_molecules:int) -> tuple[list[str], list[Atoms], list[StructureID]]:
 
+def load_pcqm(
+    pcqm_file: Path, N_molecules: int
+) -> tuple[list[str], list[Atoms], list[StructureID]]:
     mols = filter_mols(pcqm_file, N_molecules)
 
     # convert mols to atoms
 
     molecules = convert_to_ase(mols)
 
-
     smiles = get_canon_smiles(mols)
 
-    structure_ids = [StructureID(sid, canonical_smiles=smi, molecule_id =  sid, conformer_id= 0) for sid, smi in enumerate(smiles)]
-
+    structure_ids = [
+        StructureID(sid, canonical_smiles=smi, molecule_id=sid, conformer_id=0)
+        for sid, smi in enumerate(smiles)
+    ]
 
     return smiles, molecules, structure_ids
 
 
-def get_canon_smiles(mols : list[Mol]):
-    return [Chem.MolToSmiles(mol) for mol in mols ]
+def get_canon_smiles(mols: list[Mol]):
+    return [Chem.MolToSmiles(mol) for mol in mols]
 
 
 def convert_to_ase(mols):
-
     all_atoms = []
-
 
     for mol in mols:
         try:
             symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
             positions = mol.GetConformer().GetPositions()
 
-            all_atoms.append(Atoms(symbols = symbols, positions=positions, info = {"smiles" : Chem.MolToSmiles(mol)}))
+            all_atoms.append(
+                Atoms(
+                    symbols=symbols,
+                    positions=positions,
+                    info={"smiles": Chem.MolToSmiles(mol)},
+                )
+            )
 
-        except Exception as e :
+        except Exception as e:
             print(e)
             continue
 
@@ -51,10 +58,8 @@ def convert_to_ase(mols):
 
 
 def filter_mols(pcqm_file: Path, N_max: int):
-
     mols = []
-    suppl = Chem.SDMolSupplier(pcqm_file,removeHs=False)
-
+    suppl = Chem.SDMolSupplier(pcqm_file, removeHs=False)
 
     indices = list(range(len(suppl)))
     shuffle(indices)
@@ -68,14 +73,14 @@ def filter_mols(pcqm_file: Path, N_max: int):
                 continue
 
             if any(a.GetSymbol() not in MACE_OFF_ELEMENTS for a in mol.GetAtoms()):
-                    continue
+                continue
 
             if any(
-                    a.GetNumRadicalElectrons() != 0
-                    or a.GetIsotope() != 0
-                    or a.GetFormalCharge() != 0
-                    for a in mol.GetAtoms()
-                ):
+                a.GetNumRadicalElectrons() != 0
+                or a.GetIsotope() != 0
+                or a.GetFormalCharge() != 0
+                for a in mol.GetAtoms()
+            ):
                 continue
         except Exception as e:
             print(f"Failed reading {Chem.MolToSmiles(mol)}: {e}")

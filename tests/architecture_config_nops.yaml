@@ -1,12 +1,9 @@
+kind: regression
 embedding_preprocess_config:
-  input_embedding_size: 640
   input_irreps: 128x0e+128x1o+128x0e
-  output_irreps: 128x0e+128x0e
-  output_irreps_dim: 256
   pseudoscalar_dimension: 0
-  pseudoscalar_embedding_dim: 0
+  chiral_embedding_dimension: 0
   pseudoscalars: false
-  reload_state_dict: null
 encoder_config:
   N_layers: 1
   attention_layer_config:
@@ -14,9 +11,13 @@ encoder_config:
     dropout: 0.3
     embedding_dim: 256
     num_heads: 8
-  reload_state_dict: null
+positional_encoding_config:
+  N_radial_basis_functions: 16
+  d_projection: 64
+  distance_cutoff: 32.0
 global_aggregator_config:
-  aggregation_fn: mean
+  aggregator_type_config:
+    aggregator_type: mean
   input_dim: 256
   output_dim: 256
 regression_head_config:
@@ -26,4 +27,3 @@ regression_head_config:
   - 128
   input_dimensions: 258
   task_name: cmrt
-reload_full_model_weights: null

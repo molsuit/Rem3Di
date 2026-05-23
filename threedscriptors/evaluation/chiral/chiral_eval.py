@@ -18,12 +18,14 @@ def plot_molecule_pseudoscalar_comparison(
         batch_size=dataset.dataset_config.N_conformers,
         shuffle=False,
         collate_fn=sample_collate_fn,
-        drop_last=True
+        drop_last=True,
     )
 
     device = "cuda"
 
-    N_full_conformal_ensembles = dataset.dataset_config.N_molecules // dataset.dataset_config.N_conformers
+    N_full_conformal_ensembles = (
+        dataset.dataset_config.N_molecules // dataset.dataset_config.N_conformers
+    )
 
     enantiomer_pred_ps = np.zeros(
         (len(dataloader), dataset.dataset_config.N_conformers)
@@ -58,21 +60,17 @@ def plot_molecule_pseudoscalar_comparison(
             .squeeze()
         )
 
-
-
-    targets = dataset.regression_targets[:(N_full_conformal_ensembles*dataset.dataset_config.N_conformers)]
+    targets = dataset.regression_targets[
+        : (N_full_conformal_ensembles * dataset.dataset_config.N_conformers)
+    ]
 
     regression_targets = (
-        targets.reshape(-1,
-                                           dataset.dataset_config.N_conformers)
-        .detach()
-        .cpu()
-        .numpy()
+        targets.reshape(-1, dataset.dataset_config.N_conformers).detach().cpu().numpy()
     )
 
     fig = plt.figure()
 
-    N_mol_infig = dataset.dataset_config.N_conformers*10
+    N_mol_infig = dataset.dataset_config.N_conformers * 10
 
     y_min = min(
         [
@@ -116,11 +114,11 @@ def plot_molecule_pseudoscalar_comparison(
 
         plt.vlines(x=class_pos, ymin=-5, ymax=5, colors="k")
         plt.scatter(
-            (class_pos + 2) * x, e0_ps -center, c="tab:blue", marker="*", label="E0PS"
+            (class_pos + 2) * x, e0_ps - center, c="tab:blue", marker="*", label="E0PS"
         )
         plt.scatter(
             (class_pos + 3) * x,
-            e1_ps-center,
+            e1_ps - center,
             c="tab:orange",
             marker="*",
             label="E1PS",
@@ -129,20 +127,20 @@ def plot_molecule_pseudoscalar_comparison(
         plt.scatter(class_pos + 4, gt_label[0], c="tab:blue", label="GT_E0")
         plt.scatter(
             class_pos + 4,
-            gt_label[n_confs_per_enantionmer]-center,
+            gt_label[n_confs_per_enantionmer] - center,
             c="tab:orange",
             label="GT_E1",
         )
         plt.scatter(
             (class_pos + 5) * x,
-            e0_nps-center,
+            e0_nps - center,
             c="tab:blue",
             marker="x",
             label="E0NPS",
         )
         plt.scatter(
             (class_pos + 6) * x,
-            e1_nps-center,
+            e1_nps - center,
             c="tab:orange",
             marker="x",
             label="E1NPS",
@@ -158,14 +156,11 @@ def plot_molecule_pseudoscalar_comparison(
         Line2D(
             [0], [0], marker="o", color="black", linestyle="None", label="Reference"
         ),
-        Line2D([0], [0], marker="*", color="black",
-               linestyle="None", label="With PS"),
-        Line2D([0], [0], marker="x", color="black",
-               linestyle="None", label="No PS"),
+        Line2D([0], [0], marker="*", color="black", linestyle="None", label="With PS"),
+        Line2D([0], [0], marker="x", color="black", linestyle="None", label="No PS"),
     ]
 
-    plt.xticks(ticks=np.linspace(4, 76, 10),
-               labels=[str(i) for i in range(10)])
+    plt.xticks(ticks=np.linspace(4, 76, 10), labels=[str(i) for i in range(10)])
     plt.yticks([])
     plt.ylabel("Retention Time [a.u]")
     plt.xlabel("Molecule")

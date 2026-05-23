@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Sequence
 from time import perf_counter
 
 import numpy as np
@@ -15,17 +17,22 @@ from threedscriptors.data_handling.dataset_creation import (
 )
 from threedscriptors.data_handling.dataset_creation.generators import MoleculeGenerator
 from threedscriptors.data_handling.dataset_creation.loading_batch import SmilesData
+from threedscriptors.data_handling.dataset_creation.shard_aligned_writer import (
+    ShardAlignedWriter,
+)
 from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 from threedscriptors.data_handling.dataset_creation.utils import (
     ensure_numpy_array,
     system_idx_to_ragged_ptr,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class DatasetConstructionOrchestrator:
     def __init__(
         self,
-        pipeline: list[PipelineStage],
+        pipeline: Sequence[PipelineStage],
         batch_generator: MoleculeGenerator,
         construction_config: DatasetCreationConfig,
         dataset_config: DatasetConfig,
@@ -34,10 +41,13 @@ class DatasetConstructionOrchestrator:
         self.batch_generator = batch_generator
         self.construction_config = construction_config
 
-        # Initialize empty zarr dataset
+        # Initialize empty zarr dataset + its shard-aligned writer. The
+        # writer owns the build-time buffering so each shard file is written
+        # exactly once (MoleculeDataset itself is pure storage).
         self.dataset = MoleculeDataset.create_empty_dataset(
             self.construction_config.path, dataset_config
         )
+        self.writer = ShardAlignedWriter(self.dataset)
 
         # Timing accumulators
         self._stage_times: dict[str, float] = {}
@@ -46,13 +56,13 @@ class DatasetConstructionOrchestrator:
 
     def build_dataset(self):
         for input_batch in self.batch_generator:
-
-
-            if input_batch.molecules == [] and input_batch.smiles == []:
+            if len(input_batch) == 0 and (
+                input_batch.raw_smiles is None or len(input_batch.raw_smiles) == 0
+            ):
                 continue
 
-
             output_data = None
+            skipped = False
 
             for stage in self.pipeline:
                 t0 = perf_counter()
@@ -60,38 +70,53 @@ class DatasetConstructionOrchestrator:
                 dt = perf_counter() - t0
                 name = stage.__class__.__name__
                 self._stage_times[name] = self._stage_times.get(name, 0.0) + dt
+                # A filter stage may drop every row in the batch; downstream
+                # stages (CopyDataStage's _stack_atoms) can't handle empties,
+                # so bail out and move to the next generator batch.
+                if len(input_batch) == 0 and (
+                    input_batch.raw_smiles is None
+                    or len(input_batch.raw_smiles) == 0
+                ):
+                    skipped = True
+                    break
+
+            if skipped:
+                continue
 
             t0 = perf_counter()
 
-            #if torch.isnan(output_data.embeddings).any():
+            # if torch.isnan(output_data.embeddings).any():
             #    breakpoint()
 
+            assert output_data is not None, "no DataBatch produced by the pipeline"
             self.append_batch_to_dataset(output_data)
             self._append_time += perf_counter() - t0
 
             self._num_batches += 1
 
-            if self.dataset.N_structures > self.construction_config.N_structures:
+            if (
+                self.construction_config.N_structures is not None
+                and self.writer.n_structures > self.construction_config.N_structures
+            ):
                 break
 
         self.finalize()
 
     def append_batch_to_dataset(self, output_data: DataBatch):
-        embeddings = ensure_numpy_array(output_data.embeddings)
         positions = ensure_numpy_array(output_data.atomic_positions)
         atomic_numbers = ensure_numpy_array(output_data.atomic_numbers)
+        total_charge = ensure_numpy_array(output_data.total_charge)
+        multiplicity = ensure_numpy_array(output_data.multiplicity)
 
         # Ensure pointer length matches the number of structures in the batch.
-        # If the last system produced zero atoms, `minlength` keeps a trailing 0 count
-        # so the ptr length equals len(structure_ids).
-        ptr = ensure_numpy_array(system_idx_to_ragged_ptr(
-            output_data.systems_index,
-        ))
+        ptr = ensure_numpy_array(
+            system_idx_to_ragged_ptr(
+                output_data.systems_index,
+            )
+        )
 
         N_atoms_batch = positions.shape[0]
 
-        if embeddings is not None and embeddings.ndim != 2:
-            raise ValueError("embeddings must be 2D [N_atoms, D]")
         if positions.shape != (N_atoms_batch, 3):
             raise ValueError("atomic_positions must be [N_atoms, 3]")
         if atomic_numbers.shape[0] != N_atoms_batch:
@@ -108,23 +133,27 @@ class DatasetConstructionOrchestrator:
             system_masks = output_data.regression_data.mask_system
             atom_target = output_data.regression_data.targets_atom
             atom_mask = output_data.regression_data.mask_atom
+            split = output_data.regression_data.split
         else:
             system_targets = None
             system_masks = None
             atom_target = None
             atom_mask = None
+            split = None
 
-        self.dataset.append_batch(
-            embeddings,
+        self.writer.append_batch(
             positions,
             atomic_numbers,
             ptr,
             molecule_ids,
             stereoisomer_ids,
+            total_charge,
+            multiplicity,
             system_targets,
             system_masks,
             atom_target,
             atom_mask,
+            split,
         )
 
     def get_mol_ids_for_batch(
@@ -158,20 +187,59 @@ class DatasetConstructionOrchestrator:
             self.dataset.smiles.close()
             self.dataset.isomeric_smiles.close()
 
-        self.dataset.shrink_to_fit()
+        self.writer.finalize()
 
-        # Print simple timing summary
+        # Duck-typed per-stage flush hook: any stage exposing ``flush_timings``
+        # (currently only ``ConformerGenerationStage``) gets its build artifact
+        # written into the zarr dir before the summary is logged.
+        for stage in self.pipeline:
+            flush = getattr(stage, "flush_timings", None)
+            if callable(flush):
+                flush()
+
+        self._log_build_summary()
+
+    def _log_build_summary(self) -> None:
+        """Aggregate generator + stage stats + timings into one INFO block.
+
+        Whether the generator and stages expose stats is optional — anything
+        without a ``load_stats`` / ``stats`` attribute is silently skipped, so
+        non-benchmark generators (e.g. TmqmGenerator) still produce a clean
+        log.
+        """
+        lines: list[str] = ["dataset build summary:"]
+
+        gen_stats = getattr(self.batch_generator, "load_stats", None)
+        if gen_stats is not None:
+            lines.append(
+                f"  generator {type(self.batch_generator).__name__}: "
+                f"{gen_stats.summary()}"
+            )
+
+        for stage in self.pipeline:
+            stage_stats = getattr(stage, "stats", None)
+            if stage_stats is not None:
+                lines.append(
+                    f"  stage {type(stage).__name__}: {stage_stats.summary()}"
+                )
+
+        lines.append(f"  zarr structures written: {self.writer.n_structures}")
+
         if self._num_batches > 0:
-            per_batch_append = self._append_time / self._num_batches
-            # Order stages by total time (descending)
+            lines.append(
+                f"  timings ({self._num_batches} batches, per-stage total / per-batch):"
+            )
             ordered = sorted(
                 self._stage_times.items(), key=lambda x: x[1], reverse=True
             )
-            print("Dataset construction timing summary:")
             for name, total in ordered:
-                print(
-                    f"  Stage {name}: {total:.3f}s total ({total / self._num_batches:.4f}s/batch)"
+                lines.append(
+                    f"    {name}: {total:.3f}s ({total / self._num_batches:.4f}s/batch)"
                 )
-            print(
-                f"  Append: {self._append_time:.3f}s total ({per_batch_append:.4f}s/batch)"
+            per_batch_append = self._append_time / self._num_batches
+            lines.append(
+                f"    Append: {self._append_time:.3f}s "
+                f"({per_batch_append:.4f}s/batch)"
             )
+
+        logger.info("\n".join(lines))

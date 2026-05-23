@@ -70,9 +70,7 @@ def test_get_invariant_indices():
     assert out_irreps == Irreps("10x0e+10x0e")
 
 
-
-
-#def test_fixed_ps_generator():
+# def test_fixed_ps_generator():
 #
 #    smiles = "CC(N)O"
 #    atoms = get_ase_atoms(smiles)
@@ -140,5 +138,3 @@ def test_get_invariant_indices():
 #    ps_2 = ps_generator(des2_equiv).detach()
 #
 #    npt.assert_allclose(ps_1, -1* ps_2)
-
-

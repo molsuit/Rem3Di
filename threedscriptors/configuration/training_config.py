@@ -1,15 +1,28 @@
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from threedscriptors.configuration.dataloader_config import DataLoaderConfig
+
+
+class CompileConfig(BaseModel):
+    """torch.compile + shape-stability knobs."""
+
+    enabled: bool = True
+    # Round padded atom count up to this multiple to bound the inductor graph
+    # cache. 1 = off; 8 / 16 are typical for FFN-heavy decoders. Pairs with
+    # bucketed batching: with bucket_size choosing a narrow length range and
+    # pad_multiple quantizing the max, inductor sees only a handful of shapes.
+    pad_multiple: int = Field(default=1, gt=0)
+    dynamo_cache_size_limit: int = Field(default=16, gt=0)
 
 
 class SplitStrategy(str, Enum):
-    SINGLE = "single"  # hold‑out / train–val split
-    REPEATED_CV = "repeated_cv"  # repeated k‑fold CV
-    SCAFFOLD = "scaffold" # Bemis murcko scaffold split
+    SINGLE = "single"  # hold-out / train-val split
+    REPEATED_CV = "repeated_cv"  # repeated k-fold CV
+    SCAFFOLD = "scaffold"  # Bemis murcko scaffold split
 
 
 @dataclass
@@ -23,23 +36,36 @@ class SplitConfig:
     shuffle: bool = True
 
 
+class VICRegConfig(BaseModel):
+    """Optional VICReg variance + covariance regularizers on the descriptor.
+
+    Defaults follow Bardes et al. 2022 (variance_weight=25, covariance_weight=1,
+    target_std=1.0).
+    """
+
+    enabled: bool = False
+    variance_weight: float = 25.0
+    covariance_weight: float = 1.0
+    target_std: float = 1.0
+
+
 class TrainingConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     training_name: str
     run_group: str | None = None
-    batch_size: int
+    dataloader: DataLoaderConfig
     epochs: int
     learning_rate: float
     weight_decay: float
     max_grad_norm: float | None = None
     noise_level: float | None = None
     split_config: SplitConfig
-    mace_model_path: Path
     dataset_path: Path
     model_config_path: Path
+    output_base: Path
+    training_directory: Path | None = None
     total_steps: int | None = None
     wandb_active: bool = False
-
-
-
+    vicreg: VICRegConfig = VICRegConfig()
+    compile: CompileConfig = CompileConfig()

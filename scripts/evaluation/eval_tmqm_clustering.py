@@ -1,85 +1,194 @@
+import argparse
+from pathlib import Path
 
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+import torch
 
-from threedscriptors.evaluation.clustering import (
-    plot_reduced_dimension,
+from threedscriptors.configuration.architecture_config import (
+    EncoderDecoderArchitectureConfig,
 )
-from threedscriptors.evaluation.clustering.tmqm_clustering_utils import (
-    get_atomic_num_colors,
-    get_block_colors,
-    get_coordination_numbers,
-    get_metal_center_type,
-    get_tm_colormap,
+from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+from threedscriptors.data_handling.dataset.training_dataset import (
+    TrainingMoleculeDataset,
+    atoms_getitem,
+)
+from threedscriptors.evaluation.descriptor_analysis import (
+    CapacityDiagnosticTask,
+    ChemiscopeClusterTask,
+    ClusterAxisAnalysisTask,
+    ClusterChemicalFingerprintTask,
+    ClusterGranularitySweepTask,
+    CoordinationNumberColor,
+    DBlockColor,
+    DescriptorAnalysisRunner,
+    DescriptorDistributionTask,
+    DescriptorNormalizationConfig,
+    DescriptorStructureBenchmarkTask,
+    HDBSCANClusterTask,
+    MetalCenterAtomicNumberColor,
+    MetalCenterElementColor,
+    NumAtomsColor,
+    ProjectionConfig,
+    ProjectionPlotTask,
+    TopNormDescriptorsTask,
 )
 from threedscriptors.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
 )
-from threedscriptors.model.model_builder import ModelBuilder
+from threedscriptors.model.remedi_model import REM3DIModel
 
-model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/159-2025_08_19_14_29_24-tmqmpretrained"
-
-
-#model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/144-2025_07_30_14_47_16-TMQM First Run"
-
-model = ModelBuilder.from_directory(model_directory).build_remedi_model()
-
-dataset_directory = (
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/tmqm"
+DEFAULT_MODEL_DIR = Path(
+    "/scratch/s5f/wedigs.s5f/training_runs/10-2026_04_28_09_24_50-tmc_0"
 )
-out_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/tmqm_pretraining/train"
-
-dataset = reload_dataset_pipeline(dataset_directory).build()
-
-import numpy as np
-
-descriptors = evaluate_molecular_descriptor_on_dataset(model, dataset)
-descriptors = descriptors.numpy()
+DATASET_DIR = Path(
+    "/scratch/s5f/wedigs.s5f/datasets/tmqm"
+)
 
 
-# Z-score normalization: subtract mean and divide by std for each feature
-descriptors = (descriptors - np.mean(descriptors, axis=0)) / np.std(descriptors, axis=0)
-
-descriptors = descriptors / np.linalg.norm(descriptors, axis= 1, keepdims =True)
-
-
-import umap
-
-um = umap.UMAP()
-
-emb = um.fit_transform(descriptors)
-
-
+def load_model(model_dir: Path) -> REM3DIModel:
+    bundle = EncoderDecoderArchitectureConfig.from_directory(str(model_dir)).build()
+    model = REM3DIModel(preprocessor=bundle.preprocessor, encoder=bundle.encoder)
+    model.encoder.load_state_dict(torch.load(model_dir / "encoder.pth"))
+    model.preprocessor.atomic_preprocessor.load_state_dict(
+        torch.load(model_dir / "atomic_preprocessor.pth")
+    )
+    model.preprocessor.geometric_preprocessor.load_state_dict(
+        torch.load(model_dir / "geometric_preprocessor.pth")
+    )
+    return model
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-dir", type=Path, default=DEFAULT_MODEL_DIR)
+    args = parser.parse_args()
 
-num_atoms = [len(m) for m in dataset.molecules]
-fig = plot_reduced_dimension(emb, color = num_atoms, suptitle="By Number of atoms")
-fig.savefig(f"{out_dir}/number_of_atoms.png", dpi = 300)
+    model_dir: Path = args.model_dir
+    output_dir = model_dir / "analysis"
+
+    dataset = MoleculeDataset.open_existing_dataset_from_dir(DATASET_DIR)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    descriptors_path = output_dir / "descriptors.pt"
+
+    if descriptors_path.exists():
+        descriptors = torch.load(descriptors_path)
+    else:
+        model = load_model(model_dir)
+        train_dataset = TrainingMoleculeDataset.from_molecule_dataset(
+            dataset, get_item=atoms_getitem
+        )
+        descriptors = evaluate_molecular_descriptor_on_dataset(
+            model, train_dataset, device="cuda"
+        )
+        torch.save(descriptors, descriptors_path)
+
+    runner = DescriptorAnalysisRunner(
+        normalization=DescriptorNormalizationConfig(z_score=False, l2_normalize=True),
+        projection=ProjectionConfig(method="umap", center=True),
+        tasks=[
+            CapacityDiagnosticTask(),
+            CapacityDiagnosticTask(
+                l2_normalize=True,
+                file_name="capacity_diagnostic_l2.yaml",
+            ),
+            CapacityDiagnosticTask(
+                drop_outlier_quantile=0.99,
+                file_name="capacity_diagnostic_no_outliers.yaml",
+            ),
+            # DescriptorDistributionTask(),
+            # TopNormDescriptorsTask(n_top=10),
+            ProjectionPlotTask(
+                file_name="number_of_atoms.png",
+                color_provider=NumAtomsColor(),
+            ),
+            ProjectionPlotTask(
+                file_name="metal_center_element.png",
+                color_provider=MetalCenterElementColor(),
+            ),
+            ProjectionPlotTask(
+                file_name="metal_center_dblock.png",
+                color_provider=MetalCenterAtomicNumberColor(),
+            ),
+            ProjectionPlotTask(
+                file_name="metal_center_block.png",
+                color_provider=DBlockColor(),
+            ),
+            ProjectionPlotTask(
+                file_name="coordination_number.png",
+                color_provider=CoordinationNumberColor(),
+            ),
+            # # Single-file benchmark scorecard — the headline cross-model
+            # # comparable artifact. See the docstring of
+            # # DescriptorStructureBenchmarkTask for the protocol.
+            # DescriptorStructureBenchmarkTask(),
+            # # Companion variant: cluster on raw (unnormalized) descriptors with
+            # # euclidean UMAP so the vector norm enters the partition. Lets you
+            # # ask whether descriptor magnitude carries chemical signal that the
+            # # canonical cosine path discards.
+            # DescriptorStructureBenchmarkTask(
+            #     cluster_metric="euclidean",
+            #     use_raw_descriptors=True,
+            #     summary_file_name="descriptor_structure_benchmark_euclidean_raw.yaml",
+            # ),
+            # *(
+            #     HDBSCANClusterTask(
+            #         min_cluster_size=mcs,
+            #         figure_file_name=f"hdbscan_clusters_mcs{mcs}.png",
+            #         summary_file_name=f"hdbscan_clusters_mcs{mcs}.yaml",
+            #     )
+            #     for mcs in (50, 200, 1000, 5000)
+            # ),
+            # # Coarse mcs collapses to one mega-cluster; the chemically coherent
+            # # structure lives at small mcs. Sweep to find the purity-optimal
+            # # granularity, then fingerprint each candidate. Run both with the
+            # # clustering-UMAP and directly on the 64-D descriptors (no UMAP) to
+            # # tell whether weak chemical clustering is intrinsic to the
+            # # descriptor or introduced by the UMAP compression.
+            # *(
+            #     ClusterGranularitySweepTask(
+            #         cluster_reducer=reducer,
+            #         min_cluster_sizes=[25, 50, 100],
+            #         summary_file_name=f"cluster_granularity_sweep_{tag}.yaml",
+            #     )
+            #     for reducer, tag in (("umap", "umap"), ("none", "noumap"))
+            # ),
+            # *(
+            #     ClusterChemicalFingerprintTask(
+            #         cluster_reducer=reducer,
+            #         min_cluster_size=mcs,
+            #         summary_file_name=f"cluster_fingerprint_{tag}_mcs{mcs}.yaml",
+            #     )
+            #     for reducer, tag in (("umap", "umap"), ("none", "noumap"))
+            #     for mcs in (25, 50, 100)
+            # ),
+            # # For each clustering granularity, ask which chemical axis (metal
+            # # block, geometry, ligand motif, donor element, …) best explains
+            # # that partition — not just whether donor-set works.
+            # *(
+            #     ClusterAxisAnalysisTask(
+            #         cluster_reducer=reducer,
+            #         min_cluster_size=mcs,
+            #         summary_file_name=f"cluster_axis_{tag}_mcs{mcs}.yaml",
+            #     )
+            #     for reducer, tag in (("umap", "umap"), ("none", "noumap"))
+            #     for mcs in (25, 50, 100)
+            # ),
+            # # One viewer to manually inspect cluster chemistry on the settled
+            # # UMAP: the small granularities switchable; heavy per-element /
+            # # formula columns dropped to keep the JSON viewer-loadable.
+            # ChemiscopeClusterTask(
+            #     min_cluster_sizes=[25, 50, 100],
+            #     default_color_mcs=50,
+            #     include_heavy_properties=False,
+            #     file_name="chemiscope_clusters.json.gz",
+            # ),
+        ],
+    )
+
+    # Serialize each task as it finishes so a timeout still leaves the
+    # completed reports on disk for inspection.
+    runner.run(descriptors=descriptors, dataset=dataset, output_dir=output_dir)
 
 
-atomic_num = get_metal_center_type(dataset.molecules)
-element_colors, handles = get_atomic_num_colors(atomic_num)
-fig = plot_reduced_dimension(emb, color = element_colors, suptitle="By metal center", handles=handles)
-fig.savefig(f"{out_dir}/metal_center_element.png", dpi = 300)
-
-block_colors = get_block_colors(atomic_num)
-fig = plot_reduced_dimension(emb, color = dataset.regression_targets[:,0], suptitle="By homo_lumo_gap")
-fig.savefig(f"{out_dir}/umap_homo_lumo_gap.png", dpi = 300)
-
-
-
-
-
-tm_cmap, norm = get_tm_colormap()
-
-fig = plot_reduced_dimension(emb, color =atomic_num, suptitle="By metal center", cmap = tm_cmap, norm = norm)
-
-fig.savefig(f"{out_dir}/metal_center_dblock.png", dpi = 300)
-
-
-
-
-cns = get_coordination_numbers(dataset.molecules)
-
-fig = plot_reduced_dimension(emb, color =cns)
-fig.savefig(f"{out_dir}/coordination_number.png", dpi = 300)
+if __name__ == "__main__":
+    main()

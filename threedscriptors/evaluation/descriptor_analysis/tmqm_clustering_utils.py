@@ -5,10 +5,10 @@ from ase import Atoms
 from ase.data import atomic_numbers, chemical_symbols
 from ase.data.colors import jmol_colors
 from pymatgen.analysis.local_env import MinimumDistanceNN
-from pymatgen.io.ase import AseAtomsAdaptor
+from pymatgen.core import Molecule
 
 TM = {
-    # transition metals (d‑block)
+    # transition metals (d-block)
     "Sc",
     "Ti",
     "V",
@@ -27,7 +27,7 @@ TM = {
     "Rh",
     "Pd",
     "Ag",
-    "Lu",  # sometimes considered d‑block as well
+    "Lu",  # sometimes considered d-block as well
     "Hf",
     "Ta",
     "W",
@@ -36,7 +36,7 @@ TM = {
     "Ir",
     "Pt",
     "Au",
-    "Lr",  # 103, sometimes placed with d‑block
+    "Lr",  # 103, sometimes placed with d-block
     "Rf",
     "Db",
     "Sg",
@@ -49,7 +49,7 @@ TM = {
     "Zn",
     "Cd",
     "Hg",
-    # lanthanides (f‑block)
+    # lanthanides (f-block)
     "La",
     "Ce",
     "Pr",
@@ -64,7 +64,7 @@ TM = {
     "Er",
     "Tm",
     "Yb",
-    # actinides (f‑block)
+    # actinides (f-block)
     "Ac",
     "Th",
     "Pa",
@@ -85,11 +85,19 @@ TM_numbers = set([atomic_numbers[sym] for sym in TM])
 
 
 def get_coordination_numbers(molecules: list[Atoms]):
-
+    # tmQM records every entry with S = 0 (DFT singlet) regardless of physical
+    # ground state, which pymatgen rejects for odd-electron complexes. Coordination
+    # number is purely geometric, so let pymatgen infer the multiplicity.
     cns = []
 
     for m in molecules:
-        mol = AseAtomsAdaptor.get_molecule(m)
+        charge = int(round(float(m.info["total_charge"])))
+        mol = Molecule(
+            species=[chemical_symbols[z] for z in m.get_atomic_numbers()],
+            coords=m.get_positions(),
+            charge=charge,
+            spin_multiplicity=None,
+        )
         cn = MinimumDistanceNN(tol=0.20).get_cn(mol, 0)
         cns.append(cn)
 
@@ -98,11 +106,11 @@ def get_coordination_numbers(molecules: list[Atoms]):
 
 def get_tm_colormap():
     # 1. Define your “zones”
-    Z_green = np.arange(21, 31)  # 21–30
+    Z_green = np.arange(21, 31)  # 21-30
     Z_blue = np.arange(39, 49)  # 29 only
-    Z_red = np.r_[57, np.arange(72, 81)]  # 57 and 72–80
+    Z_red = np.r_[57, np.arange(72, 81)]  # 57 and 72-80
 
-    # 2. Sample each gradient from a built‑in cmap
+    # 2. Sample each gradient from a built-in cmap
     nG = len(Z_green)
     nB = len(Z_blue)
     nR = len(Z_red)
@@ -135,7 +143,6 @@ def get_tm_colormap():
 
 
 def get_block_colors(atomic_nums):
-
     blocks = {
         "3d": ["Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn"],
         "4d": ["Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd"],
@@ -145,7 +152,7 @@ def get_block_colors(atomic_nums):
 
     back_map = {}
 
-    for i, (key, val) in enumerate(blocks.items()):
+    for i, (_key, val) in enumerate(blocks.items()):
         for v in val:
             back_map[v] = i
 
@@ -158,7 +165,7 @@ def get_metal_center_type(molecules: list[Atoms]) -> list[int]:
     centers = []
     for m in molecules:
         nums = m.get_atomic_numbers()
-        # find all in the transition‐metal set
+        # find all in the transition-metal set
         metals = [num for num in nums if num in TM_numbers]
         if len(metals) != 1:
             raise ValueError(
@@ -169,8 +176,7 @@ def get_metal_center_type(molecules: list[Atoms]) -> list[int]:
     return centers
 
 
-def get_atomic_num_colors(atomic_nums: int):
-
+def get_atomic_num_colors(atomic_nums: list[int]):
     colors = [jmol_colors[num] for num in atomic_nums]
 
     color_atomic_symbols = {
@@ -179,7 +185,6 @@ def get_atomic_num_colors(atomic_nums: int):
 
     handles = []
     for key, val in color_atomic_symbols.items():
-
         handles.append(
             plt.Line2D(
                 [],

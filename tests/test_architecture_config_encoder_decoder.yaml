@@ -1,0 +1,25 @@
+kind: encoder_decoder
+embedding_preprocess_config:
+  input_irreps: 128x0e+128x1o+128x0e
+  pseudoscalar_dimension: 0
+  chiral_embedding_dimension: 16
+  pseudoscalars: false
+encoder_config:
+  N_layers: 5
+  attention_layer_config:
+    dim_feedforward: 1024
+    dropout: 0.3
+    num_heads: 8
+positional_encoding_config:
+  N_radial_basis_functions: 16
+  d_projection: 64
+  distance_cutoff: 32.0
+global_aggregator_config:
+  aggregator_type_config:
+    aggregator_type: mean
+decoder_config:
+  N_layers: 2
+  attention_layer_config:
+    dim_feedforward: 1024
+    dropout: 0.3
+    num_heads: 8

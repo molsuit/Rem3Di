@@ -1,4 +1,3 @@
-
 import matplotlib.pyplot as plt
 
 from threedscriptors.data_handling.data_utils import get_functional_group_label
@@ -11,7 +10,7 @@ def plot_reduced_dimension_3d(principle_components, color="k", suptitle=None, **
     principle_components : (N, 3) array‑like
         Coordinates for the first three UMAP/PC components.
     color : str | sequence, optional
-        • Single Matplotlib colour → whole cloud uses that colour  
+        • Single Matplotlib colour → whole cloud uses that colour
         • Sequence of scalars or colour specs → each point coloured individually.
     suptitle : str, optional
         Figure‑level title.
@@ -27,7 +26,11 @@ def plot_reduced_dimension_3d(principle_components, color="k", suptitle=None, **
     if principle_components.shape[1] < 3:
         raise ValueError("Need at least three components for a 3‑D plot.")
 
-    pc1, pc2, pc3 = principle_components[:, 0], principle_components[:, 1], principle_components[:, 2]
+    pc1, pc2, pc3 = (
+        principle_components[:, 0],
+        principle_components[:, 1],
+        principle_components[:, 2],
+    )
 
     fig = plt.figure(figsize=(8, 6))
     ax = fig.add_subplot(111, projection="3d")
@@ -48,7 +51,9 @@ def plot_reduced_dimension_3d(principle_components, color="k", suptitle=None, **
     return fig
 
 
-def plot_reduced_dimension(principle_components, color = "k", suptitle = None, handles = None, **kwargs):
+def plot_reduced_dimension(
+    principle_components, color="k", suptitle=None, handles=None, **kwargs
+):
     # Plot a scatter plot of the principle components. Color each point according to it molecules type in dataset.mol_ids
     pc1 = principle_components[:, 0]
     pc2 = principle_components[:, 1]
@@ -56,9 +61,7 @@ def plot_reduced_dimension(principle_components, color = "k", suptitle = None, h
     # Create the scatter plot
     fig = plt.figure(figsize=(8, 6))
 
-
-    plt.scatter(pc1, pc2, c=color, alpha=0.7, s= 0.4, **kwargs)
-
+    plt.scatter(pc1, pc2, c=color, alpha=0.7, s=0.4, **kwargs)
 
     # Labeling
     plt.xlabel("UMAP1")
@@ -66,16 +69,13 @@ def plot_reduced_dimension(principle_components, color = "k", suptitle = None, h
     plt.title("UMAP Plot of Molecule Descriptors")
 
     if handles is not None:
-        plt.legend(handles = handles)
+        plt.legend(handles=handles)
 
     if suptitle is not None:
-        plt.title(f"UMAP Plot of Molecule Descriptors {suptitle}" )
+        plt.title(f"UMAP Plot of Molecule Descriptors {suptitle}")
 
     plt.tight_layout()
     return fig
-
-
-
 
 
 def plot_reduced_dimension_functional_group_comparison(reduced_dimensions, smiles):

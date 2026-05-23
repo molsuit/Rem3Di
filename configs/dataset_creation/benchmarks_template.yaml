@@ -1,0 +1,45 @@
+# Benchmark dataset-build config template.
+#
+# Copy to e.g. configs/dataset_creation/benchmarks_local.yaml and fill the
+# <PLACEHOLDER> paths, then:
+#
+#   uv run python scripts/dataset_creation/build_benchmark_dataset.py \
+#       --config configs/dataset_creation/benchmarks_local.yaml
+#
+# Builds the full registered panel (every MoleculeNet + TDC ADMET benchmark)
+# into one subdirectory per benchmark dataset_id under `output_root`. Each
+# zarr carries the literature split materialized in its `split` column.
+# Re-running is idempotent: datasets whose zarr already exists are skipped.
+# To rebuild one benchmark, delete its subdirectory and re-run.
+
+output_root: <PLACEHOLDER>/datasets/benchmarks
+moleculenet_raw_root: <PLACEHOLDER>/raw_datasets/molecule_net
+tdc_cache: <PLACEHOLDER>/tdc_admet_cache
+
+batch_size: 256
+n_sampled_conformers: 1
+# ETKDG retry budget per conformer. 200 covers essentially anything ETKDG can
+# embed; raising this rarely improves yield and disproportionately inflates
+# wall time on pathological molecules.
+max_embed_attempts: 200
+max_mmff_steps: 100
+# MMFF94 non-bonded cutoff in Å. 100.0 (RDKit default) already includes every
+# atom pair for drug-sized molecules; raising this only inflates per-step cost
+# on large systems.
+mmff_non_bonded_thresh: 100.0
+
+# PyTDC `get_train_valid_split` default seed. The test fold is fixed by TDC;
+# eval can re-derive the train/valid partition per seed without rebuilding.
+tdc_train_valid_seed: 1
+
+# SMILES filter stage (parse / standardize / filter / canonicalize / dedupe).
+# Defaults strip salts and neutralize charges so multi-fragment salt rows
+# (HCl / Na+ / ...) survive as their neutral drug form. Element gate is
+# selectable via element_set: `mace_off` (organic drug subset) or `mace_polar`
+# (Z=1..83). `max_atoms` caps drug-sized molecules.
+filter:
+  max_atoms: 100
+  element_set: mace_off
+  strip_salts: true
+  neutralize: true
+  dedupe: true

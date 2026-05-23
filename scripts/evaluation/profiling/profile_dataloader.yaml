@@ -1,0 +1,30 @@
+dataset_path: /scratch/s5f/wedigs.s5f/datasets/tmqm
+output_dir: dataloading_benchmark/evaluations
+scratch_parent: null   # null => system tempdir; set if you want it on a fast local disk
+device: null           # null => auto (cuda if available, else cpu)
+warmup_batches: 30
+run_micro: false
+micro_iters: 1024
+structures_per_chunk: 50000
+
+benchmark:
+  atom_chunk: 8192
+  molecule_chunk: 4096
+  collate: flat        # "flat" matches pretraining; "padded" matches downstream regression
+  limit_n_batches: 100
+  structure_limit: null  # null => auto-derive from limit_n_batches and sampler
+
+  dataloader:
+    num_workers: 12
+    prefetch_factor: 4
+    persistent_workers: true
+    pin_memory: true
+    batch_sampling:
+      kind: bucket_batch
+      max_atoms_per_batch: 4500
+      max_batch_size: 256
+      bucket_size: 512
+      # To benchmark the random-shuffle path instead, replace the block above with:
+      # kind: random_shuffle
+      # batch_size: 128
+      # drop_last: false

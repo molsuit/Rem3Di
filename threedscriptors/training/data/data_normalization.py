@@ -30,6 +30,7 @@ class NormalizationStats:
             scaling=self.scaling,
         )
 
+
 class DataNormalizationModule(nn.Module):
     """
     Responsibility (only):
@@ -43,7 +44,7 @@ class DataNormalizationModule(nn.Module):
 
     def __init__(
         self,
-        dataset : TrainingMoleculeDataset,
+        dataset: TrainingMoleculeDataset,
         *,
         eps: float = 1e-12,
     ):
@@ -51,8 +52,8 @@ class DataNormalizationModule(nn.Module):
         self.eps = eps
         self.dataset = dataset  # BaseDataset or IndexedSubset
 
-        #self.stats: NormalizationStats | None = None
-        #if getattr(self.dataset, "regression_targets", None) is not None:
+        # self.stats: NormalizationStats | None = None
+        # if getattr(self.dataset, "regression_targets", None) is not None:
         #    self.stats = self._compute_regression_stats()
 
     # ------------------------------------------------------------------ #
@@ -68,7 +69,9 @@ class DataNormalizationModule(nn.Module):
         sample.regression_targets = self.transform(rt, mask)
         return sample
 
-    def transform(self, y: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
+    def transform(
+        self, y: torch.Tensor, mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """Normalize using precomputed stats; respects mask."""
         assert self.stats is not None
 
@@ -76,12 +79,16 @@ class DataNormalizationModule(nn.Module):
             mask = torch.ones_like(y, dtype=y.dtype, device=y.device)
 
         mean, std = self.stats.mean.to(y.device), self.stats.std.to(y.device)
-        log_mask = self.stats.log_mask.to(y.device) # This should probably be moved to the device as a buffer, right?
+        log_mask = self.stats.log_mask.to(
+            y.device
+        )  # This should probably be moved to the device as a buffer, right?
 
         if log_mask.any():
             lm = log_mask.view(*(1,) * (y.dim() - 1), -1)
             valid = (mask > 0) & lm
-            y = torch.where(valid, torch.log(y.clamp_min(self.eps)), y) # maybe this should be log (x +1 )??
+            y = torch.where(
+                valid, torch.log(y.clamp_min(self.eps)), y
+            )  # maybe this should be log (x +1 )??
 
         y = (y - mean) / std
         return y * mask
@@ -100,56 +107,50 @@ class DataNormalizationModule(nn.Module):
 
     # ---------------- invariants (input irreps) ------------------------ #
 
-
     @torch.no_grad()
-    def get_atomic_embedding_normalization_constants(self, irreps : Irreps) -> tuple[torch.Tensor, torch.Tensor]:
-
+    def get_atomic_embedding_normalization_constants(
+        self, irreps: Irreps
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         invariant_indices, _ = get_invariant_indices(irreps)
 
         loader = DataLoader(
-                self.dataset,
-                batch_size=10000,
-                shuffle=False,
-                num_workers=4,
-                prefetch_factor=2,
-                collate_fn= normalization_collate_fn,
-
-            )
-
+            self.dataset,
+            batch_size=10000,
+            shuffle=False,
+            num_workers=4,
+            prefetch_factor=2,
+            collate_fn=normalization_collate_fn,
+        )
 
         # Accumulators (tiny: shape [1,1,D])
         total_sum = None
         total_sumsq = None
         total_count = 0
 
-
-
-
-        for i,batch in enumerate(loader):
+        for i, batch in enumerate(loader):
             # Cast for stable math; keep batch on whatever device it arrived
-            if i> 30:
+            if i > 30:
                 break
-            embeddings = batch.embeddings[:,invariant_indices]
+            embeddings = batch.embeddings[:, invariant_indices]
 
             # Reductions over [N]
             emb = embeddings.to(dtype=torch.float64, device="cpu", copy=False)
-            s  = emb.sum(dim=0)             # (D_inv,)
-            ss = (emb * emb).sum(dim=0)     # (D_inv,)  <-- key fix: sum over dim=0 only
-            n  = emb.shape[0]
+            s = emb.sum(dim=0)  # (D_inv,)
+            ss = (emb * emb).sum(dim=0)  # (D_inv,)  <-- key fix: sum over dim=0 only
+            n = emb.shape[0]
 
             if total_sum is None:
-                total_sum   = s.clone()
+                total_sum = s.clone()
                 total_sumsq = ss.clone()
             else:
-                total_sum   += s
+                total_sum += s
                 total_sumsq += ss
 
             total_count += n
 
-        mean = total_sum / total_count                                 # (D_inv,)
-        var  = (total_sumsq / total_count) - mean.pow(2)             # (D_inv,)
-        std  = var.clamp_min(0).sqrt().clamp_min(1e-9)               # (D_inv,)
-
+        mean = total_sum / total_count  # (D_inv,)
+        var = (total_sumsq / total_count) - mean.pow(2)  # (D_inv,)
+        std = var.clamp_min(0).sqrt().clamp_min(1e-9)  # (D_inv,)
 
         print(f"mean shape {mean.shape}, std_ shape {std.shape}")
         return mean.to(torch.float32), std.to(torch.float32)
@@ -163,11 +164,15 @@ class DataNormalizationModule(nn.Module):
         Mask semantics: 1 == valid label, 0 == missing.
         No mask mutation here; we trust upstream sanitation.
         """
-        x   = torch.as_tensor(self.dataset.regression_targets, dtype=torch.float32)  # [N, T]
-        msk = torch.as_tensor(self.dataset.regression_masks,   dtype=torch.float32)  # [N, T]
+        x = torch.as_tensor(
+            self.dataset.regression_targets, dtype=torch.float32
+        )  # [N, T]
+        msk = torch.as_tensor(
+            self.dataset.regression_masks, dtype=torch.float32
+        )  # [N, T]
         valid = msk > 0
 
-        tasks   = self.dataset.dataset_config.tasks
+        tasks = self.dataset.dataset_config.tasks
         scaling = [t.scaling or LabelScalingType.Z for t in tasks]
         log_mask = torch.tensor(
             [s == LabelScalingType.LOG_Z for s in scaling],
@@ -196,8 +201,8 @@ class DataNormalizationModule(nn.Module):
         valid_f = valid.to(y.dtype)
         count = valid_f.sum(dim=0).clamp(min=1)
         mean_tasks = (y * valid_f).sum(dim=0) / count
-        var_tasks  = ((y - mean_tasks) ** 2 * valid_f).sum(dim=0) / count
-        std_tasks  = torch.sqrt(var_tasks).clamp(min=self.eps)
+        var_tasks = ((y - mean_tasks) ** 2 * valid_f).sum(dim=0) / count
+        std_tasks = torch.sqrt(var_tasks).clamp(min=self.eps)
 
         stats = NormalizationStats(
             mean=mean_tasks.unsqueeze(0),
@@ -207,25 +212,27 @@ class DataNormalizationModule(nn.Module):
         )
 
         # optionally persist to TaskConfig
-        for t, m, s in zip(tasks, stats.mean.squeeze(0).tolist(), stats.std.squeeze(0).tolist(), strict=False):
+        for t, m, s in zip(
+            tasks,
+            stats.mean.squeeze(0).tolist(),
+            stats.std.squeeze(0).tolist(),
+            strict=False,
+        ):
             t.mean = m
             t.std = s
-
 
         self.task_configs = tasks
 
         return stats
 
-    def get_pairwise_differences(self,dataset):
-
-        targets  = torch.log(dataset.regression_targets.reshape(-1,2))
-        diffs = targets[:,0] - targets[:,1]
+    def get_pairwise_differences(self, dataset):
+        targets = torch.log(dataset.regression_targets.reshape(-1, 2))
+        diffs = targets[:, 0] - targets[:, 1]
 
         mean_diff_log = diffs.mean()
         std_diff_logs = diffs.std()
 
         print(mean_diff_log)
         print(std_diff_logs)
-
 
         return mean_diff_log, std_diff_logs

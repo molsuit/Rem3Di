@@ -1,41 +1,43 @@
+import shutil
 from collections.abc import Sequence
 from pathlib import Path
-import shutil
 
 import numpy as np
 
 from threedscriptors.configuration.dataset_config import DatasetConfig
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.data_handling.dataset.tasks import TaskConfig, TaskSet
+from threedscriptors.data_handling.dataset_creation.shard_aligned_writer import (
+    ShardAlignedWriter,
+)
 
 
 class DatasetConcatenation:
-    def __init__(self, datasets : Sequence[MoleculeDataset], new_dataset_dir: Path):
-
+    def __init__(self, datasets: Sequence[MoleculeDataset], new_dataset_dir: Path):
         self.datasets = datasets
         self.new_dataset_dir = Path(new_dataset_dir)
 
     def _append_dataset_to_target(
         self,
-        out_ds: MoleculeDataset,
+        writer: ShardAlignedWriter,
         ref_cfg: DatasetConfig,
         src: MoleculeDataset,
         next_mol_base: int,
         next_iso_base: int,
     ) -> tuple[int, int]:
+        out_ds = writer.ds
         src_ptr = np.asarray(src.ptr[:], dtype=np.int64)
         if src_ptr.shape[0] <= 1:
             return next_mol_base, next_iso_base
 
+        n_structs = src_ptr.shape[0] - 1
         lengths = (src_ptr[1:] - src_ptr[:-1]).astype("i8", copy=False)
         C = lengths.cumsum(dtype="i8")
 
-        if ref_cfg.contains_embeddings:
-            E = src.atomic_embeddings[:]
-        else:
-            E = None
         P = src.positions[:]
         Z = src.atomic_numbers[:]
+        Q = np.asarray(src.total_charge[:n_structs])
+        S_mult = np.asarray(src.multiplicity[:n_structs])
 
         if ref_cfg.contains_smiles:
             if (
@@ -50,7 +52,9 @@ class DatasetConcatenation:
             old_iso_ids = src.isomer_ids[:]
 
             mol_strings = [src.smiles.id_to_string(int(i)) for i in old_mol_ids]
-            iso_strings = [src.isomeric_smiles.id_to_string(int(i)) for i in old_iso_ids]
+            iso_strings = [
+                src.isomeric_smiles.id_to_string(int(i)) for i in old_iso_ids
+            ]
 
             mol_map = out_ds.smiles.append_new_lines(mol_strings)
             iso_map = out_ds.isomeric_smiles.append_new_lines(iso_strings)
@@ -69,13 +73,14 @@ class DatasetConcatenation:
             if old_iso_ids.size > 0:
                 next_iso_base += int(old_iso_ids.max()) + 1
 
-        out_ds.append_batch(
-            E,
+        writer.append_batch(
             P,
             Z,
             C,
             new_mol_ids,
             new_iso_ids,
+            Q,
+            S_mult,
             None,
             None,
             None,
@@ -84,19 +89,19 @@ class DatasetConcatenation:
 
         return next_mol_base, next_iso_base
 
-
     def concatenate_datasets(self):
         # Concatenate multiple MoleculeDatasets into a new one at new_dataset_dir.
         # Arrays are backed by zarr; we stream per-dataset to keep it fast.
 
         out_ds, ref_cfg = self._create_target_dataset()
+        writer = ShardAlignedWriter(out_ds)
 
         # For non-smiles case, maintain running id offsets to avoid collisions
         next_mol_base = 0
         next_iso_base = 0
         for src in self.datasets:
             next_mol_base, next_iso_base = self._append_dataset_to_target(
-                out_ds, ref_cfg, src, next_mol_base, next_iso_base
+                writer, ref_cfg, src, next_mol_base, next_iso_base
             )
 
         # Finalize storage files
@@ -104,11 +109,13 @@ class DatasetConcatenation:
             out_ds.smiles.close()
             out_ds.isomeric_smiles.close()
 
-        out_ds.shrink_to_fit()
+        writer.finalize()
 
         return out_ds
 
-    def concatenate_datasets_copy_first(self, overwrite: bool = False) -> MoleculeDataset:
+    def concatenate_datasets_copy_first(
+        self, overwrite: bool = False
+    ) -> MoleculeDataset:
         """
         Concatenate datasets by copying the first dataset to the destination and
         appending the remaining datasets on top.
@@ -120,6 +127,7 @@ class DatasetConcatenation:
         """
 
         out_ds, ref_cfg = self._copy_first_dataset(overwrite=overwrite)
+        writer = ShardAlignedWriter(out_ds)
 
         if ref_cfg.contains_smiles:
             next_mol_base = 0
@@ -130,14 +138,14 @@ class DatasetConcatenation:
 
         for src in self.datasets[1:]:
             next_mol_base, next_iso_base = self._append_dataset_to_target(
-                out_ds, ref_cfg, src, next_mol_base, next_iso_base
+                writer, ref_cfg, src, next_mol_base, next_iso_base
             )
 
         if ref_cfg.contains_smiles:
             out_ds.smiles.close()
             out_ds.isomeric_smiles.close()
 
-        out_ds.shrink_to_fit()
+        writer.finalize()
         return out_ds
 
     def _copy_first_dataset(
@@ -149,15 +157,7 @@ class DatasetConcatenation:
         assert self._check_dataset_compatible()
 
         first_ds = self.datasets[0]
-        store = getattr(first_ds.positions, "store", None)
-        source_dir = getattr(store, "path", None)
-        if source_dir is None:
-            raise ValueError(
-                "First dataset store path unavailable; copy-first concatenation "
-                "requires directory-backed datasets."
-            )
-
-        source_path = Path(source_dir).resolve()
+        source_path = Path(first_ds.path).resolve()
         dest_path = Path(self.new_dataset_dir).expanduser()
         dest_abs = dest_path.resolve(strict=False)
 
@@ -181,7 +181,7 @@ class DatasetConcatenation:
         out_ds = MoleculeDataset.open_existing_dataset_from_dir(dest_path)
         return out_ds, out_ds.config
 
-    def concatenate_datasets_chunked(
+    def concatenate_datasets_chunked(  # noqa: C901  (pre-existing streaming complexity, unchanged by the writer refactor)
         self, structures_per_chunk: int = 50_000, smiles_batch: int = 50_000
     ) -> MoleculeDataset:
         """
@@ -190,6 +190,7 @@ class DatasetConcatenation:
         """
 
         out_ds, ref_cfg = self._create_target_dataset()
+        writer = ShardAlignedWriter(out_ds)
 
         next_mol_base = 0
         next_iso_base = 0
@@ -223,12 +224,10 @@ class DatasetConcatenation:
                     # All structures empty in this chunk; skip append to avoid zero-atom writes
                     continue
 
-                if src.config.contains_embeddings:
-                    E = np.asarray(src.atomic_embeddings[a0:a1, :])
-                else:
-                    E=None
                 P = np.asarray(src.positions[a0:a1, :])
                 Z = np.asarray(src.atomic_numbers[a0:a1])
+                Q = np.asarray(src.total_charge[s0:s1])
+                S_mult = np.asarray(src.multiplicity[s0:s1])
 
                 # ptr cumulative ends for chunk
                 chunk_ptr = src_ptr[s0 : s1 + 1]
@@ -248,15 +247,16 @@ class DatasetConcatenation:
                     if mol_ids_chunk.size > 0:
                         mol_max = max(mol_max, int(mol_ids_chunk.max()))
                     if iso_ids_chunk.size > 0:
-                        iso_max = max(iso_max, int(iso_ids_chunk.max()))
+                        iso_max = max(iso_ids_chunk.max(), iso_max)
 
-                out_ds.append_batch(
-                    E,
+                writer.append_batch(
                     P,
                     Z,
                     C,
                     new_mol_ids,
                     new_iso_ids,
+                    Q,
+                    S_mult,
                     None,
                     None,
                     None,
@@ -273,7 +273,7 @@ class DatasetConcatenation:
             out_ds.smiles.close()
             out_ds.isomeric_smiles.close()
 
-        out_ds.shrink_to_fit()
+        writer.finalize()
         return out_ds
 
     @staticmethod
@@ -284,7 +284,6 @@ class DatasetConcatenation:
         return int(values.max()) + 1
 
     def _create_target_dataset(self) -> tuple[MoleculeDataset, DatasetConfig]:
-
         assert self._check_dataset_compatible()
 
         ref_cfg = self.datasets[0].config
@@ -292,21 +291,14 @@ class DatasetConcatenation:
         out_ds = MoleculeDataset.create_empty_dataset(self.new_dataset_dir, ref_cfg)
         return out_ds, ref_cfg
 
-
     def _check_dataset_compatible(self):
-
         if len(self.datasets) == 0:
             return False
 
         ref_cfg = self.datasets[0].config
         for ds in self.datasets[1:]:
             cfg = ds.config
-            if (
-                cfg.embedding_dim != ref_cfg.embedding_dim
-                or cfg.contains_smiles != ref_cfg.contains_smiles
-                or cfg.irreps != ref_cfg.irreps
-                or cfg.contains_embeddings != ref_cfg.contains_embeddings
-            ):
+            if cfg.contains_smiles != ref_cfg.contains_smiles:
                 return False
         return True
 
@@ -339,21 +331,15 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
     This datasets concatenation is for labeld datasets, and concatenates the system labels and masks, as well as all the embeddings and positions
     """
 
-
-    def __init__(self, datasets : Sequence[MoleculeDataset], new_dataset_dir: Path):
-
+    def __init__(self, datasets: Sequence[MoleculeDataset], new_dataset_dir: Path):
         self.datasets = datasets
         self.new_dataset_dir = Path(new_dataset_dir)
 
-
     def _create_target_dataset(self) -> tuple[MoleculeDataset, DatasetConfig]:
-
         assert self._check_dataset_compatible()
 
         system_tasks: list[TaskConfig] = []
         atom_tasks: list[TaskConfig] = []
-        system_index: dict[str, TaskConfig] = {}
-        atom_index: dict[str, TaskConfig] = {}
 
         for dataset in self.datasets:
             cfg = dataset.config
@@ -365,7 +351,6 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
 
             for task in cfg.tasks.atom_cols:
                 atom_tasks.append(task)
-
 
         combined_tasks = TaskSet(
             system_cols=system_tasks,
@@ -380,36 +365,33 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
 
         return out_ds, new_config
 
-    def concatenate_datasets_copy_first(self, overwrite: bool = False) -> MoleculeDataset:
+    def concatenate_datasets_copy_first(
+        self, overwrite: bool = False
+    ) -> MoleculeDataset:
         raise NotImplementedError(
             "Copy-first concatenation is not supported for labeled datasets."
         )
 
     def concatenate_datasets(self):
-
-
         out_ds, ref_cfg = self._create_target_dataset()
+        writer = ShardAlignedWriter(out_ds)
 
         N_total_systems_tasks = len(ref_cfg.tasks.system_cols)
 
         for src in self.datasets:
-
-
-            # Load per-atom arrays
-            if src.config.contains_embeddings:
-                E = src.atomic_embeddings[:]
-            else: 
-                E= None
-            P = src.positions[:]
-            Z = src.atomic_numbers[:]
-
-
-
             # Build cumulative ends per structure from ptr
             src_ptr = src.ptr[:]
             if src_ptr.shape[0] <= 1:
                 # Empty dataset; skip
                 continue
+
+            n_structs = src_ptr.shape[0] - 1
+
+            # Load per-atom arrays
+            P = src.positions[:]
+            Z = src.atomic_numbers[:]
+            Q = np.asarray(src.total_charge[:n_structs])
+            S_mult = np.asarray(src.multiplicity[:n_structs])
 
             lengths = (src_ptr[1:] - src_ptr[:-1]).astype("i8", copy=False)
             C = lengths.cumsum(dtype="i8")
@@ -421,7 +403,9 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
                 old_iso_ids = src.isomer_ids[:]
 
                 mol_strings = [src.smiles.id_to_string(int(i)) for i in old_mol_ids]
-                iso_strings = [src.isomeric_smiles.id_to_string(int(i)) for i in old_iso_ids]
+                iso_strings = [
+                    src.isomeric_smiles.id_to_string(int(i)) for i in old_iso_ids
+                ]
 
                 mol_map = out_ds.smiles.append_new_lines(mol_strings)
                 iso_map = out_ds.isomeric_smiles.append_new_lines(iso_strings)
@@ -476,15 +460,23 @@ class LabeldDatasetConcatenation(DatasetConcatenation):
 
             # Create the correct masking for all other targets
 
-            out_ds.append_batch(
-                E,
+            writer.append_batch(
                 P,
                 Z,
                 C,
                 new_mol_ids,
                 new_iso_ids,
+                Q,
+                S_mult,
                 system_targets,
                 system_masks,
                 None,
                 None,
             )
+
+        if ref_cfg.contains_smiles:
+            out_ds.smiles.close()
+            out_ds.isomeric_smiles.close()
+
+        writer.finalize()
+        return out_ds

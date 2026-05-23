@@ -12,7 +12,7 @@ import numpy as np
 from ase import Atoms
 from rdkit import Chem
 
-from threedscriptors.data_handling.dataset_creation import StructureID
+from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 from threedscriptors.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
 )
@@ -29,7 +29,7 @@ class GeomGenerator(MoleculeGenerator):
     def __init__(
         self,
         geom_dir: Path,
-        boltzman_weight_threshold: float, # The minimum boltzman weight that a conf needs to have to be accepted
+        boltzman_weight_threshold: float,  # The minimum boltzman weight that a conf needs to have to be accepted
         max_atoms: int | None = None,
         loading_batch_size: int = 100,
         max_workers: int = os.cpu_count(),
@@ -70,6 +70,14 @@ class GeomGenerator(MoleculeGenerator):
         """
         Worker: read one pickle, run all filters, and return a list of tuples:
         (mol_id, conf_id, canonical_smiles, atomic_numbers (list[int]), positions (ndarray))
+
+        GeomGenerator is intentionally exempt from ``FilterMoleculeStage``:
+        the worker filters BEFORE shipping conformer arrays back through the
+        ProcessPoolExecutor pickle boundary, so rejected molecules never pay
+        the IPC cost for their (up to ~hundreds of) conformer payloads.
+        Moving this filter to the main thread would force all conformer data
+        across the boundary unconditionally — measurable build-time
+        regression on the full GEOM-Drugs panel.
         """
         mol_id, mol_path, boltzmann_weight_threshold, max_atoms = args
 
@@ -139,7 +147,7 @@ class GeomGenerator(MoleculeGenerator):
             raw_results.sort(key=lambda t: (t[0], t[1]))  # (molecule_id, conformer_id)
 
             # Push everything we just loaded into the buffer
-            for mol_id, conf_id, can_smi, nums, pos in raw_results:
+            for mol_id, _conf_id, can_smi, nums, pos in raw_results:
                 atoms = Atoms(numbers=nums, positions=pos, info={"smiles": can_smi})
                 buf_mols.append(atoms)
                 buf_ids.append(

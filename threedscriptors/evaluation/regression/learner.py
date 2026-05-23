@@ -149,25 +149,26 @@ class Learner(ABC, Generic[P, S]):
                 final[k] = v
                 continue
             dv = defaults[k]
-            if isinstance(dv, (bool, np.bool_)):
+            if isinstance(dv, bool | np.bool_):
                 final[k] = bool(v)
-            elif isinstance(dv, (np.integer, int)) and isinstance(
-                v, (float, int, np.floating, np.integer)
+            elif isinstance(dv, np.integer | int) and isinstance(
+                v, float | int | np.floating | np.integer
             ):
-                final[k] = int(round(float(v)))
-            elif isinstance(dv, (np.floating, float)) and isinstance(
-                v, (float, int, np.floating, np.integer)
+                final[k] = round(float(v))
+            elif isinstance(dv, np.floating | float) and isinstance(
+                v, float | int | np.floating | np.integer
             ):
                 final[k] = float(v)
-            elif dv is None and isinstance(v, (float, int, np.floating, np.integer)):
+            elif dv is None and isinstance(v, float | int | np.floating | np.integer):
                 f = float(v)
-                final[k] = int(round(f)) if f.is_integer() else f
+                final[k] = round(f) if f.is_integer() else f
             else:
                 final[k] = v
         return final
 
 
 from typing import Literal
+
 
 # ---------- Concrete learners ----------
 # Ridge
@@ -280,7 +281,7 @@ class LGBMSearchSpace:
     n_estimators: Any = field(default_factory=lambda: randint(400, 1001))
     learning_rate: Any = field(default_factory=lambda: loguniform(1e-3, 2e-1))
     num_leaves: Any = field(default_factory=lambda: randint(31, 63))
-    max_depth: list[int] = field(default_factory=lambda: [-1, 2,4,6, 8])
+    max_depth: list[int] = field(default_factory=lambda: [-1, 2, 4, 6, 8])
     min_child_samples: Any = field(default_factory=lambda: randint(5, 201))
     subsample: Any = field(default_factory=lambda: uniform(0.5, 0.5))
     colsample_bytree: Any = field(default_factory=lambda: uniform(0.5, 0.5))

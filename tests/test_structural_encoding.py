@@ -8,7 +8,6 @@ from threedscriptors.model.preprocessing.geometric_preprocessor import (
 
 
 def test_distance_loading(molecule: Atoms, positional_encoding_config):
-
     pos = torch.from_numpy(molecule.get_positions()).unsqueeze(0).float()
 
     atom_mask = torch.ones(size=(1, pos.shape[1])).bool()
@@ -23,7 +22,6 @@ def test_distance_loading(molecule: Atoms, positional_encoding_config):
 
 
 def test_distance_encoding_with_padding(molecule: Atoms, positional_encoding_config):
-
     pos = molecule.get_positions()
 
     N_atoms = pos.shape[0]

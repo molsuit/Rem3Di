@@ -12,3 +12,14 @@ training_runs/
 notebooks/
 backed_up_models/
 *.log
+raw_datasets/
+dataset
+uv.lock
+.claude
+.env
+CLAUDE.md
+*.model
+*.err
+*.out
+analysis_output/
+/submit_*.sh

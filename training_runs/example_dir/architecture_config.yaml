@@ -1,52 +1,54 @@
-decoder_config:
-  N_layers: 4
-  attention_layer_config:
-    dim_feedforward: 1024
-    dropout: 0.3
-    embedding_dim: 320
-    num_heads: 8
-  d_descriptor: 320
-  d_geo: 16
-  d_pair: 64
-  reload_state_dict: null
+kind: encoder_decoder
+mace_config:
+  model_path: /home/s5f/wedigs.s5f/3DMolecularDescriptors/MACE-POLAR-1-M.model
+  device: cuda
+  dtype: float32
+  enable_cueq: true
 embedding_preprocess_config:
-  chiral_embedding_dimension: 64
+  pseudoscalar_dimension: 0
+  chiral_embedding_dimension: 0
+  pseudoscalars: false
   equivariant_rms_normalization: true
   gated: true
-  input_dimension: 640
-  input_equivariant_dimension: 384
-  input_invariant_dimension: 256
-  input_irreps: 128x0e+128x1o+128x0e
-  output_irreps: 128x0e+128x0e+64x0o
-  output_irreps_dim: 320
-  pseudoscalar_dimension: 64
-  pseudoscalar_irrep: 64x0o
-  pseudoscalars: true
-  reload_state_dict: null
+  # Subset of MACE message-passing layers to keep. Omit (or set to null) for
+  # all layers; e.g. [0] for the first MP layer only, [1] for the second.
+  mace_layer_indices: null
+  # Atomwise projection applied to the (selected) normalized invariants.
+  # Variants:
+  #   {kind: identity}                                                   - no projection (default)
+  #   {kind: linear, output_dim: <int>, bias: true}
+  #   {kind: mlp, output_dim: <int>, hidden_dimensions: [<int>, ...],
+  #    activation_fn: SiLU, dropout: 0.0}
+  invariant_projection_config:
+    kind: linear
+    output_dim: 256
+    bias: false
 encoder_config:
   N_layers: 4
   attention_layer_config:
-    dim_feedforward: 1024
+    dim_feedforward: 4096
     dropout: 0.3
-    embedding_dim: 320
     num_heads: 8
   d_geo: 16
   d_pair: 64
-  reload_state_dict: null
+decoder_config:
+  N_layers: 4
+  attention_layer_config:
+    dim_feedforward: 4096
+    dropout: 0.3
+    num_heads: 8
+  d_geo: 16
+  d_pair: 64
+positional_encoding_config:
+  N_radial_basis_functions: 16
+  d_projection: 64
+  distance_cutoff: 32.0
+  basis_function_config:
+    kind: bessel
 global_aggregator_config:
   aggregator_type_config:
     aggregator_type: attention
     attn_dropout: 0.3
-    head_dim: null
     num_heads: 8
   global_molecular_descriptor_dropout: 0.0
-  input_dim: 320
-  output_dim: 320
-positional_encoding_config:
-  N_radial_basis_functions: 16
-  basis_function_type: bessel
-  d_projection: 64
-  distance_cutoff: 32.0
-  reload_state_dict: null
-regression_head_config: null
-reload_full_model_weights: null
+  output_dim: 64

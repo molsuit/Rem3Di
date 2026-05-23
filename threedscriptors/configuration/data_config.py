@@ -36,7 +36,6 @@ class LabelScalingType(str, Enum):
         return None
 
 
-
 class MaceCalculatorConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -99,9 +98,6 @@ class MaceCalculatorConfig(BaseModel):
         }
 
 
-
-
-
 class TaskConfig(BaseModel):
     task_name: str
     mean: float | None = None
@@ -113,7 +109,6 @@ class TaskConfig(BaseModel):
     @field_validator("scaling", mode="before")
     @classmethod
     def _coerce_scaling(cls, v):
-
         if v is None:
             return None
 
@@ -132,8 +127,6 @@ class TaskConfig(BaseModel):
     def _serialize_scaling(self, v: LabelScalingType | None, _info):
         return None if v is None else v.name
 
-
-
     def get_task_names(self):
         if self.tasks is None:
             return None
@@ -141,7 +134,6 @@ class TaskConfig(BaseModel):
             return [tc.task_name for tc in self.tasks]
 
     def get_mean_std_per_task(self):
-
         mean = {tc.task_name: tc.mean for tc in self.tasks}
         std = {tc.task_name: tc.std for tc in self.tasks}
 
@@ -149,4 +141,3 @@ class TaskConfig(BaseModel):
         assert None not in set(std.values())
 
         return mean, std
-

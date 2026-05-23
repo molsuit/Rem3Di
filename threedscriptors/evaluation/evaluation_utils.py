@@ -2,7 +2,7 @@ from collections.abc import Iterable
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 from threedscriptors.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
@@ -11,14 +11,14 @@ from threedscriptors.data_handling.dataset_creation.structure_ids import Structu
 from threedscriptors.data_handling.sample import (
     Sample,
     paired_sample_collate_fn,
-    pretraining_padded_collate_fn,
     sample_collate_fn,
+    yield_molecules_collate_fn,
 )
-from threedscriptors.model.encoder import TransformerEncoder
 from threedscriptors.model.model_output import ModelOutput
 from threedscriptors.model.molecule_difference_regressor import (
     MolecularDifferenceRegressor,
 )
+from threedscriptors.model.pair_encoder import TransformerPairEncoder
 from threedscriptors.model.regression_models import (
     MultiTaskRegressionModel,
 )
@@ -31,7 +31,6 @@ def evaluate_regression_model_on_dataset(
     device="cuda",
     undo_standardization=False,
 ):
-
     # returns the predictions of the model on dataset in standardized units
 
     assert set([tc.task_name for tc in dataset.dataset_config.tasks]).issubset(
@@ -70,24 +69,43 @@ def evaluate_regression_model_on_dataset(
 
 
 def evaluate_molecular_descriptor_on_dataset(
-    model: REM3DIModel, dataset: TrainingMoleculeDataset, device="cuda"
+    model: REM3DIModel,
+    dataset: Dataset,
+    device="cuda",
+    *,
+    batch_size: int = 64,
+    num_workers: int = 0,
+    prefetch_factor: int | None = None,
 ):
-    batch_size = min(64, len(dataset))
+    """Run the encoder over `dataset` and return descriptors as a flat
+    `(N, L * d_out)` tensor — `L` seed tokens are concatenated per molecule.
 
-    dataloader: Iterable[Sample] = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        drop_last=False,
-        collate_fn=pretraining_padded_collate_fn,
-    )
+    Raise ``num_workers`` to overlap zarr reads / sample featurization with the
+    encoder forward pass; the existing TrainingMoleculeDataset rebuilds its
+    zarr handles per-worker via ``__getstate__``/``__setstate__``.
+    """
+    batch_size = min(batch_size, len(dataset))
+
+    dataloader_kwargs: dict = {
+        "batch_size": batch_size,
+        "shuffle": False,
+        "drop_last": False,
+        "collate_fn": yield_molecules_collate_fn,
+        "num_workers": num_workers,
+    }
+    if num_workers > 0:
+        dataloader_kwargs["persistent_workers"] = True
+        if prefetch_factor is not None:
+            dataloader_kwargs["prefetch_factor"] = prefetch_factor
+
+    dataloader: Iterable[Sample] = DataLoader(dataset, **dataloader_kwargs)
 
     model.to(device)
     model.eval()
 
-    descriptors = torch.zeros(
-        size=(len(dataset), model.encoder.aggregator.config.output_dim)
-    )
+    aggregator = model.encoder.aggregator
+    flat_dim = aggregator.seq_len * aggregator.d_out
+    descriptors = torch.zeros(size=(len(dataset), flat_dim))
 
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
@@ -95,7 +113,7 @@ def evaluate_molecular_descriptor_on_dataset(
 
             model_output = model(samples)
             descriptors[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
-                model_output.molecular_descriptor
+                model_output.molecular_descriptor.flat
             )
 
     return descriptors
@@ -126,17 +144,16 @@ def evaluate_molecule_difference_on_dataset(
     differences = torch.zeros(size=(len(dataset), 1))
     print(differences.shape)
 
-
     with torch.no_grad():
         for batch_idx, samples in enumerate(dataloader):
-
             samples.to_(device)
 
             descriptors = model(samples).molecular_descriptor
 
             differences[batch_idx * batch_size : (batch_idx + 1) * batch_size] = (
                 molecular_difference_regressor(
-                    descriptors, samples.auxillary_data["cmrt"]
+                    descriptors,
+                    samples.auxillary_data["cmrt"],
                 )
             )
 
@@ -148,7 +165,6 @@ def evaluate_atomic_descriptors(
     dataset: TrainingMoleculeDataset,
     device="cuda",
 ):
-
     model.to(device)
     model.eval()
 
@@ -183,7 +199,7 @@ def evaluate_atomic_descriptors(
 
 
 def calculate_fingerprint_uncertainty(
-    encoder: TransformerEncoder, dataset: TrainingMoleculeDataset
+    encoder: TransformerPairEncoder, dataset: TrainingMoleculeDataset
 ):
     # for all smiles in the smiles list, get the corresponding unique dataset id
 
@@ -231,7 +247,6 @@ def compute_class_std(data, class_ids):
 def average_over_conformers(
     structure_ids: list[StructureID], predictions: torch.Tensor
 ):
-
     classes = [(sid.molecule_id, sid.enantiomer_id) for sid in structure_ids]
     class_ids = {mol_e_id: i for i, mol_e_id in enumerate(set(classes))}
 
@@ -246,7 +261,6 @@ def average_over_conformers(
 
     print(class_id_per_mol)
     for class_id in class_ids.values():
-
         mask = torch.where(class_id_per_mol == class_id)
         class_mean = torch.mean(predictions[mask], dim=0)
         print(class_mean)
@@ -254,7 +268,6 @@ def average_over_conformers(
         predictions[mask] = class_mean
 
     return predictions
-
 
 
 def clip_and_log_transform(y: torch.Tensor) -> torch.Tensor:

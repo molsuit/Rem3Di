@@ -4,26 +4,38 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
+from typing import Literal
 
 import numpy as np
 import torch
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from torch.utils.data import DataLoader, Subset
 
+from threedscriptors.configuration.dataloader_config import (
+    BucketBatchSamplingConfig,
+    DataLoaderConfig,
+    RandomShuffleSamplingConfig,
+)
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
-    pos_emb_getitem,
+    atoms_getitem,
 )
 from threedscriptors.data_handling.dataset_creation.dataset_modification import (
     DatasetReconfigurator,
 )
-from threedscriptors.data_handling.sample import Sample, pretraining_padded_collate_fn
-from threedscriptors.training.data import worker_init_fn
-from threedscriptors.training.data.samplers import (
-    BucketByLengthBatchSampler,
-    lengths_from_ptr,
+from threedscriptors.data_handling.sample import (
+    Sample,
+    pretraining_padded_collate_fn,
+    yield_molecules_collate_fn,
 )
+from threedscriptors.training.data.samplers import lengths_from_ptr
+
+CollateKind = Literal["padded", "flat"]
+_COLLATES = {
+    "padded": pretraining_padded_collate_fn,
+    "flat": yield_molecules_collate_fn,
+}
 
 
 @dataclass
@@ -36,15 +48,24 @@ class Timing:
 class DataloaderBenchmarkConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
+    # Storage-layout knobs for the temporary reconfigured dataset.
     atom_chunk: int = Field(default=8192, ge=1)
     molecule_chunk: int = Field(default=4_096, ge=1)
 
-    bucketed: bool = False
-    batch_size: int = Field(default=512, ge=1)
-    num_workers: int = Field(default=8, ge=0)
-    prefetch_factor: int = Field(default=4, ge=1)
+    # The dataloader being benchmarked. Mirrors the production training config
+    # so bucket vs random and worker/prefetch knobs are tested as-shipped.
+    dataloader: DataLoaderConfig
 
+    # Which collate to feed the loader. "flat" matches
+    # run_online_embedding_denoising_pretraining; "padded" matches the
+    # downstream-regression scripts.
+    collate: CollateKind = "flat"
+
+    # Iteration cap (None => one full pass through the loader).
     limit_n_batches: int | None = Field(default=32, ge=1)
+    # Cap on number of structures pulled into the temp dataset; None => use
+    # everything in the source. Smaller = faster setup for large datasets.
+    structure_limit: int | None = Field(default=None, ge=1)
 
 
 class MicrobenchmarkResult(BaseModel):
@@ -85,7 +106,7 @@ class DataloaderBenchmarkResult(BaseModel):
     @field_serializer("dataset_dir")
     def _serialize_dataset_dir(self, dataset_dir: Path) -> str:
         return str(dataset_dir)
-    
+
     def summary(self) -> str:
         if self.batches == 0:
             return "No batches processed."
@@ -178,8 +199,8 @@ class DataloaderBenchmarkResult(BaseModel):
 def _count_atoms(sample: Sample) -> int:
     if sample.padding_mask is not None:
         return int((~sample.padding_mask).sum().item())
-    if sample.embeddings is not None:
-        return int(sample.embeddings.shape[0])
+    if sample.atomic_positions is not None:
+        return int(sample.atomic_positions.shape[0])
     return 0
 
 
@@ -224,7 +245,8 @@ class DataloaderBenchmark:
             source_ds.isomeric_smiles.close()
 
         scratch_dir = TemporaryDirectory(
-            prefix="dataloader_bench_", dir=str(scratch_parent) if scratch_parent else None
+            prefix="dataloader_bench_",
+            dir=str(scratch_parent) if scratch_parent else None,
         )
         target_dir = Path(scratch_dir.name) / "dataset"
         self._scratch = scratch_dir
@@ -236,7 +258,7 @@ class DataloaderBenchmark:
                 target_dir,
                 new_cfg,
                 structures_per_chunk=self._structures_per_chunk,
-                structure_limit= int(self.config.batch_size * self.config.limit_n_batches* 1.25)
+                structure_limit=self._resolve_structure_limit(),
             )
             reconfig.run()
             print("Reconfig completed")
@@ -245,7 +267,7 @@ class DataloaderBenchmark:
             raise
 
         self._dataset = MoleculeDataset.open_existing_dataset_from_dir(target_dir)
-        self._training_dataset = TrainingMoleculeDataset(target_dir, pos_emb_getitem)
+        self._training_dataset = TrainingMoleculeDataset(target_dir, atoms_getitem)
         self._lengths = lengths_from_ptr(np.asarray(self._dataset.ptr[:]))
         self._train_indices = self._build_train_indices(len(self._lengths))
 
@@ -256,6 +278,32 @@ class DataloaderBenchmark:
             return np.zeros((0,), dtype=np.int64)
         return np.arange(n_train, dtype=np.int64)
 
+    def _resolve_structure_limit(self) -> int | None:
+        """How many structures the temp dataset should hold.
+
+        Explicit `structure_limit` wins. Otherwise auto-derive enough to
+        provide `limit_n_batches` worth of batches at the chosen sampler.
+        """
+        if self.config.structure_limit is not None:
+            return int(self.config.structure_limit)
+        if self.config.limit_n_batches is None:
+            return None
+
+        sampling = self.config.dataloader.batch_sampling
+        slack = 1.25
+        if isinstance(sampling, RandomShuffleSamplingConfig):
+            return int(sampling.batch_size * self.config.limit_n_batches * slack)
+        if isinstance(sampling, BucketBatchSamplingConfig):
+            # Conservative: pick the larger of (max_batch_size if set) vs an
+            # atom-budget estimate at ~50 atoms/structure (the TMQM mode).
+            cap_by_count = (
+                sampling.max_batch_size if sampling.max_batch_size is not None else 0
+            )
+            cap_by_atoms = sampling.max_atoms_per_batch // 50
+            per_batch = max(cap_by_count, cap_by_atoms, 1)
+            return int(per_batch * self.config.limit_n_batches * slack)
+        return None
+
     def _build_dataloader(self) -> DataLoader[Sample]:
         if (
             self._training_dataset is None
@@ -265,29 +313,12 @@ class DataloaderBenchmark:
             raise RuntimeError("Benchmark dataset not prepared.")
 
         subset = Subset(self._training_dataset, self._train_indices.tolist())
-        kwargs = dict(
-            worker_init_fn=worker_init_fn,
-            prefetch_factor=self.config.prefetch_factor,
-            persistent_workers=self.config.num_workers > 0,
-            pin_memory=True,
-            num_workers=self.config.num_workers,
-            collate_fn=pretraining_padded_collate_fn,
-        )
-
-        if self.config.bucketed:
-            batch_sampler = BucketByLengthBatchSampler(
-                indices=self._train_indices,
-                lengths=self._lengths,
-                batch_size=self.config.batch_size,
-                drop_last=False,
-            )
-            return DataLoader(subset, batch_sampler=batch_sampler, **kwargs)
-
-        return DataLoader(
+        train_lengths = self._lengths[self._train_indices]
+        return self.config.dataloader.build(
             subset,
-            batch_size=self.config.batch_size,
+            lengths=train_lengths,
+            collate_fn=_COLLATES[self.config.collate],
             shuffle=True,
-            **kwargs,
         )
 
     def _collect_timing(self, warmup_batches: int) -> Timing:
@@ -342,6 +373,17 @@ class DataloaderBenchmark:
             timing=timing,
         )
 
+    def _microbench_batch_size(self) -> int:
+        """A representative batch size for the collate microbench."""
+        sampling = self.config.dataloader.batch_sampling
+        if isinstance(sampling, RandomShuffleSamplingConfig):
+            return sampling.batch_size
+        if isinstance(sampling, BucketBatchSamplingConfig):
+            if sampling.max_batch_size is not None:
+                return sampling.max_batch_size
+            return max(1, sampling.max_atoms_per_batch // 50)
+        return 64
+
     def run_microbenchmarks(self, n_iters: int = 1024) -> MicrobenchmarkResult | None:
         if self._training_dataset is None or self._lengths is None:
             raise RuntimeError("Benchmark dataset not prepared.")
@@ -349,29 +391,31 @@ class DataloaderBenchmark:
             return None
 
         rng = np.random.default_rng(0)
-        idxs = rng.integers(low=0, high=len(self._lengths), size=n_iters, endpoint=False)
+        idxs = rng.integers(
+            low=0, high=len(self._lengths), size=n_iters, endpoint=False
+        )
 
         total_atoms = 0
         t0 = perf_counter()
         for i in idxs:
             sample = self._training_dataset[int(i)]
-            if sample.embeddings is not None:
-                total_atoms += sample.embeddings.shape[0]
+            if sample.atomic_positions is not None:
+                total_atoms += sample.atomic_positions.shape[0]
         t1 = perf_counter()
 
-        idxs2 = rng.integers(
-            low=0, high=len(self._lengths), size=self.config.batch_size, endpoint=False
-        )
+        bs = self._microbench_batch_size()
+        idxs2 = rng.integers(low=0, high=len(self._lengths), size=bs, endpoint=False)
         samples = [self._training_dataset[int(i)] for i in idxs2]
+        collate_fn = _COLLATES[self.config.collate]
         t2 = perf_counter()
-        _ = pretraining_padded_collate_fn(samples)
+        _ = collate_fn(samples)
         t3 = perf_counter()
 
         return MicrobenchmarkResult(
             getitem_mean_s=(t1 - t0) / max(1, n_iters),
             getitem_atoms_per_s=total_atoms / max(1e-9, t1 - t0),
             collate_time_s=(t3 - t2),
-            collate_batch_size=self.config.batch_size,
+            collate_batch_size=bs,
         )
 
     def close(self) -> None:

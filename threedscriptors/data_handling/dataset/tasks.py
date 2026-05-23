@@ -1,6 +1,32 @@
-from enum import Enum
+from enum import Enum, StrEnum
 
 from pydantic import BaseModel
+
+
+class ElementSet(StrEnum):
+    """Named element-set preset for ``filter_mol(allowed_elements=...)``.
+
+    ``mace_off`` is the organic drug subset (H,C,N,O,F,P,S,Cl,Br,I).
+    ``mace_polar`` extends to atomic numbers 1..83 (the MACE-POLAR coverage).
+    Resolve via :func:`generators.utils.resolve_element_set`.
+    """
+
+    mace_off = "mace_off"
+    mace_polar = "mace_polar"
+
+
+class Split(int, Enum):
+    """Per-structure split membership, materialized into the dataset on disk.
+
+    Stored as a uint8 zarr column. ``unassigned`` is the default for datasets
+    ingested without a literature split; eval may still override the split at
+    run time regardless of what is stored.
+    """
+
+    train = 0
+    valid = 1
+    test = 2
+    unassigned = 255
 
 
 class TaskType(str, Enum):
@@ -25,8 +51,7 @@ class TaskSet(BaseModel):
     atom_cols: list[TaskConfig] = []
 
     system_map: dict[str, int] = {}
-    atom_map:   dict[str, int] = {}
-
+    atom_map: dict[str, int] = {}
 
     @classmethod
     def from_list(cls, task_list: list[TaskConfig]):

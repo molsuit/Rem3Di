@@ -1,86 +1,71 @@
-
 import pytest
+import torch
 from pydantic import TypeAdapter, ValidationError
 
 from threedscriptors.configuration.architecture_config import (
-    Aggregations,
     AttentionAggregatorConfig,
     GlobalAggregatorConfig,
     MeanAggregatorConfig,
 )
+from threedscriptors.model.pooling import AttnPool
 
-# import your actual classes here!
-from threedscriptors.model.pooling import AttnPool, MeanPool
-
-
-@pytest.mark.parametrize(
-    "raw, expected",
-    [
-        ("mean", Aggregations.MEAN),
-        (" attention ", Aggregations.ATTENTION),
-        (MeanPool, Aggregations.MEAN),
-        (AttnPool(d_in=8), Aggregations.ATTENTION),
-    ],
-)
-def test_enum_coercion(raw, expected):
-    assert Aggregations(raw) is expected
-
-
-def test_enum_str():
-    assert str(Aggregations.ATTENTION) == "attention"
-
-
-# ---------------------------------------------------------------------------
-# ATTNPOOL assertion check
-# ---------------------------------------------------------------------------
 
 def test_attnpool_bad_divisibility():
     with pytest.raises(AssertionError):
-        AttnPool(d_in=10, n_heads=4)      # 10 % 4 ⇒ assertion
+        AttnPool(d_in=10, n_heads=4)  # 10 % 4 => assertion
 
 
-# ---------------------------------------------------------------------------
-# CHILD CONFIGS (Literal enforced)
-# ---------------------------------------------------------------------------
+def test_attnpool_projects_to_d_out_when_different():
+    pool = AttnPool(d_in=1024, d_out=320, n_heads=8, d_hidden=64)
+    x = torch.randn(2, 5, 1024)
+    pad_mask = torch.zeros(2, 5, dtype=torch.bool)
+    out = pool(x, pad_mask)
+    # AttnPool returns a length-1 descriptor sequence (B, 1, d_out).
+    assert out.shape == (2, 1, 320)
+
+
+def test_attnpool_identity_when_d_in_equals_d_out():
+    pool = AttnPool(d_in=128, d_out=128, n_heads=8, d_hidden=64)
+    assert isinstance(pool.out_proj, torch.nn.Identity)
+
 
 def test_mean_cfg_roundtrip():
-    cfg = MeanAggregatorConfig(aggregator_type=Aggregations.MEAN)
-    assert cfg.aggregator_type is Aggregations.MEAN
+    cfg = MeanAggregatorConfig()
+    assert cfg.aggregator_type == "mean"
     assert '"aggregator_type":"mean"' in cfg.model_dump_json()
 
 
-def test_mean_cfg_rejects_string():
-    with pytest.raises(ValidationError):
-        MeanAggregatorConfig(aggregator_type="mean")   # must be enum member
+def test_mean_cfg_build_honors_output_dim():
+    # Regression for the `agg_mean` ablation crash: build() must produce a
+    # module that emits `output_dim` (64), not `input_dim` (256), so the
+    # decoder cross-attention (wired for output_dim) matches.
+    pool = MeanAggregatorConfig().build(input_dim=256, output_dim=64)
+    x = torch.randn(2, 5, 256)
+    mask = torch.zeros(2, 5, dtype=torch.bool)
+    out = pool(x, mask)
+    assert out.shape == (2, 1, 64)
 
 
 def test_attention_cfg_success():
-    cfg = AttentionAggregatorConfig(
-        aggregator_type=Aggregations.ATTENTION,
-        num_heads=8,
-        head_dim=16,
-    )
+    cfg = AttentionAggregatorConfig(num_heads=8, head_dim=16)
     assert cfg.num_heads == 8
     assert '"aggregator_type":"attention"' in cfg.model_dump_json()
 
 
 def test_attention_cfg_missing_fields():
     with pytest.raises(ValidationError):
-        AttentionAggregatorConfig(aggregator_type=Aggregations.ATTENTION)
+        AttentionAggregatorConfig()
 
 
-# ---------------------------------------------------------------------------
-# GLOBAL CONFIG (nested union via discriminator)
-# ---------------------------------------------------------------------------
+adapter = TypeAdapter(GlobalAggregatorConfig)
 
-adapter = TypeAdapter(GlobalAggregatorConfig)   # re-usable helper
 
 @pytest.mark.parametrize(
     "payload, expected_cls",
     [
         (
             {
-                "aggregator_type_config": {"aggregator_type": Aggregations.MEAN},
+                "aggregator_type_config": {"aggregator_type": "mean"},
                 "input_dim": 32,
                 "output_dim": 16,
             },
@@ -89,7 +74,7 @@ adapter = TypeAdapter(GlobalAggregatorConfig)   # re-usable helper
         (
             {
                 "aggregator_type_config": {
-                    "aggregator_type": Aggregations.ATTENTION,
+                    "aggregator_type": "attention",
                     "num_heads": 4,
                     "head_dim": 16,
                 },
@@ -101,7 +86,7 @@ adapter = TypeAdapter(GlobalAggregatorConfig)   # re-usable helper
     ],
 )
 def test_global_dispatch(payload, expected_cls):
-    cfg = adapter.validate_python(payload)          # ← v2 way
+    cfg = adapter.validate_python(payload)
     assert isinstance(cfg.aggregator_type_config, expected_cls)
 
 

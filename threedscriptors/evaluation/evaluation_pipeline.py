@@ -20,10 +20,7 @@ class BaseEvalTask(ABC):
 
 
 class EvalPipelineRunner:
-    def __init__(
-        self, tasks: list[BaseEvalTask], dataset_name
-    ):
-
+    def __init__(self, tasks: list[BaseEvalTask], dataset_name):
         self.tasks = tasks
         self.dataset_label = f"{dataset_name}"
         self.results: list[EvalResult] = []
@@ -39,9 +36,7 @@ class EvalPipelineRunner:
             task.plot(model_name)
             self.results.extend(task.results)
 
-
     def output_results(self, output_directory: str):
-
         output_dir = Path(output_directory)
         output_dir.mkdir(parents=True, exist_ok=True)
 

@@ -11,23 +11,50 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "torch>=2.5.1",
+    # Explicit so `uv sync` always installs it: torch's cu126 wheels need
+    # libcusparseLt.so.0 at `import torch`, and relying on transitive
+    # resolution left it missing on the nodes that crashed the ablation.
+    "nvidia-cusparselt-cu12",
     "ase>=3.24.0",
     "rdkit>=2024.9.4",
     "wandb",
     "pydantic",
     "pydantic_yaml",
-    "mace-torch",
-    "umap-learn"
+    "mace-torch>=0.3.16",
+    "umap-learn",
+    "torch-sim-atomistic",
+    "zarr>=3.2",
+    "graph-longrange",
+    "cuequivariance-torch==0.9.1",
+    "cuequivariance==0.9.1",
+    "cuequivariance-ops-torch-cu12==0.9.1",
+    "pymatgen>=2026.3.23",
+    "datashader>=0.19.0",
+    "chemiscope>=1.0.3",
+    "PyTDC>=0.3.6",
 ]
-[project.optional-dependencies]
-cuequivariance = [
-    "cuequivariance",
-    "cuequivariance-torch",
-    "cuequivariance-ops-torch-cu12"
-]
+
 
 mols  = ["polaris-lib>=0.11.4",
     "molfeat",
+]
+
+[project.optional-dependencies]
+cluster = [
+    "bblean>=0.10.3",
+]
+# Descriptor-probe benchmark panel
+# (scripts/evaluation/run_benchmark_eval.py + scripts/dataset_creation/
+# build_benchmark_dataset.py). lightgbm is the LightGBMLearner backend; PyTDC
+# drives the TDC ADMET ingest. The rest are pinned for a reproducible eval
+# install (otherwise only present transitively). ECFP also needs molfeat from
+# the `mols` extra: `uv sync --extra mols --extra eval`.
+eval = [
+    "lightgbm>=4.6.0",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "pyyaml",
 ]
 
 [build-system]
@@ -37,3 +64,23 @@ build-backend = "hatchling.build"
 [tool.ruff]
 lint.select = ["I", "UP", "F", "E", "W", "C90", "B", "A", "RUF"]
 lint.ignore = ["E501", "B008"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "pytest",
+    "ty>=0.0.32",
+    "ruff"
+]
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+graph-longrange = { git = "https://github.com/WillBaldwin0/graph_electrostatics.git" }
+torch-sim-atomistic = { git = "https://github.com/TorchSim/torch-sim.git", branch = "main"}
+torch = { index = "pytorch-cu126" }
+
+[tool.ty.environment]
+root = ["./threedscriptors"]

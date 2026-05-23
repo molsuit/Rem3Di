@@ -1,0 +1,22 @@
+# Local benchmark eval — pipeline-validation run for pcqm_depth_2.
+#
+# REM3DI descriptor (encoder weights from /scratch/.../pcqm_depth_2) x linear
+# learner over every prepared zarr in eval_root. Outputs results.csv +
+# results.yaml under output_dir.
+
+eval_root: /scratch/s5f/wedigs.s5f/datasets/benchmarks
+output_dir: /scratch/s5f/wedigs.s5f/evaluation_results/benchmark_eval_pcqm_depth_2
+
+seed: 0
+
+descriptors:
+  - descriptor_kind: remedi
+    name: remedi_pcqm_depth_2
+    model_dir: /scratch/s5f/wedigs.s5f/training_runs/pcqm_ablation/25-2026_05_19_12_57_45-pcqm_depth_2
+    batch_size: 64
+    device: cuda
+
+learners:
+  - learner_kind: linear
+    ridge_alpha: 1.0
+    logreg_C: 1.0

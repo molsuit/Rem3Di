@@ -13,13 +13,10 @@ from threedscriptors.data_handling.mol_id import StructureID
 MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 
 
-
 def get_all_mol_paths(geom_dir):
-
     drugs_file = os.path.join(geom_dir, "rdkit_folder/summary_drugs.json")
     with open(drugs_file) as f:
         drugs_summ = json.load(f)
-
 
     rdkit_dir = Path(geom_dir) / "rdkit_folder/"
     existing = {
@@ -35,15 +32,14 @@ def get_all_mol_paths(geom_dir):
 
     return mol_paths
 
+
 def load_geom(
     geom_dir: str,
     boltzmann_weight_threshold: float,
     N_molecules: int,
     max_atoms: int = 100,
 ) -> tuple[list[str], list[Atoms], list[StructureID]]:
-
     mol_paths = get_all_mol_paths(geom_dir)
-
 
     if N_molecules is None:
         N_molecules = len(mol_paths)
@@ -92,7 +88,6 @@ def load_geom(
         can_smiles = Chem.CanonSmiles(dic["smiles"])
 
         for conf_id, conf in enumerate(conformers):
-
             molecules.append(mol_to_ase(conf["rd_mol"], can_smi=can_smiles))
             structure_ids.append(
                 StructureID(
@@ -117,7 +112,6 @@ def load_geom(
 
 
 def mol_to_ase(mol: Chem.Mol, can_smi: str):
-
     numbers = [a.GetAtomicNum() for a in mol.GetAtoms()]
     conf = mol.GetConformer()
 
@@ -185,9 +179,6 @@ def _process_one_file(args):
     return results
 
 
-
-
-
 def load_geom_parallel(
     geom_dir: str,
     boltzmann_weight_threshold: float,
@@ -195,15 +186,9 @@ def load_geom_parallel(
     max_atoms: int = 100,
     max_workers: int | None = None,
 ) -> tuple[list[str], list[Atoms], list["StructureID"]]:
-
     # 1) read summary and collect existing pickle paths (single-threaded)
 
     mol_paths = get_all_mol_paths(geom_dir)
-
-
-
-
-
 
     # 2) dispatch work
     args = [
