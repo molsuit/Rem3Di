@@ -32,17 +32,20 @@ dependencies = [
     "datashader>=0.19.0",
     "chemiscope>=1.0.3",
     "PyTDC>=0.3.6",
+    # PolarisOfflineGenerator reads the standardized parquet produced by
+    # scripts/dataset_download/dump_polaris.py; pandas is already pulled
+    # transitively, but the parquet engine is not.
+    "pyarrow",
 ]
 
 
-mols  = ["polaris-lib>=0.11.4",
-    "molfeat",
-]
+# ``polaris-lib`` is intentionally NOT listed here: it pins ``zarr<3`` and so
+# cannot share a venv with this project (which requires ``zarr>=3.2`` for the
+# MoleculeDataset store). Polaris ingest runs out-of-venv via
+# ``scripts/dataset_download/dump_polaris.py`` (PEP 723 inline deps); the
+# build pipeline reads its parquet dumps via ``PolarisOfflineGenerator``.
 
 [project.optional-dependencies]
-cluster = [
-    "bblean>=0.10.3",
-]
 # Descriptor-probe benchmark panel
 # (scripts/evaluation/run_benchmark_eval.py + scripts/dataset_creation/
 # build_benchmark_dataset.py). lightgbm is the LightGBMLearner backend; PyTDC
@@ -55,6 +58,8 @@ eval = [
     "scipy",
     "scikit-learn",
     "pyyaml",
+    "bblean>=0.10.3",
+    "molfeat"
 ]
 
 [build-system]

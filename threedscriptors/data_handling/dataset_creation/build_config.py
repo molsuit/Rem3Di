@@ -27,6 +27,11 @@ class BenchmarkBuildConfig(BaseModel):
     output_root: Path
     moleculenet_raw_root: Path
     tdc_cache: Path
+    # Polaris parquet dumps (produced by scripts/dataset_download/dump_polaris.py
+    # in its own venv -- polaris-lib pins zarr<3 and cannot share this env).
+    # ``None`` skips the polaris panel; existing moleculenet / tdc builds keep
+    # working with no config change.
+    polaris_raw_root: Path | None = None
 
     # Per-build knobs shared across datasets. Defaults are the values
     # validated by the CYP timing experiment (slurm-4686108): three CYP_Veith

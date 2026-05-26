@@ -1,11 +1,17 @@
-"""Build the full benchmark panel (every registered MoleculeNet + TDC dataset).
+"""Build the full benchmark panel (MoleculeNet + TDC + Polaris).
 
 Single yaml-driven entry point. The script dispatches on ``benchmark.source``
-to the matching generator (MoleculeNet / TDC) and writes one zarr per benchmark
-under ``output_root/<dataset_id>/``, with the literature split materialized in
-the zarr ``split`` column. Datasets whose zarr already exists are skipped, so
+to the matching generator and writes one zarr per benchmark under
+``output_root/<dataset_id>/``, with the literature split materialized in the
+zarr ``split`` column. Datasets whose zarr already exists are skipped, so
 re-running is idempotent and rebuilding one benchmark just means deleting its
 subdirectory.
+
+Polaris benchmarks are only built when ``polaris_raw_root`` is set in the
+config and the per-dataset parquet has been produced by
+``scripts/dataset_download/dump_polaris.py`` (which runs in its own ephemeral
+venv -- polaris-lib pins ``zarr<3`` and cannot share this venv). Polaris
+benchmarks whose parquet is missing are skipped with a warning.
 
 Usage::
 
@@ -28,9 +34,11 @@ from threedscriptors.configuration.dataset_config import (
 )
 from threedscriptors.data_handling.benchmarks import (
     MOLECULENET_BENCHMARKS,
+    POLARIS_BENCHMARKS,
     TDC_BENCHMARKS,
     BenchmarkManifest,
     MoleculeNetBenchmark,
+    PolarisBenchmark,
     TdcBenchmark,
 )
 from threedscriptors.data_handling.dataset_creation.build_config import (
@@ -38,6 +46,9 @@ from threedscriptors.data_handling.dataset_creation.build_config import (
 )
 from threedscriptors.data_handling.dataset_creation.generators.moleculenet_generator import (
     MoleculeNetGenerator,
+)
+from threedscriptors.data_handling.dataset_creation.generators.polaris_offline_generator import (
+    PolarisOfflineGenerator,
 )
 from threedscriptors.data_handling.dataset_creation.generators.tdc_generator import (
     TdcGenerator,
@@ -55,7 +66,8 @@ logger = logging.getLogger(__name__)
 
 
 def _make_generator(
-    benchmark: MoleculeNetBenchmark | TdcBenchmark, cfg: BenchmarkBuildConfig
+    benchmark: MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark,
+    cfg: BenchmarkBuildConfig,
 ):
     if isinstance(benchmark, MoleculeNetBenchmark):
         # MoleculeNet does filter + scaffold-split together (see generator
@@ -67,6 +79,17 @@ def _make_generator(
             batch_size=cfg.batch_size,
             filter_config=cfg.filter,
         )
+    if isinstance(benchmark, PolarisBenchmark):
+        if cfg.polaris_raw_root is None:
+            raise ValueError(
+                "polaris_raw_root is unset; cannot build polaris benchmarks. "
+                "Dump the parquet first via scripts/dataset_download/dump_polaris.py."
+            )
+        return PolarisOfflineGenerator(
+            benchmark,
+            cfg.polaris_raw_root,
+            batch_size=cfg.batch_size,
+        )
     return TdcGenerator(
         benchmark,
         cfg.tdc_cache,
@@ -76,7 +99,8 @@ def _make_generator(
 
 
 def build_one(
-    benchmark: MoleculeNetBenchmark | TdcBenchmark, cfg: BenchmarkBuildConfig
+    benchmark: MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark,
+    cfg: BenchmarkBuildConfig,
 ) -> None:
     zarr_path = cfg.output_root / benchmark.dataset_id
     if zarr_path.exists():
@@ -86,6 +110,29 @@ def build_one(
             zarr_path,
         )
         return
+
+    # Polaris: skip with a warning if the parquet hasn't been dumped yet so a
+    # partial polaris setup doesn't block the rest of the panel from building.
+    if isinstance(benchmark, PolarisBenchmark):
+        if cfg.polaris_raw_root is None:
+            logger.warning(
+                "%s: polaris_raw_root unset; skipping. "
+                "Run scripts/dataset_download/dump_polaris.py and set "
+                "polaris_raw_root in the build config to enable.",
+                benchmark.dataset_id,
+            )
+            return
+        parquet_path = cfg.polaris_raw_root / benchmark.parquet_filename
+        if not parquet_path.exists():
+            logger.warning(
+                "%s: parquet %s missing; skipping. Dump it via "
+                "scripts/dataset_download/dump_polaris.py --slug %s --out %s",
+                benchmark.dataset_id,
+                parquet_path,
+                benchmark.polaris_slug,
+                parquet_path,
+            )
+            return
 
     creation_config = DatasetCreationConfig(
         path=zarr_path,
@@ -107,9 +154,11 @@ def build_one(
         ConformerGenerationStage(dataset_creation_config=creation_config),
         CopyDataStage(dtype=torch.float64),
     ]
-    # Only TDC routes through FilterMoleculeStage; MoleculeNet filters inside
-    # the generator alongside scaffold-split (apply_smiles_filter is shared).
-    if isinstance(benchmark, TdcBenchmark):
+    # TDC and Polaris emit raw SMILES and route through FilterMoleculeStage
+    # (parse / canonicalize / dedupe / filter). MoleculeNet filters inside the
+    # generator alongside scaffold-split, since the split is a global operation
+    # over the kept-SMILES set; ``apply_smiles_filter`` keeps the rules shared.
+    if isinstance(benchmark, (TdcBenchmark, PolarisBenchmark)):
         pipeline.insert(0, FilterMoleculeStage(config=cfg.filter))
 
     logger.info("%s: building -> %s", benchmark.dataset_id, zarr_path)
@@ -136,7 +185,7 @@ def main() -> None:
 
     cfg = pyd_yaml.parse_yaml_file_as(BenchmarkBuildConfig, args.config)
     selected = cfg.only_datasets
-    for bench in (*MOLECULENET_BENCHMARKS, *TDC_BENCHMARKS):
+    for bench in (*MOLECULENET_BENCHMARKS, *TDC_BENCHMARKS, *POLARIS_BENCHMARKS):
         if selected is not None and bench.dataset_id not in selected:
             continue
         build_one(bench, cfg)

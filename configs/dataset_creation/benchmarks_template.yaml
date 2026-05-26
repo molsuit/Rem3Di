@@ -16,6 +16,14 @@ output_root: <PLACEHOLDER>/datasets/benchmarks
 moleculenet_raw_root: <PLACEHOLDER>/raw_datasets/molecule_net
 tdc_cache: <PLACEHOLDER>/tdc_admet_cache
 
+# Optional. Directory holding the per-dataset parquet dumps produced by
+# `scripts/dataset_download/dump_polaris.py` (polaris-lib pins zarr<3 and so
+# cannot share this venv; the dump script runs in its own PEP 723 ephemeral
+# env via `uv run`). Leave commented out to skip the polaris panel; polaris
+# benchmarks whose parquet is missing under this root are also skipped with a
+# warning, so a partial polaris setup never blocks the rest of the build.
+# polaris_raw_root: <PLACEHOLDER>/raw_datasets/polaris
+
 batch_size: 256
 n_sampled_conformers: 1
 # ETKDG retry budget per conformer. 200 covers essentially anything ETKDG can

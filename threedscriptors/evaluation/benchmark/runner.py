@@ -67,7 +67,7 @@ class EvalConfig(BaseModel):
 
 class BenchmarkResultRow(BaseModel):
     dataset_id: str
-    source: Literal["moleculenet", "tdc"]
+    source: Literal["moleculenet", "tdc", "polaris"]
     descriptor_name: str
     learner_kind: str
     metric_name: str

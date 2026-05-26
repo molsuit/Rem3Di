@@ -1,4 +1,4 @@
-"""Pydantic registry of the benchmark panel (MoleculeNet + TDC ADMET).
+"""Pydantic registry of the benchmark panel (MoleculeNet + TDC ADMET + Polaris).
 
 This replaces the junior eval001 frozen-dataclass / ``Literal`` specs with the
 package idiom: pydantic models, an ``Annotated`` discriminated union on
@@ -10,6 +10,16 @@ Multi-label MoleculeNet datasets (ClinTox/SIDER/Tox21) are modelled as several
 ``classification`` :class:`BenchmarkTask` columns with a dataset-level
 ``macro-AUROC`` metric; the package ``TaskType`` only distinguishes
 regression vs classification, and column count carries single- vs multi-label.
+
+Polaris datasets are loaded indirectly: ``polaris-lib`` pins ``zarr<3`` whereas
+the rest of this project requires ``zarr>=3.2`` for the MoleculeDataset store,
+so the two cannot share a venv. The workaround is a standalone PEP 723 dump
+script (``scripts/dataset_download/dump_polaris.py``) that runs in its own
+ephemeral env, fetches a polaris dataset, and writes a standardized parquet
+(columns ``smiles``, ``split``, plus one column per task) under
+``polaris_raw_root``. :class:`PolarisBenchmark` entries here describe that
+parquet; the build pipeline reads it via ``PolarisOfflineGenerator`` without
+ever importing ``polaris``.
 """
 
 from __future__ import annotations
@@ -43,6 +53,9 @@ class SplitVariant(StrEnum):
     scaffold = "scaffold"
     # PyTDC admet_group official split (fixed scaffold test; seeded train/valid).
     tdc_default = "tdc_default"
+    # Polaris ``Set`` column (Train / Valid / Test labels per row), materialized
+    # by the standalone dump script into the parquet's ``split`` uint8 codes.
+    polaris_set = "polaris_set"
     random = "random"
 
 
@@ -92,8 +105,26 @@ class TdcBenchmark(_BenchmarkBase):
     split_variant: SplitVariant = SplitVariant.tdc_default
 
 
+class PolarisBenchmark(_BenchmarkBase):
+    source: Literal["polaris"] = "polaris"
+    # Polaris-hub slug. Consumed by ``scripts/dataset_download/dump_polaris.py``
+    # to fetch the dataset; not used at build time (the build pipeline reads
+    # the standardized parquet only).
+    polaris_slug: str
+    # Filename within ``polaris_raw_root`` of the standardized parquet dumped
+    # by the polaris fetch script (columns: ``smiles``, ``split``, one per
+    # task). Defaults to ``<dataset_id>.parquet``.
+    parquet_name: str | None = None
+    split_variant: SplitVariant = SplitVariant.polaris_set
+
+    @property
+    def parquet_filename(self) -> str:
+        return self.parquet_name or f"{self.dataset_id}.parquet"
+
+
 Benchmark = Annotated[
-    MoleculeNetBenchmark | TdcBenchmark, Field(discriminator="source")
+    MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark,
+    Field(discriminator="source"),
 ]
 
 
@@ -285,12 +316,112 @@ TDC_BENCHMARKS: tuple[TdcBenchmark, ...] = (
 )
 
 
-_BY_ID: dict[str, MoleculeNetBenchmark | TdcBenchmark] = {
-    b.dataset_id: b for b in (*MOLECULENET_BENCHMARKS, *TDC_BENCHMARKS)
+# --- Polaris (ASAP / Biogen ADME-Fang) -------------------------------------
+# Loaded from per-dataset parquet dumps under the build config's
+# ``polaris_raw_root``; see module docstring for the rationale and
+# ``scripts/dataset_download/dump_polaris.py`` for how to refresh them
+# (single invocation, dumps every curated slug). Task column names match
+# polaris's source columns one-for-one (the dump script preserves them) and
+# double as the canonical TaskSet column names.
+#
+# Adding a polaris dataset:
+#   1. Append the (dataset_id, slug, smiles_column) row to ``_DATASETS`` in
+#      ``scripts/dataset_download/dump_polaris.py``.
+#   2. ``uv run scripts/dataset_download/dump_polaris.py --out-root <root>``
+#      then ``python -c "import pandas as pd;
+#      print(pd.read_parquet('<root>/<id>.parquet').columns.tolist())"`` to
+#      read off the source columns.
+#   3. Add a ``PolarisBenchmark`` entry below with the task columns
+#      transcribed verbatim into ``BenchmarkTask.name`` (``_reg`` for
+#      regression columns, ``_clf`` for classification).
+#
+POLARIS_BENCHMARKS: tuple[PolarisBenchmark, ...] = (
+    PolarisBenchmark(
+        dataset_id="polaris_antiviral_admet",
+        polaris_slug="asap-discovery/antiviral-admet-2025-unblinded",
+        tasks=[
+            _reg("LogD"),
+            _reg("HLM"),
+            _reg("MLM"),
+            _reg("KSOL"),
+            _reg("MDR1-MDCKII"),
+        ],
+        metric=EvalMetric.mae,
+    ),
+    PolarisBenchmark(
+        dataset_id="polaris_antiviral_potency",
+        polaris_slug="asap-discovery/antiviral-potency-2025-unblinded",
+        tasks=[
+            _reg("pIC50 (MERS-CoV Mpro)"),
+            _reg("pIC50 (SARS-CoV-2 Mpro)"),
+        ],
+        metric=EvalMetric.mae,
+    ),
+    PolarisBenchmark(
+        dataset_id="polaris_adme_fang",
+        polaris_slug="biogen/adme-fang-v1",
+        # Real biogen parquet column names (the polarishub.io UI shows
+        # human-readable labels with units; the underlying columns are
+        # underscored). Confirmed by inspecting the dump.
+        # LOG_HPPB / LOG_RPPB are very sparse (~5% non-null over 3521 rows);
+        # the per-cell mask handles missingness but expect small effective
+        # train sets for those two tasks.
+        # No "Set" column upstream -> PolarisOfflineGenerator applies a
+        # scaffold-split fallback at build time.
+        tasks=[
+            _reg("LOG_HLM_CLint"),
+            _reg("LOG_RLM_CLint"),
+            _reg("LOG_MDR1-MDCK_ER"),
+            _reg("LOG_SOLUBILITY"),
+            _reg("LOG_HPPB"),
+            _reg("LOG_RPPB"),
+        ],
+        metric=EvalMetric.mae,
+    ),
+    PolarisBenchmark(
+        dataset_id="polaris_pkis2_subset",
+        polaris_slug="polaris/drewry2017-pkis2-subset-v2",
+        # PKIS2 kinase %-inhibition subset (Drewry 2017). Five kinase
+        # readouts; SMILES column is MOL_smiles.
+        tasks=[
+            _reg("KIT"),
+            _reg("LOK"),
+            _reg("RET"),
+            _reg("SLK"),
+            _reg("EGFR"),
+        ],
+        metric=EvalMetric.mae,
+    ),
+    PolarisBenchmark(
+        dataset_id="polaris_pkis2_subset_cls",
+        polaris_slug="polaris/drewry2017-pkis2-subset-v2",
+        # Binary active/inactive labels thresholded from the regression
+        # %-inhibition columns above (active ~= >=80% inhibition; CLS_KIT=1
+        # iff KIT>=threshold etc.). Reuses the same dump as
+        # polaris_pkis2_subset; ``parquet_name`` makes the build pipeline
+        # read the same on-disk file rather than expecting a second dump.
+        parquet_name="polaris_pkis2_subset.parquet",
+        tasks=[
+            _clf("CLS_KIT"),
+            _clf("CLS_LOK"),
+            _clf("CLS_RET"),
+            _clf("CLS_SLK"),
+            _clf("CLS_EGFR"),
+        ],
+        metric=EvalMetric.macro_auroc,
+    ),
+)
+
+
+_BY_ID: dict[str, MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark] = {
+    b.dataset_id: b
+    for b in (*MOLECULENET_BENCHMARKS, *TDC_BENCHMARKS, *POLARIS_BENCHMARKS)
 }
 
 
-def get_benchmark(dataset_id: str) -> MoleculeNetBenchmark | TdcBenchmark:
+def get_benchmark(
+    dataset_id: str,
+) -> MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark:
     try:
         return _BY_ID[dataset_id]
     except KeyError as exc:
@@ -301,10 +432,10 @@ def get_benchmark(dataset_id: str) -> MoleculeNetBenchmark | TdcBenchmark:
 
 
 def select_benchmarks(
-    benchmarks: tuple[MoleculeNetBenchmark | TdcBenchmark, ...],
+    benchmarks: tuple[MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark, ...],
     ids: list[str] | None = None,
     limit: int | None = None,
-) -> list[MoleculeNetBenchmark | TdcBenchmark]:
+) -> list[MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark]:
     out = list(benchmarks)
     if ids:
         wanted = set(ids)
@@ -330,11 +461,12 @@ class BenchmarkManifest(BaseModel):
     metric: EvalMetric
     split_variant: SplitVariant
     # Provenance only; the eval reader does not branch on this.
-    source: Literal["moleculenet", "tdc"]
+    source: Literal["moleculenet", "tdc", "polaris"]
 
     @classmethod
     def from_benchmark(
-        cls, benchmark: MoleculeNetBenchmark | TdcBenchmark
+        cls,
+        benchmark: MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark,
     ) -> BenchmarkManifest:
         return cls(
             dataset_id=benchmark.dataset_id,
