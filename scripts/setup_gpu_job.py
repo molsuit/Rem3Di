@@ -1,12 +1,21 @@
 """Stage a dataset onto the compute node's fast local scratch.
 
-On Isambard-AI compute nodes ``$LOCALDIR`` (≈ ``/local/user/<UID>``) is a
-per-job tmpfs of ~48 GiB. Reading the dataset from there avoids hammering
-shared storage during training/benchmarking.
-
 The staged path is printed on stdout so an sbatch script can capture it via
 ``$(...)`` and pass it as ``--dataset_path`` to the entrypoint; informational
 messages go to stderr.
+
+Staging directory resolution:
+
+* Isambard-AI exposes a per-job tmpfs via ``$LOCALDIR`` (≈ ``/local/user/<UID>``,
+  ~48 GiB). When set, it is used.
+* JUWELS Booster nodes have no ``$LOCALDIR`` but do have a large RAM-backed
+  ``/dev/shm`` shared by the (up to four) GPU processes packed onto the node, so
+  that is the fallback.
+* ``--stage-dir`` overrides both.
+
+Staging is idempotent: if the target already exists it is reused, so the four
+single-GPU runs packed onto a Booster node that share a ``dataset_path`` only
+copy it once.
 
 The input yaml only needs a top-level ``dataset_path`` field. Both
 ``TrainingConfig`` and ``ProfileBenchmarkConfig`` satisfy that — no pydantic
@@ -14,9 +23,9 @@ validation is performed here so this stager is config-shape-agnostic.
 
 Usage from sbatch::
 
-    LOCAL_DATASET_PATH=$(uv run scripts/setup_gpu_job.py "$CFG")
-    srun uv run scripts/run_*.py --config "$CFG" \\
-                                 --dataset_path "$LOCAL_DATASET_PATH"
+    LOCAL_DATASET_PATH=$(uv run python scripts/setup_gpu_job.py "$CFG")
+    uv run python scripts/run_*.py --config "$CFG" \\
+                                   --dataset_path "$LOCAL_DATASET_PATH"
 """
 
 from __future__ import annotations
@@ -34,13 +43,12 @@ def log(msg: str) -> None:
     print(f"[setup_gpu_job] {msg}", file=sys.stderr, flush=True)
 
 
-def localdir() -> Path:
+def default_stage_dir() -> Path:
+    """Node-local fast scratch: ``$LOCALDIR`` (Isambard) or ``/dev/shm`` (JUWELS)."""
     value = os.environ.get("LOCALDIR")
-    if not value:
-        raise OSError(
-            "$LOCALDIR is not set; this helper assumes Isambard-AI environment."
-        )
-    return Path(value)
+    if value:
+        return Path(value)
+    return Path("/dev/shm")
 
 
 def stage_dataset(source: Path, stage_dir: Path) -> Path:
@@ -48,6 +56,9 @@ def stage_dataset(source: Path, stage_dir: Path) -> Path:
         raise FileNotFoundError(f"Dataset source does not exist: {source}")
     stage_dir.mkdir(parents=True, exist_ok=True)
     target = stage_dir / source.name
+    if target.exists():
+        log(f"Reusing already-staged dataset: {target}")
+        return target
     log(f"Staging {source} -> {target}")
     if source.is_dir():
         shutil.copytree(source, target, dirs_exist_ok=True)
@@ -69,17 +80,25 @@ def read_dataset_path(config_path: Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Stage a dataset to $LOCALDIR on Isambard-AI."
+        description="Stage a dataset to node-local scratch ($LOCALDIR or /dev/shm)."
     )
     parser.add_argument(
         "config",
         type=Path,
         help="Path to a yaml with a top-level dataset_path field.",
     )
+    parser.add_argument(
+        "--stage-dir",
+        type=Path,
+        default=None,
+        help="Override the node-local staging directory "
+        "(default: $LOCALDIR if set, else /dev/shm).",
+    )
     args = parser.parse_args()
 
     src = read_dataset_path(args.config)
-    staged = stage_dataset(src, localdir())
+    stage_dir = args.stage_dir if args.stage_dir is not None else default_stage_dir()
+    staged = stage_dataset(src, stage_dir)
     print(staged)
 
 

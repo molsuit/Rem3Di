@@ -1,0 +1,41 @@
+compile:
+  dynamo_cache_size_limit: 16
+  enabled: false
+  pad_multiple: 1
+dataloader:
+  batch_sampling:
+    bucket_size: 512
+    kind: bucket_batch
+    max_atoms_per_batch: 5250
+    max_batch_size: null
+  num_workers: 12
+  persistent_workers: true
+  pin_memory: true
+  prefetch_factor: 4
+dataset_path: /p/scratch/mace/wedig1/datasets/pcqm4m/pcqm500k_std
+epochs: 15
+learning_rate: 0.0003
+max_grad_norm: 1.0
+model_config_path: 
+  /p/project1/mace/wedig1/3DMolecularDescriptors/configs/training/pcqm_ablation_novicreg/pcqm_depth_6/architecture_config.yaml
+noise_level: 0.3
+output_base: /p/scratch/mace/wedig1/training_runs/pcqm_ablation_novicreg
+run_group: pcqm_ablation_novicreg
+split_config:
+  N_folds: null
+  N_repeats: null
+  shuffle: true
+  strategy: single
+  train_val_ratios:
+  - 0.98
+  - 0.02
+total_steps: null
+training_directory: null
+training_name: pcqm_depth_6
+vicreg:
+  covariance_weight: 1.0
+  enabled: false
+  target_std: 1.0
+  variance_weight: 25.0
+wandb_active: true
+weight_decay: 0.001
