@@ -143,6 +143,24 @@ class MoleculeDataset:
             root=path,
         )
 
+    def close(self) -> None:
+        """Release the SMILES file handles owned by this dataset."""
+        for store in (getattr(self, "smiles", None), getattr(self, "isomeric_smiles", None)):
+            if store is not None:
+                store.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def __del__(self):
+        # Safety net for the case where close() / the context manager was not
+        # used (e.g. an owning script crashed).
+        self.close()
+
     def _structure_atom_span(self, i: int) -> tuple[int, int]:
         """Return [a0, a1) atom indices for structure i."""
         a0 = int(self.ptr[i])

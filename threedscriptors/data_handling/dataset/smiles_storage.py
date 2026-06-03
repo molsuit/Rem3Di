@@ -121,6 +121,12 @@ class SmilesStorage:
         except Exception:
             pass
 
+    def __del__(self):
+        # Safety net: release file handles / mmaps if close() was never called
+        # explicitly (e.g. the owning script crashed). Prevents the
+        # "unclosed file" ResourceWarning on interpreter shutdown.
+        self.close()
+
     def __enter__(self):  # context manager support
         return self
 
