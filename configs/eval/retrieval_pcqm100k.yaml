@@ -1,0 +1,38 @@
+# Vector-retrieval eval: PCQM100k embedded by the pcqm_ablation baseline run.
+# Point `model.model_dir` at a single trained run directory (the one holding
+# post_training_architecture_config.yaml + encoder.pth + the preprocessor .pth).
+dataset_path: /p/scratch/mace/wedig1/datasets/pcqm4m/pcqm100k
+dataset_id: pcqm100k
+output_dir: reports/retrieval/pcqm100k_baseline
+
+model:
+  descriptor_kind: remedi
+  name: pcqm_baseline
+  model_dir: /p/scratch/mace/wedig1/training_runs/pcqm_ablation/24-2026_05_19_12_57_28-pcqm_baseline
+  batch_size: 64
+  device: cuda
+  # The checkpoint config bakes in an absolute (training-cluster) MACE path;
+  # override it with the local copy of the foundation model.
+  mace_model_path: /p/project1/mace/wedig1/3DMolecularDescriptors/MACE-POLAR-1-M.model
+
+index:
+  index_kind: sklearn_flat
+  metric: cosine
+
+tasks:
+  - task_kind: tanimoto_similarity
+    name: tanimoto_similarity
+    k: 10
+    n_query_sample: 500
+    n_global_pairs: 50000
+    fp_radius: 2
+    fp_n_bits: 2048
+    seed: 0
+
+  - task_kind: nearest_molecule
+    name: nearest_molecule
+    k: 10
+    # Sample 20 molecules at random from the dataset, re-embed a fresh conformer
+    # of each, and retrieve their nearest neighbors (round-trip retrieval check).
+    n_random_query_smiles: 20
+    query_sample_seed: 0
