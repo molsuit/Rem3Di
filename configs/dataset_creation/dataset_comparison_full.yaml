@@ -1,0 +1,70 @@
+# Full pretrain-vs-benchmark comparison: the existing 3.5M pcqm zarr plus
+# GEOM drugs (~290k unique molecules) against the benchmark eval panel.
+#
+# Note: the 3M pcqm zarr was built with load_from_sdf_structures.py BEFORE
+# the SMILES standardization landed in SDFMoleculeGenerator. PCQM4Mv2 is a
+# curated single-molecule corpus so strip_salts / neutralize would be
+# essentially no-ops on it anyway; the canonical SMILES match the benchmark
+# loaders' output for nearly all molecules. GEOM was built with the new
+# standardization path so it matches benchmarks exactly.
+#
+# Expect ~30-90 min wall time at full scale (BitBIRCH on ~3.5M FPs dominates).
+# Submit via the JUWELS sbatch template.
+
+output_dir: /p/scratch/mace/wedig1/datasets/comparisons/full_pcqm3M_geom_vs_benchmarks
+
+random_seed: 1234
+rdkit_n_workers: 32
+top_clusters_plotted: 30
+
+datasets:
+  - name: pcqm
+    role: pretrain
+    path: /p/scratch/mace/wedig1/datasets/pcqm4m/pcqm_only_structures_3_5_M
+  - name: geom_drugs
+    role: pretrain
+    path: /p/scratch/mace/wedig1/datasets/geom_drugs
+  - name: bace
+    role: eval
+    path: /p/scratch/mace/wedig1/datasets/benchmarks/bace
+  - name: bbbp
+    role: eval
+    path: /p/scratch/mace/wedig1/datasets/benchmarks/bbbp
+  - name: esol
+    role: eval
+    path: /p/scratch/mace/wedig1/datasets/benchmarks/esol
+  - name: freesolv
+    role: eval
+    path: /p/scratch/mace/wedig1/datasets/benchmarks/freesolv
+
+bitbirch:
+  enabled: true
+  fingerprint_kind: ecfp4
+  n_features: 2048
+  threshold: 0.65               # ignored when auto_threshold is true
+  auto_threshold: true
+  auto_threshold_factor: 3.0    # bblean default
+  branching_factor: 50
+  merge_criterion: diameter
+  max_molecules: null
+  umap:
+    enabled: true
+    sample_size: 200000         # cap UMAP; BitBIRCH still sees the union
+    n_neighbors: 30
+    min_dist: 0.1
+    metric: jaccard
+    top_clusters_colored: 20
+    plot_size: 1600
+
+nn_tanimoto:
+  enabled: true
+  fingerprint_kind: ecfp4
+  n_features: 2048
+  chunk_size: 1024
+  backend: cpu
+  histogram_bins: 50
+
+scaffold_overlap:
+  enabled: true
+  include_generic: true
+  n_rdkit_workers: 32

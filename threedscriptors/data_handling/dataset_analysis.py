@@ -8,6 +8,7 @@ from collections.abc import Iterable, Iterator
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,6 +21,7 @@ from rdkit.Chem import rdMolDescriptors as rdMD
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from threedscriptors.configuration.dataset_analysis_config import (
+    BitBirchConfig,
     MoleculeDatasetAnalysisConfig,
 )
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
@@ -195,8 +197,42 @@ class BitBirchSummary(BaseModel):
     cluster_size_distribution: DistributionStats = Field(
         default_factory=lambda: DistributionStats(n=0)
     )
+    threshold_used: float | None = None
+    """Actual threshold passed to BitBIRCH (resolved from auto-calibration
+    when ``BitBirchConfig.auto_threshold`` is true, else the config value)."""
+    threshold_source: Literal["config", "auto"] | None = None
+    mean_isim: float | None = None
+    """Mean pairwise Tanimoto (iSIM) of the fingerprint set, when computed."""
+    std_isim: float | None = None
+    """Estimated std of pairwise Tanimoto, when computed."""
     umap: BitBirchUmapSummary | None = None
     notes: str | None = None
+
+
+def resolve_bitbirch_threshold(
+    cfg: BitBirchConfig,
+    fps_packed: np.ndarray,
+) -> tuple[float, str, float | None, float | None]:
+    """Decide the BitBIRCH threshold for a given (packed-uint8) FP matrix.
+
+    Returns ``(threshold, source, mean_isim, std_isim)``. When
+    ``cfg.auto_threshold`` is false the source is ``"config"`` and the
+    iSIM/std fields are ``None``; otherwise the helper calls
+    ``bblean.bitbirch.guess_threshold`` (mean iSIM + factor·std) and the
+    returned numbers are filled in so callers can record what was used."""
+    if not cfg.auto_threshold:
+        return float(cfg.threshold), "config", None, None
+    import bblean.bitbirch as bb
+
+    threshold, mean, std = bb.guess_threshold(
+        fps_packed,
+        input_is_packed=True,
+        n_features=cfg.n_features,
+        factor=cfg.auto_threshold_factor,
+        return_mean_std=True,
+    )
+    threshold = float(np.clip(threshold, 0.0, 1.0))
+    return threshold, "auto", float(mean), float(std)
 
 
 class DatasetSummary(BaseModel):
@@ -622,8 +658,16 @@ class MoleculeDatasetAnalysis:
                 notes="no valid fingerprints produced",
             )
 
+        threshold, source, mean_isim, std_isim = resolve_bitbirch_threshold(cfg, fps)
+        log.info(
+            "BitBIRCH: threshold=%.3f (source=%s, mean_iSIM=%s, std=%s)",
+            threshold,
+            source,
+            f"{mean_isim:.3f}" if mean_isim is not None else "n/a",
+            f"{std_isim:.3f}" if std_isim is not None else "n/a",
+        )
         tree = bblean.BitBirch(
-            threshold=cfg.threshold,
+            threshold=threshold,
             branching_factor=cfg.branching_factor,
             merge_criterion=cfg.merge_criterion,
             tolerance=cfg.tolerance,
@@ -645,8 +689,8 @@ class MoleculeDatasetAnalysis:
         ax.set_xlabel("Molecules per cluster")
         ax.set_ylabel("Cluster count (log)")
         ax.set_title(
-            f"BitBIRCH clusters (n={sizes.size}, threshold={cfg.threshold:.2f},"
-            f" kind={cfg.fingerprint_kind})"
+            f"BitBIRCH clusters (n={sizes.size}, threshold={threshold:.2f}"
+            f" [{source}], kind={cfg.fingerprint_kind})"
         )
         fig.tight_layout()
         self.results.append(
@@ -663,6 +707,10 @@ class MoleculeDatasetAnalysis:
             singleton_clusters=int((sizes == 1).sum()),
             largest_cluster=int(sizes.max()) if sizes.size else 0,
             cluster_size_distribution=DistributionStats.from_array(sizes),
+            threshold_used=threshold,
+            threshold_source=source,
+            mean_isim=mean_isim,
+            std_isim=std_isim,
             umap=umap_summary,
         )
 

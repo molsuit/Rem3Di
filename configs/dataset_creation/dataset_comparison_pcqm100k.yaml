@@ -1,0 +1,60 @@
+# DatasetComparison config using a 100k pcqm subset as the pretraining
+# reference, compared against a handful of representative benchmark zarrs.
+# Built by scripts/dataset_creation/load_pcqm100k_juwels.py.
+#
+# Run with:
+#   uv run python scripts/dataset_creation/run_dataset_comparison.py \
+#       --config configs/dataset_creation/dataset_comparison_pcqm100k.yaml
+
+output_dir: /p/scratch/mace/wedig1/datasets/comparisons/pcqm100k_vs_benchmarks
+
+random_seed: 1234
+rdkit_n_workers: 16
+top_clusters_plotted: 30
+
+datasets:
+  - name: pcqm100k
+    role: pretrain
+    path: /p/scratch/mace/wedig1/datasets/pcqm4m/pcqm100k
+  - name: bace
+    role: eval
+    path: /p/scratch/mace/wedig1/datasets/benchmarks/bace
+  - name: bbbp
+    role: eval
+    path: /p/scratch/mace/wedig1/datasets/benchmarks/bbbp
+  - name: esol
+    role: eval
+    path: /p/scratch/mace/wedig1/datasets/benchmarks/esol
+  - name: freesolv
+    role: eval
+    path: /p/scratch/mace/wedig1/datasets/benchmarks/freesolv
+
+bitbirch:
+  enabled: true
+  fingerprint_kind: ecfp4
+  n_features: 2048
+  threshold: 0.65
+  branching_factor: 50
+  merge_criterion: diameter
+  max_molecules: null
+  umap:
+    enabled: true
+    sample_size: 50000        # cap UMAP input; BitBIRCH still sees the union
+    n_neighbors: 30
+    min_dist: 0.1
+    metric: jaccard
+    top_clusters_colored: 20
+    plot_size: 1600
+
+nn_tanimoto:
+  enabled: true
+  fingerprint_kind: ecfp4
+  n_features: 2048
+  chunk_size: 512
+  backend: cpu
+  histogram_bins: 50
+
+scaffold_overlap:
+  enabled: true
+  include_generic: true
+  n_rdkit_workers: 16

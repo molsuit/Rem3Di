@@ -4,8 +4,12 @@ from pathlib import Path
 from ase import Atoms
 from rdkit import Chem
 
+from threedscriptors.configuration.dataset_config import FilterMoleculeStageConfig
 from threedscriptors.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
+)
+from threedscriptors.data_handling.dataset_creation.generators.utils import (
+    standardize_for_conformer,
 )
 from threedscriptors.data_handling.dataset_creation.loading_batch import (
     InputBatch,
@@ -21,15 +25,25 @@ class SDFMoleculeGenerator(MoleculeGenerator):
     ``FilterAtomsStage``. Total charge / spin multiplicity are still computed
     here because SDF carries them per-atom on the Mol and there's nothing to
     recover them from once we've collapsed to Atoms downstream.
+
+    When ``filter_config`` is provided the generator also routes every SMILES
+    through the same standardize → filter → canonicalize path as the benchmark
+    loaders (``apply_smiles_filter``). The atom-count consistency check inside
+    ``standardize_for_conformer`` guarantees the published SMILES still
+    describes the molecule whose 3D coordinates we emit. Pass ``None`` (the
+    legacy default) to preserve historical behaviour.
     """
 
     def __init__(
         self,
         sdf_file: Path | list[Path],
         loading_batch_size: int = 100,
+        filter_config: FilterMoleculeStageConfig | None = None,
     ):
         self.sdf_file = sdf_file
         self.loading_batch_size = int(loading_batch_size)
+        self.filter_config = filter_config
+        self._seen: set[str] = set()
 
     def __iter__(self):
         if isinstance(self.sdf_file, list):
@@ -49,9 +63,21 @@ class SDFMoleculeGenerator(MoleculeGenerator):
             if mol is None or mol.GetNumConformers() == 0:
                 continue
 
-            smiles = Chem.MolToSmiles(
-                Chem.RemoveAllHs(mol), isomericSmiles=True, canonical=True
-            )
+            if self.filter_config is not None:
+                # Route through the same standardization the benchmark loaders
+                # use (strip salts / neutralize / element-set filter / canonical
+                # isomeric SMILES / dedupe across batches). A None return means
+                # the molecule failed one of those gates -- drop it.
+                implicit_mol = Chem.RemoveAllHs(mol)
+                smiles = standardize_for_conformer(
+                    implicit_mol, self.filter_config, seen=self._seen
+                )
+                if smiles is None:
+                    continue
+            else:
+                smiles = Chem.MolToSmiles(
+                    Chem.RemoveAllHs(mol), isomericSmiles=True, canonical=True
+                )
             conf = mol.GetConformer()
             pos = conf.GetPositions()
             symbols = [a.GetSymbol() for a in mol.GetAtoms()]

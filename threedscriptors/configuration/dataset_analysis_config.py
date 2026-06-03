@@ -30,6 +30,13 @@ class BitBirchConfig(BaseModel):
     fingerprint_kind: Literal["ecfp4", "ecfp6", "rdkit", "maccs"] = "ecfp4"
     n_features: int = 2048
     threshold: float = Field(0.65, ge=0.0, le=1.0)
+    """Hard-coded threshold. Ignored when ``auto_threshold`` is true."""
+    auto_threshold: bool = False
+    """If true, derive the threshold at fit time from the union fingerprints
+    via ``bblean.bitbirch.guess_threshold`` (mean Tanimoto + factor·std).
+    The resolved value is recorded in ``BitBirchSummary``."""
+    auto_threshold_factor: float = Field(3.0, ge=0.0)
+    """``factor`` passed to ``guess_threshold``; bblean's default is 3.0."""
     branching_factor: int = Field(50, gt=1)
     merge_criterion: Literal["radius", "diameter", "tolerance"] = "diameter"
     tolerance: float | None = None

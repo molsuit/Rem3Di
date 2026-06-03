@@ -4,6 +4,7 @@ from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
 from rdkit.Chem.SaltRemover import SaltRemover
 
+from threedscriptors.configuration.dataset_config import FilterMoleculeStageConfig
 from threedscriptors.data_handling.dataset.tasks import ElementSet
 from threedscriptors.data_handling.dataset_creation.build_stats import LoadStats
 from threedscriptors.data_handling.dataset_creation.loading_batch import SmilesData
@@ -172,6 +173,53 @@ def _classify_one_smiles(
         Chem.RemoveAllHs(mol), isomericSmiles=True, canonical=True
     )
     return "kept", iso
+
+
+def standardize_for_conformer(
+    mol_implicit_h: Chem.Mol,
+    cfg: FilterMoleculeStageConfig,
+    *,
+    seen: set[str] | None = None,
+) -> str | None:
+    """Same standardize → filter → canonicalize path as ``apply_smiles_filter``
+    but tailored for 3D-source generators whose conformers must stay aligned
+    with the standardized SMILES.
+
+    Salt-stripping removes atoms; if that would happen we drop the molecule
+    rather than emit a SMILES/conformer mismatch (the original ``rd_mol``
+    still has the salt atoms). Pass ``seen`` to dedupe across calls.
+
+    Returns the canonical isomeric SMILES, or ``None`` to drop the molecule.
+    The input mol must be in implicit-H form (call ``Chem.RemoveAllHs`` first
+    if the source supplied explicit hydrogens).
+    """
+    if mol_implicit_h is None:
+        return None
+    n_heavy = mol_implicit_h.GetNumHeavyAtoms()
+    std = standardize_mol(
+        mol_implicit_h, strip_salts=cfg.strip_salts, neutralize=cfg.neutralize
+    )
+    if std is None or std.GetNumHeavyAtoms() != n_heavy:
+        return None
+    allowed_elements = resolve_element_set(cfg.element_set)
+    if not filter_mol(
+        std,
+        max_atoms=cfg.max_atoms,
+        allowed_elements=allowed_elements,
+        allow_charged=cfg.allow_charged,
+        allow_radicals=cfg.allow_radicals,
+        allow_isotopes=cfg.allow_isotopes,
+        allow_multifragment=cfg.allow_multifragment,
+    ):
+        return None
+    iso = Chem.MolToSmiles(
+        Chem.RemoveAllHs(std), isomericSmiles=True, canonical=True
+    )
+    if cfg.dedupe and seen is not None:
+        if iso in seen:
+            return None
+        seen.add(iso)
+    return iso
 
 
 def apply_smiles_filter(

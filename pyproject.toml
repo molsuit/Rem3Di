@@ -36,6 +36,7 @@ dependencies = [
     # scripts/dataset_download/dump_polaris.py; pandas is already pulled
     # transitively, but the parquet engine is not.
     "pyarrow",
+    "nvmolkit>=0.5.0",
 ]
 
 
@@ -46,12 +47,6 @@ dependencies = [
 # build pipeline reads its parquet dumps via ``PolarisOfflineGenerator``.
 
 [project.optional-dependencies]
-# Descriptor-probe benchmark panel
-# (scripts/evaluation/run_benchmark_eval.py + scripts/dataset_creation/
-# build_benchmark_dataset.py). lightgbm is the LightGBMLearner backend; PyTDC
-# drives the TDC ADMET ingest. The rest are pinned for a reproducible eval
-# install (otherwise only present transitively). ECFP also needs molfeat from
-# the `mols` extra: `uv sync --extra mols --extra eval`.
 eval = [
     "lightgbm>=4.6.0",
     "pandas",

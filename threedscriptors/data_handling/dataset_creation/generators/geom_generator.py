@@ -12,15 +12,19 @@ import numpy as np
 from ase import Atoms
 from rdkit import Chem
 
-from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
+from threedscriptors.configuration.dataset_config import FilterMoleculeStageConfig
 from threedscriptors.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
 )
-from threedscriptors.data_handling.dataset_creation.generators.utils import filter_mol
+from threedscriptors.data_handling.dataset_creation.generators.utils import (
+    filter_mol,
+    standardize_for_conformer,
+)
 from threedscriptors.data_handling.dataset_creation.loading_batch import (
     InputBatch,
     SmilesData,
 )
+from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
 
 MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 
@@ -34,6 +38,7 @@ class GeomGenerator(MoleculeGenerator):
         loading_batch_size: int = 100,
         max_workers: int = os.cpu_count(),
         shuffle_mols: bool = True,
+        filter_config: FilterMoleculeStageConfig | None = None,
     ):
         self.geom_dir = geom_dir
 
@@ -42,6 +47,11 @@ class GeomGenerator(MoleculeGenerator):
         self.loading_batch_size = loading_batch_size
         self.max_workers = max_workers
         self.shuffle_mols = shuffle_mols
+        # When provided, the worker routes every SMILES through
+        # `standardize_for_conformer` so the canonical form matches the
+        # benchmark loaders. No inter-mol dedupe -- GEOM stores one pickle
+        # per unique molecule so duplicates within a build are negligible.
+        self.filter_config = filter_config
 
     def get_all_mol_paths(self):
         drugs_file = self.geom_dir / "summary_drugs.json"
@@ -79,7 +89,7 @@ class GeomGenerator(MoleculeGenerator):
         across the boundary unconditionally — measurable build-time
         regression on the full GEOM-Drugs panel.
         """
-        mol_id, mol_path, boltzmann_weight_threshold, max_atoms = args
+        mol_id, mol_path, boltzmann_weight_threshold, max_atoms, filter_cfg = args
 
         with open(mol_path, "rb") as f:
             dic = pickle.load(f)
@@ -88,10 +98,23 @@ class GeomGenerator(MoleculeGenerator):
         if dic.get("charge", 0) != 0:
             return []
 
-        mol = Chem.AddHs(Chem.MolFromSmiles(dic["smiles"]))
-
-        if not filter_mol(mol, max_atoms=max_atoms):
+        implicit_mol = Chem.MolFromSmiles(dic["smiles"])
+        if implicit_mol is None:
             return []
+
+        if filter_cfg is not None:
+            # Same standardize → filter → canonicalize the benchmark loaders
+            # use. We can't dedupe inside the worker (workers don't share
+            # state across processes); the main thread dedupes after results
+            # come back.
+            can_smiles = standardize_for_conformer(implicit_mol, filter_cfg, seen=None)
+            if can_smiles is None:
+                return []
+        else:
+            mol = Chem.AddHs(implicit_mol)
+            if not filter_mol(mol, max_atoms=max_atoms):
+                return []
+            can_smiles = Chem.CanonSmiles(dic["smiles"])
 
         conformers = [
             c
@@ -100,8 +123,6 @@ class GeomGenerator(MoleculeGenerator):
         ]
         if not conformers:
             return []
-
-        can_smiles = Chem.CanonSmiles(dic["smiles"])
 
         results = []
         for conf_id, conf in enumerate(conformers):
@@ -130,7 +151,13 @@ class GeomGenerator(MoleculeGenerator):
         for mol_path_batched in batched(mol_paths, file_batch_size):
             # Dispatch work across processes
             args = [
-                (i, p, self.boltzmann_weight_threshold, self.max_atoms)
+                (
+                    i,
+                    p,
+                    self.boltzmann_weight_threshold,
+                    self.max_atoms,
+                    self.filter_config,
+                )
                 for i, p in enumerate(mol_path_batched)
             ]
 

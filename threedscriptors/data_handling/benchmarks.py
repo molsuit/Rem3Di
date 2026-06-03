@@ -262,8 +262,8 @@ MOLECULENET_BENCHMARKS: tuple[MoleculeNetBenchmark, ...] = (
 # --- TDC ADMET (22 tasks; PyTDC admet_group official splits) ---------------
 
 TDC_BENCHMARKS: tuple[TdcBenchmark, ...] = (
-    TdcBenchmark(dataset_id="BBB_Martins", tdc_name="BBB_Martins",
-                 tasks=[_clf("BBB")], metric=EvalMetric.auroc),
+    # BBB_Martins (TDC) was dropped: same molecule list as MoleculeNet `bbbp`,
+    # so it was inflating the eval panel without adding chemistry.
     TdcBenchmark(dataset_id="HIA_Hou", tdc_name="HIA_Hou",
                  tasks=[_clf("HIA")], metric=EvalMetric.auroc),
     TdcBenchmark(dataset_id="Pgp_Broccatelli", tdc_name="Pgp_Broccatelli",
@@ -282,12 +282,10 @@ TDC_BENCHMARKS: tuple[TdcBenchmark, ...] = (
                  tasks=[_clf("CYP2D6-I")], metric=EvalMetric.auprc),
     TdcBenchmark(dataset_id="CYP3A4_Veith", tdc_name="CYP3A4_Veith",
                  tasks=[_clf("CYP3A4-I")], metric=EvalMetric.auprc),
-    TdcBenchmark(dataset_id="CYP2C9_Substrate_CarbonMangels",
-                 tdc_name="CYP2C9_Substrate_CarbonMangels",
-                 tasks=[_clf("CYP2C9-S")], metric=EvalMetric.auprc),
-    TdcBenchmark(dataset_id="CYP2D6_Substrate_CarbonMangels",
-                 tdc_name="CYP2D6_Substrate_CarbonMangels",
-                 tasks=[_clf("CYP2D6-S")], metric=EvalMetric.auprc),
+    # CYP{2C9,2D6}_Substrate_CarbonMangels were dropped: the three
+    # CarbonMangels substrate panels share their molecule list (~99% scaffold
+    # overlap, 662-666 mols each) and only differ in which CYP isoform label
+    # they carry. Keeping CYP3A4 alone for the chem-space coverage view.
     TdcBenchmark(dataset_id="CYP3A4_Substrate_CarbonMangels",
                  tdc_name="CYP3A4_Substrate_CarbonMangels",
                  tasks=[_clf("CYP3A4-S")], metric=EvalMetric.auroc),
@@ -297,9 +295,8 @@ TDC_BENCHMARKS: tuple[TdcBenchmark, ...] = (
                  tasks=[_reg("Caco-2")], metric=EvalMetric.mae),
     TdcBenchmark(dataset_id="PPBR_AZ", tdc_name="PPBR_AZ",
                  tasks=[_reg("PPBR")], metric=EvalMetric.mae),
-    TdcBenchmark(dataset_id="Lipophilicity_AstraZeneca",
-                 tdc_name="Lipophilicity_AstraZeneca",
-                 tasks=[_reg("Lipophilicity")], metric=EvalMetric.mae),
+    # Lipophilicity_AstraZeneca (TDC) was dropped: same molecule list as
+    # MoleculeNet `lipophilicity`.
     TdcBenchmark(dataset_id="Solubility_AqSolDB",
                  tdc_name="Solubility_AqSolDB",
                  tasks=[_reg("Solubility")], metric=EvalMetric.mae),

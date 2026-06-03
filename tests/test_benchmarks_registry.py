@@ -20,7 +20,7 @@ from threedscriptors.data_handling.dataset.tasks import TaskType
 
 def test_panel_counts() -> None:
     assert len(MOLECULENET_BENCHMARKS) == 10
-    assert len(TDC_BENCHMARKS) == 22
+    assert len(TDC_BENCHMARKS) == 18
     ids = {b.dataset_id for b in MOLECULENET_BENCHMARKS}
     # Junior's 8 + the two the user asked to add back.
     assert {"hiv", "bace_pic50"}.issubset(ids)
