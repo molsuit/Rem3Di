@@ -1,4 +1,5 @@
 import argparse
+import logging
 from datetime import datetime
 from pathlib import Path
 from time import perf_counter
@@ -28,19 +29,18 @@ from threedscriptors.training.data import (
     DatasetSplitting,
 )
 from threedscriptors.training.data.samplers import lengths_from_ptr
+from threedscriptors.training.linear_probe import LinearProbeMonitor
 from threedscriptors.training.noise_scheduler import ConstantSchedule, NoiseModule
 from threedscriptors.training.pretraining import (
     atom_denoising_loss,
     vicreg_descriptor_loss,
 )
 from threedscriptors.training.telemetry import TrainingTelemetry
-import logging
-
-from torch.profiler import profile, ProfilerActivity
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 import torch._dynamo
+
 torch._logging.set_logs(recompiles=True)
 
 # nvalchemiops applies @torch.compile to prepare_batch_idx_ptr, which is on the
@@ -49,6 +49,7 @@ torch._logging.set_logs(recompiles=True)
 # function does ~µs of cumsum/bincount work — not worth compiling. Override the
 # decorated symbol with a dynamo-disabled version before any model is built.
 import nvalchemiops.torch.neighbors.neighbor_utils as _nv_neighbor_utils
+
 _nv_neighbor_utils.prepare_batch_idx_ptr = torch._dynamo.disable(
     _nv_neighbor_utils.prepare_batch_idx_ptr
 )
@@ -101,6 +102,74 @@ def parse_args():
         help="Optional cap on validation batches per epoch for smoke runs.",
     )
     return parser.parse_args()
+
+def build_probe_monitor(
+    probe_cfg, full_dataset, ds, val_idx, collate_fn, device, logger
+) -> LinearProbeMonitor | None:
+    """Build the frozen linear-probe monitor from a fixed validation subset.
+
+    Returns None (with a warning) when probing is disabled or the dataset lacks
+    the physicochemical ``targets_system`` columns the probe scores against.
+    """
+    if not probe_cfg.enabled:
+        return None
+
+    tasks = full_dataset.config.tasks
+    if tasks is None or not tasks.system_cols or full_dataset.targets_system is None:
+        logger.warning("Probe enabled but dataset has no system targets; skipping.")
+        return None
+
+    if probe_cfg.properties is None:
+        names = [c.name for c in tasks.system_cols]
+    else:
+        names = [p for p in probe_cfg.properties if p in tasks.system_map]
+        missing = [p for p in probe_cfg.properties if p not in tasks.system_map]
+        if missing:
+            logger.warning("Probe properties not in dataset (ignored): %s", missing)
+    if not names:
+        logger.warning("No valid probe properties; skipping probe.")
+        return None
+    cols = [tasks.system_map[n] for n in names]
+
+    val_idx = np.asarray(val_idx, dtype=np.int64)
+    n_probe = min(probe_cfg.n_probe_molecules, val_idx.shape[0])
+    if n_probe < 4:
+        logger.warning("Validation split too small for probe (%d); skipping.", n_probe)
+        return None
+    rng = np.random.default_rng(probe_cfg.seed)
+    probe_idx = np.sort(rng.choice(val_idx, size=n_probe, replace=False))
+
+    targets = np.asarray(full_dataset.targets_system[:], dtype=np.float64)
+    if full_dataset.mask_system is not None:
+        masks = np.asarray(full_dataset.mask_system[:]).astype(bool)
+    else:
+        masks = np.ones_like(targets, dtype=bool)
+    labels = targets[probe_idx][:, cols]
+    label_masks = masks[probe_idx][:, cols]
+
+    probe_samples = [ds[int(i)] for i in probe_idx]
+
+    logger.info(
+        "Linear probe enabled: M=%d cols=%s every_n_steps=%d",
+        n_probe,
+        names,
+        probe_cfg.every_n_steps,
+    )
+    return LinearProbeMonitor(
+        probe_samples=probe_samples,
+        labels=labels,
+        masks=label_masks,
+        property_names=names,
+        collate_fn=collate_fn,
+        device=device,
+        every_n_steps=probe_cfg.every_n_steps,
+        ridge_alpha=probe_cfg.ridge_alpha,
+        val_fraction=probe_cfg.val_fraction,
+        batch_size=min(256, n_probe),
+        report_count_accuracy=probe_cfg.report_count_accuracy,
+        seed=probe_cfg.seed,
+    )
+
 
 def setup_logging(filename, level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger("remedi")
@@ -192,6 +261,16 @@ def main():
 
     logger.info("Data Loaders Prepared")
 
+    probe_monitor = build_probe_monitor(
+        training_config.probe,
+        full_dataset,
+        ds,
+        val_idx,
+        yield_molecules_collate_fn,
+        device,
+        logger,
+    )
+
     bundle = architecture_config.build()
     preprocessor = bundle.preprocessor
     encoder = bundle.encoder
@@ -233,7 +312,7 @@ def main():
         out_dir=training_data_dir,
         config = {"train_config": training_config.model_dump(), "architecture_config": architecture_config.model_dump()}
     ) as telemetry:
-        
+
         encoder.to(device, dtype = torch.float32)
         decoder.to(device, dtype = torch.float32)
         preprocessor.to(device)
@@ -244,7 +323,7 @@ def main():
 
         print("Training Start")
 
-    
+
         vicreg_cfg = training_config.vicreg
 
         # Rolling throughput counters. Logged every WINDOW_STEPS batches so we
@@ -378,6 +457,18 @@ def main():
                     window_var = torch.zeros((), device=device)
                     window_cov = torch.zeros((), device=device)
                     window_vc_steps = 0
+
+                if probe_monitor is not None:
+                    probe_metrics = probe_monitor.maybe_run(
+                        global_step, preprocessor, encoder
+                    )
+                    if probe_metrics:
+                        telemetry.log_probe(global_step, probe_metrics)
+                        logger.info(
+                            "probe @ step %d: %s",
+                            global_step,
+                            {k: round(v, 4) for k, v in probe_metrics.items()},
+                        )
 
             avg_train_loss = (running / (
                 (batch_index + 1)

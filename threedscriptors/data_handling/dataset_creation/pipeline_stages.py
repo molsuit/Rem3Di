@@ -1,6 +1,7 @@
 import os
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import partial
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -15,7 +16,9 @@ from threedscriptors.configuration.dataset_config import (
     DatasetCreationConfig,
     FilterAtomsStageConfig,
     FilterMoleculeStageConfig,
+    PhysicochemicalDescriptorStageConfig,
 )
+from threedscriptors.data_handling import physchem
 from threedscriptors.data_handling.dataset_creation.build_stats import LoadStats
 from threedscriptors.data_handling.dataset_creation.conformer_timing import (
     ConformerTimingRecord,
@@ -130,6 +133,103 @@ def _stack_atoms(
         torch.tensor(atom_counts, dtype=torch.long),
     )
     return positions, atomic_numbers, system_idx
+
+
+def _physchem_worker(
+    names: list[str], item: tuple[str | None, np.ndarray, np.ndarray]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Top-level worker (picklable): one structure -> (values, finite-mask)."""
+    iso_smiles, atomic_numbers, positions = item
+    return physchem.compute_row(names, iso_smiles, atomic_numbers, positions)
+
+
+class PhysicochemicalDescriptorStage(PipelineStage):
+    """Per-structure cheap RDKit descriptors written as ``targets_system`` columns.
+
+    Provenance-independent: place it after whatever populates
+    ``input_batch.molecules`` (after ``FilterAtomsStage`` for loaded datasets,
+    after ``ConformerGenerationStage`` for generated ones) and before
+    ``CopyDataStage``. 2D descriptors are computed from ``input_batch.smiles``;
+    3D descriptors (SASA) from the loaded geometry. Missing SMILES masks the 2D
+    columns; geometry-perception failure masks the 3D columns. Column order
+    follows ``config.descriptor_names`` and must match ``config.to_task_set()``.
+    """
+
+    def __init__(
+        self,
+        config: PhysicochemicalDescriptorStageConfig,
+        num_workers: int | None = None,
+    ):
+        self.config = config
+        self.names = list(config.descriptor_names)
+        # Validate names up front (raises KeyError on unknown descriptor).
+        physchem.split_names(self.names)
+        self.num_workers = os.cpu_count() if num_workers is None else int(num_workers)
+
+    def __call__(self, input_batch: InputBatch, data_batch):
+        molecules = input_batch.molecules
+        if molecules is None:
+            raise ValueError(
+                "PhysicochemicalDescriptorStage requires populated "
+                "input_batch.molecules; place it after the stage that produces "
+                "them (FilterAtomsStage or ConformerGenerationStage)."
+            )
+
+        n = len(molecules)
+        smiles = input_batch.smiles
+        items = [
+            (
+                smiles[i].isomeric_smiles if smiles is not None else None,
+                molecules[i].get_atomic_numbers(),
+                molecules[i].get_positions(),
+            )
+            for i in range(n)
+        ]
+
+        worker = partial(_physchem_worker, self.names)
+        if self.num_workers and self.num_workers > 1 and n > 1:
+            chunksize = max(1, n // (self.num_workers * 4))
+            with ProcessPoolExecutor(max_workers=self.num_workers) as ex:
+                rows = list(ex.map(worker, items, chunksize=chunksize))
+        else:
+            rows = [worker(it) for it in items]
+
+        n_cols = len(self.names)
+        targets = np.zeros((n, n_cols), dtype=np.float32)
+        masks = np.zeros((n, n_cols), dtype=np.uint8)
+        for i, (vals, mask) in enumerate(rows):
+            masks[i] = mask
+            # Keep only valid entries; zero masked ones so a forgotten mask never
+            # propagates NaN downstream (the mask stays authoritative).
+            targets[i] = np.where(mask.astype(bool), vals, 0.0).astype(np.float32)
+
+        input_batch.regression_data = self._merge_targets(
+            input_batch.regression_data, targets, masks
+        )
+        return input_batch, data_batch
+
+    @staticmethod
+    def _merge_targets(
+        rd: RegressionData | None, targets: np.ndarray, masks: np.ndarray
+    ) -> RegressionData:
+        """Set the physchem columns, appending if prior system targets exist."""
+        if rd is None:
+            return RegressionData(targets_system=targets, mask_system=masks)
+        if rd.targets_system is None:
+            return RegressionData(
+                targets_system=targets,
+                mask_system=masks,
+                targets_atom=rd.targets_atom,
+                mask_atom=rd.mask_atom,
+                split=rd.split,
+            )
+        return RegressionData(
+            targets_system=np.concatenate([rd.targets_system, targets], axis=1),
+            mask_system=np.concatenate([rd.mask_system, masks], axis=1),
+            targets_atom=rd.targets_atom,
+            mask_atom=rd.mask_atom,
+            split=rd.split,
+        )
 
 
 class CopyDataStage(PipelineStage):

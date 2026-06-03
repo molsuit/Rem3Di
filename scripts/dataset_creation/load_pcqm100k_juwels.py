@@ -22,6 +22,7 @@ from threedscriptors.configuration.dataset_config import (
     DatasetCreationConfig,
     FilterAtomsStageConfig,
     FilterMoleculeStageConfig,
+    PhysicochemicalDescriptorStageConfig,
 )
 from threedscriptors.data_handling.dataset.tasks import ElementSet
 from threedscriptors.data_handling.dataset_creation.generators.sdf_generator import (
@@ -33,6 +34,7 @@ from threedscriptors.data_handling.dataset_creation.orchestrator import (
 from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
     FilterAtomsStage,
+    PhysicochemicalDescriptorStage,
 )
 
 sdf_file = Path(
@@ -90,16 +92,22 @@ def main() -> None:
     filter_stage = FilterAtomsStage(
         config=FilterAtomsStageConfig(element_set=ElementSet.mace_off)
     )
+    # Cheap RDKit physicochemical descriptors -> per-structure targets_system
+    # columns, used as linear-probe labels during pretraining. Runs after the
+    # atoms filter (so it sees the loaded 3D structures + SMILES) and before the
+    # copy stage.
+    physchem_cfg = PhysicochemicalDescriptorStageConfig()
+    physchem_stage = PhysicochemicalDescriptorStage(config=physchem_cfg)
     copy_data = CopyDataStage(dtype=torch.float64)
 
     creation_config = DatasetCreationConfig(
         path=output_path,
         N_structures=args.n_structures,
     )
-    dataset_config = DatasetConfig()
+    dataset_config = DatasetConfig(tasks=physchem_cfg.to_task_set())
 
     orchestrator = DatasetConstructionOrchestrator(
-        pipeline=[filter_stage, copy_data],
+        pipeline=[filter_stage, physchem_stage, copy_data],
         batch_generator=mol_generator,
         construction_config=creation_config,
         dataset_config=dataset_config,

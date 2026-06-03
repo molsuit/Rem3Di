@@ -1,0 +1,71 @@
+decoder_config:
+  N_layers: 4
+  attention_layer_config:
+    dim_feedforward: 1024
+    dropout: 0.3
+    embedding_dim: 256
+    num_heads: 8
+  d_descriptor: 32
+  d_geo: 16
+  d_pair: 64
+embedding_preprocess_config:
+  chiral_embedding_dimension: 0
+  equivariant_rms_normalization: true
+  gated: true
+  input_dimension: 4096
+  input_equivariant_dimension: 3072
+  input_invariant_dimension: 1024
+  input_irreps: 512x0e+512x1o+512x0e+512x1o
+  invariant_irreps: 512x0e+512x0e
+  invariant_normalization_config:
+    kind: precomputed_normalization
+  invariant_projection_config:
+    bias: false
+    kind: linear
+    output_dim: 256
+  mace_layer_indices:
+  - 1
+  mace_per_layer_irreps:
+  - 512x0e+512x1o
+  - 512x0e+512x1o
+  output_irreps: 256x0e
+  output_irreps_dim: 256
+  pseudoscalar_dimension: 0
+  pseudoscalar_irrep: ''
+  pseudoscalars: false
+encoder_config:
+  N_layers: 4
+  attention_layer_config:
+    dim_feedforward: 1024
+    dropout: 0.3
+    embedding_dim: 256
+    num_heads: 8
+  d_geo: 16
+  d_pair: 64
+global_aggregator_config:
+  aggregator_type_config:
+    aggregator_type: attention
+    attn_dropout: 0.3
+    head_dim: null
+    num_heads: 8
+  descriptor_flat_dim: 32
+  descriptor_seq_len: 1
+  global_molecular_descriptor_dropout: 0.0
+  input_dim: 256
+  output_dim: 32
+kind: encoder_decoder
+mace_config:
+  compute_forces: false
+  compute_stress: false
+  device: cuda
+  dtype: float32
+  enable_cueq: true
+  model_path: 
+    /p/project1/mace/wedig1/3DMolecularDescriptors/MACE-POLAR-1-M.model
+positional_encoding_config:
+  N_radial_basis_functions: 16
+  basis_function_config:
+    eps: 1e-08
+    kind: bessel
+  d_projection: 64
+  distance_cutoff: 32.0

@@ -49,6 +49,28 @@ class VICRegConfig(BaseModel):
     target_std: float = 1.0
 
 
+class ProbeConfig(BaseModel):
+    """Frozen diagnostic linear probes on the molecular descriptor.
+
+    Every ``every_n_steps`` training steps, a fixed set of ``n_probe_molecules``
+    held-out validation molecules is re-embedded (eval / no_grad) and a
+    closed-form ridge is fit on a fixed fit/score split to measure how
+    linearly-decodable the physicochemical ``targets_system`` columns are. The
+    probe never backprops into the encoder.
+    """
+
+    enabled: bool = False
+    every_n_steps: int = Field(default=500, gt=0)
+    n_probe_molecules: int = Field(default=2048, gt=0)
+    ridge_alpha: float = Field(default=1.0, gt=0)
+    val_fraction: float = Field(default=0.3, gt=0.0, lt=1.0)
+    # None = probe every system target column; else restrict to these names.
+    properties: list[str] | None = None
+    # Also log a rounded exact-match accuracy for integer-valued columns.
+    report_count_accuracy: bool = False
+    seed: int = 0
+
+
 class TrainingConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -69,3 +91,4 @@ class TrainingConfig(BaseModel):
     wandb_active: bool = False
     vicreg: VICRegConfig = VICRegConfig()
     compile: CompileConfig = CompileConfig()
+    probe: ProbeConfig = ProbeConfig()
