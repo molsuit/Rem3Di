@@ -63,6 +63,11 @@ class EvalConfig(BaseModel):
     descriptor_cache_dir: Path | None = None
     # Forwarded to learner.fit_predict_* methods that accept a seed.
     seed: int = 0
+    # When True (default) a benchmark that raises is logged + recorded in
+    # ``failures.yaml`` and the panel continues; ``results.csv`` is rewritten
+    # after every dataset so a crash/timeout keeps everything completed so far.
+    # Set False to fail fast on the first error.
+    keep_going: bool = True
 
 
 class BenchmarkResultRow(BaseModel):
@@ -70,11 +75,22 @@ class BenchmarkResultRow(BaseModel):
     source: Literal["moleculenet", "tdc", "polaris"]
     descriptor_name: str
     learner_kind: str
+    # Which target column this row scores. Set per-column for regression
+    # benchmarks (single- or multi-target); ``None`` for the macro-averaged
+    # multilabel path.
+    target_col: str | None
     metric_name: str
     metric_value: float
     n_train: int
     n_val: int
     n_test: int
+
+
+class BenchmarkFailure(BaseModel):
+    """One benchmark that raised during the panel (recorded, not fatal)."""
+
+    dataset_id: str
+    error: str
 
 
 def _descriptor_name(cfg: EcfpConfig | RemediConfig) -> str:
@@ -109,38 +125,38 @@ def _task_kind(
     cols = dataset.config.tasks.system_cols
     types = {c.task_type for c in cols}
     if types == {TaskType.regression}:
-        if len(cols) != 1:
-            raise ValueError(
-                f"Multi-column regression benchmark not supported: "
-                f"{[c.name for c in cols]}"
-            )
+        # Multi-target regression (e.g. polaris_adme_fang) is scored per column
+        # downstream — one independent single-target fit per target.
         return "regression"
     if types == {TaskType.classification}:
         return "binary" if len(cols) == 1 else "multilabel"
     raise ValueError(f"Mixed task types in one benchmark: {types}")
 
 
-def _dispatch_learner(
+def _fit_predict_single_column(
     learner: Learner,
-    kind: Literal["regression", "binary", "multilabel"],
+    is_regression: bool,
     splits: tuple[np.ndarray, np.ndarray, np.ndarray],
     X: np.ndarray,
-    Y: np.ndarray,
+    y: np.ndarray,
     seed: int,
 ) -> np.ndarray:
-    """Call the right ``fit_predict_*`` and return predictions on the test fold."""
+    """Fit one single-target column, dropping NaN-label rows from train/val.
+
+    Sparse multi-target regression (e.g. polaris_adme_fang) leaves NaN where a
+    molecule has no measurement for that target; Ridge / the MLP can't fit on
+    NaN labels, so the missing rows are filtered out of the fit folds. Test
+    predictions are still produced over the full test fold — ``_score`` masks
+    the NaN test rows when scoring.
+    """
     tr, va, te = splits
-    Xtr, Xv, Xte = X[tr], X[va], X[te]
-    Ytr, Yv = Y[tr], Y[va]
-    if kind == "regression":
-        return learner.fit_predict_regression(
-            Xtr, Ytr[:, 0], Xv, Yv[:, 0], Xte, seed
-        )
-    if kind == "binary":
-        return learner.fit_predict_binary(
-            Xtr, Ytr[:, 0], Xv, Yv[:, 0], Xte, seed
-        )
-    return learner.fit_predict_multilabel(Xtr, Ytr, Xv, Yv, Xte, seed)
+    ytr, yva = y[tr], y[va]
+    tr_keep, va_keep = ~np.isnan(ytr), ~np.isnan(yva)
+    Xtr, Xva, Xte = X[tr][tr_keep], X[va][va_keep], X[te]
+    ytr, yva = ytr[tr_keep], yva[va_keep]
+    if is_regression:
+        return learner.fit_predict_regression(Xtr, ytr, Xva, yva, Xte, seed)
+    return learner.fit_predict_binary(Xtr, ytr, Xva, yva, Xte, seed)
 
 
 def _score(
@@ -175,6 +191,54 @@ def _split_masks(
     )
 
 
+def _evaluate_cell(
+    learner_cfg: LearnerConfig,
+    kind: Literal["regression", "binary", "multilabel"],
+    splits: tuple[np.ndarray, np.ndarray, np.ndarray],
+    X: np.ndarray,
+    Y: np.ndarray,
+    col_names: list[str],
+    manifest: BenchmarkManifest,
+    descriptor_name: str,
+    seed: int,
+) -> list[BenchmarkResultRow]:
+    """Evaluate one (descriptor x learner) cell, one row per scored target.
+
+    Regression yields one row per target column (a fresh learner per column);
+    binary and multilabel yield a single row.
+    """
+    tr, va, te = splits
+    counts = dict(n_train=int(tr.sum()), n_val=int(va.sum()), n_test=int(te.sum()))
+
+    def make_row(metric_value: float, target_col: str | None) -> BenchmarkResultRow:
+        return BenchmarkResultRow(
+            dataset_id=manifest.dataset_id,
+            source=manifest.source,
+            descriptor_name=descriptor_name,
+            learner_kind=_learner_kind(learner_cfg),
+            target_col=target_col,
+            metric_name=str(manifest.metric.value),
+            metric_value=float(metric_value),
+            **counts,
+        )
+
+    rows: list[BenchmarkResultRow] = []
+    if kind == "multilabel":
+        preds = learner_cfg.build().fit_predict_multilabel(
+            X[tr], Y[tr], X[va], Y[va], X[te], seed
+        )
+        rows.append(make_row(_score(Y[te], preds, manifest.metric), None))
+        return rows
+
+    # regression / binary: score each target column independently.
+    for col, name in enumerate(col_names):
+        preds = _fit_predict_single_column(
+            learner_cfg.build(), kind == "regression", splits, X, Y[:, col], seed
+        )
+        rows.append(make_row(_score(Y[te, col], preds, manifest.metric), name))
+    return rows
+
+
 def evaluate_zarr(
     zarr_path: Path,
     manifest: BenchmarkManifest,
@@ -184,9 +248,10 @@ def evaluate_zarr(
 ) -> list[BenchmarkResultRow]:
     dataset = MoleculeDataset.open_existing_dataset_from_dir(zarr_path)
     kind = _task_kind(dataset)
+    assert dataset.config.tasks is not None  # narrowed by _task_kind
+    col_names = [c.name for c in dataset.config.tasks.system_cols]
     Y = _build_targets_with_nan(dataset)
-    tr_mask, va_mask, te_mask = _split_masks(dataset, split_override)
-    Y_test_natural = Y[te_mask][:, 0] if kind != "multilabel" else Y[te_mask]
+    splits = _split_masks(dataset, split_override)
     cache_dir = cfg.descriptor_cache_dir or (cfg.output_dir / "descriptor_cache")
 
     rows: list[BenchmarkResultRow] = []
@@ -196,45 +261,60 @@ def evaluate_zarr(
         )
         X = compute_and_cache(desc_cfg, dataset, cache_dir, manifest.dataset_id)
         for learner_cfg in cfg.learners:
-            learner = learner_cfg.build()
-            preds = _dispatch_learner(
-                learner, kind, (tr_mask, va_mask, te_mask), X, Y, cfg.seed
+            cell_rows = _evaluate_cell(
+                learner_cfg, kind, splits, X, Y, col_names, manifest,
+                desc_cfg.name, cfg.seed,
             )
-            metric_value = _score(Y_test_natural, preds, manifest.metric)
-            row = BenchmarkResultRow(
-                dataset_id=manifest.dataset_id,
-                source=manifest.source,
-                descriptor_name=desc_cfg.name,
-                learner_kind=_learner_kind(learner_cfg),
-                metric_name=str(manifest.metric.value),
-                metric_value=float(metric_value),
-                n_train=int(tr_mask.sum()),
-                n_val=int(va_mask.sum()),
-                n_test=int(te_mask.sum()),
-            )
-            logger.info(
-                "%s | %s | %s: %s=%.4f",
-                manifest.dataset_id,
-                desc_cfg.name,
-                _learner_kind(learner_cfg),
-                row.metric_name,
-                row.metric_value,
-            )
-            rows.append(row)
+            for row in cell_rows:
+                logger.info(
+                    "%s | %s | %s | %s: %s=%.4f",
+                    manifest.dataset_id,
+                    desc_cfg.name,
+                    _learner_kind(learner_cfg),
+                    row.target_col,
+                    row.metric_name,
+                    row.metric_value,
+                )
+            rows.extend(cell_rows)
     return rows
 
 
 def run_eval(cfg: EvalConfig) -> list[BenchmarkResultRow]:
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
     rows: list[BenchmarkResultRow] = []
+    failures: list[BenchmarkFailure] = []
     for zarr_path, manifest in discover_benchmark_zarrs(cfg.eval_root):
         logger.info("--- %s @ %s ---", manifest.dataset_id, zarr_path)
-        rows.extend(evaluate_zarr(zarr_path, manifest, cfg))
-    write_results(rows, cfg.output_dir)
+        try:
+            rows.extend(evaluate_zarr(zarr_path, manifest, cfg))
+        except Exception as exc:  # one bad benchmark must not sink the panel
+            logger.exception(
+                "benchmark %s failed; recording and continuing", manifest.dataset_id
+            )
+            failures.append(
+                BenchmarkFailure(dataset_id=manifest.dataset_id, error=repr(exc))
+            )
+            if not cfg.keep_going:
+                write_results(rows, cfg.output_dir, failures)
+                raise
+        # Persist after every dataset so a later crash / wall-clock timeout
+        # keeps everything completed so far (descriptors stay cached, so a
+        # resubmit only redoes the cheap probe fits for what's missing).
+        write_results(rows, cfg.output_dir, failures)
+    if failures:
+        logger.warning(
+            "benchmark panel finished with %d failed dataset(s): %s",
+            len(failures),
+            ", ".join(f.dataset_id for f in failures),
+        )
     return rows
 
 
-def write_results(rows: list[BenchmarkResultRow], output_dir: Path) -> None:
+def write_results(
+    rows: list[BenchmarkResultRow],
+    output_dir: Path,
+    failures: list[BenchmarkFailure] | None = None,
+) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame([r.model_dump() for r in rows])
     df.to_csv(output_dir / "results.csv", index=False)
@@ -243,9 +323,19 @@ def write_results(rows: list[BenchmarkResultRow], output_dir: Path) -> None:
         output_dir / "results.yaml",
         _ResultBundle(rows=rows),
     )
+    if failures:
+        pyd_yaml.to_yaml_file(
+            output_dir / "failures.yaml", _FailureBundle(failures=failures)
+        )
 
 
 class _ResultBundle(BaseModel):
     """Internal wrapper so pydantic_yaml can dump a list[BenchmarkResultRow]."""
 
     rows: list[BenchmarkResultRow]
+
+
+class _FailureBundle(BaseModel):
+    """Internal wrapper so pydantic_yaml can dump a list[BenchmarkFailure]."""
+
+    failures: list[BenchmarkFailure]

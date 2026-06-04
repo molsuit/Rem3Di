@@ -16,7 +16,6 @@ from ase.data import chemical_symbols
 from ase.visualize.plot import plot_atoms
 from pydantic import BaseModel, ConfigDict, Field
 from rdkit import Chem, RDLogger
-from rdkit.Chem import Crippen, Descriptors
 from rdkit.Chem import rdMolDescriptors as rdMD
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
@@ -25,6 +24,7 @@ from threedscriptors.configuration.dataset_analysis_config import (
     MoleculeDatasetAnalysisConfig,
 )
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+from threedscriptors.data_handling.physchem import DESCRIPTORS_2D
 from threedscriptors.evaluation.results import (
     EvalResult,
     FigureResult,
@@ -100,7 +100,12 @@ class _MolDescriptors(BaseModel):
 
 
 def _compute_descriptors(smiles: str) -> _MolDescriptors:
-    """Single-SMILES descriptor pass. Top-level so multiprocessing can pickle it."""
+    """Single-SMILES descriptor pass. Top-level so multiprocessing can pickle it.
+
+    The numeric fields come from the shared :data:`physchem.DESCRIPTORS_2D`
+    registry (one source of truth with the dataset-creation probe stage); the
+    scaffold / stereo fields stay analysis-only.
+    """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return _MolDescriptors(valid=False)
@@ -109,16 +114,17 @@ def _compute_descriptors(smiles: str) -> _MolDescriptors:
         scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
     except Exception:
         scaffold = ""
+    d = DESCRIPTORS_2D
     return _MolDescriptors(
-        mw=float(Descriptors.MolWt(mol)),
-        logp=float(Crippen.MolLogP(mol)),
-        tpsa=float(rdMD.CalcTPSA(mol)),
-        hbd=int(rdMD.CalcNumHBD(mol)),
-        hba=int(rdMD.CalcNumHBA(mol)),
-        rot_bonds=int(rdMD.CalcNumRotatableBonds(mol)),
-        n_rings=int(rdMD.CalcNumRings(mol)),
-        n_aromatic_rings=int(rdMD.CalcNumAromaticRings(mol)),
-        n_heavy_atoms=int(mol.GetNumHeavyAtoms()),
+        mw=d["mw"](mol),
+        logp=d["logp"](mol),
+        tpsa=d["tpsa"](mol),
+        hbd=int(d["hbd"](mol)),
+        hba=int(d["hba"](mol)),
+        rot_bonds=int(d["rot_bonds"](mol)),
+        n_rings=int(d["n_rings"](mol)),
+        n_aromatic_rings=int(d["n_aromatic_rings"](mol)),
+        n_heavy_atoms=int(d["n_heavy_atoms"](mol)),
         has_stereo=bool(rdMD.CalcNumAtomStereoCenters(mol) > 0),
         scaffold=scaffold,
         valid=True,

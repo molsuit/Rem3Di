@@ -1,80 +1,50 @@
+"""Run a unified evaluation manifest (model x tasks) fault-tolerantly.
+
+One manifest describes one model's full evaluation — a benchmark panel, a
+retrieval panel, etc. Tasks share embeddings / indices via the run's
+:class:`ResourceCache`; artifacts are written incrementally and a failing task
+is recorded in ``status.yaml`` rather than sinking the run.
+
+This is the single eval entrypoint — it superseded the former separate
+benchmark / retrieval runner scripts.
+
+Usage::
+
+    uv run python scripts/evaluation/run_eval.py --config <manifest>.yaml
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
 from pathlib import Path
 
-import torch
+import pydantic_yaml as pyd_yaml
 
-from threedscriptors.configuration.architecture_config import (
-    EncoderOnlyArchitectureConfig,
-)
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.training_dataset import (
-    TrainingMoleculeDataset,
-    atoms_getitem,
-)
-from threedscriptors.evaluation.descriptor_analysis import (
-    CapacityDiagnosticTask,
-    ChemiscopeProjectionTask,
-    DescriptorAnalysisRunner,
-    DescriptorDistributionTask,
-    DescriptorNormalizationConfig,
-    NumAtomsColor,
-    ProjectionConfig,
-    ProjectionPlotTask,
-)
-from threedscriptors.evaluation.evaluation_utils import (
-    evaluate_molecular_descriptor_on_dataset,
-)
+from threedscriptors.evaluation.framework import EvalManifest, run_manifest
 
-DATASET_DIR = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/geom_drugs"
-)
-MODEL_DIR = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/geom_drugs_350k/1-2025_10_12_18_02_05-Train"
-)
-OUTPUT_DIR = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/eval_runs/geom_drugs_pretraining/geom_drugs"
-)
-MODEL_NAME = "GEOM_DRUGS"
-
-
-def load_model(model_dir: Path):
-    model = EncoderOnlyArchitectureConfig.from_directory(str(model_dir)).build()
-    model.encoder.load_state_dict(torch.load(model_dir / "encoder.pth"))
-    model.preprocessor.atomic_preprocessor.load_state_dict(
-        torch.load(model_dir / "atomic_preprocessor.pth")
-    )
-    model.preprocessor.geometric_preprocessor.load_state_dict(
-        torch.load(model_dir / "geometric_preprocessor.pth")
-    )
-    return model
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    model = load_model(MODEL_DIR)
-
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(DATASET_DIR)
-    train_dataset = TrainingMoleculeDataset.from_molecule_dataset(
-        dataset, get_item=atoms_getitem
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, required=True)
+    args = parser.parse_args()
 
-    descriptors = evaluate_molecular_descriptor_on_dataset(model, train_dataset)
-
-    runner = DescriptorAnalysisRunner(
-        file_prefix=MODEL_NAME,
-        normalization=DescriptorNormalizationConfig(z_score=True, l2_normalize=True),
-        projection=ProjectionConfig(method="umap"),
-        tasks=[
-            CapacityDiagnosticTask(),
-            DescriptorDistributionTask(),
-            ProjectionPlotTask(
-                file_name="umap_num_atoms.png",
-                color_provider=NumAtomsColor(),
-            ),
-            ChemiscopeProjectionTask(file_name="umap.json.gz"),
-        ],
+    manifest = pyd_yaml.parse_yaml_file_as(EvalManifest, args.config)
+    report = run_manifest(manifest)
+    logger.info(
+        "eval done: %d/%d task(s) ok -> %s",
+        report.n_tasks - report.n_failed,
+        report.n_tasks,
+        manifest.output_root,
     )
-
-    results = runner.run(descriptors=descriptors, dataset=dataset)
-    runner.serialize(results, OUTPUT_DIR)
+    if report.n_failed:
+        raise SystemExit(f"{report.n_failed} task(s) failed; see status.yaml")
 
 
 if __name__ == "__main__":

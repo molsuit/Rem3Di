@@ -3,7 +3,14 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from threedscriptors.data_handling.dataset.tasks import ElementSet, TaskSet
+from threedscriptors.data_handling.dataset.tasks import (
+    ElementSet,
+    TaskConfig,
+    TaskScope,
+    TaskSet,
+    TaskType,
+)
+from threedscriptors.data_handling.physchem import DEFAULT_DESCRIPTORS
 
 
 class FilterMoleculeStageConfig(BaseModel):
@@ -57,6 +64,36 @@ FilterStageConfig = Annotated[
     FilterMoleculeStageConfig | FilterAtomsStageConfig,
     Field(discriminator="kind"),
 ]
+
+
+class PhysicochemicalDescriptorStageConfig(BaseModel):
+    """Compute cheap RDKit physicochemical descriptors as per-structure targets.
+
+    Each descriptor becomes one ``targets_system`` column (declared via
+    :meth:`to_task_set`); they serve as linear-probe labels during pretraining.
+    2D descriptors come from the SMILES, 3D ones (SASA) from the conformer — see
+    ``threedscriptors.data_handling.physchem``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["physchem_descriptors"] = "physchem_descriptors"
+    descriptor_names: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_DESCRIPTORS)
+    )
+
+    def to_task_set(self) -> TaskSet:
+        """Build a system-scope regression TaskSet, one column per descriptor."""
+        return TaskSet.from_list(
+            [
+                TaskConfig(
+                    name=name,
+                    task_type=TaskType.regression,
+                    scope=TaskScope.system,
+                )
+                for name in self.descriptor_names
+            ]
+        )
 
 
 class DatasetCreationConfig(BaseModel):

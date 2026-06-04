@@ -17,6 +17,9 @@ class TrainingTelemetry:
         self.out_dir = out_dir
 
         self.loss_data = []
+        # Mid-epoch linear-probe trajectory, dumped to probe_history.yaml so the
+        # per-property R²/MAE survive as a parseable artifact (not just wandb).
+        self.probe_data: list[dict] = []
 
         self.best_validation_loss = math.inf
         self.best_epoch = True
@@ -40,6 +43,7 @@ class TrainingTelemetry:
 
     def finish(self):
         self.dump_loss_history()
+        self.dump_probe_history()
 
         # plot all the plots
 
@@ -140,12 +144,30 @@ class TrainingTelemetry:
         if self.wandb_active:
             wandb.log(data=metrics)
 
+    def log_probe(self, global_step: int, metrics: dict[str, float]) -> None:
+        """Record one linear-probe point: persisted to disk AND logged to wandb.
+
+        Unlike ``log_metrics`` (wandb-only throughput flush), the probe
+        trajectory is accumulated into ``probe_data`` so it is dumped to
+        ``probe_history.yaml`` as a first-class, parseable artifact.
+        """
+        record = {"global_step": int(global_step), **metrics}
+        self.probe_data.append(record)
+        if self.wandb_active:
+            wandb.log(data=record)
+
     def dump_loss_history(self):
         with open(
             f"{self.out_dir}/training_losses.yaml",
             "x",
         ) as f:
             yaml.safe_dump(self.loss_data, f)
+
+    def dump_probe_history(self):
+        if not self.probe_data:
+            return
+        with open(f"{self.out_dir}/probe_history.yaml", "x") as f:
+            yaml.safe_dump(self.probe_data, f)
 
     def get_track_grad_norm_fn(self):
         def capture_grad(grad):  # grad has same shape as M
