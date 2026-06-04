@@ -1,23 +1,16 @@
-"""Pydantic configuration for the vector-retrieval eval.
+"""Pydantic configuration for the vector-retrieval tasks.
 
-One yaml describes: the dataset, the trained model that produces the
-embeddings, the nearest-neighbor index, and a list of retrieval tasks to run
-against the resulting :class:`VectorStore`. Tasks are an
-``Annotated[..., discriminator="task_kind"]` union so the yaml stays declarative.
+Defines the retrieval sub-task configs and their
+``Annotated[..., discriminator="task_kind"]`` union, consumed by the framework
+retrieval task (:mod:`threedscriptors.evaluation.framework.tasks.retrieval`),
+which supplies the dataset / model / index at the manifest level.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from threedscriptors.evaluation.benchmark.descriptors import RemediConfig
-from threedscriptors.evaluation.retrieval.vector_store import (
-    RetrievalIndexConfig,
-    SklearnIndexConfig,
-)
+from pydantic import BaseModel, Field
 
 
 class TanimotoSimilarityTaskConfig(BaseModel):
@@ -68,21 +61,3 @@ RetrievalTaskConfig = Annotated[
     TanimotoSimilarityTaskConfig | NearestMoleculeTaskConfig,
     Field(discriminator="task_kind"),
 ]
-
-
-class RetrievalEvalConfig(BaseModel):
-    """Full retrieval-eval panel: dataset x model x index x tasks."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    dataset_path: Path
-    # Identifier used for the embedding cache filename.
-    dataset_id: str
-    model: RemediConfig
-    output_dir: Path
-    index: RetrievalIndexConfig = Field(default_factory=SklearnIndexConfig)
-    # Defaults to ``output_dir / "descriptor_cache"`` when omitted.
-    descriptor_cache_dir: Path | None = None
-    # Optional cap on store size (truncates after embedding) for quick dev runs.
-    max_structures: int | None = None
-    tasks: list[RetrievalTaskConfig] = Field(default_factory=list, min_length=1)
