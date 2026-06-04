@@ -200,3 +200,41 @@ def test_multilabel_runs_per_column() -> None:
     for j in range(2):
         accuracy = ((pred[:, j] > 0.5).astype(int) == Y_test[:, j]).mean()
         assert accuracy > 0.7
+
+
+def test_null_learner_predicts_train_constant_and_parses():
+    from threedscriptors.evaluation.benchmark.learners import (
+        NullLearner,
+        NullLearnerConfig,
+    )
+
+    learner = NullLearner()
+    # regression: constant train mean (NaN labels ignored)
+    y_train = np.array([1.0, 3.0, np.nan, 5.0])
+    pred = learner.fit_predict_regression(
+        np.zeros((4, 3)), y_train, np.zeros((1, 3)), np.array([0.0]), np.zeros((2, 3))
+    )
+    assert pred.shape == (2,)
+    assert np.allclose(pred, 3.0)  # mean of [1,3,5]
+
+    # binary: base rate
+    pb = learner.fit_predict_binary(
+        np.zeros((4, 3)), np.array([0, 1, 1, 1.0]), np.zeros((1, 3)),
+        np.array([0.0]), np.zeros((5, 3))
+    )
+    assert pb.shape == (5,) and np.allclose(pb, 0.75)
+
+    # multilabel: per-column base rate, NaN-aware
+    Y = np.array([[1.0, np.nan], [0.0, 1.0], [1.0, 1.0]])
+    pm = learner.fit_predict_multilabel(
+        np.zeros((3, 3)), Y, np.zeros((1, 3)), np.zeros((1, 2)), np.zeros((4, 3))
+    )
+    assert pm.shape == (4, 2)
+    assert np.allclose(pm[:, 0], 2 / 3) and np.allclose(pm[:, 1], 1.0)
+
+    # discriminated-union round-trip on the string value (not bare ``null``)
+    cfg = pyd_yaml.parse_yaml_file_as  # noqa: F841  (sanity: import path stable)
+    parsed = pydantic.TypeAdapter(LearnerConfig).validate_python(
+        {"learner_kind": "null_baseline"}
+    )
+    assert isinstance(parsed, NullLearnerConfig)

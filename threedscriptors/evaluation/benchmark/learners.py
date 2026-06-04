@@ -517,6 +517,42 @@ class MlpLearner(Learner):
         return 1.0 / (1.0 + np.exp(-logits))
 
 
+# -- NullLearner ------------------------------------------------------------
+# Featureless reference: predict the train-set constant (mean for regression,
+# base rate for classification), ignoring X entirely. A constant score gives
+# AUROC=0.5 and AUPRC=base-rate, the canonical "no-skill" floor every real
+# descriptor must clear. Descriptor-independent, so one run per dataset suffices.
+
+
+class NullLearner(Learner):
+    @staticmethod
+    def _const(y: np.ndarray) -> float:
+        y = np.asarray(y, dtype=float).reshape(-1)
+        y = y[~np.isnan(y)]
+        return float(y.mean()) if y.size else 0.0
+
+    def fit_predict_regression(
+        self, X_train, y_train, X_val, y_val, X_test, seed: int = 0
+    ) -> np.ndarray:
+        del X_train, X_val, y_val, seed
+        return np.full(len(X_test), self._const(y_train), dtype=float)
+
+    def fit_predict_binary(
+        self, X_train, y_train, X_val, y_val, X_test, seed: int = 0
+    ) -> np.ndarray:
+        del X_train, X_val, y_val, seed
+        return np.full(len(X_test), self._const(y_train), dtype=float)
+
+    def fit_predict_multilabel(
+        self, X_train, y_train, X_val, y_val, X_test, seed: int = 0
+    ) -> np.ndarray:
+        del X_train, X_val, y_val, seed
+        Y = np.asarray(y_train, dtype=float)
+        with np.errstate(invalid="ignore"):
+            rates = np.where(np.all(np.isnan(Y), axis=0), 0.0, np.nanmean(Y, axis=0))
+        return np.tile(rates, (len(X_test), 1))
+
+
 # -- Pydantic configs -------------------------------------------------------
 
 
@@ -584,7 +620,19 @@ class MlpLearnerConfig(BaseModel):
         )
 
 
+class NullLearnerConfig(BaseModel):
+    # "null_baseline" not "null": a bare ``null`` in yaml parses to None and
+    # would break discriminated-union resolution.
+    learner_kind: Literal["null_baseline"] = "null_baseline"
+
+    def build(self) -> NullLearner:
+        return NullLearner()
+
+
 LearnerConfig = Annotated[
-    LinearLearnerConfig | LightGBMLearnerConfig | MlpLearnerConfig,
+    LinearLearnerConfig
+    | LightGBMLearnerConfig
+    | MlpLearnerConfig
+    | NullLearnerConfig,
     Field(discriminator="learner_kind"),
 ]
