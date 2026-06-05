@@ -48,6 +48,13 @@ class NearestMoleculeTaskConfig(BaseModel):
     query_sample_seed: int = 0
     # ETKDG seed for conformer generation of SMILES queries.
     conformer_seed: int = 0xF00D
+    # How many queries to render as a "query + top-k neighbors" molecule grid
+    # (PNG per query). 0 disables the visualization. Capped at the number of
+    # embedded queries that actually returned neighbors.
+    n_visualize: int = 0
+    # Molecules per row in each grid; defaults to k + 1 (query + all neighbors
+    # on one row) when None.
+    viz_mols_per_row: int | None = None
 
     def has_queries(self) -> bool:
         return (

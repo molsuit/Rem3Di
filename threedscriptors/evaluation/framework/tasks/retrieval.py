@@ -29,7 +29,10 @@ from threedscriptors.evaluation.retrieval.config import (
 from threedscriptors.evaluation.retrieval.config import (
     RetrievalTaskConfig as RetrievalSubTaskConfig,
 )
-from threedscriptors.evaluation.retrieval.nearest_molecule import run_nearest_molecule
+from threedscriptors.evaluation.retrieval.nearest_molecule import (
+    nearest_molecule_figures,
+    run_nearest_molecule,
+)
 from threedscriptors.evaluation.retrieval.runner import RetrievalReport
 from threedscriptors.evaluation.retrieval.tanimoto_similarity import (
     run_tanimoto_similarity,
@@ -75,6 +78,8 @@ class RetrievalConfig(BaseModel):
             yield PydanticResult(
                 file_name=Path(f"retrieval/{task_cfg.name}.yaml"), obj=res
             )
+            if isinstance(task_cfg, NearestMoleculeTaskConfig):
+                yield from nearest_molecule_figures(store, res, task_cfg)
 
         yield PydanticResult(
             file_name=Path("retrieval/retrieval_report.yaml"), obj=report

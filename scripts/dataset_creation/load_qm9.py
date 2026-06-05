@@ -1,90 +1,69 @@
+"""Build the curated/recalculated QM9 dataset from its extxyz dump.
+
+Reads the single curated QM9 extxyz (one frame per molecule, the 15 GDB-9
+properties + reference SMILES on each comment line) and writes a zarr dataset
+with all 15 properties as system-scope regression tasks. No train/val/test
+split is baked in -- splitting is left to train time.
+
+Run with:
+    uv run python scripts/dataset_creation/load_qm9.py
+"""
+
 from pathlib import Path
 
-from mace.calculators import MACECalculator
+import torch
 
-from threedscriptors.configuration.data_config import (
+from threedscriptors.configuration.dataset_config import (
     DatasetConfig,
-    MaceCalculatorConfig,
+    DatasetCreationConfig,
+    FilterAtomsStageConfig,
 )
-from threedscriptors.data_handling.dataset import (
-    RegressionDatasetwithRandomWalks,
+from threedscriptors.data_handling.dataset.tasks import ElementSet
+from threedscriptors.data_handling.dataset_creation.generators.qm9_generator import (
+    ALL_QM9_TASKS,
+    QM9Generator,
 )
-from threedscriptors.data_handling.dataset_builder import DatasetBuilder
-from threedscriptors.data_handling.dataset_io import store_data_to_disk
-from threedscriptors.data_handling.pipelines import (
-    regression_training_from_structures_pipeline,
+from threedscriptors.data_handling.dataset_creation.orchestrator import (
+    DatasetConstructionOrchestrator,
 )
-from threedscriptors.data_handling.source_preprocessing.qm9_preprocessing import (
-    QM9PropertyNames,
-    load_qm9,
-)
-
-qm9_dir = Path("/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/raw_data/qm9_raw")
-
-
-N_molecules = 134000
-
-tasks_to_load = [
-    QM9PropertyNames.mu,
-    QM9PropertyNames.gap,
-    QM9PropertyNames.alpha,
-    QM9PropertyNames.r2,
-    QM9PropertyNames.zpve,
-    QM9PropertyNames.Cv,
-]
-
-smiles, molecules, structure_ids, regression_targets, regression_masks, task_configs = (
-    load_qm9(qm9_dir, N_molecules, tasks_to_load=tasks_to_load)
+from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+    CopyDataStage,
+    FilterAtomsStage,
 )
 
-assert regression_targets.shape[1] == len(tasks_to_load)
-
-dataset_directory = "/home/snw30/rds/hpc-work/3DMolecularDescriptors/data/qm9_full"
-
-MACE_PATH = "/home/snw30/rds/hpc-work/models/MACE-OFF24_medium.model"
-
-embedding_model_config = MaceCalculatorConfig(
-    mace_calc=MACECalculator(model_paths=MACE_PATH, enable_cueq=True, device="cuda"),
-    model_name="mace_off_24_medium",
-    model_path=MACE_PATH,
-    enable_cueq=True,
-    device="cuda",
+qm9_extxyz = Path(
+    "/p/scratch/mace/wedig1/raw_datasets/recalcQM9/curatedQM9_full.extxyz"
 )
-
-dataset_config = DatasetConfig(
-    N_molecules=N_molecules,
-    dataset_type=RegressionDatasetwithRandomWalks,
-    BFGS_tol=0.1,
-    BFGS_max_steps=500,
-    N_conformers=1,
-    embedding_model_config=embedding_model_config,
-    max_atoms=None,
-    tasks=task_configs,
-    only_heavy_atoms=False,
-    dataset_name="qm9",
-    rw_transition_matrix_from_3D=True,
-)
+output_path = Path("/p/scratch/mace/wedig1/datasets/qm9")
 
 
-dataset = regression_training_from_structures_pipeline(
-    dataset_config, molecules, structure_ids, regression_targets, regression_masks
-).build()
+def main() -> None:
+    generator = QM9Generator(
+        xyz_file=qm9_extxyz,
+        tasks=ALL_QM9_TASKS,
+        loading_batch_size=10000,
+    )
+
+    # QM9 is GDB-9: small neutral organics over the MACE-OFF element set. The
+    # atoms-side filter is the only gate we need (the generator already drops
+    # rows whose SMILES RDKit rejects).
+    filter_stage = FilterAtomsStage(
+        config=FilterAtomsStageConfig(element_set=ElementSet.mace_off)
+    )
+    copy_data = CopyDataStage(dtype=torch.float64)
+
+    creation_config = DatasetCreationConfig(path=output_path, N_structures=None)
+    dataset_config = DatasetConfig(tasks=generator.task_set())
+
+    orchestrator = DatasetConstructionOrchestrator(
+        pipeline=[filter_stage, copy_data],
+        batch_generator=generator,
+        construction_config=creation_config,
+        dataset_config=dataset_config,
+    )
+
+    orchestrator.build_dataset()
 
 
-store_data_to_disk(dataset, dataset_directory + "_full")
-
-
-from threedscriptors.training.dataset_splitting import DatasetSplitting
-
-ds = DatasetSplitting(dataset)
-names = ["training", "test"]
-split_ratios = [0.9, 0.1]
-split_dataset_indices = ds.general_split(split_ratios, True)
-
-
-for ids, name in zip(split_dataset_indices, names, strict=False):
-    new_dataset = ds.materialise_dataset_split(dataset, ids)
-
-    db = DatasetBuilder(new_dataset)
-    db.canonicalize_structure_ids()
-    store_data_to_disk(new_dataset, dataset_directory + "_" + name)
+if __name__ == "__main__":
+    main()

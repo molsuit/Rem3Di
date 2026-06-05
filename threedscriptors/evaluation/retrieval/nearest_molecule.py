@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
+from threedscriptors.evaluation.results import FigureResult
 from threedscriptors.evaluation.retrieval.config import NearestMoleculeTaskConfig
 from threedscriptors.evaluation.retrieval.vector_store import VectorStore
 
@@ -158,6 +159,93 @@ def _smiles_queries(
                 )
             )
     return results
+
+
+def _query_display_smiles(qr: QueryResult, store: VectorStore) -> str | None:
+    """The SMILES of a query for rendering: parsed from a ``smiles:`` query, or
+    looked up in the store for an ``index:`` query. None if unresolvable."""
+    if qr.query.startswith("smiles:"):
+        return qr.query[len("smiles:") :]
+    if qr.query.startswith("index:"):
+        try:
+            return store.smiles[int(qr.query[len("index:") :])]
+        except (ValueError, IndexError):
+            return None
+    return None
+
+
+def nearest_molecule_figures(
+    store: VectorStore,
+    result: NearestMoleculeResult,
+    cfg: NearestMoleculeTaskConfig,
+) -> list[FigureResult]:
+    """Render one ``query + top-k neighbors`` molecule grid per query (PNG).
+
+    Each grid puts the query molecule first (legend ``query``) followed by its
+    retrieved neighbors in rank order, each labelled with its rank and the
+    embedding-space distance. Queries that did not embed, returned no neighbors,
+    or whose molecules RDKit cannot parse are skipped. Returns at most
+    ``cfg.n_visualize`` figures.
+    """
+    if cfg.n_visualize <= 0:
+        return []
+
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from rdkit.Chem import Draw
+
+    mols_per_row = cfg.viz_mols_per_row or (cfg.k + 1)
+    figures: list[FigureResult] = []
+
+    for q_idx, qr in enumerate(result.queries):
+        if len(figures) >= cfg.n_visualize:
+            break
+        if not qr.embedded or not qr.neighbors:
+            continue
+        query_smi = _query_display_smiles(qr, store)
+        if query_smi is None:
+            continue
+
+        smis = [query_smi] + [n.smiles for n in qr.neighbors]
+        # ``.3g`` keeps tiny cosine distances legible (e.g. 4.17e-07, where a
+        # fixed 3-decimal format would collapse every neighbor to "0.000") while
+        # still reading naturally for larger ones (e.g. 0.12).
+        legends = ["query"] + [
+            f"#{n.rank + 1}  d={n.distance:.3g}" for n in qr.neighbors
+        ]
+        mols, kept_legends = [], []
+        for smi, leg in zip(smis, legends, strict=True):
+            mol = Chem.MolFromSmiles(smi)
+            if mol is not None:
+                mols.append(mol)
+                kept_legends.append(leg)
+        if len(mols) < 2:  # need the query + at least one neighbor
+            continue
+
+        grid = Draw.MolsToGridImage(
+            mols,
+            molsPerRow=mols_per_row,
+            subImgSize=(260, 260),
+            legends=kept_legends,
+        )
+
+        n_rows = int(np.ceil(len(mols) / mols_per_row))
+        fig, ax = plt.subplots(figsize=(mols_per_row * 2.0, n_rows * 2.0 + 0.4))
+        ax.imshow(np.asarray(grid))
+        ax.axis("off")
+        ax.set_title(f"query: {query_smi}", fontsize=9)
+        figures.append(
+            FigureResult(
+                file_name=Path(f"retrieval/{cfg.name}/query_{q_idx:03d}.png"),
+                figure=fig,
+                save_kwargs={"dpi": 120, "bbox_inches": "tight"},
+            )
+        )
+
+    logger.info(
+        "%s: rendered %d nearest-neighbor grid(s)", cfg.name, len(figures)
+    )
+    return figures
 
 
 def run_nearest_molecule(
