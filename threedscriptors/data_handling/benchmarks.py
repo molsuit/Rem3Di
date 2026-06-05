@@ -46,6 +46,13 @@ class EvalMetric(StrEnum):
     auroc = "AUROC"
     auprc = "AUPRC"
     macro_auroc = "macro-AUROC"
+    # Single-label multi-class metrics (TaskType.multiclass). The probe emits a
+    # (N, n_classes) softmax; balanced-accuracy / macro-F1 argmax it, macro-OvR
+    # AUROC consumes the probabilities. Balanced metrics are the headline for
+    # class-imbalanced multiclass tasks (e.g. chiral_cat).
+    balanced_accuracy = "balanced-accuracy"
+    macro_f1 = "macro-F1"
+    macro_auroc_ovr = "macro-AUROC-OvR"
 
 
 class SplitVariant(StrEnum):
@@ -57,6 +64,9 @@ class SplitVariant(StrEnum):
     # by the standalone dump script into the parquet's ``split`` uint8 codes.
     polaris_set = "polaris_set"
     random = "random"
+    # Group-aware, class-stratified split (splits.stratified_group_split):
+    # groups (non-isomeric SMILES) are kept whole, class proportions preserved.
+    stratified = "stratified"
 
 
 class BenchmarkTask(BaseModel):
@@ -122,8 +132,25 @@ class PolarisBenchmark(_BenchmarkBase):
         return self.parquet_name or f"{self.dataset_id}.parquet"
 
 
+class LocalXyzBenchmark(_BenchmarkBase):
+    """A benchmark whose 3D structures + labels come from a local extended-XYZ
+    file (one frame per structure, labels on the comment line). Unlike the
+    SMILES sources, geometries are supplied directly — the build pipeline skips
+    conformer generation and ingests the coordinates verbatim (the QM9 path)."""
+
+    source: Literal["local"] = "local"
+    # Filename of the extended-XYZ dump within the build config's
+    # ``local_raw_root``.
+    xyz_filename: str
+    # ``atoms.info`` key carrying the integer class label per frame.
+    label_key: str = "label"
+    # ``atoms.info`` key carrying the reference SMILES per frame.
+    smiles_key: str = "smiles"
+    split_variant: SplitVariant = SplitVariant.stratified
+
+
 Benchmark = Annotated[
-    MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark,
+    MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark | LocalXyzBenchmark,
     Field(discriminator="source"),
 ]
 
@@ -137,6 +164,13 @@ def _clf(name: str, source_column: str | None = None) -> BenchmarkTask:
 def _reg(name: str, source_column: str | None = None) -> BenchmarkTask:
     return BenchmarkTask(
         name=name, source_column=source_column, task_type=TaskType.regression
+    )
+
+
+def _mcls(name: str, source_column: str | None = None) -> BenchmarkTask:
+    """A single-label multi-class column (TaskType.multiclass)."""
+    return BenchmarkTask(
+        name=name, source_column=source_column, task_type=TaskType.multiclass
     )
 
 
@@ -410,15 +444,38 @@ POLARIS_BENCHMARKS: tuple[PolarisBenchmark, ...] = (
 )
 
 
-_BY_ID: dict[str, MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark] = {
+# --- Local extended-XYZ datasets (3D structures supplied directly) ----------
+# Built by ``scripts/dataset_creation/build_chiral_cat.py`` (the QM9-style 3D
+# path: no conformer generation). ChiralCat is single-label 5-class chirality-
+# type classification over 17,023 molecules; balanced-accuracy is the headline
+# given the extreme class imbalance (achiral/central dominate, helical/planar
+# are rare). See ``/p/scratch/mace/wedig1/raw_datasets/chiral_cat/DATASET.md``.
+LOCAL_BENCHMARKS: tuple[LocalXyzBenchmark, ...] = (
+    LocalXyzBenchmark(
+        dataset_id="chiral_cat",
+        xyz_filename="chiral_structures.extxyz",
+        tasks=[_mcls("chirality_type")],
+        metric=EvalMetric.balanced_accuracy,
+    ),
+)
+
+
+_BY_ID: dict[
+    str, MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark | LocalXyzBenchmark
+] = {
     b.dataset_id: b
-    for b in (*MOLECULENET_BENCHMARKS, *TDC_BENCHMARKS, *POLARIS_BENCHMARKS)
+    for b in (
+        *MOLECULENET_BENCHMARKS,
+        *TDC_BENCHMARKS,
+        *POLARIS_BENCHMARKS,
+        *LOCAL_BENCHMARKS,
+    )
 }
 
 
 def get_benchmark(
     dataset_id: str,
-) -> MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark:
+) -> MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark | LocalXyzBenchmark:
     try:
         return _BY_ID[dataset_id]
     except KeyError as exc:
@@ -429,10 +486,12 @@ def get_benchmark(
 
 
 def select_benchmarks(
-    benchmarks: tuple[MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark, ...],
+    benchmarks: tuple[
+        MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark | LocalXyzBenchmark, ...
+    ],
     ids: list[str] | None = None,
     limit: int | None = None,
-) -> list[MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark]:
+) -> list[MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark | LocalXyzBenchmark]:
     out = list(benchmarks)
     if ids:
         wanted = set(ids)
@@ -458,12 +517,15 @@ class BenchmarkManifest(BaseModel):
     metric: EvalMetric
     split_variant: SplitVariant
     # Provenance only; the eval reader does not branch on this.
-    source: Literal["moleculenet", "tdc", "polaris"]
+    source: Literal["moleculenet", "tdc", "polaris", "local"]
 
     @classmethod
     def from_benchmark(
         cls,
-        benchmark: MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark,
+        benchmark: MoleculeNetBenchmark
+        | TdcBenchmark
+        | PolarisBenchmark
+        | LocalXyzBenchmark,
     ) -> BenchmarkManifest:
         return cls(
             dataset_id=benchmark.dataset_id,

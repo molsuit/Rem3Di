@@ -80,6 +80,12 @@ class RegressionHead(nn.Module):
 
         self.head_config = head_config
         self.task_config = head_config.task_config
+        # n_classes None -> scalar regression; positive int -> classification
+        # logits over n_classes. The whole head body is shared; only the final
+        # projection width and the (regression-only) label scaling differ.
+        self.n_classes = head_config.n_classes
+        self.is_classification = self.n_classes is not None
+        out_features = self.n_classes if self.is_classification else 1
 
         head = nn.Sequential()
 
@@ -100,37 +106,43 @@ class RegressionHead(nn.Module):
                 )
         head.add_module(
             f"linear_{idx + 1}",
-            nn.Linear(dimensions[-1], 1),
+            nn.Linear(dimensions[-1], out_features),
         )
 
         self.head = head
 
-        mean = self.task_config.mean
-        std = self.task_config.std
-        if type(self.task_config.mean) is float:
-            mean = torch.Tensor([mean])
+        # Classification heads emit raw logits — no label standardization, and
+        # task_config (with its mean/std/scaling) is not required.
+        if not self.is_classification:
+            # Default to identity scaling when no task_config was inserted
+            # (e.g. a bare build() before insert_task_configs).
+            mean = getattr(self.task_config, "mean", 0.0) if self.task_config else 0.0
+            std = getattr(self.task_config, "std", 1.0) if self.task_config else 1.0
+            if type(mean) is float:
+                mean = torch.Tensor([mean])
+            if type(std) is float:
+                std = torch.Tensor([std])
 
-        if type(self.task_config.std) is float:
-            std = torch.Tensor([std])
-
-        self.register_buffer("task_mean", mean)
-        self.register_buffer("task_std", std)
+            self.register_buffer("task_mean", mean)
+            self.register_buffer("task_std", std)
 
     def forward(self, molecular_descriptor):
         return self.head(molecular_descriptor)
 
     def inference(self, molecular_descriptor):
-        standardized_prediction = self.head(molecular_descriptor)
+        logits_or_value = self.head(molecular_descriptor)
 
-        standardized_prediction = (
-            standardized_prediction * self.task_std
-        ) + self.task_mean
+        # Classification: return per-class probabilities (softmax over logits).
+        if self.is_classification:
+            return torch.softmax(logits_or_value, dim=-1)
 
-        if self.task_config.scaling == LabelScalingType.LOG_Z:
+        # Regression: undo the label standardization.
+        standardized_prediction = (logits_or_value * self.task_std) + self.task_mean
+
+        if getattr(self.task_config, "scaling", None) == LabelScalingType.LOG_Z:
             standardized_prediction = torch.exp(standardized_prediction)
 
         return standardized_prediction
-        # undo the standardization:
 
 
 class MultitaskHeads(nn.Module):

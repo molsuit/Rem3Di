@@ -97,6 +97,78 @@ def random_train_val_test_split(
     return np.sort(train_idx), np.sort(val_idx), np.sort(test_idx)
 
 
+def stratified_group_split(
+    labels: np.ndarray,
+    groups: np.ndarray,
+    train_frac: float = 0.8,
+    val_frac: float = 0.1,
+    seed: int = 0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Group-aware, class-stratified train/valid/test split.
+
+    Each *group* (e.g. all conformers / enantiomers sharing a non-isomeric
+    SMILES) is assigned whole to exactly one partition so the same molecular
+    graph never leaks across folds. Within that constraint the partition class
+    proportions track the global ones, so rare classes (e.g. the 37 ``helical``
+    chiral_cat molecules) land in train, valid and test rather than collapsing
+    into one fold.
+
+    Implementation: assign one label per group (the group's modal label), order
+    groups by class so each class is dealt round-robin across the three
+    partitions by their target fractions, and break ties deterministically with
+    a seeded shuffle *within* each (class) bucket. Returns sorted index arrays
+    over the original rows.
+    """
+    labels = np.asarray(labels)
+    groups = np.asarray(groups)
+    n = labels.shape[0]
+    if n == 0:
+        empty = np.empty(0, dtype=int)
+        return empty, empty.copy(), empty.copy()
+
+    rng = np.random.default_rng(seed)
+
+    # One representative label per group (modal label within the group).
+    group_to_rows: dict[object, list[int]] = defaultdict(list)
+    for i in range(n):
+        group_to_rows[groups[i].item() if hasattr(groups[i], "item") else groups[i]].append(i)
+
+    group_label: dict[object, int] = {}
+    for g, rows in group_to_rows.items():
+        vals, counts = np.unique(labels[rows], return_counts=True)
+        group_label[g] = int(vals[int(np.argmax(counts))])
+
+    test_frac = 1.0 - train_frac - val_frac
+    train_idx: list[int] = []
+    valid_idx: list[int] = []
+    test_idx: list[int] = []
+
+    # Deal groups per class so every partition gets a proportional share of
+    # each class. Cumulative-fraction assignment keeps the smallest classes
+    # spread across all three folds instead of rounding them all into train.
+    classes = sorted({group_label[g] for g in group_to_rows})
+    for cls in classes:
+        cls_groups = [g for g in group_to_rows if group_label[g] == cls]
+        cls_groups.sort(
+            key=lambda g: (len(group_to_rows[g]), g if isinstance(g, str) else str(g))
+        )
+        rng.shuffle(cls_groups)
+        for k, g in enumerate(cls_groups):
+            pos = (k + 0.5) / len(cls_groups)
+            if pos < train_frac:
+                train_idx.extend(group_to_rows[g])
+            elif pos < train_frac + val_frac or test_frac <= 0.0:
+                valid_idx.extend(group_to_rows[g])
+            else:
+                test_idx.extend(group_to_rows[g])
+
+    return (
+        np.sort(np.asarray(train_idx, dtype=int)),
+        np.sort(np.asarray(valid_idx, dtype=int)),
+        np.sort(np.asarray(test_idx, dtype=int)),
+    )
+
+
 def split_codes(
     n: int,
     train_idx: np.ndarray,

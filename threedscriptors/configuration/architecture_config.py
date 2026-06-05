@@ -127,6 +127,13 @@ class RegressionHeadConfig(BaseModel):
     hidden_dimensions: list[int] = [256, 128]
     input_dimensions: int | None = None
     head_type: HeadType = HeadType.FULLY_CONNECTED
+    # ``None`` -> scalar regression head (final Linear -> 1, label scaling).
+    # A positive int -> single-label classification head over that many classes
+    # (final Linear -> n_classes, raw logits, no label scaling). This is the
+    # only thing that distinguishes a regression from a classification
+    # architecture; everything upstream (preprocessor / encoder / aggregator) is
+    # shared.
+    n_classes: int | None = None
 
 
 class PrecomputedInvariantNormalizationConfig(BaseModel):
@@ -836,8 +843,17 @@ class RegressionArchitectureConfig(_BaseArchitectureConfig):
             MultiTaskRegressionModel,
         )
 
+        # With a ``mace_config`` the preprocessor runs MACE on the fly from raw
+        # atoms (supervised training from scratch — the only path that trains
+        # the pseudoscalar preprocessor). Without one the model consumes
+        # precomputed ``Sample.embeddings`` (input_irreps given directly).
+        mace_model = (
+            self.mace_config.build_torch_sim_model()
+            if self.mace_config is not None
+            else None
+        )
         preprocessor = self._build_preprocessor(
-            None, mean_atomic_embedding, std_atomic_embedding
+            mace_model, mean_atomic_embedding, std_atomic_embedding
         )
         encoder = self._build_encoder()
         model = MultiTaskRegressionModel(

@@ -88,6 +88,23 @@ class Learner(ABC):
     ) -> np.ndarray:
         """Return shape (n_test, n_labels) of per-column class-1 probabilities."""
 
+    @abstractmethod
+    def fit_predict_multiclass(
+        self,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_val: np.ndarray,
+        y_val: np.ndarray,
+        X_test: np.ndarray,
+        n_classes: int,
+        seed: int = 0,
+    ) -> np.ndarray:
+        """Return shape (n_test, n_classes) of softmax class probabilities.
+
+        ``y_train`` / ``y_val`` are 1-D integer class labels in ``0..n_classes-1``;
+        the returned columns are aligned to that fixed class ordering so a class
+        absent from a (small) train fold still maps to its own column."""
+
 
 # -- LinearLearner ----------------------------------------------------------
 # Ridge / LogReg with StandardScaler. Ignores X_val / y_val: no early stopping
@@ -99,6 +116,30 @@ def _scaler_for(kind: ScalerKind):
     if kind is ScalerKind.standard:
         return StandardScaler()
     return None
+
+
+def _align_proba(
+    proba: np.ndarray, model_classes: np.ndarray, n_classes: int
+) -> np.ndarray:
+    """Reindex an sklearn ``predict_proba`` block to a fixed ``0..n_classes-1``
+    column order. Classes the fitted model never saw get an all-zero column."""
+    out = np.zeros((proba.shape[0], n_classes), dtype=float)
+    for j, c in enumerate(np.asarray(model_classes, dtype=int)):
+        if 0 <= c < n_classes:
+            out[:, c] = proba[:, j]
+    return out
+
+
+def _focal_ce(logits: torch.Tensor, target: torch.Tensor, gamma: float) -> torch.Tensor:
+    """Multi-class focal cross-entropy (Lin et al. 2017), mean-reduced.
+
+    ``FL = -(1 - p_t)^gamma * log(p_t)`` with ``p_t`` the softmax probability of
+    the true class. ``gamma=0`` recovers plain cross-entropy. Down-weights the
+    easy, dominant classes so the rare chiral sub-classes still drive the fit."""
+    log_p = nn.functional.log_softmax(logits, dim=-1)
+    log_pt = log_p.gather(1, target.view(-1, 1)).squeeze(1)
+    pt = log_pt.exp()
+    return (-((1.0 - pt) ** gamma) * log_pt).mean()
 
 
 class LinearLearner(Learner):
@@ -169,6 +210,36 @@ class LinearLearner(Learner):
                 X_train, Y_train[:, j], X_val, Y_val[:, j], X_test, seed
             )
         return preds
+
+    def fit_predict_multiclass(
+        self, X_train, y_train, X_val, y_val, X_test, n_classes: int, seed: int = 0
+    ) -> np.ndarray:
+        del X_val, y_val  # no early stopping notion
+        y = np.asarray(y_train, dtype=float).reshape(-1)
+        mask = ~np.isnan(y)
+        X = X_train[mask]
+        y = y[mask].astype(int)
+        if len(np.unique(y)) < 2:
+            # Degenerate train fold: fall back to the train base rates.
+            rates = np.bincount(y, minlength=n_classes).astype(float)
+            rates = rates / rates.sum() if rates.sum() else rates
+            return np.tile(rates, (len(X_test), 1))
+        s = _scaler_for(self.scaler)
+        # lbfgs fits a single multinomial (softmax) model for multiclass —
+        # the explicit multi_class arg was removed in sklearn 1.7+.
+        clf = LogisticRegression(
+            C=self.logreg_C,
+            max_iter=self.logreg_max_iter,
+            random_state=seed,
+            solver="lbfgs",
+        )
+        model = make_pipeline(s, clf) if s is not None else make_pipeline(clf)
+        model.fit(X, y)
+        return _align_proba(
+            np.asarray(model.predict_proba(X_test), dtype=float),
+            model.classes_,
+            n_classes,
+        )
 
 
 # -- Pydantic configs -------------------------------------------------------
@@ -274,6 +345,46 @@ class LightGBMLearner(Learner):
             )
         return preds
 
+    def fit_predict_multiclass(
+        self, X_train, y_train, X_val, y_val, X_test, n_classes: int, seed: int = 0
+    ) -> np.ndarray:
+        ytr = np.asarray(y_train, dtype=float).reshape(-1)
+        yv = np.asarray(y_val, dtype=float).reshape(-1)
+        mtr = ~np.isnan(ytr)
+        mv = ~np.isnan(yv)
+        Xtr = X_train[mtr]
+        ytr_i = ytr[mtr].astype(int)
+        if len(np.unique(ytr_i)) < 2:
+            rates = np.bincount(ytr_i, minlength=n_classes).astype(float)
+            rates = rates / rates.sum() if rates.sum() else rates
+            return np.tile(rates, (len(X_test), 1))
+        Xv = X_val[mv]
+        yv_i = yv[mv].astype(int)
+        model = LGBMClassifier(
+            **self.params,
+            objective="multiclass",
+            num_class=n_classes,
+            random_state=seed,
+            n_jobs=1,
+            verbosity=-1,
+        )
+        # Early-stop on val only when it carries >=2 classes; otherwise the
+        # multi_logloss signal is meaningless (LGBM also warns).
+        allow_early = len(np.unique(yv_i)) >= 2 and len(Xv) > 0
+        eval_set = [(Xv, yv_i)] if allow_early else [(Xtr, ytr_i)]
+        model.fit(
+            Xtr,
+            ytr_i,
+            eval_set=eval_set,
+            eval_metric="multi_logloss",
+            callbacks=self._callbacks(allow_early_stop=allow_early),
+        )
+        return _align_proba(
+            np.asarray(model.predict_proba(X_test), dtype=float),
+            model.classes_,
+            n_classes,
+        )
+
 
 # -- MlpLearner --------------------------------------------------------------
 # Small PyTorch MLP. Uses val loss for early stopping with patience; never
@@ -315,6 +426,8 @@ class MlpLearner(Learner):
         batch_size: int = 128,
         device: Literal["cuda", "cpu"] = "cuda",
         allow_cpu_mlp: bool = False,
+        loss: Literal["cross_entropy", "focal"] = "cross_entropy",
+        focal_gamma: float = 2.0,
     ) -> None:
         self.hidden_dims = tuple(hidden_dims)
         self.dropout = dropout
@@ -325,6 +438,11 @@ class MlpLearner(Learner):
         self.batch_size = batch_size
         self.device_str = device
         self.allow_cpu_mlp = allow_cpu_mlp
+        # Multiclass objective: plain cross-entropy or focal CE. Focal
+        # down-weights the dominant classes, which is the point on the
+        # imbalanced chiral_cat panel; ``focal_gamma=0`` == cross-entropy.
+        self.loss = loss
+        self.focal_gamma = focal_gamma
 
     # -- internal helpers --
 
@@ -353,6 +471,28 @@ class MlpLearner(Learner):
         Xte = scaler.transform(X_test).astype(np.float32)
         return Xtr, Xv, Xte
 
+    def _loss(
+        self,
+        out: torch.Tensor,
+        target: torch.Tensor,
+        mode: Literal["regression", "binary", "multilabel", "multiclass"],
+        mask: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Per-mode objective. Multiclass picks focal vs cross-entropy by config;
+        multilabel applies the per-label validity mask; the rest are plain."""
+        if mode == "regression":
+            return nn.functional.mse_loss(out, target)
+        if mode == "binary":
+            return nn.functional.binary_cross_entropy_with_logits(out, target)
+        if mode == "multiclass":
+            if self.loss == "focal":
+                return _focal_ce(out, target, self.focal_gamma)
+            return nn.functional.cross_entropy(out, target)
+        # multilabel: masked BCE over the per-label validity mask.
+        assert mask is not None
+        raw = nn.functional.binary_cross_entropy_with_logits(out, target, reduction="none")
+        return (raw * mask).sum() / mask.sum().clamp_min(1.0)
+
     def _train(
         self,
         model: _Mlp,
@@ -360,7 +500,7 @@ class MlpLearner(Learner):
         y_train: np.ndarray,
         X_val: np.ndarray,
         y_val: np.ndarray,
-        mode: Literal["regression", "binary", "multilabel"],
+        mode: Literal["regression", "binary", "multilabel", "multiclass"],
         device: torch.device,
         seed: int,
         *,
@@ -379,8 +519,11 @@ class MlpLearner(Learner):
         best_loss = float("inf")
         stale = 0
 
+        # Multiclass labels are integer class indices (long); every other mode
+        # uses float targets.
+        label_np_dtype = np.int64 if mode == "multiclass" else np.float32
         Xv_t = torch.from_numpy(X_val.astype(np.float32)).to(device)
-        yv_t = torch.from_numpy(y_val.astype(np.float32)).to(device)
+        yv_t = torch.from_numpy(y_val.astype(label_np_dtype)).to(device)
         val_mask_t = (
             torch.from_numpy(val_mask.astype(np.float32)).to(device)
             if val_mask is not None
@@ -394,42 +537,20 @@ class MlpLearner(Learner):
             for start in range(0, n, bs):
                 idx = order[start : start + bs]
                 xb = torch.from_numpy(X_train[idx].astype(np.float32)).to(device)
-                yb = torch.from_numpy(y_train[idx].astype(np.float32)).to(device)
+                yb = torch.from_numpy(y_train[idx].astype(label_np_dtype)).to(device)
                 opt.zero_grad()
-                out = model(xb)
-                if mode == "regression":
-                    loss = nn.functional.mse_loss(out, yb)
-                elif mode == "binary":
-                    loss = nn.functional.binary_cross_entropy_with_logits(out, yb)
-                else:
-                    assert train_mask is not None
-                    mb = torch.from_numpy(
-                        train_mask[idx].astype(np.float32)
-                    ).to(device)
-                    raw = nn.functional.binary_cross_entropy_with_logits(
-                        out, yb, reduction="none"
-                    )
-                    loss = (raw * mb).sum() / mb.sum().clamp_min(1.0)
+                mb = (
+                    torch.from_numpy(train_mask[idx].astype(np.float32)).to(device)
+                    if train_mask is not None
+                    else None
+                )
+                loss = self._loss(model(xb), yb, mode, mb)
                 loss.backward()
                 opt.step()
 
             model.eval()
             with torch.no_grad():
-                out = model(Xv_t)
-                if mode == "regression":
-                    val_loss = nn.functional.mse_loss(out, yv_t).item()
-                elif mode == "binary":
-                    val_loss = nn.functional.binary_cross_entropy_with_logits(
-                        out, yv_t
-                    ).item()
-                else:
-                    assert val_mask_t is not None
-                    raw = nn.functional.binary_cross_entropy_with_logits(
-                        out, yv_t, reduction="none"
-                    )
-                    val_loss = (
-                        (raw * val_mask_t).sum() / val_mask_t.sum().clamp_min(1.0)
-                    ).item()
+                val_loss = self._loss(model(Xv_t), yv_t, mode, val_mask_t).item()
 
             if val_loss < best_loss - 1e-6:
                 best_loss = val_loss
@@ -516,6 +637,28 @@ class MlpLearner(Learner):
             logits = model(xte).cpu().numpy()
         return 1.0 / (1.0 + np.exp(-logits))
 
+    def fit_predict_multiclass(
+        self, X_train, y_train, X_val, y_val, X_test, n_classes: int, seed: int = 0
+    ) -> np.ndarray:
+        ytr = np.asarray(y_train, dtype=float).reshape(-1)
+        yv = np.asarray(y_val, dtype=float).reshape(-1)
+        mtr = ~np.isnan(ytr)
+        mv = ~np.isnan(yv)
+        if len(np.unique(ytr[mtr])) < 2:
+            rates = np.bincount(ytr[mtr].astype(int), minlength=n_classes).astype(float)
+            rates = rates / rates.sum() if rates.sum() else rates
+            return np.tile(rates, (len(X_test), 1))
+        device = self._resolve_device()
+        Xtr, Xv, Xte = self._standardize(X_train[mtr], X_val[mv], X_test)
+        y_tr = ytr[mtr].astype(np.int64)
+        y_v = yv[mv].astype(np.int64)
+        model = _Mlp(Xtr.shape[1], n_classes, self.hidden_dims, self.dropout).to(device)
+        model = self._train(model, Xtr, y_tr, Xv, y_v, "multiclass", device, seed)
+        with torch.no_grad():
+            xte = torch.from_numpy(Xte).to(device)
+            probs = torch.softmax(model(xte), dim=-1).cpu().numpy()
+        return np.asarray(probs, dtype=float)
+
 
 # -- NullLearner ------------------------------------------------------------
 # Featureless reference: predict the train-set constant (mean for regression,
@@ -550,6 +693,16 @@ class NullLearner(Learner):
         Y = np.asarray(y_train, dtype=float)
         with np.errstate(invalid="ignore"):
             rates = np.where(np.all(np.isnan(Y), axis=0), 0.0, np.nanmean(Y, axis=0))
+        return np.tile(rates, (len(X_test), 1))
+
+    def fit_predict_multiclass(
+        self, X_train, y_train, X_val, y_val, X_test, n_classes: int, seed: int = 0
+    ) -> np.ndarray:
+        del X_train, X_val, y_val, seed
+        y = np.asarray(y_train, dtype=float).reshape(-1)
+        y = y[~np.isnan(y)].astype(int)
+        rates = np.bincount(y, minlength=n_classes).astype(float)
+        rates = rates / rates.sum() if rates.sum() else rates
         return np.tile(rates, (len(X_test), 1))
 
 
@@ -605,6 +758,11 @@ class MlpLearnerConfig(BaseModel):
     batch_size: int = 128
     device: Literal["cuda", "cpu"] = "cuda"
     allow_cpu_mlp: bool = False
+    # Multiclass objective: "cross_entropy" or "focal" (Lin et al. 2017). Focal
+    # down-weights the dominant classes — set it for imbalanced multiclass
+    # panels like chiral_cat. Ignored by the regression/binary/multilabel paths.
+    loss: Literal["cross_entropy", "focal"] = "cross_entropy"
+    focal_gamma: float = 2.0
 
     def build(self) -> MlpLearner:
         return MlpLearner(
@@ -617,6 +775,8 @@ class MlpLearnerConfig(BaseModel):
             batch_size=self.batch_size,
             device=self.device,
             allow_cpu_mlp=self.allow_cpu_mlp,
+            loss=self.loss,
+            focal_gamma=self.focal_gamma,
         )
 
 

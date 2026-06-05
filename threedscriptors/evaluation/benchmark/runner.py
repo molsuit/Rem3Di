@@ -72,7 +72,7 @@ class EvalConfig(BaseModel):
 
 class BenchmarkResultRow(BaseModel):
     dataset_id: str
-    source: Literal["moleculenet", "tdc", "polaris"]
+    source: Literal["moleculenet", "tdc", "polaris", "local"]
     descriptor_name: str
     learner_kind: str
     # Which target column this row scores. Set per-column for regression
@@ -119,7 +119,7 @@ def _build_targets_with_nan(dataset: MoleculeDataset) -> np.ndarray:
 
 def _task_kind(
     dataset: MoleculeDataset,
-) -> Literal["regression", "binary", "multilabel"]:
+) -> Literal["regression", "binary", "multilabel", "multiclass"]:
     if dataset.config.tasks is None:
         raise ValueError("Dataset has no TaskSet; cannot infer task kind.")
     cols = dataset.config.tasks.system_cols
@@ -130,6 +130,14 @@ def _task_kind(
         return "regression"
     if types == {TaskType.classification}:
         return "binary" if len(cols) == 1 else "multilabel"
+    if types == {TaskType.multiclass}:
+        # Single-label multi-class: exactly one column carrying integer class
+        # indices (e.g. chiral_cat's 5 chirality types).
+        if len(cols) != 1:
+            raise ValueError(
+                f"multiclass benchmark must have one column, got {len(cols)}"
+            )
+        return "multiclass"
     raise ValueError(f"Mixed task types in one benchmark: {types}")
 
 
@@ -193,7 +201,7 @@ def _split_masks(
 
 def _evaluate_cell(
     learner_cfg: LearnerConfig,
-    kind: Literal["regression", "binary", "multilabel"],
+    kind: Literal["regression", "binary", "multilabel", "multiclass"],
     splits: tuple[np.ndarray, np.ndarray, np.ndarray],
     X: np.ndarray,
     Y: np.ndarray,
@@ -205,7 +213,7 @@ def _evaluate_cell(
     """Evaluate one (descriptor x learner) cell, one row per scored target.
 
     Regression yields one row per target column (a fresh learner per column);
-    binary and multilabel yield a single row.
+    binary, multilabel and multiclass each yield a single row.
     """
     tr, va, te = splits
     counts = dict(n_train=int(tr.sum()), n_val=int(va.sum()), n_test=int(te.sum()))
@@ -228,6 +236,17 @@ def _evaluate_cell(
             X[tr], Y[tr], X[va], Y[va], X[te], seed
         )
         rows.append(make_row(_score(Y[te], preds, manifest.metric), None))
+        return rows
+
+    if kind == "multiclass":
+        # One column of integer class indices; the class count spans the whole
+        # dataset (the stratified split guarantees every class is present).
+        y = Y[:, 0]
+        n_classes = int(np.nanmax(y)) + 1
+        preds = learner_cfg.build().fit_predict_multiclass(
+            X[tr], y[tr], X[va], y[va], X[te], n_classes, seed
+        )
+        rows.append(make_row(_score(y[te], preds, manifest.metric), None))
         return rows
 
     # regression / binary: score each target column independently.

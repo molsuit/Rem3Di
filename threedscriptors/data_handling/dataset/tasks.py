@@ -32,6 +32,10 @@ class Split(int, Enum):
 class TaskType(str, Enum):
     regression = "regression"
     classification = "classification"  # single-label or multi-label (see output_dim)
+    # Single-label, multi-class (>2 mutually exclusive classes in one column).
+    # The integer class index lives in a single ``targets_system`` column; the
+    # class count is derived from the data at eval time (``int(nanmax)+1``).
+    multiclass = "multiclass"
 
 
 class TaskScope(str, Enum):

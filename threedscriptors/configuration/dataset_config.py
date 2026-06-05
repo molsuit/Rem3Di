@@ -58,6 +58,11 @@ class FilterAtomsStageConfig(BaseModel):
 
     reject_zero_h: bool = False
     min_h_heavy_ratio: float = 0.0
+    # Drop structures with any pair of atoms closer than this (Angstrom). Guards
+    # against degenerate geometries (e.g. overlapping / origin-placed atoms) that
+    # make MACE divide by a ~zero interatomic distance and emit NaN embeddings.
+    # None disables the check; ~0.5 A is safely below any real bond length.
+    min_interatomic_distance: float | None = None
 
 
 FilterStageConfig = Annotated[

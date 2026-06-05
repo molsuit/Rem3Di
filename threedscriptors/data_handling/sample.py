@@ -130,6 +130,21 @@ def yield_molecules_collate_fn(batch: list[Sample]) -> Sample:
     )
 
 
+def yield_molecules_supervised_collate_fn(batch: list[Sample]) -> Sample:
+    """Like :func:`yield_molecules_collate_fn` but also stacks the per-molecule
+    supervised target into ``regression_targets`` (shape ``(B,)``).
+
+    Used for from-scratch supervised training where MACE embeddings are computed
+    on the fly from raw atoms: each ``Sample`` carries its label in
+    ``regression_targets`` (a scalar tensor — the class index for classification
+    or the target value for regression)."""
+    sample = yield_molecules_collate_fn(batch)
+    sample.regression_targets = torch.stack(
+        [s.regression_targets.reshape(()) for s in batch]
+    )
+    return sample
+
+
 @dataclass
 class PreprocessedSample:
     preprocessed_atomic_embeddings: torch.Tensor | None = None

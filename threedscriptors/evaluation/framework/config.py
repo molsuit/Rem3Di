@@ -14,6 +14,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from threedscriptors.evaluation.benchmark.descriptors import DescriptorConfig
+from threedscriptors.evaluation.chiral import ChiralReportConfig
 from threedscriptors.evaluation.framework.tasks import (
     BenchmarkPanelConfig,
     DescriptorAnalysisConfig,
@@ -23,7 +24,10 @@ from threedscriptors.evaluation.framework.tasks import (
 # Discriminated union of task configs; the runner and manifest are agnostic to
 # membership — add a variant here and it is runnable from a manifest.
 TaskConfig = Annotated[
-    BenchmarkPanelConfig | RetrievalConfig | DescriptorAnalysisConfig,
+    BenchmarkPanelConfig
+    | RetrievalConfig
+    | DescriptorAnalysisConfig
+    | ChiralReportConfig,
     Field(discriminator="kind"),
 ]
 

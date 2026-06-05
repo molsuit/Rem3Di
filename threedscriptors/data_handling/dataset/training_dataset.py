@@ -26,6 +26,28 @@ def atoms_getitem(ds: "TrainingMoleculeDataset", i: int) -> Sample:
     )
 
 
+def make_supervised_getitem(
+    labels: np.ndarray, label_dtype: torch.dtype = torch.long
+) -> GetItemFn:
+    """Build a get-item that augments :func:`atoms_getitem` with a per-structure
+    supervised label.
+
+    ``labels`` is indexed by the same structure index the dataset uses (the
+    TrainingMoleculeDataset shares the source zarr's ordering), so
+    ``labels[i]`` is the target for structure ``i``. The label is attached as a
+    scalar ``Sample.regression_targets`` tensor (``long`` for classification
+    class indices, ``float`` for regression), which
+    :func:`yield_molecules_supervised_collate_fn` stacks into a ``(B,)`` batch.
+    """
+
+    def _getitem(ds: "TrainingMoleculeDataset", i: int) -> Sample:
+        sample = atoms_getitem(ds, i)
+        sample.regression_targets = torch.tensor(labels[i], dtype=label_dtype)
+        return sample
+
+    return _getitem
+
+
 class TrainingMoleculeDataset(Dataset):
     def __init__(self, root: Path, get_item: GetItemFn, in_memory: bool = False):
         self.root = str(root)

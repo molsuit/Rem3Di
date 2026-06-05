@@ -183,6 +183,12 @@ class OnTheFlyInvariantNormalization(nn.Module):
             batch_mean = x_valid.mean(dim=0)
             batch_var = x_valid.var(dim=0, unbiased=False)
 
+            # Match the buffer dtype: the atomic preprocessor is cast to float64
+            # at build time, but the MACE embeddings (hence batch stats) may be
+            # float32. ``copy_`` casts implicitly; in-place ``lerp_`` does not
+            # and would raise on a dtype mismatch.
+            batch_mean = batch_mean.to(self.running_mean.dtype)
+            batch_var = batch_var.to(self.running_var.dtype)
             if self.num_batches_tracked == 0:
                 self.running_mean.copy_(batch_mean)
                 self.running_var.copy_(batch_var)
@@ -202,7 +208,11 @@ class OnTheFlyInvariantNormalization(nn.Module):
             self._update_running_stats(x, padding_mask)
 
         mean = self.running_mean.view(1, 1, -1)
-        std = (self.running_var + self.eps).sqrt().view(1, 1, -1)
+        # Floor the variance so a channel with (near-)zero running variance —
+        # common early in warmup on low-diversity batches — can't produce a
+        # tiny std that amplifies inputs to overflow/NaN. eps is a hard floor,
+        # not just an additive nudge.
+        std = self.running_var.clamp_min(self.eps).sqrt().view(1, 1, -1)
 
         x_norm = (x - mean) / std
 

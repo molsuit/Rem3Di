@@ -38,6 +38,15 @@ from threedscriptors.data_handling.dataset_creation.structure_ids import Structu
 from threedscriptors.data_handling.dataset_creation.utils import embed_one_smiles
 
 
+def _min_pairwise_distance(positions: np.ndarray) -> float:
+    """Smallest distance between any two atoms (Angstrom). Used to reject
+    degenerate geometries (overlapping atoms) that make MACE emit NaN."""
+    diff = positions[:, None, :] - positions[None, :, :]
+    d = np.linalg.norm(diff, axis=-1)
+    np.fill_diagonal(d, np.inf)
+    return float(d.min())
+
+
 def _slice_regression(rd: RegressionData, idx: np.ndarray) -> RegressionData:
     """Reindex a RegressionData by row indices (system axis).
 
@@ -585,6 +594,16 @@ class FilterAtomsStage(PipelineStage):
             if self._allowed_numbers is not None and not all(
                 int(z) in self._allowed_numbers for z in nums
             ):
+                stats.n_filtered_out += 1
+                continue
+            if (
+                cfg.min_interatomic_distance is not None
+                and n_total >= 2
+                and _min_pairwise_distance(atoms.get_positions())
+                < cfg.min_interatomic_distance
+            ):
+                # Degenerate geometry (overlapping / origin-placed atoms) makes
+                # MACE divide by a ~zero distance and emit NaN embeddings.
                 stats.n_filtered_out += 1
                 continue
             kept_idx.append(i)

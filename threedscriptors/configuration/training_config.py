@@ -71,6 +71,21 @@ class ProbeConfig(BaseModel):
     seed: int = 0
 
 
+class ClassificationConfig(BaseModel):
+    """Supervised single-label classification objective knobs.
+
+    Only consumed by the classification trainer (a regression architecture whose
+    head carries ``n_classes``); ignored by the self-supervised pretraining.
+    """
+
+    # Focal-loss focusing parameter; 0.0 -> (optionally weighted) cross-entropy.
+    focal_gamma: float = 2.0
+    # Up-weight rare classes via inverse-frequency focal alpha (sklearn
+    # "balanced"), computed on the train split. Right default for the highly
+    # imbalanced chiral-type task.
+    class_balanced_alpha: bool = True
+
+
 class TrainingConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -92,3 +107,4 @@ class TrainingConfig(BaseModel):
     vicreg: VICRegConfig = VICRegConfig()
     compile: CompileConfig = CompileConfig()
     probe: ProbeConfig = ProbeConfig()
+    classification: ClassificationConfig = ClassificationConfig()
