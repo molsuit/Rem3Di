@@ -19,7 +19,10 @@ from typing import Literal
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from threedscriptors.data_handling.benchmarks import discover_benchmark_zarrs
+from threedscriptors.data_handling.benchmarks import (
+    EvalMetric,
+    discover_benchmark_zarrs,
+)
 from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
 from threedscriptors.evaluation.benchmark.descriptors import DescriptorConfig
 from threedscriptors.evaluation.benchmark.learners import LearnerConfig
@@ -29,7 +32,9 @@ from threedscriptors.evaluation.benchmark.runner import (
     _build_targets_with_nan,
     _evaluate_cell,
     _split_masks,
+    _structure_group_ids,
     _task_kind,
+    evaluate_pairwise_cell,
 )
 from threedscriptors.evaluation.framework.context import EvalContext
 from threedscriptors.evaluation.framework.resources import EmbeddingSpec
@@ -91,6 +96,10 @@ class BenchmarkPanelConfig(BaseModel):
         col_names = [c.name for c in dataset.config.tasks.system_cols]
         Y = _build_targets_with_nan(dataset)
         splits = _split_masks(dataset, None)
+        is_pairwise = manifest.metric == EvalMetric.pair_ranking_accuracy
+        mol_ids, iso_ids = (
+            _structure_group_ids(dataset) if is_pairwise else (None, None)
+        )
         rows: list[BenchmarkResultRow] = []
         for desc in descriptors:
             X = ctx.resources.get(
@@ -102,12 +111,21 @@ class BenchmarkPanelConfig(BaseModel):
                 )
             )
             for learner_cfg in self.learners:
-                rows.extend(
-                    _evaluate_cell(
-                        learner_cfg, kind, splits, X, Y, col_names,
-                        manifest, desc.name, ctx.seed,
+                if is_pairwise:
+                    assert mol_ids is not None and iso_ids is not None
+                    rows.extend(
+                        evaluate_pairwise_cell(
+                            learner_cfg, splits, X, Y, mol_ids, iso_ids,
+                            col_names[0], manifest, desc.name, ctx.seed,
+                        )
                     )
-                )
+                else:
+                    rows.extend(
+                        _evaluate_cell(
+                            learner_cfg, kind, splits, X, Y, col_names,
+                            manifest, desc.name, ctx.seed,
+                        )
+                    )
         return rows
 
     @staticmethod

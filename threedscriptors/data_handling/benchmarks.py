@@ -53,6 +53,13 @@ class EvalMetric(StrEnum):
     balanced_accuracy = "balanced-accuracy"
     macro_f1 = "macro-F1"
     macro_auroc_ovr = "macro-AUROC-OvR"
+    # Pairwise enantiomer ranking accuracy (chiral_docking). The probe regresses
+    # the per-conformer docking ``top_score``; conformer predictions are pooled
+    # per stereoisomer, the two enantiomers of each constitution are paired, and
+    # the metric is the fraction of pairs whose predicted better-docker matches
+    # the true one (ties scored 0.5). Needs the molecule/stereoisomer grouping,
+    # so it is evaluated by a dedicated path, not via ``metric_for``.
+    pair_ranking_accuracy = "pair-ranking-accuracy"
 
 
 class SplitVariant(StrEnum):
@@ -67,6 +74,10 @@ class SplitVariant(StrEnum):
     # Group-aware, class-stratified split (splits.stratified_group_split):
     # groups (non-isomeric SMILES) are kept whole, class proportions preserved.
     stratified = "stratified"
+    # Literature split supplied verbatim by the source (e.g. the Chiro docking
+    # dataset ships separate train/valid/test pickle files); the generator writes
+    # the per-row code straight into the zarr ``split`` column.
+    predefined = "predefined"
 
 
 class BenchmarkTask(BaseModel):
@@ -149,8 +160,41 @@ class LocalXyzBenchmark(_BenchmarkBase):
     split_variant: SplitVariant = SplitVariant.stratified
 
 
+class ChiroDockingBenchmark(_BenchmarkBase):
+    """Chiro small-enantiomer docking-ranking benchmark (3D supplied directly).
+
+    Built from three pandas ``.pkl`` DataFrames (one per literature split) of
+    RDKit Mols carrying a single 3D conformer plus a molecule-level docking
+    ``top_score``. Like :class:`LocalXyzBenchmark` the geometries are ingested
+    verbatim (no conformer generation), but the task is **pairwise**: the two
+    enantiomers of each constitution are ranked by predicted ``top_score``, so
+    the headline metric is :attr:`EvalMetric.pair_ranking_accuracy` and the eval
+    runner dispatches to the dedicated pairwise evaluator. The single regression
+    column holds the per-conformer ``top_score`` the probe is trained on.
+    """
+
+    source: Literal["local_chiro"] = "local_chiro"
+    # Source pickle filenames within the build config's local raw root.
+    train_file: str
+    valid_file: str
+    test_file: str
+    # Raw DataFrame column names.
+    id_column: str = "ID"
+    nonstereo_column: str = "SMILES_nostereo"
+    mol_column: str = "rdkit_mol_cistrans_stereo"
+    score_column: str = "top_score"
+    # Conformers ingested per stereoisomer (first-N in file order); None keeps all.
+    max_conformers_per_stereoisomer: int | None = 2
+    metric: EvalMetric = EvalMetric.pair_ranking_accuracy
+    split_variant: SplitVariant = SplitVariant.predefined
+
+
 Benchmark = Annotated[
-    MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark | LocalXyzBenchmark,
+    MoleculeNetBenchmark
+    | TdcBenchmark
+    | PolarisBenchmark
+    | LocalXyzBenchmark
+    | ChiroDockingBenchmark,
     Field(discriminator="source"),
 ]
 
@@ -460,22 +504,39 @@ LOCAL_BENCHMARKS: tuple[LocalXyzBenchmark, ...] = (
 )
 
 
-_BY_ID: dict[
-    str, MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark | LocalXyzBenchmark
-] = {
+# --- Chiro docking (pairwise enantiomer ranking; 3D supplied directly) ------
+# Built by ``scripts/dataset_creation/build_chiro_docking.py``. Source pickles:
+# /p/scratch/mace/wedig1/raw_datasets/chiral_chiro_datasets (see its
+# DATASETS_DESCRIPTION.md). Each constitution has exactly two enantiomers; the
+# probe regresses the per-conformer docking top_score and the pairwise evaluator
+# ranks the pair. ``margin3`` filtering upstream guarantees every pair has a
+# clear (>=0.3 kcal/mol) winner.
+CHIRO_BENCHMARKS: tuple[ChiroDockingBenchmark, ...] = (
+    ChiroDockingBenchmark(
+        dataset_id="chiral_docking",
+        train_file="train_small_enantiomers_stable_full_screen_docking_MOL_margin3_234622_48384_24192.pkl",
+        valid_file="validation_small_enantiomers_stable_full_screen_docking_MOL_margin3_49878_10368_5184.pkl",
+        test_file="test_small_enantiomers_stable_full_screen_docking_MOL_margin3_50571_10368_5184.pkl",
+        tasks=[_reg("docking_top_score", "top_score")],
+    ),
+)
+
+
+_BY_ID: dict[str, Benchmark] = {
     b.dataset_id: b
     for b in (
         *MOLECULENET_BENCHMARKS,
         *TDC_BENCHMARKS,
         *POLARIS_BENCHMARKS,
         *LOCAL_BENCHMARKS,
+        *CHIRO_BENCHMARKS,
     )
 }
 
 
 def get_benchmark(
     dataset_id: str,
-) -> MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark | LocalXyzBenchmark:
+) -> Benchmark:
     try:
         return _BY_ID[dataset_id]
     except KeyError as exc:
@@ -486,12 +547,10 @@ def get_benchmark(
 
 
 def select_benchmarks(
-    benchmarks: tuple[
-        MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark | LocalXyzBenchmark, ...
-    ],
+    benchmarks: tuple[Benchmark, ...],
     ids: list[str] | None = None,
     limit: int | None = None,
-) -> list[MoleculeNetBenchmark | TdcBenchmark | PolarisBenchmark | LocalXyzBenchmark]:
+) -> list[Benchmark]:
     out = list(benchmarks)
     if ids:
         wanted = set(ids)
@@ -517,15 +576,12 @@ class BenchmarkManifest(BaseModel):
     metric: EvalMetric
     split_variant: SplitVariant
     # Provenance only; the eval reader does not branch on this.
-    source: Literal["moleculenet", "tdc", "polaris", "local"]
+    source: Literal["moleculenet", "tdc", "polaris", "local", "local_chiro"]
 
     @classmethod
     def from_benchmark(
         cls,
-        benchmark: MoleculeNetBenchmark
-        | TdcBenchmark
-        | PolarisBenchmark
-        | LocalXyzBenchmark,
+        benchmark: Benchmark,
     ) -> BenchmarkManifest:
         return cls(
             dataset_id=benchmark.dataset_id,

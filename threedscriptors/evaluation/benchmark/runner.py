@@ -46,6 +46,7 @@ from threedscriptors.evaluation.benchmark.learners import (
     LearnerConfig,
 )
 from threedscriptors.evaluation.benchmark.metrics import metric_for
+from threedscriptors.evaluation.benchmark.pairwise import pair_ranking_accuracy
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ class EvalConfig(BaseModel):
 
 class BenchmarkResultRow(BaseModel):
     dataset_id: str
-    source: Literal["moleculenet", "tdc", "polaris", "local"]
+    source: Literal["moleculenet", "tdc", "polaris", "local", "local_chiro"]
     descriptor_name: str
     learner_kind: str
     # Which target column this row scores. Set per-column for regression
@@ -258,6 +259,60 @@ def _evaluate_cell(
     return rows
 
 
+def evaluate_pairwise_cell(
+    learner_cfg: LearnerConfig,
+    splits: tuple[np.ndarray, np.ndarray, np.ndarray],
+    X: np.ndarray,
+    Y: np.ndarray,
+    molecule_ids: np.ndarray,
+    isomer_ids: np.ndarray,
+    col_name: str,
+    manifest: BenchmarkManifest,
+    descriptor_name: str,
+    seed: int,
+) -> list[BenchmarkResultRow]:
+    """Evaluate one (descriptor x learner) cell for the pairwise ranking task.
+
+    The single regression column (the docking ``top_score``) is fit as an
+    ordinary regression; the test-fold predictions are then handed to
+    :func:`pair_ranking_accuracy`, which pools conformers per stereoisomer and
+    ranks each enantiomer pair. One result row, with ``n_test`` carrying the
+    number of enantiomer pairs scored (not conformers).
+    """
+    tr, va, te = splits
+    y = Y[:, 0]
+    preds = _fit_predict_single_column(
+        learner_cfg.build(), True, splits, X, y, seed
+    )
+    acc, n_pairs = pair_ranking_accuracy(
+        y[te], preds, molecule_ids[te], isomer_ids[te]
+    )
+    return [
+        BenchmarkResultRow(
+            dataset_id=manifest.dataset_id,
+            source=manifest.source,
+            descriptor_name=descriptor_name,
+            learner_kind=_learner_kind(learner_cfg),
+            target_col=col_name,
+            metric_name=str(manifest.metric.value),
+            metric_value=float(acc),
+            n_train=int(tr.sum()),
+            n_val=int(va.sum()),
+            n_test=int(n_pairs),
+        )
+    ]
+
+
+def _structure_group_ids(
+    dataset: MoleculeDataset,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-structure (constitution id, stereoisomer id) aligned to descriptor rows."""
+    return (
+        np.asarray(dataset.molecule_ids[:]),
+        np.asarray(dataset.isomer_ids[:]),
+    )
+
+
 def evaluate_zarr(
     zarr_path: Path,
     manifest: BenchmarkManifest,
@@ -273,6 +328,9 @@ def evaluate_zarr(
     splits = _split_masks(dataset, split_override)
     cache_dir = cfg.descriptor_cache_dir or (cfg.output_dir / "descriptor_cache")
 
+    is_pairwise = manifest.metric == EvalMetric.pair_ranking_accuracy
+    mol_ids, iso_ids = _structure_group_ids(dataset) if is_pairwise else (None, None)
+
     rows: list[BenchmarkResultRow] = []
     for desc_cfg in cfg.descriptors:
         logger.info(
@@ -280,10 +338,17 @@ def evaluate_zarr(
         )
         X = compute_and_cache(desc_cfg, dataset, cache_dir, manifest.dataset_id)
         for learner_cfg in cfg.learners:
-            cell_rows = _evaluate_cell(
-                learner_cfg, kind, splits, X, Y, col_names, manifest,
-                desc_cfg.name, cfg.seed,
-            )
+            if is_pairwise:
+                assert mol_ids is not None and iso_ids is not None
+                cell_rows = evaluate_pairwise_cell(
+                    learner_cfg, splits, X, Y, mol_ids, iso_ids,
+                    col_names[0], manifest, desc_cfg.name, cfg.seed,
+                )
+            else:
+                cell_rows = _evaluate_cell(
+                    learner_cfg, kind, splits, X, Y, col_names, manifest,
+                    desc_cfg.name, cfg.seed,
+                )
             for row in cell_rows:
                 logger.info(
                     "%s | %s | %s | %s: %s=%.4f",
