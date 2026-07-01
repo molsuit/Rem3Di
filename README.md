@@ -5,9 +5,9 @@
   <br> <br>
   <a href="https://www.linkedin.com/in/steffen-wedig/" target="_blank">Steffen&nbsp;Wedig</a> &emsp; <b>&middot;</b> &emsp;
   <a href="https://www.felixburton.com" target="_blank">Felix&nbsp;Burton</a> &emsp; <b>&middot;</b> &emsp;
-  <a href="https://www.linkedin.com/in/rokas-elijošius-9148a8147/" target="_blank">Rokas&nbsp;Elijošius<sup>*</sup></a> &emsp; <b>&middot;</b> &emsp;
-  <a href="https://www.phy.cam.ac.uk/profile/dr-christoph-schran/" target="_blank">Christoph&nbsp;Schran<sup>*</sup></a> &emsp; <b>&middot;</b> &emsp;
-  <a href="https://www.larsschaaf.com" target="_blank">Lars&nbsp;L.&nbsp;Schaaf<sup>*</sup></a>
+  <a href="https://www.linkedin.com/in/rokas-elijošius-9148a8147/" target="_blank">Rokas&nbsp;Elijošius</a><sup>*</sup> &emsp; <b>&middot;</b> &emsp;
+  <a href="https://www.phy.cam.ac.uk/profile/dr-christoph-schran/" target="_blank">Christoph&nbsp;Schran</a><sup>*</sup> &emsp; <b>&middot;</b> &emsp;
+  <a href="https://www.larsschaaf.com" target="_blank">Lars&nbsp;L.&nbsp;Schaaf</a><sup>*</sup>
   <br> <br>
   <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank"><b><u>Paper Link</u></b></a>
   <br> <br>
@@ -84,9 +84,9 @@ remedi_descriptors = evaluate_molecular_descriptor_on_dataset(model, ds)
 ## Citation
 
 If you use any of this code in your work, please cite our paper
-([OpenReview](https://openreview.net/forum?id=jOmZsvXoK5&referrer)):
+(<a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank">OpenReview</a>):
 
-> Wedig, Steffen, et al. ["REM3DI: Learning smooth, chiral 3D molecular representations from equivariant atomistic foundation models."]((https://openreview.net/forum?id=jOmZsvXoK5&referrer)) NeurIPS 2025 Workshop on Symmetry and Geometry in Neural Representations. 2025.
+> Wedig, Steffen, et al. <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank">"REM3DI: Learning smooth, chiral 3D molecular representations from equivariant atomistic foundation models."</a> NeurIPS 2025 Workshop on Symmetry and Geometry in Neural Representations. 2025.
 
 ```bibtex
 @inproceedings{wedig2025rem3di,
