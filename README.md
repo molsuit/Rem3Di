@@ -9,7 +9,7 @@
   <a href="https://www.phy.cam.ac.uk/profile/dr-christoph-schran/" target="_blank">Christoph&nbsp;Schran<sup>*</sup></a> &emsp; <b>&middot;</b> &emsp;
   <a href="https://www.larsschaaf.com" target="_blank">Lars&nbsp;L.&nbsp;Schaaf<sup>*</sup></a>
   <br> <br>
-  <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank">Link&nbsp;to&nbsp;paper</a>
+  <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank"><b><u>Paper Link</u></b></a>
   <br> <br>
 </div>
 
