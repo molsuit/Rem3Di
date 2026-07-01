@@ -2,11 +2,17 @@ import pytest
 import torch
 from ase import Atoms
 
-from threedscriptors.configuration.architecture_config import (
+# e3nn 0.4.4 loads o3/constants.pt via torch.load; torch>=2.6 defaults
+# weights_only=True and rejects the pickled `slice` objects, so `from e3nn import o3`
+# (transitively imported by everything below) raises UnpicklingError. Allowlist it.
+# ponytail: drop this once e3nn is upgraded past the torch.load(weights_only) break.
+torch.serialization.add_safe_globals([slice])
+
+from threedscriptors.configuration.architecture_config import (  # noqa: E402
     GaussianBasisConfig,
     RelativeDistancePositionalEncodingConfig,
 )
-from threedscriptors.data_handling.data_utils import get_ase_atoms
+from threedscriptors.data_handling.data_utils import get_ase_atoms  # noqa: E402
 
 
 @pytest.fixture(scope="session")

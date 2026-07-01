@@ -1,6 +1,7 @@
 import torch
-from e3nn import o3
 from e3nn.o3 import Irreps
+
+from threedscriptors.model.preprocessing.pseudoscalar_tp import Rem3DiPseudoScalarTP
 
 
 class ChiGate(torch.nn.Module):
@@ -65,34 +66,15 @@ class ChiralEmbeddingModel(torch.nn.Module):
 
         self.pseudoscalar_irreps = Irreps(f"{pseudoscalar_dimension}x0o")
 
-        self.eq_embedding_irrep = Irreps(f"{pseudoscalar_dimension}x1o")
-
-        self.lin0 = o3.Linear(self.equivariant_irreps, self.eq_embedding_irrep)
-        self.lin1 = o3.Linear(self.equivariant_irreps, self.eq_embedding_irrep)
-        self.lin2 = o3.Linear(self.equivariant_irreps, self.eq_embedding_irrep)
-
-        # self.eq_norm = NormActivation(self.eq_embedding_irrep, torch.sigmoid )
-
-        self.tp_cross = o3.TensorProduct(
-            self.eq_embedding_irrep,
-            self.eq_embedding_irrep,
-            o3.Irreps(f"{pseudoscalar_dimension}x1e"),
-            # single CG path, weights = CG only
-            instructions=[(0, 0, 0, "uvu", True)],
-            internal_weights=True,
-            shared_weights=True,
-            irrep_normalization="component",
-        )
-
-        # 2) dot: (1e ⊗ 1o) → 0o
-        self.tp_dot = o3.TensorProduct(
-            self.tp_cross.irreps_out,
-            self.eq_embedding_irrep,
-            self.pseudoscalar_irreps,  # final pseudoscalar
-            instructions=[(0, 0, 0, "uvu", True)],
-            internal_weights=True,
-            shared_weights=True,
-            irrep_normalization="component",
+        # General 2-TP pseudoscalar engine: uses ALL discovered paths to 0o from the
+        # equivariant irreps (replaces the hardcoded single vector-triple-product path).
+        # TP weights are conditioned on the invariant features.
+        self.pseudoscalar_tp = Rem3DiPseudoScalarTP(
+            input_irreps=self.equivariant_irreps,
+            pseudoscalar_dimension=pseudoscalar_dimension,
+            invariant_conditioned=True,
+            invariant_irreps=self.invariant_irreps,
+            dtype=dtype,
         )
 
         self.ln = torch.nn.LayerNorm(pseudoscalar_dimension, dtype=dtype, bias=False)
@@ -117,14 +99,7 @@ class ChiralEmbeddingModel(torch.nn.Module):
         equivariant_embeddings: torch.Tensor,  # (B, N, F) or (N, F)
         padding: torch.BoolTensor | None = None,  # (B, N), True => padded
     ):
-        x0, x1, x2 = (
-            self.lin0(equivariant_embeddings),
-            self.lin1(equivariant_embeddings),
-            self.lin2(equivariant_embeddings),
-        )
-
-        cross = self.tp_cross(x0, x1)
-        out = self.tp_dot(cross, x2)
+        out = self.pseudoscalar_tp(equivariant_embeddings, invariant_embeddings)
 
         out = self.ln(out)
 
