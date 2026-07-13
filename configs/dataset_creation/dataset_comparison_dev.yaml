@@ -6,7 +6,7 @@
 # point one entry at the pcqm4m zarr with role=pretrain and the rest at the
 # benchmark zarrs with role=eval.
 
-output_dir: /p/scratch/mace/wedig1/datasets/comparisons/dev_freesolv_vs_bace
+output_dir: /path/to/datasets/comparisons/dev_freesolv_vs_bace
 
 random_seed: 1234
 rdkit_n_workers: 8
@@ -15,10 +15,10 @@ top_clusters_plotted: 20
 datasets:
   - name: freesolv
     role: pretrain          # nominal -- stand-in for the real pretraining set
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/freesolv
+    path: /path/to/datasets/benchmarks/freesolv
   - name: bace
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/bace
+    path: /path/to/datasets/benchmarks/bace
 
 bitbirch:
   enabled: true

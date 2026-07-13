@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=benchmark_build
-#SBATCH --account=brics.s5f
+#SBATCH --account=your_account
 #SBATCH --partition=workq
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=288
 #SBATCH --time=06:00:00
-#SBATCH --output=/scratch/s5f/wedigs.s5f/datasets/logs/slurm-%j.out
-#SBATCH --error=/scratch/s5f/wedigs.s5f/datasets/logs/slurm-%j.err
+#SBATCH --output=/path/to/datasets/logs/slurm-%j.out
+#SBATCH --error=/path/to/datasets/logs/slurm-%j.err
 #
 # Builds the full benchmark panel (every registered MoleculeNet + TDC ADMET
 # dataset). Re-running is idempotent: zarrs whose directory already exists
@@ -18,8 +18,8 @@
 
 set -euo pipefail
 
-cd /home/s5f/wedigs.s5f/3DMolecularDescriptors
-mkdir -p /scratch/s5f/wedigs.s5f/datasets/logs
+cd /path/to/3DMolecularDescriptors
+mkdir -p /path/to/datasets/logs
 
 exec uv run python scripts/dataset_creation/build_benchmark_dataset.py \
     --config configs/dataset_creation/benchmarks_local.yaml

@@ -19,7 +19,7 @@ Outputs under ``--output-dir`` (default ``<eval_root>/comparison``):
 Usage::
 
     uv run python scripts/evaluation/compare_benchmarks.py \\
-        --eval-root /p/scratch/mace/wedig1/evaluation_results/pcqm_ablation_novicreg
+        --eval-root /path/to/evaluation_results/pcqm_ablation_novicreg
 """
 
 from __future__ import annotations

@@ -63,7 +63,7 @@ mace_config:
   dtype: float32
   enable_cueq: true
   model_path: 
-    /p/project1/mace/wedig1/3DMolecularDescriptors/MACE-POLAR-1-M.model
+    /path/to/3DMolecularDescriptors/MACE-POLAR-1-M.model
 positional_encoding_config:
   N_radial_basis_functions: 16
   basis_function_config:

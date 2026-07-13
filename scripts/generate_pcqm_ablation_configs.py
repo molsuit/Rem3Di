@@ -1,6 +1,6 @@
 """Regenerate the PCQM pretraining ablation with VICReg disabled.
 
-The previous ablation (``/p/scratch/mace/wedig1/training_runs/pcqm_ablation``)
+The previous ablation (``/path/to/training_runs/pcqm_ablation``)
 swept 11 architecture/training knobs against a single baseline *with* the VICReg
 variance + covariance regularizer enabled. This rebuilds the exact same 11 runs
 but:
@@ -37,13 +37,13 @@ from remedi.configuration.architecture_config import ArchitectureConfig
 from remedi.configuration.dataloader_config import BucketBatchSamplingConfig
 from remedi.configuration.training_config import TrainingConfig
 
-SOURCE_ABLATION = Path("/p/scratch/mace/wedig1/training_runs/pcqm_ablation")
+SOURCE_ABLATION = Path("/path/to/training_runs/pcqm_ablation")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = REPO_ROOT / "configs" / "training" / "pcqm_ablation_novicreg"
 
 MACE_MODEL = REPO_ROOT / "MACE-POLAR-1-M.model"
-DATASET_PATH = Path("/p/scratch/mace/wedig1/datasets/pcqm4m/pcqm500k_std")
-OUTPUT_BASE = Path("/p/scratch/mace/wedig1/training_runs/pcqm_ablation_novicreg")
+DATASET_PATH = Path("/path/to/datasets/pcqm4m/pcqm500k_std")
+OUTPUT_BASE = Path("/path/to/training_runs/pcqm_ablation_novicreg")
 RUN_GROUP = "pcqm_ablation_novicreg"
 EPOCHS = 15
 

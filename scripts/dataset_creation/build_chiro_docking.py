@@ -19,8 +19,8 @@ discovers the zarr as the ``chiral_docking`` benchmark.
 Run with:
     uv run python scripts/dataset_creation/build_chiro_docking.py
     uv run python scripts/dataset_creation/build_chiro_docking.py \\
-        --raw-root /p/scratch/mace/wedig1/raw_datasets/chiral_chiro_datasets \\
-        --output /p/scratch/mace/wedig1/datasets/chiral_docking \\
+        --raw-root /path/to/raw_datasets/chiral_chiro_datasets \\
+        --output /path/to/datasets/chiral_docking \\
         --max-conformers 2
 """
 
@@ -56,8 +56,8 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_RAW_ROOT = Path("/p/scratch/mace/wedig1/raw_datasets/chiral_chiro_datasets")
-DEFAULT_OUTPUT = Path("/p/scratch/mace/wedig1/datasets/chiral_docking")
+DEFAULT_RAW_ROOT = Path("/path/to/raw_datasets/chiral_chiro_datasets")
+DEFAULT_OUTPUT = Path("/path/to/datasets/chiral_docking")
 
 
 def main() -> None:

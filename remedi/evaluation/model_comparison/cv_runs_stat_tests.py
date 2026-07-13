@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pingouin as pg
 
-top_dir = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/0-av_potency_conformal_sampling"
+top_dir = "/path/to/3DMolecularDescriptors/training_runs/0-av_potency_conformal_sampling"
 
 
 # capture the number at the end of the line after a colon

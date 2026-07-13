@@ -12,14 +12,14 @@ dataloader:
   persistent_workers: true
   pin_memory: true
   prefetch_factor: 4
-dataset_path: /p/scratch/mace/wedig1/datasets/pcqm4m/pcqm500k_std
+dataset_path: /path/to/datasets/pcqm4m/pcqm500k_std
 epochs: 15
 learning_rate: 0.001
 max_grad_norm: 1.0
 model_config_path: 
-  /p/project1/mace/wedig1/3DMolecularDescriptors/configs/training/pcqm_ablation_novicreg/pcqm_lr_1e-3/architecture_config.yaml
+  /path/to/3DMolecularDescriptors/configs/training/pcqm_ablation_novicreg/pcqm_lr_1e-3/architecture_config.yaml
 noise_level: 0.3
-output_base: /p/scratch/mace/wedig1/training_runs/pcqm_ablation_novicreg
+output_base: /path/to/training_runs/pcqm_ablation_novicreg
 run_group: pcqm_ablation_novicreg
 split_config:
   N_folds: null

@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=48
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
-#SBATCH --output=/p/scratch/mace/wedig1/training_runs/logs/slurm-%x-%j.out
-#SBATCH --error=/p/scratch/mace/wedig1/training_runs/logs/slurm-%x-%j.err
+#SBATCH --output=/path/to/training_runs/logs/slurm-%x-%j.out
+#SBATCH --error=/path/to/training_runs/logs/slurm-%x-%j.err
 #
 # Pack up to four single-GPU pretraining runs onto one JUWELS Booster node
 # (4x A100). JUWELS only allocates whole nodes, so an ablation of N configs is
@@ -23,9 +23,9 @@
 
 set -euo pipefail
 
-PROJECT_DIR=/p/project1/mace/wedig1/3DMolecularDescriptors
+PROJECT_DIR=/path/to/3DMolecularDescriptors
 cd "${PROJECT_DIR}"
-mkdir -p /p/scratch/mace/wedig1/training_runs/logs
+mkdir -p /path/to/training_runs/logs
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 4 ]; then
     echo "Usage: sbatch submit_ablation_node.sbatch <cfg1> [cfg2] [cfg3] [cfg4]" >&2

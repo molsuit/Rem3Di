@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=48
 #SBATCH --gres=gpu:4
 #SBATCH --time=08:00:00
-#SBATCH --output=/p/scratch/mace/wedig1/evaluation_results/logs/slurm-%x-%j.out
-#SBATCH --error=/p/scratch/mace/wedig1/evaluation_results/logs/slurm-%x-%j.err
+#SBATCH --output=/path/to/evaluation_results/logs/slurm-%x-%j.out
+#SBATCH --error=/path/to/evaluation_results/logs/slurm-%x-%j.err
 #
 # Pack up to four single-GPU model evaluations onto one JUWELS Booster node
 # (4x A100). JUWELS only allocates whole nodes, so evaluating N models is
@@ -27,9 +27,9 @@
 
 set -euo pipefail
 
-PROJECT_DIR=/p/project1/mace/wedig1/3DMolecularDescriptors
+PROJECT_DIR=/path/to/3DMolecularDescriptors
 cd "${PROJECT_DIR}"
-mkdir -p /p/scratch/mace/wedig1/evaluation_results/logs
+mkdir -p /path/to/evaluation_results/logs
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 4 ]; then
     echo "Usage: sbatch submit_eval_node.sbatch <cfgdir1> [cfgdir2] [cfgdir3] [cfgdir4]" >&2
@@ -59,7 +59,7 @@ declare -a PIDS
 for i in "${!CONFIG_DIRS[@]}"; do
     CFG_DIR="${CONFIG_DIRS[$i]}"
     NAME="$(basename "${CFG_DIR}")"
-    LOG="/p/scratch/mace/wedig1/evaluation_results/logs/eval-${NAME}.log"
+    LOG="/path/to/evaluation_results/logs/eval-${NAME}.log"
     echo "[gpu ${i}] model=${NAME} config_dir=${CFG_DIR}"
     CUDA_VISIBLE_DEVICES=${i} uv run python scripts/evaluation/run_eval.py \
         --config "${CFG_DIR}/manifest.yaml" > "${LOG}" 2>&1 &

@@ -25,9 +25,9 @@ split_config:
   - 0.8
   - 0.2
 dataset_path:
-  /scratch/s5f/wedigs.s5f/datasets/tmqm
-model_config_path: /home/s5f/wedigs.s5f/3DMolecularDescriptors/training_runs/example_dir/architecture_config.yaml
-output_base: /scratch/s5f/wedigs.s5f/training_runs
+  /path/to/datasets/tmqm
+model_config_path: /path/to/3DMolecularDescriptors/training_runs/example_dir/architecture_config.yaml
+output_base: /path/to/training_runs
 training_directory: null
 wandb_active: true
 vicreg:

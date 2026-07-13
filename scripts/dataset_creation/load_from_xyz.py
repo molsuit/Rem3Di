@@ -20,7 +20,7 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
 
 xyz_files = [
     Path(f)
-    for f in Path("/scratch/s5f/wedigs.s5f/raw_datasets/omol25_4M_train_tmcs").glob(
+    for f in Path("/path/to/raw_datasets/omol25_4M_train_tmcs").glob(
         "*.extxyz"
     )
 ]
@@ -43,7 +43,7 @@ filter_stage = FilterAtomsStage(
 pipeline = [filter_stage, CopyDataStage(dtype=torch.float64)]
 
 creation_config = DatasetCreationConfig(
-    path=Path("/scratch/s5f/wedigs.s5f/datasets/omol25_tmcs"),
+    path=Path("/path/to/datasets/omol25_tmcs"),
     N_structures=None,
 )
 # Defaults shard correctly (small read chunks, few on-disk shard files);

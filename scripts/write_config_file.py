@@ -16,7 +16,7 @@ from remedi.configuration.architecture_config import (
 )
 from remedi.configuration.mace_config import MaceConfig
 
-model_dir = "/home/steffen/projects/mol_descriptors/training_runs"
+model_dir = "/path/to/projects/mol_descriptors/training_runs"
 
 
 pos_encoding_config = RelativeDistancePositionalEncodingConfig(
@@ -28,7 +28,7 @@ pos_encoding_config = RelativeDistancePositionalEncodingConfig(
 
 mace_config = MaceConfig(
     model_path=Path(
-        "/home/steffen/projects/mol_descriptors/mace_model/MACE-POLAR-1-M.model"
+        "/path/to/projects/mol_descriptors/mace_model/MACE-POLAR-1-M.model"
     ),
 )
 

@@ -6,7 +6,7 @@
 # Run with:
 #   sbatch scripts/dataset_creation/run_dataset_comparison_geom_only.sbatch
 
-output_dir: /p/scratch/mace/wedig1/datasets/comparisons/geom_vs_benchmarks
+output_dir: /path/to/datasets/comparisons/geom_vs_benchmarks
 
 random_seed: 1234
 rdkit_n_workers: 32
@@ -15,19 +15,19 @@ top_clusters_plotted: 30
 datasets:
   - name: geom_drugs
     role: pretrain
-    path: /p/scratch/mace/wedig1/datasets/geom_drugs
+    path: /path/to/datasets/geom_drugs
   - name: bace
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/bace
+    path: /path/to/datasets/benchmarks/bace
   - name: bbbp
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/bbbp
+    path: /path/to/datasets/benchmarks/bbbp
   - name: esol
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/esol
+    path: /path/to/datasets/benchmarks/esol
   - name: freesolv
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/freesolv
+    path: /path/to/datasets/benchmarks/freesolv
 
 bitbirch:
   enabled: true

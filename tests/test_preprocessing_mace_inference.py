@@ -78,7 +78,7 @@ def test_torchsim_matches_ase_descriptors(mol_name: str) -> None:
 _POLAR_MODEL_PATH = Path(
     os.environ.get(
         "MACE_POLAR_MODEL_PATH",
-        "/home/steffen/projects/mol_descriptors/mace_model/MACE-POLAR-1-M.model",
+        "/path/to/projects/mol_descriptors/mace_model/MACE-POLAR-1-M.model",
     )
 )
 

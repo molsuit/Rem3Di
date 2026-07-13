@@ -3,10 +3,10 @@
 # registered MoleculeNet + TDC ADMET benchmark; re-running is idempotent
 # (datasets whose zarr subdir already exists are skipped).
 
-output_root: /p/scratch/mace/wedig1/datasets/benchmarks
-moleculenet_raw_root: /p/scratch/mace/wedig1/molecule_net
-tdc_cache: /p/scratch/mace/wedig1/datasets/tdc_cache
-polaris_raw_root: /p/scratch/mace/wedig1/raw_datasets/polaris
+output_root: /path/to/datasets/benchmarks
+moleculenet_raw_root: /path/to/molecule_net
+tdc_cache: /path/to/datasets/tdc_cache
+polaris_raw_root: /path/to/raw_datasets/polaris
 
 batch_size: 256
 n_sampled_conformers: 1

@@ -18,11 +18,11 @@ from remedi.evaluation.evaluation_utils import (
 
 # Load a model
 
-model_directory = "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/training_runs/209-2025_08_12_15_25_09-FixedPCQM"
+model_directory = "/path/to/3DMolecularDescriptors/training_runs/209-2025_08_12_15_25_09-FixedPCQM"
 
 
 mace_calc = MACECalculator(
-    model_paths="/share/snw30/projects/mace_model/MACE-OFF24_medium.model"
+    model_paths="/path/to/MACE-OFF24_medium.model"
 )
 model = EncoderOnlyArchitectureConfig.from_directory(model_directory).build(
     mace_calculator=mace_calc
@@ -78,7 +78,7 @@ print(cos)
 breakpoint()
 
 dataset_directory = (
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/data/qm9full"
+    "/path/to/3DMolecularDescriptors/data/qm9full"
 )
 dataset = reload_dataset_pipeline(dataset_directory).build()
 

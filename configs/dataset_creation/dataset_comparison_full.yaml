@@ -11,7 +11,7 @@
 # Expect ~30-90 min wall time at full scale (BitBIRCH on ~3.5M FPs dominates).
 # Submit via the JUWELS sbatch template.
 
-output_dir: /p/scratch/mace/wedig1/datasets/comparisons/full_pcqm3M_geom_vs_benchmarks
+output_dir: /path/to/datasets/comparisons/full_pcqm3M_geom_vs_benchmarks
 
 random_seed: 1234
 rdkit_n_workers: 32
@@ -20,22 +20,22 @@ top_clusters_plotted: 30
 datasets:
   - name: pcqm
     role: pretrain
-    path: /p/scratch/mace/wedig1/datasets/pcqm4m/pcqm_only_structures_3_5_M
+    path: /path/to/datasets/pcqm4m/pcqm_only_structures_3_5_M
   - name: geom_drugs
     role: pretrain
-    path: /p/scratch/mace/wedig1/datasets/geom_drugs
+    path: /path/to/datasets/geom_drugs
   - name: bace
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/bace
+    path: /path/to/datasets/benchmarks/bace
   - name: bbbp
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/bbbp
+    path: /path/to/datasets/benchmarks/bbbp
   - name: esol
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/esol
+    path: /path/to/datasets/benchmarks/esol
   - name: freesolv
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/freesolv
+    path: /path/to/datasets/benchmarks/freesolv
 
 bitbirch:
   enabled: true

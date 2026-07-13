@@ -6,8 +6,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=48
 #SBATCH --time=03:00:00
-#SBATCH --output=/p/scratch/mace/wedig1/datasets/logs/slurm-%j.out
-#SBATCH --error=/p/scratch/mace/wedig1/datasets/logs/slurm-%j.err
+#SBATCH --output=/path/to/datasets/logs/slurm-%j.out
+#SBATCH --error=/path/to/datasets/logs/slurm-%j.err
 #
 # DatasetComparison with GEOM drugs as the sole pretrain corpus.
 #
@@ -16,8 +16,8 @@
 
 set -euo pipefail
 
-cd /p/project1/mace/wedig1/3DMolecularDescriptors
-mkdir -p /p/scratch/mace/wedig1/datasets/logs
+cd /path/to/3DMolecularDescriptors
+mkdir -p /path/to/datasets/logs
 
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
 export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}

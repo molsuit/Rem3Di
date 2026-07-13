@@ -1,4 +1,4 @@
-dataset_path: /scratch/s5f/wedigs.s5f/datasets/tmqm
+dataset_path: /path/to/datasets/tmqm
 output_dir: dataloading_benchmark/evaluations
 scratch_parent: null   # null => system tempdir; set if you want it on a fast local disk
 device: null           # null => auto (cuda if available, else cpu)

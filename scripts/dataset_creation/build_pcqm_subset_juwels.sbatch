@@ -6,8 +6,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=48
 #SBATCH --time=06:00:00
-#SBATCH --output=/p/scratch/mace/wedig1/datasets/logs/slurm-%x-%j.out
-#SBATCH --error=/p/scratch/mace/wedig1/datasets/logs/slurm-%x-%j.err
+#SBATCH --output=/path/to/datasets/logs/slurm-%x-%j.out
+#SBATCH --error=/path/to/datasets/logs/slurm-%x-%j.err
 #
 # Build a fixed-size pcqm4m structure subset on /p/scratch for fast pretraining
 # iteration. CPU-only (SDF parse + filter + copy to zarr; embeddings are
@@ -19,8 +19,8 @@
 
 set -euo pipefail
 
-cd /p/project1/mace/wedig1/3DMolecularDescriptors
-mkdir -p /p/scratch/mace/wedig1/datasets/logs
+cd /path/to/3DMolecularDescriptors
+mkdir -p /path/to/datasets/logs
 
 N_STRUCTURES="${1:-500000}"
 

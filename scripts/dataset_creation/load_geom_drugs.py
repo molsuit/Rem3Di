@@ -23,7 +23,7 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
 )
 
-geom_dir = Path("/p/scratch/mace/wedig1/raw_datasets/geom_drugs")
+geom_dir = Path("/path/to/raw_datasets/geom_drugs")
 
 smiles_filter = FilterMoleculeStageConfig(
     max_atoms=100,
@@ -44,7 +44,7 @@ mol_generator = GeomGenerator(
 pipeline = [CopyDataStage(dtype=torch.float64)]
 
 creation_config = DatasetCreationConfig(
-    path=Path("/p/scratch/mace/wedig1/datasets/geom_drugs"),
+    path=Path("/path/to/datasets/geom_drugs"),
     N_structures=3_000_000,
 )
 dataset_config = DatasetConfig(atom_chunk=450, molecule_chunk=50)

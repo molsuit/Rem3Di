@@ -15,8 +15,8 @@ the eval framework auto-discovers the zarr as the ``chiral_cat`` benchmark.
 Run with:
     uv run python scripts/dataset_creation/build_chiral_cat.py
     uv run python scripts/dataset_creation/build_chiral_cat.py \\
-        --raw-root /p/scratch/mace/wedig1/raw_datasets/chiral_cat \\
-        --output /p/scratch/mace/wedig1/datasets/chiral_cat
+        --raw-root /path/to/raw_datasets/chiral_cat \\
+        --output /path/to/datasets/chiral_cat
 """
 
 from __future__ import annotations
@@ -51,8 +51,8 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_RAW_ROOT = Path("/p/scratch/mace/wedig1/raw_datasets/chiral_cat")
-DEFAULT_OUTPUT = Path("/p/scratch/mace/wedig1/datasets/chiral_cat")
+DEFAULT_RAW_ROOT = Path("/path/to/raw_datasets/chiral_cat")
+DEFAULT_OUTPUT = Path("/path/to/datasets/chiral_cat")
 
 
 def main() -> None:

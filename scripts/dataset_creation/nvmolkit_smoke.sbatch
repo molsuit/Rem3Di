@@ -7,10 +7,10 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
 #SBATCH --time=00:10:00
-#SBATCH --output=/p/scratch/mace/wedig1/datasets/logs/slurm-%j.out
-#SBATCH --error=/p/scratch/mace/wedig1/datasets/logs/slurm-%j.err
+#SBATCH --output=/path/to/datasets/logs/slurm-%j.out
+#SBATCH --error=/path/to/datasets/logs/slurm-%j.err
 
 set -euo pipefail
 
-cd /p/project1/mace/wedig1/3DMolecularDescriptors
+cd /path/to/3DMolecularDescriptors
 exec uv run python scripts/dataset_creation/nvmolkit_smoke.py

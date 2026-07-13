@@ -19,7 +19,7 @@ For every model under an eval root (one ``<model>/benchmark/results.csv`` +
 Usage::
 
     uv run python scripts/evaluation/correlate_capacity_downstream.py \\
-        --eval-root /p/scratch/mace/wedig1/evaluation_results/pcqm_ablation_novicreg
+        --eval-root /path/to/evaluation_results/pcqm_ablation_novicreg
 """
 
 from __future__ import annotations
@@ -200,7 +200,7 @@ def main() -> None:
         "--eval-root",
         type=Path,
         default=Path(
-            "/p/scratch/mace/wedig1/evaluation_results/pcqm_ablation_novicreg"
+            "/path/to/evaluation_results/pcqm_ablation_novicreg"
         ),
     )
     parser.add_argument("--dataset-id", type=str, default="pcqm100k")

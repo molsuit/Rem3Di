@@ -123,9 +123,9 @@ The experiment values were promoted to defaults across the codebase:
 
 ## Artifacts
 
-- Experiment slurm log: `/scratch/s5f/wedigs.s5f/datasets/logs/slurm-4686108.err`
-- Experiment output (per-mol JSONL): `/scratch/s5f/wedigs.s5f/datasets/benchmarks_timing_exp/CYP*_Veith/conformer_timings.jsonl`
-- Production reference log: `/scratch/s5f/wedigs.s5f/datasets/logs/slurm-4671351.err`
+- Experiment slurm log: `/path/to/datasets/logs/slurm-4686108.err`
+- Experiment output (per-mol JSONL): `/path/to/datasets/benchmarks_timing_exp/CYP*_Veith/conformer_timings.jsonl`
+- Production reference log: `/path/to/datasets/logs/slurm-4671351.err`
 
 The bespoke experiment yaml and sbatch wrapper were removed after the
 results were captured here. The `only_datasets` knob in

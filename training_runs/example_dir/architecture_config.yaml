@@ -1,6 +1,6 @@
 kind: encoder_decoder
 mace_config:
-  model_path: /home/s5f/wedigs.s5f/3DMolecularDescriptors/MACE-POLAR-1-M.model
+  model_path: /path/to/3DMolecularDescriptors/MACE-POLAR-1-M.model
   device: cuda
   dtype: float32
   enable_cueq: true

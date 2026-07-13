@@ -36,11 +36,11 @@ from remedi.evaluation.evaluation_utils import (
 from remedi.model.remedi_model import REM3DIModel
 
 DEFAULT_MODEL_DIR = Path(
-    "/scratch/s5f/wedigs.s5f/training_runs/pcqm_ablation/"
+    "/path/to/training_runs/pcqm_ablation/"
     "24-2026_05_19_12_57_28-pcqm_baseline"
 )
 DEFAULT_DATASET_DIR = Path(
-    "/scratch/s5f/wedigs.s5f/datasets/pcqm4m/pcqm_only_structures_3_5_M"
+    "/path/to/datasets/pcqm4m/pcqm_only_structures_3_5_M"
 )
 DEFAULT_N_SAMPLES = 200_000
 DEFAULT_SEED = 0

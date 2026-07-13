@@ -8,7 +8,7 @@ confusion matrix that the headline numbers hide.
 
 Run on a GPU node (MACE featurizes on the fly):
     uv run python scripts/evaluation/chiral_per_class_eval.py \
-        --ablation_dir /p/scratch/mace/wedig1/training_runs/chiral_cat_ablation \
+        --ablation_dir /path/to/training_runs/chiral_cat_ablation \
         --configs_dir configs/training/chiral_cat_ablation \
         --split valid
 """

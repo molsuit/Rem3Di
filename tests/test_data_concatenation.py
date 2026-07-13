@@ -7,16 +7,16 @@ from remedi.data_handling.dataset_io import (
 
 def test_dataset_concatenation():
     adme_fang_dataset = load_data_from_disk(
-        "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/adme_fang",
+        "/path/to/3DMolecularDescriptors/data/adme_fang",
         load_molecules=True,
     )
     admet_antiviral = load_data_from_disk(
-        "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/antiviral_admet",
+        "/path/to/3DMolecularDescriptors/data/antiviral_admet",
         load_molecules=True,
     )
 
     cmrt = load_data_from_disk(
-        "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/cmrt",
+        "/path/to/3DMolecularDescriptors/data/cmrt",
         load_molecules=True,
     )
 
@@ -34,7 +34,7 @@ def test_dataset_concatenation():
 
     store_data_to_disk(
         new_dataset,
-        "/data/fast-pc-06/snw30/projects/threescriptor/3DMolecularDescriptors/data/multitask_dataset",
+        "/path/to/3DMolecularDescriptors/data/multitask_dataset",
     )
 
 

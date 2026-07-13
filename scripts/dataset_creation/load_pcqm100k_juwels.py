@@ -38,9 +38,9 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
 )
 
 sdf_file = Path(
-    "/p/scratch/mace/wedig1/raw_datasets/pcqm4m/extracted/pcqm4m-v2-train.sdf"
+    "/path/to/raw_datasets/pcqm4m/extracted/pcqm4m-v2-train.sdf"
 )
-datasets_dir = Path("/p/scratch/mace/wedig1/datasets/pcqm4m")
+datasets_dir = Path("/path/to/datasets/pcqm4m")
 
 
 def parse_args() -> argparse.Namespace:

@@ -12,14 +12,14 @@ dataloader:
   persistent_workers: true
   pin_memory: true
   prefetch_factor: 4
-dataset_path: /p/scratch/mace/wedig1/datasets/pcqm4m/pcqm100k_std
+dataset_path: /path/to/datasets/pcqm4m/pcqm100k_std
 epochs: 1
 learning_rate: 0.0003
 max_grad_norm: 1.0
 model_config_path:
-  /p/project1/mace/wedig1/3DMolecularDescriptors/configs/training/probe_smoke/architecture_config.yaml
+  /path/to/3DMolecularDescriptors/configs/training/probe_smoke/architecture_config.yaml
 noise_level: 0.3
-output_base: /p/scratch/mace/wedig1/training_runs/probe_smoke
+output_base: /path/to/training_runs/probe_smoke
 run_group: probe_smoke
 training_name: probe_smoke
 split_config:

@@ -561,7 +561,7 @@ POLARIS_BENCHMARKS: tuple[PolarisBenchmark, ...] = (
 # path: no conformer generation). ChiralCat is single-label 5-class chirality-
 # type classification over 17,023 molecules; balanced-accuracy is the headline
 # given the extreme class imbalance (achiral/central dominate, helical/planar
-# are rare). See ``/p/scratch/mace/wedig1/raw_datasets/chiral_cat/DATASET.md``.
+# are rare). See ``/path/to/raw_datasets/chiral_cat/DATASET.md``.
 LOCAL_BENCHMARKS: tuple[LocalXyzBenchmark, ...] = (
     LocalXyzBenchmark(
         dataset_id="chiral_cat",
@@ -574,7 +574,7 @@ LOCAL_BENCHMARKS: tuple[LocalXyzBenchmark, ...] = (
 
 # --- Chiro docking (pairwise enantiomer ranking; 3D supplied directly) ------
 # Built by ``scripts/dataset_creation/build_chiro_docking.py``. Source pickles:
-# /p/scratch/mace/wedig1/raw_datasets/chiral_chiro_datasets (see its
+# /path/to/raw_datasets/chiral_chiro_datasets (see its
 # DATASETS_DESCRIPTION.md). Each constitution has exactly two enantiomers; the
 # probe regresses the per-conformer docking top_score and the pairwise evaluator
 # ranks the pair. ``margin3`` filtering upstream guarantees every pair has a

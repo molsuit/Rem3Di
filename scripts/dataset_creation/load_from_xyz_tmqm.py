@@ -35,7 +35,7 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
 )
 
 xyz_files = [
-    Path(f) for f in Path("/scratch/s5f/wedigs.s5f/raw_datasets/tmqm").glob("*.xyz")
+    Path(f) for f in Path("/path/to/raw_datasets/tmqm").glob("*.xyz")
 ]
 
 
@@ -56,7 +56,7 @@ filter_stage = FilterAtomsStage(
 pipeline = [filter_stage, CopyDataStage(dtype=torch.float64)]
 
 creation_config = DatasetCreationConfig(
-    path=Path("/scratch/s5f/wedigs.s5f/datasets/tmqm"),
+    path=Path("/path/to/datasets/tmqm"),
     N_structures=None,
 )
 # Defaults shard correctly; no per-chunk-file workaround needed under v3.

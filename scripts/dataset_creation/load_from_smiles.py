@@ -21,7 +21,7 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
 )
 
 smiles_file = Path(
-    "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/scripts/dataset_creation/pharma_smiles"
+    "/path/to/3DMolecularDescriptors/scripts/dataset_creation/pharma_smiles"
 )
 
 
@@ -29,7 +29,7 @@ smiles = open_smiles_file(smiles_file)
 
 creation_config = DatasetCreationConfig(
     path=Path(
-        "/share/snw30/projects/threedscriptor/3DMolecularDescriptors/datasets/pharma"
+        "/path/to/3DMolecularDescriptors/datasets/pharma"
     ),
     N_structures=len(smiles),
 )

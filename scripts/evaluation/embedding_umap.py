@@ -71,18 +71,18 @@ def parse_args() -> argparse.Namespace:
         "--cache-dir",
         type=Path,
         default=Path(
-            "/p/scratch/mace/wedig1/evaluation_results/qm9_retrieval/descriptor_cache"
+            "/path/to/evaluation_results/qm9_retrieval/descriptor_cache"
         ),
     )
     p.add_argument(
-        "--dataset-path", type=Path, default=Path("/p/scratch/mace/wedig1/datasets/qm9")
+        "--dataset-path", type=Path, default=Path("/path/to/datasets/qm9")
     )
     p.add_argument("--dataset-id", type=str, default="qm9")
     p.add_argument(
         "--output",
         type=Path,
         default=Path(
-            "/p/scratch/mace/wedig1/evaluation_results/qm9_retrieval/embedding_umap.png"
+            "/path/to/evaluation_results/qm9_retrieval/embedding_umap.png"
         ),
     )
     p.add_argument("--color-by", type=str, default="gap")

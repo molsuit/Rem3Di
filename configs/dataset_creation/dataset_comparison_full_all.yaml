@@ -1,5 +1,5 @@
 # Full pretrain-vs-benchmark comparison covering EVERY zarr currently under
-# /p/scratch/mace/wedig1/datasets/benchmarks (37 datasets: MoleculeNet + TDC
+# /path/to/datasets/benchmarks (37 datasets: MoleculeNet + TDC
 # ADMET + Polaris). Pretrain pool is the existing 3.5M pcqm zarr plus
 # GEOM-drugs.
 #
@@ -10,7 +10,7 @@
 # Run with:
 #   sbatch scripts/dataset_creation/run_dataset_comparison_full_all.sbatch
 
-output_dir: /p/scratch/mace/wedig1/datasets/comparisons/full_pcqm3M_geom_vs_benchmarks_all
+output_dir: /path/to/datasets/comparisons/full_pcqm3M_geom_vs_benchmarks_all
 
 random_seed: 1234
 rdkit_n_workers: 32
@@ -19,121 +19,121 @@ top_clusters_plotted: 40
 datasets:
   - name: pcqm
     role: pretrain
-    path: /p/scratch/mace/wedig1/datasets/pcqm4m/pcqm_only_structures_3_5_M
+    path: /path/to/datasets/pcqm4m/pcqm_only_structures_3_5_M
   - name: geom_drugs
     role: pretrain
-    path: /p/scratch/mace/wedig1/datasets/geom_drugs
+    path: /path/to/datasets/geom_drugs
   - name: AMES
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/AMES
+    path: /path/to/datasets/benchmarks/AMES
   - name: bace
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/bace
+    path: /path/to/datasets/benchmarks/bace
   - name: bace_pic50
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/bace_pic50
+    path: /path/to/datasets/benchmarks/bace_pic50
   - name: BBB_Martins
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/BBB_Martins
+    path: /path/to/datasets/benchmarks/BBB_Martins
   - name: bbbp
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/bbbp
+    path: /path/to/datasets/benchmarks/bbbp
   - name: Bioavailability_Ma
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/Bioavailability_Ma
+    path: /path/to/datasets/benchmarks/Bioavailability_Ma
   - name: Caco2_Wang
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/Caco2_Wang
+    path: /path/to/datasets/benchmarks/Caco2_Wang
   - name: Clearance_Hepatocyte_AZ
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/Clearance_Hepatocyte_AZ
+    path: /path/to/datasets/benchmarks/Clearance_Hepatocyte_AZ
   - name: Clearance_Microsome_AZ
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/Clearance_Microsome_AZ
+    path: /path/to/datasets/benchmarks/Clearance_Microsome_AZ
   - name: clintox
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/clintox
+    path: /path/to/datasets/benchmarks/clintox
   - name: CYP2C9_Substrate_CarbonMangels
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/CYP2C9_Substrate_CarbonMangels
+    path: /path/to/datasets/benchmarks/CYP2C9_Substrate_CarbonMangels
   - name: CYP2C9_Veith
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/CYP2C9_Veith
+    path: /path/to/datasets/benchmarks/CYP2C9_Veith
   - name: CYP2D6_Substrate_CarbonMangels
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/CYP2D6_Substrate_CarbonMangels
+    path: /path/to/datasets/benchmarks/CYP2D6_Substrate_CarbonMangels
   - name: CYP2D6_Veith
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/CYP2D6_Veith
+    path: /path/to/datasets/benchmarks/CYP2D6_Veith
   - name: CYP3A4_Substrate_CarbonMangels
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/CYP3A4_Substrate_CarbonMangels
+    path: /path/to/datasets/benchmarks/CYP3A4_Substrate_CarbonMangels
   - name: CYP3A4_Veith
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/CYP3A4_Veith
+    path: /path/to/datasets/benchmarks/CYP3A4_Veith
   - name: DILI
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/DILI
+    path: /path/to/datasets/benchmarks/DILI
   - name: esol
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/esol
+    path: /path/to/datasets/benchmarks/esol
   - name: freesolv
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/freesolv
+    path: /path/to/datasets/benchmarks/freesolv
   - name: Half_Life_Obach
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/Half_Life_Obach
+    path: /path/to/datasets/benchmarks/Half_Life_Obach
   - name: hERG
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/hERG
+    path: /path/to/datasets/benchmarks/hERG
   - name: HIA_Hou
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/HIA_Hou
+    path: /path/to/datasets/benchmarks/HIA_Hou
   - name: hiv
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/hiv
+    path: /path/to/datasets/benchmarks/hiv
   - name: LD50_Zhu
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/LD50_Zhu
+    path: /path/to/datasets/benchmarks/LD50_Zhu
   - name: lipophilicity
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/lipophilicity
+    path: /path/to/datasets/benchmarks/lipophilicity
   - name: Lipophilicity_AstraZeneca
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/Lipophilicity_AstraZeneca
+    path: /path/to/datasets/benchmarks/Lipophilicity_AstraZeneca
   - name: Pgp_Broccatelli
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/Pgp_Broccatelli
+    path: /path/to/datasets/benchmarks/Pgp_Broccatelli
   - name: polaris_adme_fang
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/polaris_adme_fang
+    path: /path/to/datasets/benchmarks/polaris_adme_fang
   - name: polaris_antiviral_admet
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/polaris_antiviral_admet
+    path: /path/to/datasets/benchmarks/polaris_antiviral_admet
   - name: polaris_antiviral_potency
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/polaris_antiviral_potency
+    path: /path/to/datasets/benchmarks/polaris_antiviral_potency
   - name: polaris_pkis2_subset
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/polaris_pkis2_subset
+    path: /path/to/datasets/benchmarks/polaris_pkis2_subset
   - name: polaris_pkis2_subset_cls
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/polaris_pkis2_subset_cls
+    path: /path/to/datasets/benchmarks/polaris_pkis2_subset_cls
   - name: PPBR_AZ
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/PPBR_AZ
+    path: /path/to/datasets/benchmarks/PPBR_AZ
   - name: sider
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/sider
+    path: /path/to/datasets/benchmarks/sider
   - name: Solubility_AqSolDB
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/Solubility_AqSolDB
+    path: /path/to/datasets/benchmarks/Solubility_AqSolDB
   - name: tox21
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/tox21
+    path: /path/to/datasets/benchmarks/tox21
   - name: VDss_Lombardo
     role: eval
-    path: /p/scratch/mace/wedig1/datasets/benchmarks/VDss_Lombardo
+    path: /path/to/datasets/benchmarks/VDss_Lombardo
 
 bitbirch:
   enabled: true

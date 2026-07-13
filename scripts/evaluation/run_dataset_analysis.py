@@ -7,9 +7,9 @@ from remedi.configuration.dataset_analysis_config import (
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset_analysis import MoleculeDatasetAnalysis
 
-dataset_dir = Path("/p/scratch/mace/wedig1/datasets/qm9")
+dataset_dir = Path("/path/to/datasets/qm9")
 
-eval_dir = Path("/p/project1/mace/wedig1/3DMolecularDescriptors/analysis_output/qm9")
+eval_dir = Path("/path/to/3DMolecularDescriptors/analysis_output/qm9")
 
 # Let BitBIRCH derive its threshold from the data (mean iSIM + factor*std via
 # bblean.guess_threshold) instead of the hard-coded 0.65.

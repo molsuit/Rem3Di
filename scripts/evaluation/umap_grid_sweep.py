@@ -135,7 +135,7 @@ def main() -> None:
     parser.add_argument(
         "--dataset-dir",
         type=Path,
-        default=Path("/scratch/s5f/wedigs.s5f/datasets/tmqm"),
+        default=Path("/path/to/datasets/tmqm"),
     )
     parser.add_argument(
         "--output-dir",

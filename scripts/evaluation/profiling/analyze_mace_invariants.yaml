@@ -1,10 +1,10 @@
 mace_config:
-  model_path: /home/s5f/wedigs.s5f/3DMolecularDescriptors/MACE-POLAR-1-M.model
+  model_path: /path/to/3DMolecularDescriptors/MACE-POLAR-1-M.model
   device: cuda
   dtype: float32
   enable_cueq: true
-dataset_path: /scratch/s5f/wedigs.s5f/datasets/tmqm
-output_dir: /home/s5f/wedigs.s5f/3DMolecularDescriptors/analysis_output/mace_invariants
+dataset_path: /path/to/datasets/tmqm
+output_dir: /path/to/3DMolecularDescriptors/analysis_output/mace_invariants
 batch_size: 16
 num_workers: 4
 max_batches: null

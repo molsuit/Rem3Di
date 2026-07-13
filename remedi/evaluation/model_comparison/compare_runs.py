@@ -5,10 +5,10 @@ import numpy as np
 from remedi.evaluation.training_metadata import TrainingMetadata
 
 dirs = [
-    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs/10-2025_08_16_21_16_42-qm9_scratch_finetune10k",
-    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs/17-2025_08_16_21_05_59-qm9_pre100k_finetune10k",
-    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs/13-2025_08_16_20_39_16-qm9_pre200k_finetune10k",
-    "/home/snw30/rds/hpc-work/3DMolecularDescriptors/training_runs/15-2025_08_16_20_55_23-qm9_pre400k_finetune10k",
+    "/path/to/rds/hpc-work/3DMolecularDescriptors/training_runs/10-2025_08_16_21_16_42-qm9_scratch_finetune10k",
+    "/path/to/rds/hpc-work/3DMolecularDescriptors/training_runs/17-2025_08_16_21_05_59-qm9_pre100k_finetune10k",
+    "/path/to/rds/hpc-work/3DMolecularDescriptors/training_runs/13-2025_08_16_20_39_16-qm9_pre200k_finetune10k",
+    "/path/to/rds/hpc-work/3DMolecularDescriptors/training_runs/15-2025_08_16_20_55_23-qm9_pre400k_finetune10k",
 ]
 labels = ["From Scratch", "100k", "200k", "400k"]
 pretrain_size = [0, 100_000, 200_000, 400_000]

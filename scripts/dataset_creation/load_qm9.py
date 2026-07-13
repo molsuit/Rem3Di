@@ -32,9 +32,9 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
 )
 
 qm9_extxyz = Path(
-    "/p/scratch/mace/wedig1/raw_datasets/recalcQM9/curatedQM9_full.extxyz"
+    "/path/to/raw_datasets/recalcQM9/curatedQM9_full.extxyz"
 )
-output_path = Path("/p/scratch/mace/wedig1/datasets/qm9")
+output_path = Path("/path/to/datasets/qm9")
 
 
 def main() -> None:

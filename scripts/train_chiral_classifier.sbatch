@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=48
 #SBATCH --gres=gpu:4
 #SBATCH --time=06:00:00
-#SBATCH --output=/p/scratch/mace/wedig1/training_runs/logs/slurm-%x-%j.out
-#SBATCH --error=/p/scratch/mace/wedig1/training_runs/logs/slurm-%x-%j.err
+#SBATCH --output=/path/to/training_runs/logs/slurm-%x-%j.out
+#SBATCH --error=/path/to/training_runs/logs/slurm-%x-%j.err
 #
 # Run the 2x2 chiral-classifier ablation (pseudoscalars x focal loss) packed
 # onto one JUWELS Booster node (4x A100), one run per GPU. Each run trains the
@@ -35,9 +35,9 @@
 
 set -euo pipefail
 
-PROJECT_DIR=/p/project1/mace/wedig1/3DMolecularDescriptors
+PROJECT_DIR=/path/to/3DMolecularDescriptors
 cd "${PROJECT_DIR}"
-mkdir -p /p/scratch/mace/wedig1/training_runs/logs
+mkdir -p /path/to/training_runs/logs
 
 # Default: the four 2x2 ablation runs (explicit order for a stable GPU mapping).
 DEFAULT_CONFIGS=(

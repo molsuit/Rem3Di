@@ -37,7 +37,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BASE_DIR = REPO_ROOT / "configs" / "training" / "chiral_cat"
 OUT_DIR = REPO_ROOT / "configs" / "training" / "chiral_cat_ablation"
-OUTPUT_BASE = Path("/p/scratch/mace/wedig1/training_runs/chiral_cat_ablation")
+OUTPUT_BASE = Path("/path/to/training_runs/chiral_cat_ablation")
 RUN_GROUP = "chiral_cat_ablation"
 
 # (run_name, pseudoscalars_on, focal_on)
