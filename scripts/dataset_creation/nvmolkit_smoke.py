@@ -11,10 +11,9 @@ from __future__ import annotations
 import sys
 
 import torch
-from rdkit import Chem
-
 from nvmolkit.fingerprints import MorganFingerprintGenerator
 from nvmolkit.similarity import crossTanimotoSimilarity
+from rdkit import Chem
 
 
 def main() -> int:
