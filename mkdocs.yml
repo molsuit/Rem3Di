@@ -1,5 +1,5 @@
 site_name: Rem3Di
-site_description: Learning smooth, chiral 3D molecular representations from equivariant atomistic foundation models
+site_description: Learning smooth, chiral 3D molecular descriptors from atomistic foundation models
 repo_url: https://github.com/steffen-wedig/3DMolecularDescriptors
 docs_dir: docs
 
@@ -16,6 +16,9 @@ theme:
       toggle: { icon: material/brightness-7, name: Dark mode }
     - scheme: slate
       toggle: { icon: material/brightness-4, name: Light mode }
+
+extra_css:
+  - stylesheets/extra.css
 
 markdown_extensions:
   - admonition

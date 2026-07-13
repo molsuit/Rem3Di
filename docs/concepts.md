@@ -30,10 +30,13 @@ model.preprocessor.geometric_preprocessor.load_state_dict(
 )
 ```
 
-## MACE frontend
+## Foundation-model frontend
 
-Rem3Di computes MACE atomic features **on the fly** inside the model — you do
-**not** precompute them into the dataset. The MACE model to use is set by
+Rem3Di builds on a **frozen atomistic foundation model** (a machine-learned
+interatomic potential) that produces the atom-centred features it aggregates. The
+framework is agnostic to the backbone; the published models use **MACE**. These
+features are computed **on the fly** inside the model — you do **not** precompute
+them into the dataset. The foundation model to use is set by
 `mace_config.model_path` in the architecture config. That path is absolute and
 machine-specific, so when you move a checkpoint between machines, override it:
 

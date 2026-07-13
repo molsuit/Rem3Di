@@ -5,7 +5,7 @@ the input format for [evaluation](evaluate-a-model.md) and
 [training](train-from-scratch.md).
 
 You do **not** precompute MACE features — the model computes them on the fly from
-coordinates ([Concepts](concepts.md#mace-frontend)). A dataset just needs 3D
+coordinates ([Concepts](concepts.md#foundation-model-frontend)). A dataset just needs 3D
 structures (and optionally labels).
 
 ## Prerequisites

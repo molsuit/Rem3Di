@@ -39,7 +39,7 @@ print(descriptors.shape)
 > Running on a different machine than the model was trained on? The MACE path
 > baked into the config may not exist locally — pass
 > `RemediCalculator(model_dir=..., mace_model_path="/local/MACE.model")`. See
-> [Concepts → MACE frontend](concepts.md#mace-frontend).
+> [Concepts → Foundation-model frontend](concepts.md#foundation-model-frontend).
 
 ## Next steps
 
