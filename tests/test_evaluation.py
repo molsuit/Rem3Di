@@ -4,19 +4,19 @@ import pydantic_yaml as pyaml
 import pytest
 from mace.calculators import mace_mp
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     RegressionArchitectureConfig,
 )
-from threedscriptors.configuration.data_config import (
+from remedi.configuration.data_config import (
     DatasetConfig,
     DatasetTypes,
     MaceCalculatorConfig,
     TaskConfig,
 )
-from threedscriptors.data_handling.pipelines import regression_training_pipeline
-from threedscriptors.evaluation.clustering import UMAPCalculator
-from threedscriptors.evaluation.evaluation_pipeline import RegressionHeadPCATask
-from threedscriptors.evaluation.evaluation_utils import (
+from remedi.data_handling.pipelines import regression_training_pipeline
+from remedi.evaluation.clustering import UMAPCalculator
+from remedi.evaluation.evaluation_pipeline import RegressionHeadPCATask
+from remedi.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
     evaluate_regression_model_on_dataset,
 )

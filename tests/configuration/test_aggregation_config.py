@@ -2,12 +2,12 @@ import pytest
 import torch
 from pydantic import TypeAdapter, ValidationError
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     AttentionAggregatorConfig,
     GlobalAggregatorConfig,
     MeanAggregatorConfig,
 )
-from threedscriptors.model.pooling import AttnPool
+from remedi.model.pooling import AttnPool
 
 
 def test_attnpool_bad_divisibility():

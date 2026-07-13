@@ -2,8 +2,8 @@
 
 **Date:** 2026-05-27
 **Branch:** `main`
-**Code:** `threedscriptors/data_handling/dataset_comparison.py`,
-`threedscriptors/configuration/dataset_comparison_config.py`,
+**Code:** `remedi/data_handling/dataset_comparison.py`,
+`remedi/configuration/dataset_comparison_config.py`,
 `scripts/dataset_creation/run_dataset_comparison.py`
 
 ## Motivation

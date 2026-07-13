@@ -1,7 +1,7 @@
 import numpy as np
 
-from threedscriptors.data_handling.indexed_subset import IndexedSubset
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
+from remedi.data_handling.indexed_subset import IndexedSubset
+from remedi.data_handling.pipelines import reload_dataset_pipeline
 
 
 def test_indexed_subset():

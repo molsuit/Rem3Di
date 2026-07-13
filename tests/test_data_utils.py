@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from threedscriptors.data_handling.data_utils import (
+from remedi.data_handling.data_utils import (
     get_max_num_of_heavy_atom_from_atoms,
 )
 

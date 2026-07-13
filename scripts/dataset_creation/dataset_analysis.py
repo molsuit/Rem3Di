@@ -13,11 +13,11 @@ from pathlib import Path
 
 import pydantic_yaml as pyd_yaml
 
-from threedscriptors.configuration.dataset_analysis_config import (
+from remedi.configuration.dataset_analysis_config import (
     MoleculeDatasetAnalysisConfig,
 )
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset_analysis import MoleculeDatasetAnalysis
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset_analysis import MoleculeDatasetAnalysis
 
 
 def parse_args() -> argparse.Namespace:

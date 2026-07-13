@@ -8,11 +8,11 @@ from ase import Atoms
 # ponytail: drop this once e3nn is upgraded past the torch.load(weights_only) break.
 torch.serialization.add_safe_globals([slice])
 
-from threedscriptors.configuration.architecture_config import (  # noqa: E402
+from remedi.configuration.architecture_config import (  # noqa: E402
     GaussianBasisConfig,
     RelativeDistancePositionalEncodingConfig,
 )
-from threedscriptors.data_handling.data_utils import get_ase_atoms  # noqa: E402
+from remedi.data_handling.data_utils import get_ase_atoms  # noqa: E402
 
 
 @pytest.fixture(scope="session")

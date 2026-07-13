@@ -15,25 +15,25 @@ import numpy as np
 import torch
 from torch.utils.data import Subset
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     EncoderDecoderArchitectureConfig,
 )
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.training_dataset import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from threedscriptors.evaluation.descriptor_analysis import (
+from remedi.evaluation.descriptor_analysis import (
     CapacityDiagnosticTask,
     DescriptorAnalysisRunner,
     DescriptorDistributionTask,
     DescriptorNormalizationConfig,
     TopNormDescriptorsTask,
 )
-from threedscriptors.evaluation.evaluation_utils import (
+from remedi.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
 )
-from threedscriptors.model.remedi_model import REM3DIModel
+from remedi.model.remedi_model import REM3DIModel
 
 DEFAULT_MODEL_DIR = Path(
     "/scratch/s5f/wedigs.s5f/training_runs/pcqm_ablation/"
@@ -128,9 +128,7 @@ def main() -> None:
             device=args.device,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
-            prefetch_factor=(
-                args.prefetch_factor if args.num_workers > 0 else None
-            ),
+            prefetch_factor=(args.prefetch_factor if args.num_workers > 0 else None),
         )
         torch.save(descriptors, descriptors_path)
         np.save(indices_path, sample_indices)

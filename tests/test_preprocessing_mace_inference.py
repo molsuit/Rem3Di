@@ -20,8 +20,8 @@ import torch
 from ase import Atoms
 from ase.build import molecule
 
-from threedscriptors.configuration.mace_config import MaceConfig
-from threedscriptors.data_handling.sample import Sample
+from remedi.configuration.mace_config import MaceConfig
+from remedi.data_handling.sample import Sample
 
 
 def _sample_from_atoms(atoms: Atoms, device: torch.device) -> Sample:
@@ -53,7 +53,7 @@ def test_torchsim_matches_ase_descriptors(mol_name: str) -> None:
         enable_cueq=False,
     )
 
-    from threedscriptors.model.preprocessing.preprocessing import (
+    from remedi.model.preprocessing.preprocessing import (
         _capture_node_feats,
         _sample_to_simstate,
     )
@@ -105,20 +105,20 @@ def test_polar_run_mace_matches_ase(mol_name: str) -> None:
     released before instantiating the torch-sim model, so the PolarMACE weights
     are only resident once at a time (this test is still RAM-hungry).
     """
-    from threedscriptors.configuration.architecture_config import (
+    from remedi.configuration.architecture_config import (
         EmbeddingPreprocessConfig,
     )
-    from threedscriptors.model.preprocessing.geometric_preprocessor import (
+    from remedi.model.preprocessing.geometric_preprocessor import (
         PairDistanceMatrixGeometricPreprocessor,
     )
-    from threedscriptors.model.preprocessing.preprocessing import (
+    from remedi.model.preprocessing.preprocessing import (
         PreprocessorWithAtomicEmbedding,
         _sample_to_simstate,
     )
-    from threedscriptors.model.preprocessing.radial_basis_functions import (
+    from remedi.model.preprocessing.radial_basis_functions import (
         BesselBasisFunctions,
     )
-    from threedscriptors.utils.model_utils import get_mace_model_irrep_signature
+    from remedi.utils.model_utils import get_mace_model_irrep_signature
 
     # POLAR's SCF + k-space machinery is heavy; pin to CPU for determinism.
     device = torch.device("cpu")

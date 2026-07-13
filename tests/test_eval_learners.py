@@ -14,7 +14,7 @@ import pydantic
 import pydantic_yaml as pyd_yaml
 import pytest
 
-from threedscriptors.evaluation.benchmark.learners import (
+from remedi.evaluation.benchmark.learners import (
     LearnerConfig,
     LightGBMLearner,
     LightGBMLearnerConfig,
@@ -42,9 +42,7 @@ def _synthetic_binary(n: int, d: int, seed: int = 0):
 
 
 def test_config_yaml_roundtrip(tmp_path) -> None:
-    cfg = LinearLearnerConfig(
-        ridge_alpha=2.0, logreg_C=0.5, scaler=ScalerKind.standard
-    )
+    cfg = LinearLearnerConfig(ridge_alpha=2.0, logreg_C=0.5, scaler=ScalerKind.standard)
     path = tmp_path / "learner.yaml"
     pyd_yaml.to_yaml_file(path, cfg)
     loaded = pyd_yaml.parse_yaml_file_as(LinearLearnerConfig, path)
@@ -89,9 +87,7 @@ def test_binary_degenerate_single_class_returns_constant() -> None:
     X = np.random.default_rng(0).standard_normal((20, 3))
     y_all_zero = np.zeros(20)
     learner = LinearLearner()
-    pred = learner.fit_predict_binary(
-        X, y_all_zero, X, y_all_zero, X[:5]
-    )
+    pred = learner.fit_predict_binary(X, y_all_zero, X, y_all_zero, X[:5])
     assert pred.shape == (5,)
     assert np.allclose(pred, 0.0)
 
@@ -193,9 +189,7 @@ def test_multilabel_runs_per_column() -> None:
     X_train, X_val, X_test = X[:30], X[30:45], X[45:]
     Y_train, Y_val, Y_test = Y[:30], Y[30:45], Y[45:]
     learner = LinearLearner()
-    pred = learner.fit_predict_multilabel(
-        X_train, Y_train, X_val, Y_val, X_test
-    )
+    pred = learner.fit_predict_multilabel(X_train, Y_train, X_val, Y_val, X_test)
     assert pred.shape == (len(X_test), 2)
     for j in range(2):
         accuracy = ((pred[:, j] > 0.5).astype(int) == Y_test[:, j]).mean()
@@ -203,7 +197,7 @@ def test_multilabel_runs_per_column() -> None:
 
 
 def test_null_learner_predicts_train_constant_and_parses():
-    from threedscriptors.evaluation.benchmark.learners import (
+    from remedi.evaluation.benchmark.learners import (
         NullLearner,
         NullLearnerConfig,
     )
@@ -219,8 +213,11 @@ def test_null_learner_predicts_train_constant_and_parses():
 
     # binary: base rate
     pb = learner.fit_predict_binary(
-        np.zeros((4, 3)), np.array([0, 1, 1, 1.0]), np.zeros((1, 3)),
-        np.array([0.0]), np.zeros((5, 3))
+        np.zeros((4, 3)),
+        np.array([0, 1, 1, 1.0]),
+        np.zeros((1, 3)),
+        np.array([0.0]),
+        np.zeros((5, 3)),
     )
     assert pb.shape == (5,) and np.allclose(pb, 0.75)
 

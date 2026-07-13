@@ -1,10 +1,10 @@
 import pytest
 from e3nn.o3 import Irreps
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     EmbeddingPreprocessConfig,
 )
-from threedscriptors.utils.model_utils import get_pseudoscalar_indices
+from remedi.utils.model_utils import get_pseudoscalar_indices
 
 
 @pytest.mark.parametrize(

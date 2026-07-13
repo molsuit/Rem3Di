@@ -15,7 +15,7 @@ import pydantic
 import pydantic_yaml as pyd_yaml
 import pytest
 
-from threedscriptors.evaluation.benchmark.descriptors import (
+from remedi.evaluation.benchmark.descriptors import (
     DescriptorConfig,
     EcfpCalculator,
     EcfpConfig,

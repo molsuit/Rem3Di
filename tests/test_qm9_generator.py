@@ -17,23 +17,23 @@ import torch
 from ase import Atoms
 from ase.io import write as ase_write
 
-from threedscriptors.configuration.dataset_config import (
+from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
     FilterAtomsStageConfig,
 )
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.tasks import ElementSet
-from threedscriptors.data_handling.dataset_creation.generators.qm9_generator import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.tasks import ElementSet
+from remedi.data_handling.dataset_creation.generators.qm9_generator import (
     ALL_QM9_TASKS,
     QM9Generator,
     QM9Property,
     qm9_task_set,
 )
-from threedscriptors.data_handling.dataset_creation.orchestrator import (
+from remedi.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
-from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+from remedi.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
     FilterAtomsStage,
 )
@@ -70,9 +70,7 @@ def test_generator_reads_all_targets_and_smiles(tmp_path: Path) -> None:
     (batch,) = list(gen)
 
     assert batch.regression_data is not None
-    np.testing.assert_allclose(
-        batch.regression_data.targets_system[0], np.arange(15.0)
-    )
+    np.testing.assert_allclose(batch.regression_data.targets_system[0], np.arange(15.0))
     np.testing.assert_allclose(
         batch.regression_data.targets_system[1], np.arange(100.0, 115.0)
     )
@@ -86,7 +84,9 @@ def test_generator_reads_all_targets_and_smiles(tmp_path: Path) -> None:
 
 def test_generator_drops_invalid_smiles(tmp_path: Path) -> None:
     good = Atoms("CH4", positions=np.zeros((5, 3)), info={**_CH4, "SMILES": "C"})
-    bad = Atoms("H2O", positions=np.zeros((3, 3)), info={**_H2O, "SMILES": "not_a_smiles"})
+    bad = Atoms(
+        "H2O", positions=np.zeros((3, 3)), info={**_H2O, "SMILES": "not_a_smiles"}
+    )
     xyz_path = tmp_path / "qm9.xyz"
     ase_write(str(xyz_path), [good, bad], format="extxyz")
 
@@ -151,8 +151,8 @@ def test_nearest_molecule_figures_render() -> None:
 
     from matplotlib.figure import Figure
 
-    from threedscriptors.evaluation.retrieval.config import NearestMoleculeTaskConfig
-    from threedscriptors.evaluation.retrieval.nearest_molecule import (
+    from remedi.evaluation.retrieval.config import NearestMoleculeTaskConfig
+    from remedi.evaluation.retrieval.nearest_molecule import (
         NearestMoleculeResult,
         Neighbor,
         QueryResult,
@@ -167,8 +167,12 @@ def test_nearest_molecule_figures_render() -> None:
                 query="smiles:CCO",
                 embedded=True,
                 neighbors=[
-                    Neighbor(rank=0, row_index=3, structure_id=3, smiles="CCO", distance=0.0),
-                    Neighbor(rank=1, row_index=7, structure_id=7, smiles="CCN", distance=0.12),
+                    Neighbor(
+                        rank=0, row_index=3, structure_id=3, smiles="CCO", distance=0.0
+                    ),
+                    Neighbor(
+                        rank=1, row_index=7, structure_id=7, smiles="CCN", distance=0.12
+                    ),
                 ],
             ),
             # Not embedded -> skipped.
@@ -178,7 +182,13 @@ def test_nearest_molecule_figures_render() -> None:
                 query="index:1",
                 embedded=True,
                 neighbors=[
-                    Neighbor(rank=0, row_index=2, structure_id=2, smiles="c1ccccc1", distance=0.05),
+                    Neighbor(
+                        rank=0,
+                        row_index=2,
+                        structure_id=2,
+                        smiles="c1ccccc1",
+                        distance=0.05,
+                    ),
                 ],
             ),
         ],
@@ -200,8 +210,8 @@ def test_nearest_molecule_figures_render() -> None:
 def test_nearest_molecule_figures_disabled_by_default() -> None:
     import types
 
-    from threedscriptors.evaluation.retrieval.config import NearestMoleculeTaskConfig
-    from threedscriptors.evaluation.retrieval.nearest_molecule import (
+    from remedi.evaluation.retrieval.config import NearestMoleculeTaskConfig
+    from remedi.evaluation.retrieval.nearest_molecule import (
         NearestMoleculeResult,
         Neighbor,
         QueryResult,
@@ -215,7 +225,11 @@ def test_nearest_molecule_figures_disabled_by_default() -> None:
             QueryResult(
                 query="smiles:CCO",
                 embedded=True,
-                neighbors=[Neighbor(rank=0, row_index=0, structure_id=0, smiles="CCO", distance=0.0)],
+                neighbors=[
+                    Neighbor(
+                        rank=0, row_index=0, structure_id=0, smiles="CCO", distance=0.0
+                    )
+                ],
             )
         ],
     )

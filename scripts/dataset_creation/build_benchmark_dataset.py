@@ -28,11 +28,11 @@ from pathlib import Path
 import pydantic_yaml as pyd_yaml
 import torch
 
-from threedscriptors.configuration.dataset_config import (
+from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
 )
-from threedscriptors.data_handling.benchmarks import (
+from remedi.data_handling.benchmarks import (
     MOLECULENET_BENCHMARKS,
     POLARIS_BENCHMARKS,
     TDC_BENCHMARKS,
@@ -41,22 +41,22 @@ from threedscriptors.data_handling.benchmarks import (
     PolarisBenchmark,
     TdcBenchmark,
 )
-from threedscriptors.data_handling.dataset_creation.build_config import (
+from remedi.data_handling.dataset_creation.build_config import (
     BenchmarkBuildConfig,
 )
-from threedscriptors.data_handling.dataset_creation.generators.moleculenet_generator import (
+from remedi.data_handling.dataset_creation.generators.moleculenet_generator import (
     MoleculeNetGenerator,
 )
-from threedscriptors.data_handling.dataset_creation.generators.polaris_offline_generator import (
+from remedi.data_handling.dataset_creation.generators.polaris_offline_generator import (
     PolarisOfflineGenerator,
 )
-from threedscriptors.data_handling.dataset_creation.generators.tdc_generator import (
+from remedi.data_handling.dataset_creation.generators.tdc_generator import (
     TdcGenerator,
 )
-from threedscriptors.data_handling.dataset_creation.orchestrator import (
+from remedi.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
-from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+from remedi.data_handling.dataset_creation.pipeline_stages import (
     ConformerGenerationStage,
     CopyDataStage,
     FilterMoleculeStage,

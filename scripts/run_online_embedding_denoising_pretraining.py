@@ -10,32 +10,32 @@ import torch
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import Subset
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     ArchitectureConfig,
 )
-from threedscriptors.configuration.training_config import (
+from remedi.configuration.training_config import (
     TrainingConfig,
 )
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.training_dataset import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from threedscriptors.data_handling.sample import (
+from remedi.data_handling.sample import (
     PreprocessedSample,
     yield_molecules_collate_fn,
 )
-from threedscriptors.training.data import (
+from remedi.training.data import (
     DatasetSplitting,
 )
-from threedscriptors.training.data.samplers import lengths_from_ptr
-from threedscriptors.training.linear_probe import LinearProbeMonitor
-from threedscriptors.training.noise_scheduler import ConstantSchedule, NoiseModule
-from threedscriptors.training.pretraining import (
+from remedi.training.data.samplers import lengths_from_ptr
+from remedi.training.linear_probe import LinearProbeMonitor
+from remedi.training.noise_scheduler import ConstantSchedule, NoiseModule
+from remedi.training.pretraining import (
     atom_denoising_loss,
     vicreg_descriptor_loss,
 )
-from threedscriptors.training.telemetry import TrainingTelemetry
+from remedi.training.telemetry import TrainingTelemetry
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -102,6 +102,7 @@ def parse_args():
         help="Optional cap on validation batches per epoch for smoke runs.",
     )
     return parser.parse_args()
+
 
 def build_probe_monitor(
     probe_cfg, full_dataset, ds, val_idx, collate_fn, device, logger
@@ -183,7 +184,6 @@ def setup_logging(filename, level: int = logging.INFO) -> logging.Logger:
     return logger
 
 
-
 def main():
     args = parse_args()
 
@@ -197,7 +197,11 @@ def main():
         ArchitectureConfig, training_config.model_config_path
     )
 
-    dataset_path = args.dataset_path if args.dataset_path is not None else training_config.dataset_path
+    dataset_path = (
+        args.dataset_path
+        if args.dataset_path is not None
+        else training_config.dataset_path
+    )
 
     full_dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
     ds = TrainingMoleculeDataset(dataset_path, get_item=atoms_getitem, in_memory=True)
@@ -304,17 +308,18 @@ def main():
         architecture_config,
     )
 
-
     with TrainingTelemetry(
         wandb_active=training_config.wandb_active,
         run_name=training_config.training_name,
         group_name=training_config.run_group,
         out_dir=training_data_dir,
-        config = {"train_config": training_config.model_dump(), "architecture_config": architecture_config.model_dump()}
+        config={
+            "train_config": training_config.model_dump(),
+            "architecture_config": architecture_config.model_dump(),
+        },
     ) as telemetry:
-
-        encoder.to(device, dtype = torch.float32)
-        decoder.to(device, dtype = torch.float32)
+        encoder.to(device, dtype=torch.float32)
+        decoder.to(device, dtype=torch.float32)
         preprocessor.to(device)
 
         if compile_cfg.enabled:
@@ -322,7 +327,6 @@ def main():
             decoder = torch.compile(decoder, dynamic=True)
 
         print("Training Start")
-
 
         vicreg_cfg = training_config.vicreg
 
@@ -470,10 +474,13 @@ def main():
                             {k: round(v, 4) for k, v in probe_metrics.items()},
                         )
 
-            avg_train_loss = (running / (
-                (batch_index + 1)
-                * architecture_config.embedding_preprocess_config.output_irreps_dim
-            )).item()
+            avg_train_loss = (
+                running
+                / (
+                    (batch_index + 1)
+                    * architecture_config.embedding_preprocess_config.output_irreps_dim
+                )
+            ).item()
 
             running = torch.zeros((), device=device)
             running_var_val = torch.zeros((), device=device)
@@ -535,10 +542,13 @@ def main():
 
                     running += denoising_loss.detach()
 
-                avg_validation_loss = (running / (
-                    (batch_idx + 1)
-                    * architecture_config.embedding_preprocess_config.output_irreps_dim
-                )).item()
+                avg_validation_loss = (
+                    running
+                    / (
+                        (batch_idx + 1)
+                        * architecture_config.embedding_preprocess_config.output_irreps_dim
+                    )
+                ).item()
 
                 extra_metrics: dict[str, float] = {
                     "descriptor_norm_max_train": float(running_zmax.item()),
@@ -567,7 +577,9 @@ def main():
 
                 if telemetry.best_epoch:
                     encoder_to_save = getattr(encoder, "_orig_mod", encoder)
-                    torch.save(encoder_to_save.state_dict(), f"{training_data_dir}/encoder.pth")
+                    torch.save(
+                        encoder_to_save.state_dict(), f"{training_data_dir}/encoder.pth"
+                    )
                     torch.save(
                         preprocessor.atomic_preprocessor.state_dict(),
                         f"{training_data_dir}/atomic_preprocessor.pth",

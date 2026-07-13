@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
+from remedi.model.preprocessing.atomic_descriptor_preprocessor import (
     PrecomputedInvariantNormalization,
 )
 

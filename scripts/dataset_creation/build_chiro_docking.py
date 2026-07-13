@@ -32,24 +32,24 @@ from pathlib import Path
 
 import torch
 
-from threedscriptors.configuration.dataset_config import (
+from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
     FilterAtomsStageConfig,
 )
-from threedscriptors.data_handling.benchmarks import (
+from remedi.data_handling.benchmarks import (
     BenchmarkManifest,
     ChiroDockingBenchmark,
     get_benchmark,
 )
-from threedscriptors.data_handling.dataset.tasks import ElementSet, Split
-from threedscriptors.data_handling.dataset_creation.generators.chiro_docking_generator import (
+from remedi.data_handling.dataset.tasks import ElementSet, Split
+from remedi.data_handling.dataset_creation.generators.chiro_docking_generator import (
     ChiroDockingGenerator,
 )
-from threedscriptors.data_handling.dataset_creation.orchestrator import (
+from remedi.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
-from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+from remedi.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
     FilterAtomsStage,
 )
@@ -95,7 +95,9 @@ def main() -> None:
     }
     for split, path in split_files.items():
         if not path.exists():
-            raise FileNotFoundError(f"Chiro docking {split.name} pickle not found: {path}")
+            raise FileNotFoundError(
+                f"Chiro docking {split.name} pickle not found: {path}"
+            )
 
     if args.output.exists():
         logger.info("%s exists; delete the dir to rebuild. Skipping.", args.output)

@@ -13,20 +13,20 @@ from pathlib import Path
 
 import torch
 
-from threedscriptors.configuration.dataset_config import (
+from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
     FilterAtomsStageConfig,
 )
-from threedscriptors.data_handling.dataset.tasks import ElementSet
-from threedscriptors.data_handling.dataset_creation.generators.qm9_generator import (
+from remedi.data_handling.dataset.tasks import ElementSet
+from remedi.data_handling.dataset_creation.generators.qm9_generator import (
     ALL_QM9_TASKS,
     QM9Generator,
 )
-from threedscriptors.data_handling.dataset_creation.orchestrator import (
+from remedi.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
-from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+from remedi.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
     FilterAtomsStage,
 )

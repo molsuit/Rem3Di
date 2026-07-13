@@ -17,10 +17,10 @@ import numpy as np
 import pytest
 from zarr.storage import LoggingStore
 
-import threedscriptors.data_handling.dataset.molecule_dataset as md
-from threedscriptors.configuration.dataset_config import DatasetConfig
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset_creation.shard_aligned_writer import (
+import remedi.data_handling.dataset.molecule_dataset as md
+from remedi.configuration.dataset_config import DatasetConfig
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset_creation.shard_aligned_writer import (
     ShardAlignedWriter,
 )
 
@@ -185,9 +185,9 @@ def test_all_buffered_until_shard_complete(tmp_path: Path, monkeypatch) -> None:
     after_loop = dict(store.counter)
 
     # Nothing flushed yet: no data writes happened during the append loop.
-    assert after_loop.get("set", 0) == before.get("set", 0), (
-        "data was written before a shard completed — buffering bypassed"
-    )
+    assert after_loop.get("set", 0) == before.get(
+        "set", 0
+    ), "data was written before a shard completed — buffering bypassed"
     assert after_loop.get("get", 0) == before.get("get", 0)
 
     writer.finalize()  # single partial-shard write here

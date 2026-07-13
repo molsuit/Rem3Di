@@ -3,12 +3,12 @@ import torch
 from e3nn.o3 import Irreps
 from mace.calculators import mace_mp
 
-from threedscriptors.configuration.architecture_config import EmbeddingPreprocessConfig
-from threedscriptors.data_handling.data_utils import get_ase_atoms
-from threedscriptors.model.preprocessing.atomic_descriptor_preprocessor import (
+from remedi.configuration.architecture_config import EmbeddingPreprocessConfig
+from remedi.data_handling.data_utils import get_ase_atoms
+from remedi.model.preprocessing.atomic_descriptor_preprocessor import (
     PseudoscalarGenerator,
 )
-from threedscriptors.utils.model_utils import (
+from remedi.utils.model_utils import (
     get_invariant_indices,
     get_mace_calculator_irrep_signature,
     get_pseudoscalars_indices,

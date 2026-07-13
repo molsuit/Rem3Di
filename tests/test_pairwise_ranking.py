@@ -6,14 +6,14 @@ import math
 
 import numpy as np
 
-from threedscriptors.data_handling.benchmarks import (
+from remedi.data_handling.benchmarks import (
     BenchmarkManifest,
     EvalMetric,
     SplitVariant,
 )
-from threedscriptors.evaluation.benchmark.learners import LinearLearnerConfig
-from threedscriptors.evaluation.benchmark.pairwise import pair_ranking_accuracy
-from threedscriptors.evaluation.benchmark.runner import evaluate_pairwise_cell
+from remedi.evaluation.benchmark.learners import LinearLearnerConfig
+from remedi.evaluation.benchmark.pairwise import pair_ranking_accuracy
+from remedi.evaluation.benchmark.runner import evaluate_pairwise_cell
 
 
 def test_perfect_ranking_pools_conformers() -> None:

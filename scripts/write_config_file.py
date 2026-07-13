@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pydantic_yaml as pyaml
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     AttentionLayerConfig,
     BesselBasisConfig,
     DecoderConfig,
@@ -14,7 +14,7 @@ from threedscriptors.configuration.architecture_config import (
     PMAAggregatorConfig,
     RelativeDistancePositionalEncodingConfig,
 )
-from threedscriptors.configuration.mace_config import MaceConfig
+from remedi.configuration.mace_config import MaceConfig
 
 model_dir = "/home/steffen/projects/mol_descriptors/training_runs"
 

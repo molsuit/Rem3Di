@@ -4,7 +4,7 @@ import pydantic_yaml as pyaml
 import pytest
 import torch
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     Activations,
     AttentionLayerConfig,
     DecoderConfig,
@@ -18,7 +18,7 @@ from threedscriptors.configuration.architecture_config import (
     RegressionHeadConfig,
     RelativeDistancePositionalEncodingConfig,
 )
-from threedscriptors.configuration.config_utils import from_yaml
+from remedi.configuration.config_utils import from_yaml
 
 
 def _minimal_shared_parts(fill_derived: bool):
@@ -241,9 +241,7 @@ def test_encoder_decoder_yaml_parses_against_current_schema():
 
 
 def test_encoder_only_from_encoder_yaml_strips_decoder(tmp_path):
-    src = (
-        resources.files("tests") / "test_architecture_config_encoder_decoder.yaml"
-    )
+    src = resources.files("tests") / "test_architecture_config_encoder_decoder.yaml"
     target = tmp_path / "post_training_architecture_config.yaml"
     target.write_bytes(src.read_bytes())
 

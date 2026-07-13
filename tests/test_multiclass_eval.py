@@ -15,30 +15,30 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from threedscriptors.data_handling.benchmarks import (
+from remedi.data_handling.benchmarks import (
     BenchmarkManifest,
     EvalMetric,
     SplitVariant,
 )
-from threedscriptors.data_handling.dataset.tasks import (
+from remedi.data_handling.dataset.tasks import (
     TaskConfig,
     TaskScope,
     TaskSet,
     TaskType,
 )
-from threedscriptors.evaluation.benchmark.learners import (
+from remedi.evaluation.benchmark.learners import (
     LightGBMLearner,
     LinearLearner,
     LinearLearnerConfig,
     MlpLearner,
     NullLearner,
 )
-from threedscriptors.evaluation.benchmark.metrics import (
+from remedi.evaluation.benchmark.metrics import (
     balanced_accuracy,
     macro_auroc_ovr,
     macro_f1,
 )
-from threedscriptors.evaluation.benchmark.runner import _evaluate_cell, _task_kind
+from remedi.evaluation.benchmark.runner import _evaluate_cell, _task_kind
 
 N_CLASSES = 5
 
@@ -136,12 +136,20 @@ def test_multiclass_metrics_perfect_and_chance() -> None:
     assert macro_f1(y_true, perfect) == 1.0
     assert macro_auroc_ovr(y_true, perfect) == 1.0
     # A single test class -> OvR AUROC undefined -> NaN.
-    assert np.isnan(macro_auroc_ovr(np.zeros(4, dtype=int), np.eye(5)[np.zeros(4, dtype=int)]))
+    assert np.isnan(
+        macro_auroc_ovr(np.zeros(4, dtype=int), np.eye(5)[np.zeros(4, dtype=int)])
+    )
 
 
 def test_task_kind_multiclass() -> None:
     ts = TaskSet.from_list(
-        [TaskConfig(name="chirality_type", task_type=TaskType.multiclass, scope=TaskScope.system)]
+        [
+            TaskConfig(
+                name="chirality_type",
+                task_type=TaskType.multiclass,
+                scope=TaskScope.system,
+            )
+        ]
     )
     ds = SimpleNamespace(config=SimpleNamespace(tasks=ts))
     assert _task_kind(ds) == "multiclass"

@@ -30,16 +30,16 @@ from sklearn.metrics import (
 )
 from torch.utils.data import Subset
 
-from threedscriptors.configuration.architecture_config import ArchitectureConfig
-from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.tasks import Split
-from threedscriptors.data_handling.dataset.training_dataset import (
+from remedi.configuration.architecture_config import ArchitectureConfig
+from remedi.configuration.training_config import TrainingConfig
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.tasks import Split
+from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
 )
-from threedscriptors.data_handling.sample import yield_molecules_supervised_collate_fn
-from threedscriptors.training.data.samplers import lengths_from_ptr
+from remedi.data_handling.sample import yield_molecules_supervised_collate_fn
+from remedi.training.data.samplers import lengths_from_ptr
 
 logger = logging.getLogger("remedi.chiral.per_class")
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -58,7 +58,9 @@ RUNS = {
 def _find_run_dir(ablation_dir: Path, suffix: str) -> Path:
     matches = sorted(ablation_dir.glob(f"*-{suffix}"))
     if not matches:
-        raise FileNotFoundError(f"no checkpoint dir matching *-{suffix} under {ablation_dir}")
+        raise FileNotFoundError(
+            f"no checkpoint dir matching *-{suffix} under {ablation_dir}"
+        )
     return matches[-1]
 
 
@@ -70,8 +72,12 @@ def _load_model(run_dir: Path):
     model.to(device)
     ld = lambda f: torch.load(run_dir / f, map_location=device)  # noqa: E731
     model.encoder.load_state_dict(ld("encoder.pth"))
-    model.preprocessor.atomic_preprocessor.load_state_dict(ld("atomic_preprocessor.pth"))
-    model.preprocessor.geometric_preprocessor.load_state_dict(ld("geometric_preprocessor.pth"))
+    model.preprocessor.atomic_preprocessor.load_state_dict(
+        ld("atomic_preprocessor.pth")
+    )
+    model.preprocessor.geometric_preprocessor.load_state_dict(
+        ld("geometric_preprocessor.pth")
+    )
     model.multitask_heads.load_state_dict(ld("classification_head.pth"))
     model.eval()
     return model
@@ -138,7 +144,9 @@ def evaluate_run(run_dir: Path, cfg_dir: Path, split: Split, n_classes: int) -> 
 
 
 def _print_run(name: str, res: dict) -> None:
-    print(f"\n===== {name}  (val balanced accuracy = {res['balanced_accuracy']:.4f}) =====")
+    print(
+        f"\n===== {name}  (val balanced accuracy = {res['balanced_accuracy']:.4f}) ====="
+    )
     print(f"{'class':9s} {'prec':>6s} {'recall':>7s} {'f1':>6s} {'support':>8s}")
     for cname, m in res["per_class"].items():
         print(
@@ -151,7 +159,9 @@ def _print_run(name: str, res: dict) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     p = argparse.ArgumentParser()
     p.add_argument("--ablation_dir", type=Path, required=True)
     p.add_argument("--configs_dir", type=Path, required=True)

@@ -13,7 +13,7 @@ import pytest
 import torch
 from e3nn.o3 import Irreps
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     EmbeddingPreprocessConfig,
     IdentityInvariantProjectionConfig,
     LinearInvariantProjectionConfig,

@@ -1,10 +1,10 @@
 import torch
 
-from threedscriptors.data_handling.dataset_io import (
+from remedi.data_handling.dataset_io import (
     load_data_from_disk,
     store_data_to_disk,
 )
-from threedscriptors.data_handling.pipelines import regression_training_pipeline
+from remedi.data_handling.pipelines import regression_training_pipeline
 
 
 def test_dataset_io(

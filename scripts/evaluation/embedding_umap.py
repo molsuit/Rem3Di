@@ -26,7 +26,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 
 DEFAULT_MODELS: list[tuple[str, str]] = [
     ("remedi_pcqm_agg_mean", "pcqm_agg_mean"),

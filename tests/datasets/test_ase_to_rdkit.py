@@ -2,7 +2,7 @@ import numpy as np
 from ase import Atoms
 from rdkit import Chem
 
-from threedscriptors.data_handling.data_utils import (
+from remedi.data_handling.data_utils import (
     get_rdkit_mol_from_ase,  # replace with actual import
 )
 

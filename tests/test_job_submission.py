@@ -14,11 +14,11 @@ from pathlib import Path
 import pydantic_yaml as pyaml
 import pytest
 
-from threedscriptors.configuration.dataloader_config import (
+from remedi.configuration.dataloader_config import (
     BucketBatchSamplingConfig,
     DataLoaderConfig,
 )
-from threedscriptors.configuration.training_config import (
+from remedi.configuration.training_config import (
     SplitConfig,
     SplitStrategy,
     TrainingConfig,

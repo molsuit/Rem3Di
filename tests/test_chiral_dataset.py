@@ -4,17 +4,17 @@ import numpy as np
 import torch
 from mace.calculators import mace_mp
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     RegressionArchitectureConfig,
 )
-from threedscriptors.configuration.config_utils import from_yaml
-from threedscriptors.configuration.data_config import (
+from remedi.configuration.config_utils import from_yaml
+from remedi.configuration.data_config import (
     DatasetConfig,
     DatasetTypes,
     MaceCalculatorConfig,
 )
-from threedscriptors.data_handling.pipelines import chiral_regression_training_pipeline
-from threedscriptors.data_handling.source_preprocessing.cmrt_preprocessing import (
+from remedi.data_handling.pipelines import chiral_regression_training_pipeline
+from remedi.data_handling.source_preprocessing.cmrt_preprocessing import (
     load_cmrt_data,
 )
 

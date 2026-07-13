@@ -33,13 +33,13 @@ import torch
 from pydantic import BaseModel, ConfigDict
 from torch.utils.data import DataLoader
 
-from threedscriptors.configuration.mace_config import MaceConfig
-from threedscriptors.data_handling.dataset.training_dataset import (
+from remedi.configuration.mace_config import MaceConfig
+from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from threedscriptors.data_handling.sample import Sample, yield_molecules_collate_fn
-from threedscriptors.evaluation.descriptor_analysis.mace_invariant_stats import (
+from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
+from remedi.evaluation.descriptor_analysis.mace_invariant_stats import (
     AnalysisReport,
     LayerSpec,
     LayerStreamStats,
@@ -51,9 +51,9 @@ from threedscriptors.evaluation.descriptor_analysis.mace_invariant_stats import 
     summarise_layer,
     summarise_total,
 )
-from threedscriptors.model.preprocessing.preprocessing import _sample_to_simstate
-from threedscriptors.training.data import worker_init_fn
-from threedscriptors.utils.model_utils import get_invariant_indices
+from remedi.model.preprocessing.preprocessing import _sample_to_simstate
+from remedi.training.data import worker_init_fn
+from remedi.utils.model_utils import get_invariant_indices
 
 logger = logging.getLogger("mace_invariant_analysis")
 
@@ -100,7 +100,7 @@ def _run_mace_on_sample(mace_model, sample: Sample) -> torch.Tensor:
     density_coefficients) is constructed by the same code path the rest of
     this repo uses.
     """
-    from threedscriptors.model.preprocessing.preprocessing import _capture_node_feats
+    from remedi.model.preprocessing.preprocessing import _capture_node_feats
 
     state, _ = _sample_to_simstate(sample, r_max=float(mace_model.r_max))
     return _capture_node_feats(mace_model, state)

@@ -28,8 +28,8 @@ from ase.data import chemical_symbols
 from ase.data.colors import jmol_colors
 from datashader.utils import export_image
 
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.evaluation.descriptor_analysis.tmqm_clustering_utils import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.evaluation.descriptor_analysis.tmqm_clustering_utils import (
     get_metal_center_type,
 )
 
@@ -64,7 +64,9 @@ def _build_categories(
     }
     elem_categorical = pd.Categorical(symbols, categories=unique_symbols)
 
-    symbol_to_block = {sym: blk for blk, syms in BLOCK_DEFINITIONS.items() for sym in syms}
+    symbol_to_block = {
+        sym: blk for blk, syms in BLOCK_DEFINITIONS.items() for sym in syms
+    }
     blocks = [symbol_to_block[s] for s in symbols]
     present_blocks = [b for b in BLOCK_DEFINITIONS if b in set(blocks)]
     block_color_key = {b: BLOCK_COLOR_KEY[b] for b in present_blocks}
@@ -230,8 +232,10 @@ def main() -> None:
     atomic_nums: list[int]
 
     if all_cached and atomic_nums_cache.exists():
-        print(f"All UMAP configs cached and {atomic_nums_cache.name} present; "
-              "skipping descriptors and dataset loading")
+        print(
+            f"All UMAP configs cached and {atomic_nums_cache.name} present; "
+            "skipping descriptors and dataset loading"
+        )
         atomic_nums = np.load(atomic_nums_cache).tolist()
     else:
         print(f"Loading descriptors from {args.descriptors_path}")

@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from threedscriptors.model.multihead_self_attention import MultiHeadCrossAttention
-from threedscriptors.model.pooling import PMAAggregator
+from remedi.model.multihead_self_attention import MultiHeadCrossAttention
+from remedi.model.pooling import PMAAggregator
 
 
 def _make_model(
@@ -145,9 +145,9 @@ def test_padding_invariance():
         out_real = model(real, no_pad_mask)
         out_pad = model(padded, pad_mask)
 
-    assert torch.allclose(out_real, out_pad, atol=1e-5), (
-        "PAD tokens leaked into the pooled output"
-    )
+    assert torch.allclose(
+        out_real, out_pad, atol=1e-5
+    ), "PAD tokens leaked into the pooled output"
 
 
 def test_seeds_produce_different_outputs():

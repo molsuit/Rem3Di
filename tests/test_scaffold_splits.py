@@ -9,18 +9,32 @@ from __future__ import annotations
 
 import numpy as np
 
-from threedscriptors.data_handling.dataset.tasks import Split
-from threedscriptors.data_handling.dataset_creation.splits import (
+from remedi.data_handling.dataset.tasks import Split
+from remedi.data_handling.dataset_creation.splits import (
     deepchem_scaffold_split,
     random_train_val_test_split,
     split_codes,
 )
 
 _SMILES = [
-    "CCO", "CCN", "CCC", "c1ccccc1", "c1ccccc1C", "c1ccccc1O",
-    "c1ccncc1", "c1ccncc1C", "C1CCCCC1", "C1CCCCC1O", "CC(=O)O",
-    "CC(=O)N", "CCOC(=O)C", "c1ccc2ccccc2c1", "c1ccc2ccccc2c1C",
-    "INVALID_SMILES", "O=C(O)c1ccccc1", "O=C(O)c1ccccc1N",
+    "CCO",
+    "CCN",
+    "CCC",
+    "c1ccccc1",
+    "c1ccccc1C",
+    "c1ccccc1O",
+    "c1ccncc1",
+    "c1ccncc1C",
+    "C1CCCCC1",
+    "C1CCCCC1O",
+    "CC(=O)O",
+    "CC(=O)N",
+    "CCOC(=O)C",
+    "c1ccc2ccccc2c1",
+    "c1ccc2ccccc2c1C",
+    "INVALID_SMILES",
+    "O=C(O)c1ccccc1",
+    "O=C(O)c1ccccc1N",
 ]
 
 

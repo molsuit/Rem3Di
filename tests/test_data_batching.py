@@ -1,6 +1,6 @@
 import torch
 
-from threedscriptors.data_handling.sample import Sample, sample_collate_fn
+from remedi.data_handling.sample import Sample, sample_collate_fn
 
 
 def test_collate_fn_regression(

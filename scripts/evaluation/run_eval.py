@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pydantic_yaml as pyd_yaml
 
-from threedscriptors.evaluation.framework import EvalManifest, run_manifest
+from remedi.evaluation.framework import EvalManifest, run_manifest
 
 logger = logging.getLogger(__name__)
 

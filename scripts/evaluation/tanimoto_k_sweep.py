@@ -38,13 +38,13 @@ import numpy as np
 import pandas as pd
 from rdkit.DataStructs.cDataStructs import ExplicitBitVect
 
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.evaluation.retrieval.fingerprints import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.evaluation.retrieval.fingerprints import (
     bulk_tanimoto,
     morgan_fingerprints,
     tanimoto,
 )
-from threedscriptors.evaluation.retrieval.vector_store import (
+from remedi.evaluation.retrieval.vector_store import (
     SklearnFlatIndex,
     VectorStore,
 )
@@ -77,9 +77,7 @@ def _valid_fingerprints(
     return valid_rows, valid_fps, row_to_valid
 
 
-def _cumulative_curve(
-    label: str, per_query_tani: np.ndarray, ks: list[int]
-) -> Curve:
+def _cumulative_curve(label: str, per_query_tani: np.ndarray, ks: list[int]) -> Curve:
     """Per-query Tanimoto-by-rank matrix -> mean + SEM at each k.
 
     Queries are the independent units: the statistic at k is each query's mean

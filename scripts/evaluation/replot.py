@@ -16,9 +16,9 @@ import logging
 from pathlib import Path
 
 # Import for the side effect of registering the built-in plotters.
-import threedscriptors.evaluation.framework.builtin_plotters  # noqa: F401
-from threedscriptors.evaluation.framework.plotting import render
-from threedscriptors.evaluation.results import TableResult
+import remedi.evaluation.framework.builtin_plotters  # noqa: F401
+from remedi.evaluation.framework.plotting import render
+from remedi.evaluation.results import TableResult
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 import gc
 import warnings
 
-from threedscriptors.data_handling.dataset.smiles_storage import SmilesStorage
+from remedi.data_handling.dataset.smiles_storage import SmilesStorage
 
 
 def _make_store(tmp_path, lines=("CCO", "c1ccccc1", "CC(=O)O")):

@@ -1,5 +1,5 @@
-from threedscriptors.data_handling.dataset_concatenation import DatasetConcatenation
-from threedscriptors.data_handling.dataset_io import (
+from remedi.data_handling.dataset_concatenation import DatasetConcatenation
+from remedi.data_handling.dataset_io import (
     load_data_from_disk,
     store_data_to_disk,
 )

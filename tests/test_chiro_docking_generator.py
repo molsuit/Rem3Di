@@ -20,22 +20,22 @@ import torch
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-from threedscriptors.configuration.dataset_config import (
+from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
     FilterAtomsStageConfig,
 )
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.tasks import ElementSet, Split, TaskType
-from threedscriptors.data_handling.dataset_creation.generators.chiro_docking_generator import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.tasks import ElementSet, Split, TaskType
+from remedi.data_handling.dataset_creation.generators.chiro_docking_generator import (
     DOCKING_TASK_NAME,
     ChiroDockingGenerator,
     chiro_docking_task_set,
 )
-from threedscriptors.data_handling.dataset_creation.orchestrator import (
+from remedi.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
-from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+from remedi.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
     FilterAtomsStage,
 )
@@ -114,9 +114,7 @@ def test_generator_adds_hydrogens_and_reads_scores(tmp_path: Path) -> None:
     gen = ChiroDockingGenerator(split_files=files, loading_batch_size=100)
     batches = list(gen)
     atoms = [a for b in batches for a in b.molecules]
-    scores = np.concatenate(
-        [b.regression_data.targets_system[:, 0] for b in batches]
-    )
+    scores = np.concatenate([b.regression_data.targets_system[:, 0] for b in batches])
     codes = np.concatenate([b.regression_data.split for b in batches])
 
     assert gen.load_stats.n_kept == 6  # 2 + 2 + 2

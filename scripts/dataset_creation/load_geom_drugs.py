@@ -7,19 +7,19 @@ from pathlib import Path
 
 import torch
 
-from threedscriptors.configuration.dataset_config import (
+from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
     FilterMoleculeStageConfig,
 )
-from threedscriptors.data_handling.dataset.tasks import ElementSet
-from threedscriptors.data_handling.dataset_creation.generators.geom_generator import (
+from remedi.data_handling.dataset.tasks import ElementSet
+from remedi.data_handling.dataset_creation.generators.geom_generator import (
     GeomGenerator,
 )
-from threedscriptors.data_handling.dataset_creation.orchestrator import (
+from remedi.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
-from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+from remedi.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
 )
 

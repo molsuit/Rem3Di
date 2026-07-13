@@ -33,9 +33,9 @@ from pathlib import Path
 
 import pydantic_yaml as pyaml
 
-from threedscriptors.configuration.architecture_config import ArchitectureConfig
-from threedscriptors.configuration.dataloader_config import BucketBatchSamplingConfig
-from threedscriptors.configuration.training_config import TrainingConfig
+from remedi.configuration.architecture_config import ArchitectureConfig
+from remedi.configuration.dataloader_config import BucketBatchSamplingConfig
+from remedi.configuration.training_config import TrainingConfig
 
 SOURCE_ABLATION = Path("/p/scratch/mace/wedig1/training_runs/pcqm_ablation")
 REPO_ROOT = Path(__file__).resolve().parents[1]

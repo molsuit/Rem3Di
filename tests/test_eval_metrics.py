@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from threedscriptors.data_handling.benchmarks import EvalMetric
-from threedscriptors.evaluation.benchmark.metrics import (
+from remedi.data_handling.benchmarks import EvalMetric
+from remedi.evaluation.benchmark.metrics import (
     auprc,
     auroc,
     macro_auroc,

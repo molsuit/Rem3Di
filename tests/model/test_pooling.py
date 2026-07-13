@@ -1,6 +1,6 @@
 import torch
 
-from threedscriptors.model.pooling import MeanPool
+from remedi.model.pooling import MeanPool
 
 
 def test_mean_pool_single_real_atom():

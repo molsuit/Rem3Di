@@ -50,8 +50,8 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# Split code matches threedscriptors.data_handling.dataset.tasks.Split. Hardcoded
-# (not imported) so this script stays free of the threedscriptors package.
+# Split code matches remedi.data_handling.dataset.tasks.Split. Hardcoded
+# (not imported) so this script stays free of the remedi package.
 _SPLIT_TRAIN, _SPLIT_VALID, _SPLIT_TEST, _SPLIT_UNASSIGNED = 0, 1, 2, 255
 
 # Polaris ``Set`` labels seen across ASAP / Biogen / polaris-org datasets.
@@ -65,25 +65,35 @@ _SET_TO_CODE = {
 
 # Columns that are never task targets (metadata / id / split annotation).
 _NON_TASK_COLUMNS = {
-    "Molecule Name", "Set",
-    "CXSMILES", "smiles", "SMILES", "Smiles", "MOL_smiles",
-    "UNIQUE_ID", "MOL_smiles_index",
+    "Molecule Name",
+    "Set",
+    "CXSMILES",
+    "smiles",
+    "SMILES",
+    "Smiles",
+    "MOL_smiles",
+    "UNIQUE_ID",
+    "MOL_smiles_index",
     # Polaris bookkeeping that occasionally surfaces as a column:
     "MOL_molhash_id",
 }
 
 # Curated polaris datasets. (dataset_id, polaris-hub slug, source SMILES column.)
-# Matches ``POLARIS_BENCHMARKS`` in ``threedscriptors/data_handling/benchmarks.py``;
+# Matches ``POLARIS_BENCHMARKS`` in ``remedi/data_handling/benchmarks.py``;
 # add new entries to both places.
 _DATASETS: tuple[tuple[str, str, str], ...] = (
-    ("polaris_antiviral_admet",
-     "asap-discovery/antiviral-admet-2025-unblinded", "CXSMILES"),
-    ("polaris_antiviral_potency",
-     "asap-discovery/antiviral-potency-2025-unblinded", "CXSMILES"),
-    ("polaris_adme_fang",
-     "biogen/adme-fang-v1", "MOL_smiles"),
-    ("polaris_pkis2_subset",
-     "polaris/drewry2017-pkis2-subset-v2", "MOL_smiles"),
+    (
+        "polaris_antiviral_admet",
+        "asap-discovery/antiviral-admet-2025-unblinded",
+        "CXSMILES",
+    ),
+    (
+        "polaris_antiviral_potency",
+        "asap-discovery/antiviral-potency-2025-unblinded",
+        "CXSMILES",
+    ),
+    ("polaris_adme_fang", "biogen/adme-fang-v1", "MOL_smiles"),
+    ("polaris_pkis2_subset", "polaris/drewry2017-pkis2-subset-v2", "MOL_smiles"),
 )
 
 
@@ -158,7 +168,11 @@ def _dump(dataset_id: str, slug: str, smiles_column: str, out_path: Path) -> Non
     }
     logger.info(
         "%s: %d rows -> %s (splits=%s, %d tasks)",
-        dataset_id, len(out_df), out_path, counts, len(task_columns),
+        dataset_id,
+        len(out_df),
+        out_path,
+        counts,
+        len(task_columns),
     )
 
 
@@ -169,11 +183,14 @@ def main() -> None:
     )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--out-root", type=Path, required=True,
+        "--out-root",
+        type=Path,
+        required=True,
         help="Directory under which <dataset_id>.parquet is written for each entry.",
     )
     parser.add_argument(
-        "--force", action="store_true",
+        "--force",
+        action="store_true",
         help="Re-dump even if the parquet already exists (default: skip).",
     )
     args = parser.parse_args()
@@ -183,7 +200,8 @@ def main() -> None:
         if out_path.exists() and not args.force:
             logger.info(
                 "%s: %s exists; skipping (pass --force to re-dump).",
-                dataset_id, out_path,
+                dataset_id,
+                out_path,
             )
             continue
         _dump(dataset_id, slug, smiles_column, out_path)

@@ -19,7 +19,7 @@ import torch
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from threedscriptors.data_handling.dataset_creation.benchmark_dataloader import (
+from remedi.data_handling.dataset_creation.benchmark_dataloader import (
     DataloaderBenchmark,
     DataloaderBenchmarkConfig,
 )

@@ -1,6 +1,6 @@
 import pytest
 
-from threedscriptors.data_handling.mol_id import StructureID
+from remedi.data_handling.mol_id import StructureID
 
 
 @pytest.mark.parametrize(

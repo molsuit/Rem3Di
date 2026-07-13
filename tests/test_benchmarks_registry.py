@@ -6,7 +6,7 @@ import pydantic
 import pydantic_yaml as pyd_yaml
 import pytest
 
-from threedscriptors.data_handling.benchmarks import (
+from remedi.data_handling.benchmarks import (
     MOLECULENET_BENCHMARKS,
     TDC_BENCHMARKS,
     Benchmark,
@@ -15,7 +15,7 @@ from threedscriptors.data_handling.benchmarks import (
     get_benchmark,
     select_benchmarks,
 )
-from threedscriptors.data_handling.dataset.tasks import TaskType
+from remedi.data_handling.dataset.tasks import TaskType
 
 
 def test_panel_counts() -> None:

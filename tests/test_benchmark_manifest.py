@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from threedscriptors.data_handling.benchmarks import (
+from remedi.data_handling.benchmarks import (
     BENCHMARK_MANIFEST_FILENAME,
     BenchmarkManifest,
     EvalMetric,

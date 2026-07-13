@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from threedscriptors.model.molecular_descriptor import MolecularDescriptor
+from remedi.model.molecular_descriptor import MolecularDescriptor
 
 
 def test_basic_shapes_and_flat():

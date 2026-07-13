@@ -13,13 +13,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from threedscriptors.configuration.dataset_config import FilterMoleculeStageConfig
-from threedscriptors.data_handling.benchmarks import get_benchmark
-from threedscriptors.data_handling.dataset.tasks import Split
-from threedscriptors.data_handling.dataset_creation.generators.tdc_generator import (
+from remedi.configuration.dataset_config import FilterMoleculeStageConfig
+from remedi.data_handling.benchmarks import get_benchmark
+from remedi.data_handling.dataset.tasks import Split
+from remedi.data_handling.dataset_creation.generators.tdc_generator import (
     TdcGenerator,
 )
-from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+from remedi.data_handling.dataset_creation.pipeline_stages import (
     FilterMoleculeStage,
 )
 
@@ -137,7 +137,7 @@ def test_patch_tdc_print_sys_idempotent_and_installs_callable():
     callable + be safe to call twice (we invoke it in every _split_frames)."""
     import tdc.utils.split as _split
 
-    from threedscriptors.data_handling.dataset_creation.generators import (
+    from remedi.data_handling.dataset_creation.generators import (
         tdc_generator,
     )
 
@@ -157,9 +157,7 @@ def test_no_strip_drops_multi_fragment_salt(monkeypatch):
         "_split_frames",
         lambda: [
             (
-                pd.DataFrame(
-                    {"Drug": ["Oc1ccccc1.[Cl-]", "CCC"], "Y": [1.0, 2.0]}
-                ),
+                pd.DataFrame({"Drug": ["Oc1ccccc1.[Cl-]", "CCC"], "Y": [1.0, 2.0]}),
                 Split.train,
             )
         ],

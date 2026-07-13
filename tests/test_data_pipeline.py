@@ -1,18 +1,18 @@
 import numpy as np
 from mace.calculators import mace_mp
 
-from threedscriptors.configuration.data_config import (
+from remedi.configuration.data_config import (
     DatasetConfig,
     MaceCalculatorConfig,
 )
-from threedscriptors.data_handling.data_build_pipeline import (
+from remedi.data_handling.data_build_pipeline import (
     ChiralConformalEmbeddingStage,
     InitializeBuildPipeline,
     InsertSmilesStage,
     PipelineOrchestrator,
 )
-from threedscriptors.data_handling.dataset import RegressionDataset
-from threedscriptors.data_handling.pipelines import (
+from remedi.data_handling.dataset import RegressionDataset
+from remedi.data_handling.pipelines import (
     regression_training_pipeline,
     regression_training_with_pos_pipeline,
 )

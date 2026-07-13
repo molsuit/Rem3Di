@@ -14,25 +14,25 @@ import pandas as pd
 import pydantic_yaml as pyd_yaml
 import pytest
 
-from threedscriptors.configuration.dataset_config import DatasetConfig
-from threedscriptors.data_handling.benchmarks import (
+from remedi.configuration.dataset_config import DatasetConfig
+from remedi.data_handling.benchmarks import (
     BenchmarkManifest,
     EvalMetric,
     SplitVariant,
 )
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.tasks import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.tasks import (
     TaskConfig,
     TaskScope,
     TaskSet,
     TaskType,
 )
-from threedscriptors.data_handling.dataset_creation.shard_aligned_writer import (
+from remedi.data_handling.dataset_creation.shard_aligned_writer import (
     ShardAlignedWriter,
 )
-from threedscriptors.evaluation.benchmark.descriptors import EcfpConfig
-from threedscriptors.evaluation.benchmark.learners import LinearLearnerConfig
-from threedscriptors.evaluation.framework import (
+from remedi.evaluation.benchmark.descriptors import EcfpConfig
+from remedi.evaluation.benchmark.learners import LinearLearnerConfig
+from remedi.evaluation.framework import (
     BenchmarkPanelConfig,
     EmbeddingSpec,
     EvalManifest,
@@ -41,10 +41,21 @@ from threedscriptors.evaluation.framework import (
     render,
     run_manifest,
 )
-from threedscriptors.evaluation.framework.runner import RunReport
-from threedscriptors.evaluation.results import ArrayResult, FigureResult, TableResult
+from remedi.evaluation.framework.runner import RunReport
+from remedi.evaluation.results import ArrayResult, FigureResult, TableResult
 
-_SMILES = ["CCO", "c1ccccc1", "CC(=O)O", "CCN", "OC", "CC", "CCC", "CCCC", "CCCCC", "CCCCCC"]
+_SMILES = [
+    "CCO",
+    "c1ccccc1",
+    "CC(=O)O",
+    "CCN",
+    "OC",
+    "CC",
+    "CCC",
+    "CCCC",
+    "CCCCC",
+    "CCCCCC",
+]
 _SPLIT = np.array([0] * 6 + [1] * 2 + [2] * 2, dtype="u1")
 
 
@@ -57,7 +68,11 @@ def _build_reg_zarr(path: Path, targets: np.ndarray) -> None:
         molecule_chunks_per_shard=4,
         contains_smiles=True,
         tasks=TaskSet.from_list(
-            [TaskConfig(name="y", task_type=TaskType.regression, scope=TaskScope.system)]
+            [
+                TaskConfig(
+                    name="y", task_type=TaskType.regression, scope=TaskScope.system
+                )
+            ]
         ),
     )
     ds = MoleculeDataset.create_empty_dataset(path, cfg)
@@ -126,8 +141,8 @@ def test_run_manifest_writes_results_status_and_manifest(tmp_path: Path) -> None
 
 def _failing_retrieval_task(tmp_path: Path):
     """A valid union task that raises at run time (dataset path doesn't exist)."""
-    from threedscriptors.evaluation.framework import RetrievalConfig
-    from threedscriptors.evaluation.retrieval.config import (
+    from remedi.evaluation.framework import RetrievalConfig
+    from remedi.evaluation.retrieval.config import (
         TanimotoSimilarityTaskConfig,
     )
 
@@ -215,8 +230,8 @@ def test_retrieval_task_tanimoto_on_cpu(tmp_path: Path) -> None:
     """Retrieval task end-to-end on CPU: an ECFP 'model' as the embedding, the
     Tanimoto sub-task sharing one EmbeddingSpec + IndexSpec. (Nearest-molecule
     needs a GPU re-embedder, so it is exercised in the GPU smoke, not here.)"""
-    from threedscriptors.evaluation.framework import RetrievalConfig
-    from threedscriptors.evaluation.retrieval.config import (
+    from remedi.evaluation.framework import RetrievalConfig
+    from remedi.evaluation.retrieval.config import (
         TanimotoSimilarityTaskConfig,
     )
 
@@ -250,8 +265,8 @@ def test_retrieval_task_tanimoto_on_cpu(tmp_path: Path) -> None:
 def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
     """Descriptor-analysis task end-to-end on CPU: capacity diagnostic over an
     ECFP embedding, artifacts re-rooted under descriptor_analysis/."""
-    from threedscriptors.evaluation.descriptor_analysis import CapacityDiagnosticTask
-    from threedscriptors.evaluation.framework import DescriptorAnalysisConfig
+    from remedi.evaluation.descriptor_analysis import CapacityDiagnosticTask
+    from remedi.evaluation.framework import DescriptorAnalysisConfig
 
     eval_root = tmp_path / "datasets"
     eval_root.mkdir()
@@ -275,8 +290,8 @@ def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
 
 
 def test_benchmark_plotter_renders_from_results_csv(tmp_path: Path) -> None:
-    import threedscriptors.evaluation.framework.builtin_plotters  # noqa: F401
-    from threedscriptors.evaluation.framework.plotting import render
+    import remedi.evaluation.framework.builtin_plotters  # noqa: F401
+    from remedi.evaluation.framework.plotting import render
 
     df = pd.DataFrame(
         {

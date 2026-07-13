@@ -5,23 +5,23 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from threedscriptors.configuration.dataset_analysis_config import (
+from remedi.configuration.dataset_analysis_config import (
     BitBirchConfig,
     BitBirchUmapConfig,
 )
-from threedscriptors.configuration.dataset_comparison_config import (
+from remedi.configuration.dataset_comparison_config import (
     DatasetComparisonConfig,
     DatasetEntry,
     NnTanimotoConfig,
     ScaffoldOverlapConfig,
 )
-from threedscriptors.configuration.dataset_config import DatasetConfig
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset_comparison import (
+from remedi.configuration.dataset_config import DatasetConfig
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset_comparison import (
     DatasetComparison,
     DatasetComparisonSummary,
 )
-from threedscriptors.data_handling.dataset_creation.shard_aligned_writer import (
+from remedi.data_handling.dataset_creation.shard_aligned_writer import (
     ShardAlignedWriter,
 )
 

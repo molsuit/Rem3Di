@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from ase import Atoms
 
-from threedscriptors.model.preprocessing.geometric_preprocessor import (
+from remedi.model.preprocessing.geometric_preprocessor import (
     PairDistanceMatrixEncodingBlock,
 )
 

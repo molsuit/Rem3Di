@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from threedscriptors.evaluation.descriptor_analysis import analysis_tasks
-from threedscriptors.evaluation.descriptor_analysis.analysis_tasks import (
+from remedi.evaluation.descriptor_analysis import analysis_tasks
+from remedi.evaluation.descriptor_analysis.analysis_tasks import (
     ChemiscopeClusterTask,
     ClusterAxisAnalysisTask,
     ClusterChemicalFingerprintTask,
@@ -20,22 +20,20 @@ from threedscriptors.evaluation.descriptor_analysis.analysis_tasks import (
     _suggest_label,
     compute_hdbscan_labels,
 )
-from threedscriptors.evaluation.descriptor_analysis.context import (
+from remedi.evaluation.descriptor_analysis.context import (
     DescriptorAnalysisContext,
 )
-from threedscriptors.evaluation.descriptor_analysis.tmqm_chemical_features import (
+from remedi.evaluation.descriptor_analysis.tmqm_chemical_features import (
     MetalEnvironmentFeatures,
     compute_metal_environment_features,
     metal_block,
 )
-from threedscriptors.evaluation.results import ChemiscopeResult
+from remedi.evaluation.results import ChemiscopeResult
 
 
 def _ring(z: float, radius: float = 1.21, n: int = 5) -> np.ndarray:
     ang = np.linspace(0, 2 * np.pi, n, endpoint=False)
-    return np.column_stack(
-        [radius * np.cos(ang), radius * np.sin(ang), np.full(n, z)]
-    )
+    return np.column_stack([radius * np.cos(ang), radius * np.sin(ang), np.full(n, z)])
 
 
 def _ferrocene() -> Atoms:
@@ -55,9 +53,7 @@ def _octahedral(metal_z: int, donor_z: int, d: float = 2.1) -> Atoms:
 def _phosphine() -> Atoms:
     # Pd with 4 ~tetrahedral P donors.
     t = 1.6
-    pos = np.array(
-        [[0, 0, 0], [t, t, t], [t, -t, -t], [-t, t, -t], [-t, -t, t]]
-    )
+    pos = np.array([[0, 0, 0], [t, t, t], [t, -t, -t], [-t, t, -t], [-t, -t, t]])
     return Atoms(numbers=[46] + [15] * 4, positions=pos, info={"total_charge": 0.0})
 
 
@@ -157,8 +153,12 @@ def _mef(**kw) -> MetalEnvironmentFeatures:
     [
         ({"is_carborane": True, "n_B": 10}, "carborane / borane-cage"),
         (
-            {"is_sandwich": True, "n_pi_groups": 2, "hapticity_max": 5,
-             "donor_set": "C10"},
+            {
+                "is_sandwich": True,
+                "n_pi_groups": 2,
+                "hapticity_max": 5,
+                "donor_set": "C10",
+            },
             "sandwich (bis-π)",
         ),
         (
@@ -177,14 +177,17 @@ def test_suggest_label_rules(kw, expected):
     if fp.modal_donor_set:
         assert fp.modal_donor_set_frac == 1.0
         assert fp.donor_set_entropy_bits == 0.0
-    assert _suggest_label(
-        fp.modal_donor_set,
-        fp.modal_donor_set_frac,
-        members[0].coordination_number,
-        fp.frac_sandwich,
-        fp.frac_carborane,
-        fp.mean_hapticity_max,
-    ) == expected
+    assert (
+        _suggest_label(
+            fp.modal_donor_set,
+            fp.modal_donor_set_frac,
+            members[0].coordination_number,
+            fp.frac_sandwich,
+            fp.frac_carborane,
+            fp.mean_hapticity_max,
+        )
+        == expected
+    )
 
 
 def test_mixed_cluster_is_not_mislabeled():
@@ -231,17 +234,20 @@ def test_chemiscope_cluster_task_bundles_clusterings_and_chemistry(monkeypatch):
     )
 
     ctx = _make_ctx(mols)
-    task = ChemiscopeClusterTask(
-        min_cluster_sizes=[50, 200], default_color_mcs=200
-    )
+    task = ChemiscopeClusterTask(min_cluster_sizes=[50, 200], default_color_mcs=200)
     (result,) = task.run(ctx)
 
     assert isinstance(result, ChemiscopeResult)
     data = result.data
     assert len(data["structures"]) == len(mols)
     props = data["properties"]
-    for key in ("cluster_mcs50", "cluster_mcs200", "metal",
-                "is_sandwich", "coordination_number"):
+    for key in (
+        "cluster_mcs50",
+        "cluster_mcs200",
+        "metal",
+        "is_sandwich",
+        "coordination_number",
+    ):
         assert key in props
     # Heavy / high-cardinality columns are dropped by default.
     assert "donor_set" not in props
@@ -260,7 +266,8 @@ def test_chemiscope_cluster_task_bundles_clusterings_and_chemistry(monkeypatch):
 def test_chemiscope_heavy_properties_opt_in(monkeypatch):
     mols = [_octahedral(26, 8), _phosphine()]
     monkeypatch.setattr(
-        analysis_tasks, "compute_hdbscan_labels",
+        analysis_tasks,
+        "compute_hdbscan_labels",
         lambda *a, **k: np.array([0, 0]),
     )
     ctx = _make_ctx(mols)
@@ -304,9 +311,7 @@ def test_granularity_sweep_recommends_highest_purity(monkeypatch):
     )
 
     ctx = _make_ctx(mols)
-    (result,) = ClusterGranularitySweepTask(
-        min_cluster_sizes=[25, 50, 100]
-    ).run(ctx)
+    (result,) = ClusterGranularitySweepTask(min_cluster_sizes=[25, 50, 100]).run(ctx)
     report = result.obj
 
     rows = {r.min_cluster_size: r for r in report.rows}
@@ -399,11 +404,11 @@ def _diaminoethane_complex() -> Atoms:
     return Atoms(
         numbers=[26, 7, 6, 6, 7],
         positions=[
-            [0.0, 0.0, 0.0],          # Fe
-            [1.9, 0.0, 0.0],          # N
-            [2.45, 1.40, 0.0],        # C
-            [1.40, 2.45, 0.0],        # C
-            [0.0, 1.9, 0.0],          # N
+            [0.0, 0.0, 0.0],  # Fe
+            [1.9, 0.0, 0.0],  # N
+            [2.45, 1.40, 0.0],  # C
+            [1.40, 2.45, 0.0],  # C
+            [0.0, 1.9, 0.0],  # N
         ],
         info={"total_charge": 0.0},
     )
@@ -447,9 +452,9 @@ def test_descriptor_structure_benchmark_scorecard(monkeypatch):
     # On a perfect partition every chemistry axis hits AMI ≈ 1.
     canonical = report.canonical
     for axis in ("metal_block", "ligand_motif", "geometry_class", "donor_set"):
-        assert canonical.ami_per_axis[axis] > 0.99, (
-            f"{axis}: {canonical.ami_per_axis[axis]}"
-        )
+        assert (
+            canonical.ami_per_axis[axis] > 0.99
+        ), f"{axis}: {canonical.ami_per_axis[axis]}"
     assert abs(report.aggregate_chemistry_ami - 1.0) < 1e-6
 
     # 2 clusters x 4 members at purity 1.0 -> 2 pure islands.
@@ -483,7 +488,8 @@ def test_descriptor_structure_benchmark_records_raw_variant(monkeypatch):
 
 def test_descriptor_structure_benchmark_rejects_unknown_axis(monkeypatch):
     monkeypatch.setattr(
-        analysis_tasks, "compute_hdbscan_labels",
+        analysis_tasks,
+        "compute_hdbscan_labels",
         lambda *a, **k: np.array([0, 0, 1, 1]),
     )
     ctx = _make_ctx([_ferrocene(), _ferrocene(), _phosphine(), _phosphine()])

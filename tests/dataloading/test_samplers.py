@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from threedscriptors.training.data.samplers import (
+from remedi.training.data.samplers import (
     BucketBatchSampler,
     lengths_from_ptr,
     quantize_pad_length,
@@ -33,9 +33,7 @@ def test_every_index_appears_exactly_once():
 
 
 def test_coverage_no_shuffle():
-    sampler = _make_sampler(
-        [5, 10, 15, 20, 25], max_atoms_per_batch=30, shuffle=False
-    )
+    sampler = _make_sampler([5, 10, 15, 20, 25], max_atoms_per_batch=30, shuffle=False)
     flat = _flatten(list(sampler))
     assert sorted(flat) == [0, 1, 2, 3, 4]
 
@@ -157,9 +155,7 @@ def test_accepts_list_input():
 
 
 def test_accepts_ndarray_input():
-    sampler = _make_sampler(
-        np.array([3, 4, 5]), max_atoms_per_batch=10, shuffle=False
-    )
+    sampler = _make_sampler(np.array([3, 4, 5]), max_atoms_per_batch=10, shuffle=False)
     flat = _flatten(list(sampler))
     assert sorted(flat) == [0, 1, 2]
 
@@ -194,23 +190,31 @@ def test_rejects_zero_bucket_size():
 
 def test_explicit_generator_makes_iteration_deterministic():
     lengths = list(range(5, 105))
-    a = list(BucketBatchSampler(
-        lengths, max_atoms_per_batch=200, generator=np.random.default_rng(123)
-    ))
-    b = list(BucketBatchSampler(
-        lengths, max_atoms_per_batch=200, generator=np.random.default_rng(123)
-    ))
+    a = list(
+        BucketBatchSampler(
+            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(123)
+        )
+    )
+    b = list(
+        BucketBatchSampler(
+            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(123)
+        )
+    )
     assert a == b
 
 
 def test_distinct_seeds_produce_distinct_orderings():
     lengths = list(range(5, 105))
-    a = list(BucketBatchSampler(
-        lengths, max_atoms_per_batch=200, generator=np.random.default_rng(1)
-    ))
-    b = list(BucketBatchSampler(
-        lengths, max_atoms_per_batch=200, generator=np.random.default_rng(2)
-    ))
+    a = list(
+        BucketBatchSampler(
+            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(1)
+        )
+    )
+    b = list(
+        BucketBatchSampler(
+            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(2)
+        )
+    )
     assert a != b
 
 
@@ -218,13 +222,17 @@ def test_iteration_independent_of_global_numpy_seed():
     """The sampler must not be affected by global np.random state."""
     lengths = list(range(5, 105))
     np.random.seed(0)
-    a = list(BucketBatchSampler(
-        lengths, max_atoms_per_batch=200, generator=np.random.default_rng(99)
-    ))
+    a = list(
+        BucketBatchSampler(
+            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(99)
+        )
+    )
     np.random.seed(1234)
-    b = list(BucketBatchSampler(
-        lengths, max_atoms_per_batch=200, generator=np.random.default_rng(99)
-    ))
+    b = list(
+        BucketBatchSampler(
+            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(99)
+        )
+    )
     assert a == b
 
 
@@ -283,9 +291,7 @@ def test_batches_do_not_cross_bucket_boundaries():
         if len(batch) <= 1:
             continue
         ids = {bucket_of[i] for i in batch}
-        assert len(ids) == 1, (
-            f"Batch crosses buckets: {batch} -> bucket ids {ids}"
-        )
+        assert len(ids) == 1, f"Batch crosses buckets: {batch} -> bucket ids {ids}"
 
 
 # ----------------------------- length self-consistency -----------------------

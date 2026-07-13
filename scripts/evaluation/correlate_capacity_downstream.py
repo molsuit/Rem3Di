@@ -36,7 +36,7 @@ import yaml
 from pydantic import BaseModel
 from scipy.stats import spearmanr
 
-from threedscriptors.evaluation.descriptor_analysis.capacity_diagnostic import (
+from remedi.evaluation.descriptor_analysis.capacity_diagnostic import (
     run_latent_space_capacity_diagnostic,
 )
 
@@ -63,7 +63,9 @@ class CapacityCorrelationReport(BaseModel):
     n_tasks_classification: int
 
 
-def _capacity_per_model(cache_dir: Path, dataset_id: str, models: list[str]) -> pd.DataFrame:
+def _capacity_per_model(
+    cache_dir: Path, dataset_id: str, models: list[str]
+) -> pd.DataFrame:
     rows = []
     for m in models:
         X = np.load(cache_dir / f"{dataset_id}__{m}.npz")["X"]
@@ -72,7 +74,9 @@ def _capacity_per_model(cache_dir: Path, dataset_id: str, models: list[str]) -> 
                 "model": m,
                 "D": int(X.shape[1]),
                 "deff": run_latent_space_capacity_diagnostic(X).d_eff,
-                "deff_l2": run_latent_space_capacity_diagnostic(X, l2_normalize=True).d_eff,
+                "deff_l2": run_latent_space_capacity_diagnostic(
+                    X, l2_normalize=True
+                ).d_eff,
                 "H_tot": run_latent_space_capacity_diagnostic(X).H_tot,
             }
         )
@@ -92,7 +96,9 @@ def _benchmark_long(eval_root: Path, models: list[str]) -> pd.DataFrame:
     bdf["ttype"] = np.where(
         bdf.metric_name.isin(REGRESSION_METRICS), "regression", "classification"
     )
-    bdf["cell"] = bdf.dataset_id + "|" + bdf.target_col.fillna("_") + "|" + bdf.learner_kind
+    bdf["cell"] = (
+        bdf.dataset_id + "|" + bdf.target_col.fillna("_") + "|" + bdf.learner_kind
+    )
     bdf["rank"] = bdf.groupby("cell", group_keys=False).apply(
         lambda g: g.metric_value.rank(
             ascending=g.metric_name.iloc[0] in LOWER_IS_BETTER, method="average"
@@ -111,7 +117,9 @@ def _summarize(s: pd.Series) -> dict[str, float]:
     }
 
 
-def run(eval_root: Path, dataset_id: str) -> tuple[CapacityCorrelationReport, pd.DataFrame]:
+def run(
+    eval_root: Path, dataset_id: str
+) -> tuple[CapacityCorrelationReport, pd.DataFrame]:
     cache_dir = eval_root / "descriptor_cache"
     models = sorted(
         Path(p).name.removeprefix(f"{dataset_id}__").removesuffix(".npz")
@@ -145,7 +153,12 @@ def run(eval_root: Path, dataset_id: str) -> tuple[CapacityCorrelationReport, pd
         g = g.set_index("model")
         if g.index.nunique() < len(models) or g["oriented"].nunique() < 3:
             continue
-        rec = {"dataset_id": ds, "target_col": tc, "learner": lk, "ttype": g.ttype.iloc[0]}
+        rec = {
+            "dataset_id": ds,
+            "target_col": tc,
+            "learner": lk,
+            "ttype": g.ttype.iloc[0],
+        }
         for c in CAPACITY_METRICS:
             res = spearmanr(cap.loc[g.index, c].astype(float), g["oriented"].values)
             rec[f"rho_{c}"] = res.statistic
@@ -186,7 +199,9 @@ def main() -> None:
     parser.add_argument(
         "--eval-root",
         type=Path,
-        default=Path("/p/scratch/mace/wedig1/evaluation_results/pcqm_ablation_novicreg"),
+        default=Path(
+            "/p/scratch/mace/wedig1/evaluation_results/pcqm_ablation_novicreg"
+        ),
     )
     parser.add_argument("--dataset-id", type=str, default="pcqm100k")
     parser.add_argument(
@@ -208,7 +223,9 @@ def main() -> None:
     for c, d in report.aggregate_spearman.items():
         logger.info(
             "  %-8s vs bench_rank %+.2f   vs retr_spearman %+.2f",
-            c, d["vs_bench_rank"], d["vs_retr_spearman"],
+            c,
+            d["vs_bench_rank"],
+            d["vs_retr_spearman"],
         )
     logger.info("per-task d_eff correlation (median, frac positive):")
     for k, d in report.per_task_deff.items():

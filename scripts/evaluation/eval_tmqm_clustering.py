@@ -3,45 +3,35 @@ from pathlib import Path
 
 import torch
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     EncoderDecoderArchitectureConfig,
 )
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.training_dataset import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from threedscriptors.evaluation.descriptor_analysis import (
+from remedi.evaluation.descriptor_analysis import (
     CapacityDiagnosticTask,
-    ChemiscopeClusterTask,
-    ClusterAxisAnalysisTask,
-    ClusterChemicalFingerprintTask,
-    ClusterGranularitySweepTask,
     CoordinationNumberColor,
     DBlockColor,
     DescriptorAnalysisRunner,
-    DescriptorDistributionTask,
     DescriptorNormalizationConfig,
-    DescriptorStructureBenchmarkTask,
-    HDBSCANClusterTask,
     MetalCenterAtomicNumberColor,
     MetalCenterElementColor,
     NumAtomsColor,
     ProjectionConfig,
     ProjectionPlotTask,
-    TopNormDescriptorsTask,
 )
-from threedscriptors.evaluation.evaluation_utils import (
+from remedi.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
 )
-from threedscriptors.model.remedi_model import REM3DIModel
+from remedi.model.remedi_model import REM3DIModel
 
 DEFAULT_MODEL_DIR = Path(
     "/scratch/s5f/wedigs.s5f/training_runs/10-2026_04_28_09_24_50-tmc_0"
 )
-DATASET_DIR = Path(
-    "/scratch/s5f/wedigs.s5f/datasets/tmqm"
-)
+DATASET_DIR = Path("/scratch/s5f/wedigs.s5f/datasets/tmqm")
 
 
 def load_model(model_dir: Path) -> REM3DIModel:

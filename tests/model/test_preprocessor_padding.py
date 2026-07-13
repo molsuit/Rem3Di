@@ -11,10 +11,10 @@ from __future__ import annotations
 import pytest
 import torch.nn as nn
 
-from threedscriptors.model.preprocessing.preprocessing import (
+from remedi.model.preprocessing.preprocessing import (
     PreprocessorWithAtomicEmbedding,
 )
-from threedscriptors.training.data.samplers import quantize_pad_length
+from remedi.training.data.samplers import quantize_pad_length
 
 
 class _StubMaceModel:

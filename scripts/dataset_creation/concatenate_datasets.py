@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset_creation.dataset_concatenation import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset_creation.dataset_concatenation import (
     DatasetConcatenation,
 )
 
@@ -18,4 +18,3 @@ dc = DatasetConcatenation(
 )
 #
 dc.concatenate_datasets_copy_first()
-

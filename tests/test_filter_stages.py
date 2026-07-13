@@ -11,20 +11,20 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from threedscriptors.configuration.dataset_config import (
+from remedi.configuration.dataset_config import (
     FilterAtomsStageConfig,
     FilterMoleculeStageConfig,
 )
-from threedscriptors.data_handling.dataset.tasks import ElementSet, Split
-from threedscriptors.data_handling.dataset_creation.loading_batch import (
+from remedi.data_handling.dataset.tasks import ElementSet, Split
+from remedi.data_handling.dataset_creation.loading_batch import (
     InputBatch,
     RegressionData,
 )
-from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+from remedi.data_handling.dataset_creation.pipeline_stages import (
     FilterAtomsStage,
     FilterMoleculeStage,
 )
-from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
+from remedi.data_handling.dataset_creation.structure_ids import StructureID
 
 
 def _smiles_batch(
@@ -35,8 +35,7 @@ def _smiles_batch(
 ) -> InputBatch:
     n = len(raw)
     structure_ids = [
-        StructureID(structure_id=i, molecule_id=i, stereoisomer_id=i)
-        for i in range(n)
+        StructureID(structure_id=i, molecule_id=i, stereoisomer_id=i) for i in range(n)
     ]
     rd = None
     if with_targets:

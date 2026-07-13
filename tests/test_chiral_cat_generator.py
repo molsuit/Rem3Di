@@ -18,26 +18,26 @@ import torch
 from ase import Atoms
 from ase.io import write as ase_write
 
-from threedscriptors.configuration.dataset_config import (
+from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
     FilterAtomsStageConfig,
 )
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.tasks import ElementSet, Split, TaskType
-from threedscriptors.data_handling.dataset_creation.generators.chiral_cat_generator import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.tasks import ElementSet, Split, TaskType
+from remedi.data_handling.dataset_creation.generators.chiral_cat_generator import (
     CHIRAL_TASK_NAME,
     ChiralCatGenerator,
     chiral_cat_task_set,
 )
-from threedscriptors.data_handling.dataset_creation.orchestrator import (
+from remedi.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
-from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+from remedi.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
     FilterAtomsStage,
 )
-from threedscriptors.data_handling.dataset_creation.splits import (
+from remedi.data_handling.dataset_creation.splits import (
     stratified_group_split,
 )
 
@@ -46,17 +46,32 @@ from threedscriptors.data_handling.dataset_creation.splits import (
 # at small N (mirrors the real dataset where every class has >=37 molecules).
 # Labels are arbitrary here; only the per-class grouping matters for the split.
 _FRAMES = [
-    ("C", 0), ("CC", 0), ("CCC", 0), ("CCCC", 0), ("CCCCC", 0),
-    ("CCO", 1), ("CCN", 1), ("CCCO", 1), ("CCCN", 1), ("CCCCO", 1),
-    ("c1ccccc1", 2), ("Cc1ccccc1", 2), ("CCc1ccccc1", 2),
-    ("c1ccncc1", 2), ("Cc1ccncc1", 2),
+    ("C", 0),
+    ("CC", 0),
+    ("CCC", 0),
+    ("CCCC", 0),
+    ("CCCCC", 0),
+    ("CCO", 1),
+    ("CCN", 1),
+    ("CCCO", 1),
+    ("CCCN", 1),
+    ("CCCCO", 1),
+    ("c1ccccc1", 2),
+    ("Cc1ccccc1", 2),
+    ("CCc1ccccc1", 2),
+    ("c1ccncc1", 2),
+    ("Cc1ccncc1", 2),
 ]
 
 
 def _make_chiral_xyz(path: Path) -> None:
     frames = []
     for i, (smi, label) in enumerate(_FRAMES):
-        a = Atoms("CH4", positions=np.zeros((5, 3)), info={"smiles": smi, "label": label, "index": i})
+        a = Atoms(
+            "CH4",
+            positions=np.zeros((5, 3)),
+            info={"smiles": smi, "label": label, "index": i},
+        )
         frames.append(a)
     ase_write(str(path), frames, format="extxyz")
 
@@ -123,7 +138,9 @@ def test_stratified_group_split_keeps_groups_whole_and_spreads_classes() -> None
 def test_stratified_group_split_no_group_leakage() -> None:
     # Two rows per group; the pair must land in the same partition.
     labels = np.array([0, 0, 1, 1, 2, 2, 0, 0, 1, 1, 2, 2])
-    groups = np.array(["a", "a", "b", "b", "c", "c", "d", "d", "e", "e", "f", "f"], dtype=object)
+    groups = np.array(
+        ["a", "a", "b", "b", "c", "c", "d", "d", "e", "e", "f", "f"], dtype=object
+    )
     tr, va, te = stratified_group_split(labels, groups, 0.5, 0.25, seed=1)
     row_to_part = {}
     for name, part in (("tr", tr), ("va", va), ("te", te)):

@@ -20,27 +20,27 @@ import torch
 from ase import Atoms
 from ase.io import write as ase_write
 
-from threedscriptors.configuration.dataset_config import (
+from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
 )
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.training_dataset import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from threedscriptors.data_handling.dataset_creation.generators.xyz_generator import (
+from remedi.data_handling.dataset_creation.generators.xyz_generator import (
     XYZMoleculeGenerator,
 )
-from threedscriptors.data_handling.dataset_creation.loading_batch import InputBatch
-from threedscriptors.data_handling.dataset_creation.orchestrator import (
+from remedi.data_handling.dataset_creation.loading_batch import InputBatch
+from remedi.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
-from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+from remedi.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
 )
-from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
-from threedscriptors.data_handling.sample import Sample, yield_molecules_collate_fn
+from remedi.data_handling.dataset_creation.structure_ids import StructureID
+from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
 
 
 def _make_xyz_file(path: Path, atoms_list: list[Atoms]) -> None:

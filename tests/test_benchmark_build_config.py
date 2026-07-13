@@ -12,12 +12,12 @@ import pydantic
 import pydantic_yaml as pyd_yaml
 import pytest
 
-from threedscriptors.configuration.dataset_config import FilterMoleculeStageConfig
-from threedscriptors.data_handling.dataset.tasks import ElementSet
-from threedscriptors.data_handling.dataset_creation.build_config import (
+from remedi.configuration.dataset_config import FilterMoleculeStageConfig
+from remedi.data_handling.dataset.tasks import ElementSet
+from remedi.data_handling.dataset_creation.build_config import (
     BenchmarkBuildConfig,
 )
-from threedscriptors.data_handling.dataset_creation.generators.utils import (
+from remedi.data_handling.dataset_creation.generators.utils import (
     MACE_OFF_ELEMENTS,
     MACE_POLAR_ELEMENTS,
     resolve_element_set,
@@ -43,9 +43,7 @@ def test_yaml_roundtrip(tmp_path: Path) -> None:
 
 def test_moleculenet_raw_root_required(tmp_path: Path) -> None:
     with pytest.raises(pydantic.ValidationError, match="moleculenet_raw_root"):
-        BenchmarkBuildConfig(
-            output_root=tmp_path / "out", tdc_cache=tmp_path / "tdc"
-        )
+        BenchmarkBuildConfig(output_root=tmp_path / "out", tdc_cache=tmp_path / "tdc")
 
 
 def test_tdc_cache_required(tmp_path: Path) -> None:

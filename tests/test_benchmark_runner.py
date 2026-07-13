@@ -16,25 +16,25 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from threedscriptors.configuration.dataset_config import DatasetConfig
-from threedscriptors.data_handling.benchmarks import (
+from remedi.configuration.dataset_config import DatasetConfig
+from remedi.data_handling.benchmarks import (
     BenchmarkManifest,
     EvalMetric,
     SplitVariant,
 )
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.tasks import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.tasks import (
     TaskConfig,
     TaskScope,
     TaskSet,
     TaskType,
 )
-from threedscriptors.data_handling.dataset_creation.shard_aligned_writer import (
+from remedi.data_handling.dataset_creation.shard_aligned_writer import (
     ShardAlignedWriter,
 )
-from threedscriptors.evaluation.benchmark.descriptors import EcfpConfig
-from threedscriptors.evaluation.benchmark.learners import LinearLearnerConfig
-from threedscriptors.evaluation.benchmark.runner import (
+from remedi.evaluation.benchmark.descriptors import EcfpConfig
+from remedi.evaluation.benchmark.learners import LinearLearnerConfig
+from remedi.evaluation.benchmark.runner import (
     BenchmarkResultRow,
     EvalConfig,
     run_eval,
@@ -154,8 +154,16 @@ def _hand_build_multitask_zarr(
 
 
 _SMILES_10 = [
-    "CCO", "c1ccccc1", "CC(=O)O", "CCN", "OC", "CC", "CCC", "CCCC",
-    "CCCCC", "CCCCCC",
+    "CCO",
+    "c1ccccc1",
+    "CC(=O)O",
+    "CCN",
+    "OC",
+    "CC",
+    "CCC",
+    "CCCC",
+    "CCCCC",
+    "CCCCCC",
 ]
 # 6 train (0), 2 valid (1), 2 test (2)
 _SPLIT_10 = np.array([0] * 6 + [1] * 2 + [2] * 2, dtype="u1")

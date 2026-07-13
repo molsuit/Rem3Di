@@ -4,15 +4,15 @@ import matplotlib.pyplot as plt
 import torch
 from mace.calculators import MACECalculator
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     EncoderOnlyArchitectureConfig,
 )
-from threedscriptors.data_handling.data_utils import get_ase_atoms, relax_atoms
-from threedscriptors.data_handling.pipelines import reload_dataset_pipeline
-from threedscriptors.evaluation.clustering import (
+from remedi.data_handling.data_utils import get_ase_atoms, relax_atoms
+from remedi.data_handling.pipelines import reload_dataset_pipeline
+from remedi.evaluation.clustering import (
     UMAPCalculator,
 )
-from threedscriptors.evaluation.evaluation_utils import (
+from remedi.evaluation.evaluation_utils import (
     evaluate_molecular_descriptor_on_dataset,
 )
 

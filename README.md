@@ -18,6 +18,15 @@
 </div>
 
 
+## Documentation
+
+📖 Full usage docs (installation, quickstart, evaluating models, training downstream
+heads, training from scratch, and concepts) live on the
+[`docs` branch](https://github.com/steffen-wedig/3DMolecularDescriptors/tree/docs/docs)
+and will be published as a GitHub Pages site.
+*(Placeholder — this link will be replaced by the rendered docs site.)*
+
+
 
 ## Setup
 1. pip install from pyproject.toml
@@ -41,7 +50,7 @@ TL;DR: We generate molecular datasets containing molecular structures and their 
 
 
 ### Dataset Overview
-MoleculeDatasets (```threedscriptors/data_handling/dataset/molecule_dataset.py```) is the object that contains all embedding and structural data for our molecular datasets. The datasets can further contain system wide, molecular labels, or atomwise labels, which can be used for training regression models. Our datasets are backed by zarr arrays(Design motivitation: multithreaded read access from disk, when dataset size exceeds memory limit). As the size of molecules varies, the MoleculeDataset contain pointer values that point to the molecules atom limits.
+MoleculeDatasets (```remedi/data_handling/dataset/molecule_dataset.py```) is the object that contains all embedding and structural data for our molecular datasets. The datasets can further contain system wide, molecular labels, or atomwise labels, which can be used for training regression models. Our datasets are backed by zarr arrays(Design motivitation: multithreaded read access from disk, when dataset size exceeds memory limit). As the size of molecules varies, the MoleculeDataset contain pointer values that point to the molecules atom limits.
 
 ### Dataset Generation
 Dataset generation is implemented batchwise to increase performance, as GPU memory can be fully utilized in this way. The pipeline goes through the following stages.
@@ -63,9 +72,9 @@ One note re. training: For training we create new dataset object (class Training
 
 ```python
 import torch
-from threedscriptors.configuration.architecture_config import EncoderOnlyArchitectureConfig
-from threedscriptors.evaluation.evaluation_utils import evaluate_molecular_descriptor_on_dataset
-from threedscriptors.data_handling.dataset.training_dataset import (
+from remedi.configuration.architecture_config import EncoderOnlyArchitectureConfig
+from remedi.evaluation.evaluation_utils import evaluate_molecular_descriptor_on_dataset
+from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     pos_emb_getitem,
 )

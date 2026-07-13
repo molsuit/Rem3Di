@@ -12,22 +12,22 @@ import numpy as np
 import pytest
 from rdkit.DataStructs import ConvertToNumpyArray
 
-from threedscriptors.evaluation.retrieval.config import (
+from remedi.evaluation.retrieval.config import (
     NearestMoleculeTaskConfig,
     TanimotoSimilarityTaskConfig,
 )
-from threedscriptors.evaluation.retrieval.fingerprints import (
+from remedi.evaluation.retrieval.fingerprints import (
     morgan_fingerprints,
     tanimoto,
 )
-from threedscriptors.evaluation.retrieval.nearest_molecule import (
+from remedi.evaluation.retrieval.nearest_molecule import (
     run_nearest_molecule,
     smiles_to_atoms,
 )
-from threedscriptors.evaluation.retrieval.tanimoto_similarity import (
+from remedi.evaluation.retrieval.tanimoto_similarity import (
     run_tanimoto_similarity,
 )
-from threedscriptors.evaluation.retrieval.vector_store import (
+from remedi.evaluation.retrieval.vector_store import (
     SklearnIndexConfig,
     VectorStore,
 )
@@ -36,11 +36,22 @@ from threedscriptors.evaluation.retrieval.vector_store import (
 # acids / amines) so embedding-space neighbors should track fingerprint
 # neighbors when the embedding *is* the fingerprint.
 _SMILES = [
-    "CCC", "CCCC", "CCCCC", "CCCCCC",
-    "CCO", "CCCO", "CCCCO",
-    "c1ccccc1", "Cc1ccccc1", "CCc1ccccc1", "Oc1ccccc1",
-    "CC(=O)O", "CCC(=O)O", "CCCC(=O)O",
-    "CCN", "CCCN",
+    "CCC",
+    "CCCC",
+    "CCCCC",
+    "CCCCCC",
+    "CCO",
+    "CCCO",
+    "CCCCO",
+    "c1ccccc1",
+    "Cc1ccccc1",
+    "CCc1ccccc1",
+    "Oc1ccccc1",
+    "CC(=O)O",
+    "CCC(=O)O",
+    "CCCC(=O)O",
+    "CCN",
+    "CCCN",
 ]
 _N_BITS = 512
 

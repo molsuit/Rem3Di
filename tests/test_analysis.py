@@ -1,6 +1,6 @@
 import numpy as np
 
-from threedscriptors.evaluation.evaluation_utils import compute_class_std
+from remedi.evaluation.evaluation_utils import compute_class_std
 
 
 def test_class_std():

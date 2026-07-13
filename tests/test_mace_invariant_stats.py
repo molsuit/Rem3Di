@@ -6,7 +6,7 @@ import pytest
 import torch
 from e3nn.o3 import Irreps
 
-from threedscriptors.evaluation.descriptor_analysis.mace_invariant_stats import (
+from remedi.evaluation.descriptor_analysis.mace_invariant_stats import (
     _CovarianceAccumulator,
     _ReservoirSampler,
     _Welford,
@@ -119,8 +119,10 @@ def test_per_dim_entropy_uniform_close_to_max():
     rng = np.random.default_rng(4)
     x = rng.uniform(size=(20000, 3)).astype(np.float64)
     H, H_norm = per_dim_entropy(
-        x, bins=64,
-        range_min=np.zeros(3), range_max=np.ones(3),
+        x,
+        bins=64,
+        range_min=np.zeros(3),
+        range_max=np.ones(3),
     )
     # Each dim should approach log2(64) = 6 bits; allow small slack.
     assert np.all(H > 5.7)
@@ -131,8 +133,10 @@ def test_per_dim_entropy_constant_dim_is_zero():
     x = np.zeros((1000, 2))
     x[:, 1] = np.linspace(0, 1, 1000)
     H, _ = per_dim_entropy(
-        x, bins=32,
-        range_min=np.array([0.0, 0.0]), range_max=np.array([0.0, 1.0]),
+        x,
+        bins=32,
+        range_min=np.array([0.0, 0.0]),
+        range_max=np.array([0.0, 1.0]),
     )
     assert H[0] == 0.0
     assert H[1] > 4.5

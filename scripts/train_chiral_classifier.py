@@ -38,36 +38,38 @@ import torch
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import Subset
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     ArchitectureConfig,
     RegressionArchitectureConfig,
 )
-from threedscriptors.configuration.training_config import TrainingConfig
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset.tasks import Split
-from threedscriptors.data_handling.dataset.training_dataset import (
+from remedi.configuration.training_config import TrainingConfig
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset.tasks import Split
+from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
 )
-from threedscriptors.data_handling.sample import yield_molecules_supervised_collate_fn
-from threedscriptors.evaluation.benchmark.metrics import (
+from remedi.data_handling.sample import yield_molecules_supervised_collate_fn
+from remedi.evaluation.benchmark.metrics import (
     balanced_accuracy,
     macro_auroc_ovr,
     macro_f1,
 )
-from threedscriptors.training.classification_training import (
+from remedi.training.classification_training import (
     FocalLoss,
     inverse_frequency_alpha,
 )
-from threedscriptors.training.data.samplers import lengths_from_ptr
-from threedscriptors.training.telemetry import TrainingTelemetry
+from remedi.training.data.samplers import lengths_from_ptr
+from remedi.training.telemetry import TrainingTelemetry
 
 logger = logging.getLogger("remedi.chiral")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Train a chiral-type classifier from scratch.")
+    p = argparse.ArgumentParser(
+        description="Train a chiral-type classifier from scratch."
+    )
     p.add_argument("--training_config", type=Path, required=True)
     p.add_argument("--dataset_path", type=Path, default=None)
     p.add_argument("--max_epochs", type=int, default=None)
@@ -154,7 +156,9 @@ def _evaluate(model, loader, n_classes: int, max_batches: int | None):
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     args = parse_args()
     global device
     if args.device is not None:
@@ -169,7 +173,9 @@ def main() -> None:
         ArchitectureConfig, training_config.model_config_path
     )
     if not isinstance(architecture_config, RegressionArchitectureConfig):
-        raise ValueError("chiral classifier requires a `kind: regression` architecture.")
+        raise ValueError(
+            "chiral classifier requires a `kind: regression` architecture."
+        )
     head_cfgs = architecture_config.regression_head_config
     if len(head_cfgs) != 1 or head_cfgs[0].n_classes is None:
         raise ValueError(
@@ -226,7 +232,9 @@ def main() -> None:
 
     params = _trainable_parameters(model)
     optimizer = torch.optim.AdamW(
-        params, lr=training_config.learning_rate, weight_decay=training_config.weight_decay
+        params,
+        lr=training_config.learning_rate,
+        weight_decay=training_config.weight_decay,
     )
     scheduler = OneCycleLR(
         optimizer,
@@ -234,7 +242,9 @@ def main() -> None:
         total_steps=training_config.epochs * max(1, len(train_loader)),
     )
 
-    pyaml.to_yaml_file(out_base / "post_training_architecture_config.yaml", architecture_config)
+    pyaml.to_yaml_file(
+        out_base / "post_training_architecture_config.yaml", architecture_config
+    )
 
     best_score = -np.inf
     with TrainingTelemetry(
@@ -261,7 +271,9 @@ def main() -> None:
                 optimizer.zero_grad()
                 loss.backward()
                 if training_config.max_grad_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(params, training_config.max_grad_norm)
+                    torch.nn.utils.clip_grad_norm_(
+                        params, training_config.max_grad_norm
+                    )
                 optimizer.step()
                 scheduler.step()
                 running += float(loss.detach()) * targets.numel()
@@ -291,7 +303,9 @@ def main() -> None:
             if score > best_score:
                 best_score = score
                 _save_checkpoint(model, out_base)
-                logger.info("  new best val balanced accuracy %.4f -> checkpointed", score)
+                logger.info(
+                    "  new best val balanced accuracy %.4f -> checkpointed", score
+                )
 
     logger.info("done. best val balanced accuracy: %.4f", best_score)
 

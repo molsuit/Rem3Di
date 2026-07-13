@@ -19,17 +19,17 @@ import pydantic_yaml as pyaml
 import pytest
 import torch
 
-from threedscriptors.configuration.architecture_config import (
+from remedi.configuration.architecture_config import (
     ArchitectureConfig,
     RegressionArchitectureConfig,
     RegressionHeadConfig,
 )
-from threedscriptors.data_handling.sample import (
+from remedi.data_handling.sample import (
     Sample,
     yield_molecules_supervised_collate_fn,
 )
-from threedscriptors.model.regression_models import RegressionHead
-from threedscriptors.training.classification_training import (
+from remedi.model.regression_models import RegressionHead
+from remedi.training.classification_training import (
     FocalLoss,
     inverse_frequency_alpha,
 )

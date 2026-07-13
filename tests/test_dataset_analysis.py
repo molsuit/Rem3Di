@@ -3,19 +3,19 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from threedscriptors.configuration.dataset_analysis_config import (
+from remedi.configuration.dataset_analysis_config import (
     BitBirchConfig,
     BitBirchUmapConfig,
     MoleculeDatasetAnalysisConfig,
 )
-from threedscriptors.configuration.dataset_config import DatasetConfig
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset_analysis import (
+from remedi.configuration.dataset_config import DatasetConfig
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset_analysis import (
     DatasetSummary,
     MoleculeDatasetAnalysis,
     _compute_descriptors,
 )
-from threedscriptors.data_handling.dataset_creation.shard_aligned_writer import (
+from remedi.data_handling.dataset_creation.shard_aligned_writer import (
     ShardAlignedWriter,
 )
 
@@ -82,7 +82,7 @@ def test_compute_descriptors_valid_and_invalid():
 
 
 def test_distribution_stats_handles_empty():
-    from threedscriptors.data_handling.dataset_analysis import DistributionStats
+    from remedi.data_handling.dataset_analysis import DistributionStats
 
     s = DistributionStats.from_array(np.asarray([], dtype=np.float64))
     assert s.n == 0
@@ -193,10 +193,26 @@ def test_bitbirch_umap_projection_runs(tmp_path: Path):
     rng = np.random.default_rng(0)
     # Build a diverse-enough set so UMAP with low n_neighbors converges.
     seed_smiles = [
-        "CCO", "CCN", "CCC", "CCCO", "CCCN", "CCCC", "CCCCO", "CCCCN",
-        "c1ccccc1", "c1ccncc1", "c1ccoc1", "c1ccsc1",
-        "Cc1ccccc1", "Nc1ccccc1", "Oc1ccccc1", "Clc1ccccc1",
-        "C1CCCCC1", "C1CCNCC1", "C1CCOCC1", "C1CCSCC1",
+        "CCO",
+        "CCN",
+        "CCC",
+        "CCCO",
+        "CCCN",
+        "CCCC",
+        "CCCCO",
+        "CCCCN",
+        "c1ccccc1",
+        "c1ccncc1",
+        "c1ccoc1",
+        "c1ccsc1",
+        "Cc1ccccc1",
+        "Nc1ccccc1",
+        "Oc1ccccc1",
+        "Clc1ccccc1",
+        "C1CCCCC1",
+        "C1CCNCC1",
+        "C1CCOCC1",
+        "C1CCSCC1",
     ]
     smiles = seed_smiles * 4  # 80 entries; UMAP handles this fine
     rng.shuffle(smiles)

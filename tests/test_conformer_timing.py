@@ -8,11 +8,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from threedscriptors.data_handling.dataset_creation.conformer_timing import (
+from remedi.data_handling.dataset_creation.conformer_timing import (
     ConformerTimingRecord,
     write_timings_jsonl,
 )
-from threedscriptors.data_handling.dataset_creation.utils import embed_one_smiles
+from remedi.data_handling.dataset_creation.utils import embed_one_smiles
 
 
 def test_embed_one_smiles_ok_returns_timing_record():
@@ -82,7 +82,9 @@ def test_write_timings_jsonl_roundtrip(tmp_path: Path):
 
     lines = out.read_text().splitlines()
     assert len(lines) == 2
-    reloaded = [ConformerTimingRecord.model_validate(json.loads(line)) for line in lines]
+    reloaded = [
+        ConformerTimingRecord.model_validate(json.loads(line)) for line in lines
+    ]
     assert reloaded[0].status == "ok"
     assert reloaded[0].t_mmff_s == pytest.approx(0.034)
     assert reloaded[1].status == "value_error"

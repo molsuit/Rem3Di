@@ -17,10 +17,10 @@ from pathlib import Path
 
 import pydantic_yaml as pyd_yaml
 
-from threedscriptors.configuration.dataset_comparison_config import (
+from remedi.configuration.dataset_comparison_config import (
     DatasetComparisonConfig,
 )
-from threedscriptors.data_handling.dataset_comparison import DatasetComparison
+from remedi.data_handling.dataset_comparison import DatasetComparison
 
 
 def main() -> None:
@@ -40,7 +40,9 @@ def main() -> None:
     comparison = DatasetComparison(config)
     comparison.run()
     out = comparison.output()
-    logging.getLogger(__name__).info("Wrote %d artifacts to %s", len(comparison.results), out)
+    logging.getLogger(__name__).info(
+        "Wrote %d artifacts to %s", len(comparison.results), out
+    )
 
 
 if __name__ == "__main__":

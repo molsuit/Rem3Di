@@ -7,7 +7,7 @@ import pytest
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-from threedscriptors.data_handling import physchem as P
+from remedi.data_handling import physchem as P
 
 
 def _embed(smiles: str):
@@ -51,8 +51,12 @@ def test_polar_fraction_handles_heteroatoms():
     # Glycerol (all O) should be far more polar than benzene (no heteroatoms).
     nums_g, pos_g = _embed("OCC(O)CO")
     nums_b, pos_b = _embed("c1ccccc1")
-    frac_g = P.compute_3d(P.mol_from_atoms(nums_g, pos_g), ["polar_sasa_fraction"])[0][0]
-    frac_b = P.compute_3d(P.mol_from_atoms(nums_b, pos_b), ["polar_sasa_fraction"])[0][0]
+    frac_g = P.compute_3d(P.mol_from_atoms(nums_g, pos_g), ["polar_sasa_fraction"])[0][
+        0
+    ]
+    frac_b = P.compute_3d(P.mol_from_atoms(nums_b, pos_b), ["polar_sasa_fraction"])[0][
+        0
+    ]
     assert frac_g > frac_b
     assert frac_b == pytest.approx(0.0, abs=1e-6)
 

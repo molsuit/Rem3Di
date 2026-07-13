@@ -8,8 +8,8 @@ import numpy as np
 import torch
 from torch import nn
 
-from threedscriptors.data_handling.sample import Sample, yield_molecules_collate_fn
-from threedscriptors.training.linear_probe import LinearProbeMonitor, _ridge_predict
+from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
+from remedi.training.linear_probe import LinearProbeMonitor, _ridge_predict
 
 
 def _make_monitor(labels, masks, *, every_n_steps=1, val_fraction=0.3):

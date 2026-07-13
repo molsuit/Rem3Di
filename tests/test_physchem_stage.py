@@ -10,24 +10,24 @@ from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-from threedscriptors.configuration.dataset_config import (
+from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
     PhysicochemicalDescriptorStageConfig,
 )
-from threedscriptors.data_handling.dataset.molecule_dataset import MoleculeDataset
-from threedscriptors.data_handling.dataset_creation.loading_batch import (
+from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi.data_handling.dataset_creation.loading_batch import (
     InputBatch,
     SmilesData,
 )
-from threedscriptors.data_handling.dataset_creation.orchestrator import (
+from remedi.data_handling.dataset_creation.orchestrator import (
     DatasetConstructionOrchestrator,
 )
-from threedscriptors.data_handling.dataset_creation.pipeline_stages import (
+from remedi.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
     PhysicochemicalDescriptorStage,
 )
-from threedscriptors.data_handling.dataset_creation.structure_ids import StructureID
+from remedi.data_handling.dataset_creation.structure_ids import StructureID
 
 
 def _atoms(smiles: str) -> Atoms:

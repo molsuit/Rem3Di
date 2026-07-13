@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pydantic_yaml as pyaml
 
-from threedscriptors.configuration.training_config import TrainingConfig
+from remedi.configuration.training_config import TrainingConfig
 
 
 def log(msg: str) -> None:

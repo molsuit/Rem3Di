@@ -12,11 +12,11 @@ import pytest
 import torch
 from e3nn.o3 import Irreps
 
-from threedscriptors.model.preprocessing.pseudoscalar_tp import (
+from remedi.model.preprocessing.pseudoscalar_tp import (
     Rem3DiPseudoScalarTP,
     Rem3DiPseudoScalarTPFromVectors,
 )
-from threedscriptors.utils.pseudoscalar_paths import find_pseudoscalar_paths
+from remedi.utils.pseudoscalar_paths import find_pseudoscalar_paths
 
 # (input irreps, exact expected set of path strings)
 PATH_CASES = [

@@ -1,5 +1,5 @@
 [project]
-name = "threedscriptors"
+name = "remedi"
 version = "0.1.0"
 description = ""
 
@@ -83,4 +83,4 @@ torch-sim-atomistic = { git = "https://github.com/TorchSim/torch-sim.git", branc
 torch = { index = "pytorch-cu126" }
 
 [tool.ty.environment]
-root = ["./threedscriptors"]
+root = ["./remedi"]

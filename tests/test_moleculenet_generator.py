@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from threedscriptors.configuration.dataset_config import FilterMoleculeStageConfig
-from threedscriptors.data_handling.benchmarks import (
+from remedi.configuration.dataset_config import FilterMoleculeStageConfig
+from remedi.data_handling.benchmarks import (
     BenchmarkTask,
     MoleculeNetBenchmark,
 )
-from threedscriptors.data_handling.dataset.tasks import ElementSet, Split, TaskType
-from threedscriptors.data_handling.dataset_creation.generators.moleculenet_generator import (
+from remedi.data_handling.dataset.tasks import ElementSet, Split, TaskType
+from remedi.data_handling.dataset_creation.generators.moleculenet_generator import (
     MoleculeNetGenerator,
 )
 
@@ -85,9 +85,7 @@ def test_generator_mask_marks_missing_targets(tmp_path):
 # single-fragment gate in filter_mol drops the whole row; with strip_salts on
 # the drug half (phenol) is recovered and ingested.
 def test_strip_salts_recovers_drug_half(tmp_path):
-    (tmp_path / "toy.csv").write_text(
-        "smiles,y\nOc1ccccc1.[Cl-],1.5\nCCC,2.5\n"
-    )
+    (tmp_path / "toy.csv").write_text("smiles,y\nOc1ccccc1.[Cl-],1.5\nCCC,2.5\n")
     gen = MoleculeNetGenerator(
         _benchmark(),
         tmp_path,
@@ -101,9 +99,7 @@ def test_strip_salts_recovers_drug_half(tmp_path):
 
 
 def test_no_strip_drops_multi_fragment_salt(tmp_path):
-    (tmp_path / "toy.csv").write_text(
-        "smiles,y\nOc1ccccc1.[Cl-],1.5\nCCC,2.5\n"
-    )
+    (tmp_path / "toy.csv").write_text("smiles,y\nOc1ccccc1.[Cl-],1.5\nCCC,2.5\n")
     gen = MoleculeNetGenerator(
         _benchmark(),
         tmp_path,
