@@ -72,9 +72,7 @@ def read_dataset_path(config_path: Path) -> Path:
     with config_path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
     if not isinstance(data, dict) or "dataset_path" not in data:
-        raise KeyError(
-            f"{config_path} does not have a top-level 'dataset_path' field."
-        )
+        raise KeyError(f"{config_path} does not have a top-level 'dataset_path' field.")
     return Path(str(data["dataset_path"]).strip())
 
 

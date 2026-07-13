@@ -19,10 +19,7 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
 )
 
 xyz_files = [
-    Path(f)
-    for f in Path("/path/to/raw_datasets/omol25_4M_train_tmcs").glob(
-        "*.extxyz"
-    )
+    Path(f) for f in Path("/path/to/raw_datasets/omol25_4M_train_tmcs").glob("*.extxyz")
 ]
 
 

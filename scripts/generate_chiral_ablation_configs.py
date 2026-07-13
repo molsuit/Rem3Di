@@ -95,9 +95,7 @@ def build_run(name: str, pseudoscalars: bool, focal: bool) -> None:
     run_dir = OUT_DIR / name
     _dump(run_dir / "architecture_config.yaml", arch)
     _dump(run_dir / "training_config.yaml", train)
-    print(
-        f"{name}: pseudoscalars={pseudoscalars} focal={focal} -> {run_dir}"
-    )
+    print(f"{name}: pseudoscalars={pseudoscalars} focal={focal} -> {run_dir}")
 
 
 def main() -> None:

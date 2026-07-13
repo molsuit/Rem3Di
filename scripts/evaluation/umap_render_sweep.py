@@ -25,10 +25,10 @@ from umap_grid_sweep import (  # type: ignore[import-not-found]
 
 BLOCK_PALETTES: dict[str, dict[str, str]] = {
     "default": {"3d": "#1f77b4", "4d": "#2ca02c", "5d": "#d62728", "f": "#ff7f0e"},
-    "bright":  {"3d": "#0066FF", "4d": "#00C800", "5d": "#FF0000", "f": "#FF00FF"},
-    "set1":    {"3d": "#377eb8", "4d": "#4daf4a", "5d": "#e41a1c", "f": "#984ea3"},
-    "okabe":   {"3d": "#0072B2", "4d": "#009E73", "5d": "#D55E00", "f": "#CC79A7"},
-    "cud":     {"3d": "#56B4E9", "4d": "#009E73", "5d": "#E69F00", "f": "#CC79A7"},
+    "bright": {"3d": "#0066FF", "4d": "#00C800", "5d": "#FF0000", "f": "#FF00FF"},
+    "set1": {"3d": "#377eb8", "4d": "#4daf4a", "5d": "#e41a1c", "f": "#984ea3"},
+    "okabe": {"3d": "#0072B2", "4d": "#009E73", "5d": "#D55E00", "f": "#CC79A7"},
+    "cud": {"3d": "#56B4E9", "4d": "#009E73", "5d": "#E69F00", "f": "#CC79A7"},
 }
 
 
@@ -133,8 +133,7 @@ def main() -> None:
     if args.category in ("block", "both"):
         for palette_name in palette_list:
             block_key = {
-                blk: BLOCK_PALETTES[palette_name][blk]
-                for blk in block_cat.categories
+                blk: BLOCK_PALETTES[palette_name][blk] for blk in block_cat.categories
             }
             categories.append((f"block-{palette_name}", block_cat, block_key))
 

@@ -76,8 +76,7 @@ def main() -> None:
 
     dirs = [validate(d) for d in args.config_dirs]
     batches = [
-        dirs[i : i + args.batch_size]
-        for i in range(0, len(dirs), args.batch_size)
+        dirs[i : i + args.batch_size] for i in range(0, len(dirs), args.batch_size)
     ]
     log(
         f"{len(dirs)} model eval(s) -> {len(batches)} node job(s) "

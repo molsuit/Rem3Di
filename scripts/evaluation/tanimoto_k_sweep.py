@@ -210,20 +210,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--cache-dir",
         type=Path,
-        default=Path(
-            "/path/to/evaluation_results/qm9_retrieval/descriptor_cache"
-        ),
+        default=Path("/path/to/evaluation_results/qm9_retrieval/descriptor_cache"),
     )
-    p.add_argument(
-        "--dataset-path", type=Path, default=Path("/path/to/datasets/qm9")
-    )
+    p.add_argument("--dataset-path", type=Path, default=Path("/path/to/datasets/qm9"))
     p.add_argument("--dataset-id", type=str, default="qm9")
     p.add_argument(
         "--output",
         type=Path,
-        default=Path(
-            "/path/to/evaluation_results/qm9_retrieval/tanimoto_k_sweep.png"
-        ),
+        default=Path("/path/to/evaluation_results/qm9_retrieval/tanimoto_k_sweep.png"),
     )
     p.add_argument("--ks", type=int, nargs="+", default=DEFAULT_KS)
     p.add_argument("--n-query", type=int, default=500)

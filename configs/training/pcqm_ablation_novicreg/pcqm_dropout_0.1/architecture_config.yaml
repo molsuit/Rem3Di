@@ -60,7 +60,7 @@ mace_config:
   device: cuda
   dtype: float32
   enable_cueq: true
-  model_path: 
+  model_path:
     /path/to/3DMolecularDescriptors/MACE-POLAR-1-M.model
 positional_encoding_config:
   N_radial_basis_functions: 16

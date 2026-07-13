@@ -199,9 +199,7 @@ def main() -> None:
     parser.add_argument(
         "--eval-root",
         type=Path,
-        default=Path(
-            "/path/to/evaluation_results/pcqm_ablation_novicreg"
-        ),
+        default=Path("/path/to/evaluation_results/pcqm_ablation_novicreg"),
     )
     parser.add_argument("--dataset-id", type=str, default="pcqm100k")
     parser.add_argument(

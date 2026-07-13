@@ -37,9 +37,7 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
     PhysicochemicalDescriptorStage,
 )
 
-sdf_file = Path(
-    "/path/to/raw_datasets/pcqm4m/extracted/pcqm4m-v2-train.sdf"
-)
+sdf_file = Path("/path/to/raw_datasets/pcqm4m/extracted/pcqm4m-v2-train.sdf")
 datasets_dir = Path("/path/to/datasets/pcqm4m")
 
 

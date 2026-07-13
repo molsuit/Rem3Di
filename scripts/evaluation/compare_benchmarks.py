@@ -53,15 +53,15 @@ def load_long(eval_root: Path) -> pd.DataFrame:
         long.metric_name.isin(REGRESSION_METRICS), "regression", "classification"
     )
     long["competitor"] = long["model"] + " / " + long["learner_kind"]
-    long["cell"] = (
-        long.dataset_id + "|" + long.target_col + "|" + long.metric_name
-    )
+    long["cell"] = long.dataset_id + "|" + long.target_col + "|" + long.metric_name
     return long
 
 
 def add_rank(long: pd.DataFrame) -> pd.DataFrame:
     def _rank(g: pd.DataFrame) -> pd.Series:
-        ascending = g.metric_name.iloc[0] not in LOWER_IS_BETTER  # higher=better -> desc
+        ascending = (
+            g.metric_name.iloc[0] not in LOWER_IS_BETTER
+        )  # higher=better -> desc
         return g.metric_value.rank(ascending=not ascending, method="average")
 
     long = long.copy()
@@ -80,7 +80,8 @@ def add_rel_improvement(
     if null.empty:
         logger.warning(
             "no null rows (model=%s learner=%s); rel_improvement will be NaN",
-            null_model, null_learner,
+            null_model,
+            null_learner,
         )
     long = long.merge(null, left_on="cell", right_index=True, how="left")
 
@@ -89,8 +90,8 @@ def add_rel_improvement(
     safe = nv.abs() > _EPS
     rel = np.where(
         lower,
-        (nv - long.metric_value) / nv,          # lower better: shrink error
-        (long.metric_value - nv) / nv,          # higher better: grow score
+        (nv - long.metric_value) / nv,  # lower better: shrink error
+        (long.metric_value - nv) / nv,  # higher better: grow score
     )
     long["rel_improvement_vs_null"] = np.where(safe, rel, np.nan)
     return long
@@ -140,9 +141,14 @@ def main() -> None:
 
     logger.info(
         "models=%d, competitors=%d, task-cells=%d -> %s",
-        long.model.nunique(), long.competitor.nunique(), long.cell.nunique(), out,
+        long.model.nunique(),
+        long.competitor.nunique(),
+        long.cell.nunique(),
+        out,
     )
-    logger.info("top of leaderboard (by mean rank):\n%s", lb.head(12).to_string(index=False))
+    logger.info(
+        "top of leaderboard (by mean rank):\n%s", lb.head(12).to_string(index=False)
+    )
 
 
 if __name__ == "__main__":

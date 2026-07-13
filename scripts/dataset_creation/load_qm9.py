@@ -31,9 +31,7 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
     FilterAtomsStage,
 )
 
-qm9_extxyz = Path(
-    "/path/to/raw_datasets/recalcQM9/curatedQM9_full.extxyz"
-)
+qm9_extxyz = Path("/path/to/raw_datasets/recalcQM9/curatedQM9_full.extxyz")
 output_path = Path("/path/to/datasets/qm9")
 
 

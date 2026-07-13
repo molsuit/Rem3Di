@@ -16,7 +16,7 @@ dataset_path: /path/to/datasets/pcqm4m/pcqm500k_std
 epochs: 15
 learning_rate: 0.0003
 max_grad_norm: 1.0
-model_config_path: 
+model_config_path:
   /path/to/3DMolecularDescriptors/configs/training/pcqm_ablation_novicreg/pcqm_dim_128/architecture_config.yaml
 noise_level: 0.3
 output_base: /path/to/training_runs/pcqm_ablation_novicreg

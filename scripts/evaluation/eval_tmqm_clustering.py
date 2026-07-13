@@ -28,9 +28,7 @@ from remedi.evaluation.evaluation_utils import (
 )
 from remedi.model.remedi_model import REM3DIModel
 
-DEFAULT_MODEL_DIR = Path(
-    "/path/to/training_runs/10-2026_04_28_09_24_50-tmc_0"
-)
+DEFAULT_MODEL_DIR = Path("/path/to/training_runs/10-2026_04_28_09_24_50-tmc_0")
 DATASET_DIR = Path("/path/to/datasets/tmqm")
 
 

@@ -22,9 +22,7 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
 tsv_path = "/path/to/3DMolecularDescriptors/data/raw_data/BindingDB_All.tsv"
 
 creation_config = DatasetCreationConfig(
-    path=Path(
-        "/path/to/fast_data_preparation/data/binding_db"
-    ),
+    path=Path("/path/to/fast_data_preparation/data/binding_db"),
     N_structures=1000,
     max_embed_attempts=100,
     max_MMFF_steps=100,

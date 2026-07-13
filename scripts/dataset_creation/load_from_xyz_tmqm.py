@@ -34,9 +34,7 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
     FilterAtomsStage,
 )
 
-xyz_files = [
-    Path(f) for f in Path("/path/to/raw_datasets/tmqm").glob("*.xyz")
-]
+xyz_files = [Path(f) for f in Path("/path/to/raw_datasets/tmqm").glob("*.xyz")]
 
 
 generator = XYZMoleculeGenerator(

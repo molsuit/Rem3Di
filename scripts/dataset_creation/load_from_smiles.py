@@ -28,9 +28,7 @@ smiles_file = Path(
 smiles = open_smiles_file(smiles_file)
 
 creation_config = DatasetCreationConfig(
-    path=Path(
-        "/path/to/3DMolecularDescriptors/datasets/pharma"
-    ),
+    path=Path("/path/to/3DMolecularDescriptors/datasets/pharma"),
     N_structures=len(smiles),
 )
 

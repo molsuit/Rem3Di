@@ -35,12 +35,16 @@ def main() -> int:
 
     fpgen = MorganFingerprintGenerator(radius=2, fpSize=2048)
     fps = fpgen.GetFingerprints(mols).torch()
-    print(f"fingerprints: shape={tuple(fps.shape)} dtype={fps.dtype} device={fps.device}")
+    print(
+        f"fingerprints: shape={tuple(fps.shape)} dtype={fps.dtype} device={fps.device}"
+    )
 
     sim = crossTanimotoSimilarity(fps, fps)
     torch.cuda.synchronize()
     sim_t = sim.torch() if hasattr(sim, "torch") else sim
-    print(f"similarity:   shape={tuple(sim_t.shape)} dtype={sim_t.dtype} device={sim_t.device}")
+    print(
+        f"similarity:   shape={tuple(sim_t.shape)} dtype={sim_t.dtype} device={sim_t.device}"
+    )
     diag = sim_t.diagonal().cpu().numpy()
     print("diagonal (self-similarity, expect ~1.0):", diag)
     nn = sim_t.max(dim=1).values.cpu().numpy()
