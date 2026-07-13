@@ -1,0 +1,24 @@
+/* Rem3Di brand: light-green top banner (#D9F2D0) with dark text/icons.
+   Set the header/tabs background directly — overriding the var alone loses to
+   Material's more specific selector, so the banner colour wouldn't change. */
+.md-header,
+.md-tabs {
+  background-color: #D9F2D0;
+  color: #0b3d1a;
+}
+
+/* Keep header controls (search, icons, title) readable on the light banner. */
+.md-header__title,
+.md-header [class^="md-icon"],
+.md-search__input,
+.md-search__input::placeholder {
+  color: #0b3d1a;
+}
+
+:root {
+  --md-primary-fg-color: #D9F2D0;
+  --md-primary-fg-color--light: #D9F2D0;
+  --md-primary-fg-color--dark: #D9F2D0;
+  --md-primary-bg-color: #0b3d1a;
+  --md-primary-bg-color--light: #0b3d1a;
+}
