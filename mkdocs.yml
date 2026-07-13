@@ -1,6 +1,7 @@
 site_name: Rem3Di
 site_description: Learning smooth, chiral 3D molecular descriptors from atomistic foundation models
-repo_url: https://github.com/steffen-wedig/3DMolecularDescriptors
+site_url: https://molsuit.github.io/Rem3Di/
+repo_url: https://github.com/molsuit/Rem3Di
 docs_dir: docs
 
 theme:

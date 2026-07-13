@@ -1,0 +1,2 @@
+# Toolchain for building the docs site (used by .github/workflows/docs.yml).
+mkdocs-material>=9.5,<10
