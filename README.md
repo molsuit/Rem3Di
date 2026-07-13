@@ -10,6 +10,8 @@
   <a href="https://www.larsschaaf.com" target="_blank">Lars&nbsp;L.&nbsp;Schaaf</a><sup>*</sup>
   <br> <br>
   <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank"><b><u>Paper Link</u></b></a>
+  &emsp;
+  <a href="https://molsuit.github.io/Rem3Di/" target="_blank"><img alt="Documentation" src="https://img.shields.io/badge/Documentation-online-blue"></a>
   <br> <br>
 </div>
 
@@ -20,11 +22,9 @@
 
 ## Documentation
 
-📖 Full usage docs (installation, quickstart, evaluating models, training downstream
-heads, training from scratch, and concepts) live on the
-[`docs` branch](https://github.com/steffen-wedig/3DMolecularDescriptors/tree/docs/docs)
-and will be published as a GitHub Pages site.
-*(Placeholder — this link will be replaced by the rendered docs site.)*
+📖 Full usage docs — installation, quickstart, evaluating models, training downstream
+heads, training from scratch, and concepts — are online at
+**<https://molsuit.github.io/Rem3Di/>**.
 
 
 
