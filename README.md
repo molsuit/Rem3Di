@@ -18,19 +18,23 @@
 </div>
 
 
+
 ## Documentation
 
-📖 Full usage docs (installation, quickstart, evaluating models, training downstream
-heads, training from scratch, and concepts) live on the
-[`docs` branch](https://github.com/steffen-wedig/3DMolecularDescriptors/tree/docs/docs)
-and will be published as a GitHub Pages site.
-*(Placeholder — this link will be replaced by the rendered docs site.)*
+Full guides live in [`docs/`](docs/index.md) (render as a site with `pip install mkdocs-material && mkdocs serve`):
 
+- **[Quickstart](docs/quickstart.md)** — get descriptors from a model in 5 minutes
+- **[Installation](docs/installation.md)**
+- **[Evaluate a model](docs/evaluate-a-model.md)** · **[Train a downstream model](docs/train-downstream.md)** · **[Train from scratch](docs/train-from-scratch.md)**
+- **[Prepare a dataset](docs/prepare-a-dataset.md)** · **[Pseudoscalars](docs/pseudoscalars.md)** · **[Concepts](docs/concepts.md)**
 
+Runnable notebooks are in [`examples/`](examples/) (start with `02_train_downstream_head.ipynb` — runs with no GPU).
 
 ## Setup
-1. pip install from pyproject.toml
-2. Additionally clone and install a torch-sim fork from https://github.com/steffen-wedig/torch-sim
+
+`uv sync` installs everything, including the `torch-sim` MACE backend pinned in
+`pyproject.toml`. See **[docs/installation.md](docs/installation.md)** for details
+(CUDA wheels, the `eval` extra, gotchas).
 
 
 ## Raw dataset download
@@ -61,7 +65,7 @@ Dataset generation is implemented batchwise to increase performance, as GPU memo
 
 ## Running Pretraining
 1. Create a training dir with a training_config.yaml and architecture_config.yaml **or** generate the architecture_config.yaml with the scripts/write_config_file.py script. In the train dir
-2. Run pretrainig via scripts/scripts/run_denoising_pretraining.py --train_dir "dir"
+2. Run pretraining via `python scripts/run_online_embedding_denoising_pretraining.py --training_config <dir>/training_config.yaml` (see [docs/train-from-scratch.md](docs/train-from-scratch.md))
 
 One note re. training: For training we create new dataset object (class TrainingMoleculeDataset). This contains additionally logic how multiple dataloader workers can simulatounsly retireve data from the same zarr files.
 
@@ -76,10 +80,10 @@ from remedi.configuration.architecture_config import EncoderOnlyArchitectureConf
 from remedi.evaluation.evaluation_utils import evaluate_molecular_descriptor_on_dataset
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
-    pos_emb_getitem,
+    atoms_getitem,
 )
-ds = TrainingMoleculeDataset(training_config.dataset_path, get_item=pos_emb_getitem)
-model = EncoderOnlyArchitectureConfig.from_directory(model_dir).build()
+ds = TrainingMoleculeDataset(dataset_path, get_item=atoms_getitem)
+model = EncoderOnlyArchitectureConfig.from_encoder_yaml(model_dir).build()
 model.encoder.load_state_dict(torch.load(f"{model_dir}/encoder.pth"))
 model.preprocessor.atomic_preprocessor.load_state_dict(
     torch.load(f"{model_dir}/atomic_preprocessor.pth")

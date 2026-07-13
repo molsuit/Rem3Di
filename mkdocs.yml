@@ -1,0 +1,37 @@
+site_name: Rem3Di
+site_description: Learning smooth, chiral 3D molecular representations from equivariant atomistic foundation models
+repo_url: https://github.com/steffen-wedig/3DMolecularDescriptors
+docs_dir: docs
+
+theme:
+  name: material
+  logo: rem3di-logo-square.jpg
+  favicon: rem3di-logo-square.jpg
+  features:
+    - navigation.instant
+    - navigation.top
+    - content.code.copy
+  palette:
+    - scheme: default
+      toggle: { icon: material/brightness-7, name: Dark mode }
+    - scheme: slate
+      toggle: { icon: material/brightness-4, name: Light mode }
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - toc: { permalink: true }
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Quickstart: quickstart.md
+  - Evaluate a model: evaluate-a-model.md
+  - Train a downstream model: train-downstream.md
+  - Train from scratch: train-from-scratch.md
+  - Prepare a dataset: prepare-a-dataset.md
+  - Pseudoscalars: pseudoscalars.md
+  - Concepts: concepts.md
+
+# Internal research notes (chiro_docking_benchmark, eval_framework_refactor_plan,
+# pcqm_novicreg_eval_results) are intentionally left out of the nav.
