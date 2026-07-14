@@ -2,9 +2,9 @@ from collections.abc import Sequence
 from typing import Generic, TypeVar
 
 import torch
-from torch.utils.data import Subset
+from torch.utils.data import Dataset, Subset
 
-TBase = TypeVar("TBase", bound="BaseDataset")
+TBase = TypeVar("TBase", bound=Dataset)
 
 
 class IndexedSubset(Subset[TBase], Generic[TBase]):
