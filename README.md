@@ -16,7 +16,7 @@
 </div>
 
 <div align="center">
-    <img width="600" alt="Rem3Di" src="docs/header-rem3di.jpg"/>
+    <img width="600" alt="Rem3Di" src="https://raw.githubusercontent.com/molsuit/Rem3Di/b2574870bb4d10b00693b6af24661d25a30b9e84/docs/header-rem3di.jpg"/>
 </div>
 
 
