@@ -1,0 +1,19 @@
+Rem3Di (remedi)
+Copyright 2026 The Rem3Di Authors
+
+This product includes software developed for the paper:
+  "Rem3Di: Learning smooth, chiral 3D molecular descriptors from atomistic
+   foundation models", NeurIPS 2025 Workshop on Symmetry and Geometry in
+   Neural Representations.
+
+Origin and attribution:
+  Source        https://github.com/molsuit/Rem3Di
+  Documentation https://molsuit.github.io/Rem3Di/
+  Paper         https://openreview.net/forum?id=jOmZsvXoK5
+
+If you use this software in academic or derivative work, please retain this
+notice and cite the paper above.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. See the LICENSE file for the
+full terms.

@@ -1,33 +1,41 @@
 [project]
 name = "remedi"
 version = "0.1.0"
-description = ""
-
-authors = [
-    { name = "Steffen Wedig", email = "snw30@cam.ac.uk" },
-]
-
+description = "Smooth, chiral 3D molecular descriptors from atomistic foundation models"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+keywords = [
+    "molecular-descriptors",
+    "cheminformatics",
+    "machine-learned-interatomic-potentials",
+    "mace",
+    "equivariant",
+    "chirality",
+]
+authors = [
+    { name = "The Rem3Di Authors" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# The core install is intentionally torch-free and lightweight. The PyTorch /
+# MACE stack lives in the `cpu` and `cuda` extras so users install the build
+# matching their platform (see the docs). `import remedi` works without them.
 dependencies = [
-    "torch>=2.5.1",
-    # Explicit so `uv sync` always installs it: torch's cu126 wheels need
-    # libcusparseLt.so.0 at `import torch`, and relying on transitive
-    # resolution left it missing on the nodes that crashed the ablation.
-    "nvidia-cusparselt-cu12",
     "ase>=3.24.0",
     "rdkit>=2024.9.4",
-    "wandb",
     "pydantic",
     "pydantic_yaml",
-    "mace-torch>=0.3.16",
-    "umap-learn",
-    "torch-sim-atomistic",
     "zarr>=3.2",
-    "graph-longrange",
-    "cuequivariance-torch==0.9.1",
-    "cuequivariance==0.9.1",
-    "cuequivariance-ops-torch-cu12==0.9.1",
+    "wandb",
+    "umap-learn",
     "pymatgen>=2026.3.23",
     "datashader>=0.19.0",
     "chemiscope>=1.0.3",
@@ -36,9 +44,7 @@ dependencies = [
     # scripts/dataset_download/dump_polaris.py; pandas is already pulled
     # transitively, but the parquet engine is not.
     "pyarrow",
-    "nvmolkit>=0.5.0",
 ]
-
 
 # ``polaris-lib`` is intentionally NOT listed here: it pins ``zarr<3`` and so
 # cannot share a venv with this project (which requires ``zarr>=3.2`` for the
@@ -46,7 +52,30 @@ dependencies = [
 # ``scripts/dataset_download/dump_polaris.py`` (PEP 723 inline deps); the
 # build pipeline reads its parquet dumps via ``PolarisOfflineGenerator``.
 
+[project.urls]
+Homepage = "https://molsuit.github.io/Rem3Di/"
+Documentation = "https://molsuit.github.io/Rem3Di/"
+Repository = "https://github.com/molsuit/Rem3Di"
+Paper = "https://openreview.net/forum?id=jOmZsvXoK5"
+
 [project.optional-dependencies]
+# PyTorch + MACE stack. `cpu` is enough to compute descriptors on CPU; `cuda`
+# adds GPU accelerators. For a specific CUDA build of torch, install it from the
+# PyTorch index yourself before/with the extra (PyPI ships the default build).
+cpu = [
+    "torch>=2.5.1",
+    "mace-torch>=0.3.16",
+    "torch-sim-atomistic",
+]
+cuda = [
+    "remedi[cpu]",
+    "cuequivariance-torch==0.9.1",
+    "cuequivariance==0.9.1",
+    "cuequivariance-ops-torch-cu12==0.9.1",
+    # torch's cu126 wheels need libcusparseLt.so.0 at `import torch`.
+    "nvidia-cusparselt-cu12",
+    "nvmolkit>=0.5.0",
+]
 eval = [
     "lightgbm>=4.6.0",
     "pandas",
@@ -60,6 +89,9 @@ eval = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["remedi"]
 
 [tool.ruff]
 lint.select = ["I", "UP", "F", "E", "W", "C90", "B", "A", "RUF"]
@@ -77,8 +109,8 @@ name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
+# Local-dev only (uv): these are stripped from the built package's metadata.
 [tool.uv.sources]
-graph-longrange = { git = "https://github.com/WillBaldwin0/graph_electrostatics.git" }
 torch-sim-atomistic = { git = "https://github.com/TorchSim/torch-sim.git", branch = "main"}
 torch = { index = "pytorch-cu126" }
 
