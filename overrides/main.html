@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block extrahead %}
+  {# GoatCounter analytics. Manual count mode so every instant-navigation
+     (navigation.instant is enabled) is registered, not just the first load. #}
+  <script>
+    window.goatcounter = { no_onload: true };
+  </script>
+  <script data-goatcounter="https://rem3di-docs.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
+  <script>
+    document$.subscribe(() => {
+      if (window.goatcounter && window.goatcounter.count)
+        window.goatcounter.count({ path: location.pathname + location.search });
+    });
+  </script>
+{% endblock %}
