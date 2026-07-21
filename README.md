@@ -30,8 +30,6 @@ heads, training from scratch, and concepts — are online at
 
 ## Setup
 1. pip install from pyproject.toml
-2. Additionally clone and install a torch-sim fork from https://github.com/steffen-wedig/torch-sim
-
 
 ## Raw dataset download
 We work with a number of different datasets for benchmarking Rem3Di.
