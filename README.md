@@ -23,12 +23,12 @@
 
 Full guides live in [`docs/`](docs/index.md) (render as a site with `pip install mkdocs-material && mkdocs serve`):
 
-- **[Quickstart](docs/quickstart.md)** — get descriptors from a model in 5 minutes
+- **[Quickstart](docs/quickstart.md)**: get descriptors from a model in 5 minutes
 - **[Installation](docs/installation.md)**
 - **[Evaluate a model](docs/evaluate-a-model.md)** · **[Train a downstream model](docs/train-downstream.md)** · **[Train from scratch](docs/train-from-scratch.md)**
 - **[Prepare a dataset](docs/prepare-a-dataset.md)** · **[Pseudoscalars](docs/pseudoscalars.md)** · **[Concepts](docs/concepts.md)**
 
-Runnable notebooks are in [`examples/`](examples/) (start with `02_train_downstream_head.ipynb` — runs with no GPU).
+Runnable notebooks are in [`examples/`](examples/) (start with `02_train_downstream_head.ipynb`, which runs with no GPU).
 
 ## Setup
 

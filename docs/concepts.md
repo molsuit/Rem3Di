@@ -15,7 +15,7 @@ A trained/published model is a directory with four files:
 | `geometric_preprocessor.pth` | Geometric (pairwise-distance) preprocessor. |
 
 Easiest is to let [`RemediCalculator`](evaluate-a-model.md#option-a-embed-a-dataset-python)
-load it. To load the model directly, use `from_encoder_yaml` — it strips the
+load it. To load the model directly, use `from_encoder_yaml`, which strips the
 decoder block from the saved `encoder_decoder` config so the checkpoint loads for
 inference:
 
@@ -32,10 +32,10 @@ model.preprocessor.geometric_preprocessor.load_state_dict(
 
 ## Foundation-model frontend
 
-Rem3Di builds on a **frozen atomistic foundation model** (a machine-learned
+Rem3Di builds on a frozen atomistic foundation model (a machine-learned
 interatomic potential) that produces the atom-centred features it aggregates. The
-framework is agnostic to the backbone; the published models use **MACE**. These
-features are computed **on the fly** inside the model — you do **not** precompute
+framework is agnostic to the backbone; the published models use MACE. These
+features are computed on the fly inside the model, and you do not precompute
 them into the dataset. The foundation model to use is set by
 `mace_config.model_path` in the architecture config. That path is absolute and
 machine-specific, so when you move a checkpoint between machines, override it:
@@ -46,19 +46,19 @@ machine-specific, so when you move a checkpoint between machines, override it:
 ## MoleculeDataset (zarr)
 
 A dataset is a zarr directory. For embedding and pretraining it needs, per
-molecule, the 3D structure — the base flow reads:
+molecule, the 3D structure. The base flow reads:
 
-- `positions` `(N_atoms, 3)` — coordinates
+- `positions` `(N_atoms, 3)`: coordinates
 - `atomic_numbers` `(N_atoms,)`
-- `molecule_ptr` `(N_molecules+1,)` — atom-range pointers per molecule
+- `molecule_ptr` `(N_molecules+1,)`: atom-range pointers per molecule
 - `total_charge`, `multiplicity` `(N_molecules,)`
 
 Optional, for supervised/downstream work:
 
-- `tasks/` group — regression/classification **labels** + validity masks, described
+- `tasks/` group: regression/classification labels + validity masks, described
   by a `TaskSet` (`remedi/data_handling/dataset/tasks.py`).
-- `split` — train/val/test codes.
-- `smiles` — SMILES strings (needed for the ECFP baseline).
+- `split`: train/val/test codes.
+- `smiles`: SMILES strings (needed for the ECFP baseline).
 
 Open one with `TrainingMoleculeDataset(path, get_item=atoms_getitem)`. See
 [Prepare a dataset](prepare-a-dataset.md) to build one.
@@ -67,6 +67,6 @@ Open one with `TrainingMoleculeDataset(path, get_item=atoms_getitem)`. See
 
 `evaluate_molecular_descriptor_on_dataset` returns `(N, L * d_out)`:
 
-- `d_out` — the aggregator's output dim.
-- `L` — number of pooled "seed" tokens: `1` for `mean`/`attention` aggregators,
+- `d_out`: the aggregator's output dim.
+- `L`: number of pooled "seed" tokens, `1` for `mean`/`attention` aggregators,
   `num_seeds` for PMA. Rows are the flattened per-molecule descriptor.

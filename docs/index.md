@@ -1,13 +1,13 @@
 # Rem3Di documentation
 
 **Rem3Di** (`remedi`) repurposes the latent features of a frozen atomistic
-foundation model — a machine-learned interatomic potential such as MACE — into a
+foundation model (a machine-learned interatomic potential such as MACE) into a
 single fixed-length descriptor of a whole molecule. The descriptor reflects the
 molecule's three-dimensional shape and does not depend on the order in which the
 atoms are listed. To capture handedness it adds **pseudoscalar** features, which
 are unchanged by rotation but reverse sign under mirror reflection, so the
-descriptor distinguishes enantiomers. The result is a drop-in feature vector for
-property prediction, virtual screening, and retrieval.
+descriptor distinguishes enantiomers. The result is a feature vector you can use
+directly for property prediction, virtual screening, and retrieval.
 
 <p align="center">
   <img src="header-rem3di.jpg" alt="Rem3Di" width="600"/>
@@ -21,8 +21,8 @@ property prediction, virtual screening, and retrieval.
 
 ## How to read these docs
 
-Pick the page for what you want to do. Each page is self-contained: **what you'll
-do → prerequisites → steps → outputs → next steps**.
+Pick the page for what you want to do. Each page follows the same layout: what
+you'll do, prerequisites, steps, outputs, and next steps.
 
 | I want to…                                                          | Start here                                      |
 | ------------------------------------------------------------------- | ----------------------------------------------- |
@@ -49,16 +49,16 @@ do → prerequisites → steps → outputs → next steps**.
     descriptors)              your labels → head)          denoising pretrain)
 ```
 
-Most users only need **Evaluate** + **Train downstream**: take a published model,
-embed your molecules, fit a head on your labels. Training from scratch is for
-producing a new Rem3Di descriptor model.
+Most users only need the Evaluate and Train-downstream flows: take a published
+model, embed your molecules, and fit a head on your labels. Training from scratch
+is for producing a new Rem3Di descriptor model.
 
 ## Runnable examples
 
-Short, copy-and-adapt notebooks live in [`examples/`](https://github.com/steffen-wedig/3DMolecularDescriptors/tree/main/examples):
+Short, copy-and-adapt notebooks live in [`examples/`](https://github.com/molsuit/Rem3Di/tree/main/examples):
 
-- `01_get_descriptors.ipynb` — model dir → descriptors
-- `02_train_downstream_head.ipynb` — descriptors + labels → trained head (runs on synthetic data, no GPU)
-- `03_build_dataset_from_smiles.ipynb` — SMILES → MoleculeDataset
-- `04_pretrain_mini.ipynb` — a smoke-sized pretraining run
-- `05_pseudoscalars.ipynb` — equivariant features → chirality-sensitive pseudoscalars (CPU, no model)
+- `01_get_descriptors.ipynb`: model dir to descriptors
+- `02_train_downstream_head.ipynb`: descriptors + labels to a trained head (runs on synthetic data, no GPU)
+- `03_build_dataset_from_smiles.ipynb`: SMILES to a MoleculeDataset
+- `04_pretrain_mini.ipynb`: a smoke-sized pretraining run
+- `05_pseudoscalars.ipynb`: equivariant features to chirality-sensitive pseudoscalars (CPU, no model)

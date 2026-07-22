@@ -1,7 +1,7 @@
 # Evaluate a model
 
-**What you'll do:** embed a dataset with a published model, or run a full
-benchmark panel (many datasets × learners) against it.
+This page embeds a dataset with a published model, or runs a full benchmark
+panel (many datasets × learners) against it.
 
 ## Prerequisites
 
@@ -9,12 +9,12 @@ benchmark panel (many datasets × learners) against it.
 - A [published model directory](concepts.md#model-directory).
 - One or more [MoleculeDataset](concepts.md#moleculedataset-zarr) zarrs.
 
-!!! tip "From SMILES — the quickest start"
+!!! tip "From SMILES"
 
-    The fastest path: SMILES → 3D conformer → descriptor, no dataset files needed.
-    `get_ase_atoms` runs RDKit ETKDG for one conformer per molecule; `embed_atoms`
-    runs MACE and the Rem3Di encoder internally, so this is the full
-    SMILES → MACE → descriptor chain:
+    The fastest route runs SMILES to a 3D conformer to a descriptor, with no
+    dataset files needed. `get_ase_atoms` runs RDKit ETKDG for one conformer per
+    molecule; `embed_atoms` runs MACE and the Rem3Di encoder internally, so this
+    covers the full SMILES-to-MACE-to-descriptor chain:
 
     ```python
     from remedi.evaluation.benchmark.descriptors import RemediCalculator
@@ -32,11 +32,11 @@ benchmark panel (many datasets × learners) against it.
     multi-conformer inputs use `get_ase_atoms_with_conformers(smiles, N)` (adds
     MMFF optimization; rejects charged molecules).
 
-## Option A — embed a dataset (Python)
+## Option A: embed a dataset (Python)
 
-The direct route: model dir → descriptors. `RemediCalculator` loads the checkpoint
-once, then embeds molecules from SMILES, from a prepared dataset, or from ASE
-`Atoms` you build in memory. Create it once:
+This goes straight from a model directory to descriptors. `RemediCalculator`
+loads the checkpoint once, then embeds molecules from SMILES, from a prepared
+dataset, or from ASE `Atoms` you build in memory. Create it once:
 
 ```python
 from remedi.evaluation.benchmark.descriptors import RemediCalculator
@@ -50,13 +50,13 @@ calc = RemediCalculator(
 ```
 
 The MACE weights are baked into the checkpoint config (`mace_config.model_path`),
-so nothing extra is needed — unless that path doesn't exist on your machine, in
+so nothing extra is needed, unless that path doesn't exist on your machine, in
 which case pass `mace_model_path` to point at your local copy.
 
 ### From SMILES
 
-See the green **From SMILES — the quickest start** box near the top of this page:
-build ASE `Atoms` with `get_ase_atoms`, then call `calc.embed_atoms(atoms)`.
+See the **From SMILES** tip box near the top of this page: build ASE `Atoms`
+with `get_ase_atoms`, then call `calc.embed_atoms(atoms)`.
 
 ### From a dataset
 
@@ -109,7 +109,7 @@ X = evaluate_molecular_descriptor_on_dataset(  # (N, L*d_out)
 )
 ```
 
-## Option B — benchmark panel (CLI)
+## Option B: benchmark panel (CLI)
 
 `run_eval.py` evaluates one model across many benchmark datasets and learners,
 fault-tolerantly, writing results to disk. Write a manifest:
@@ -118,7 +118,7 @@ fault-tolerantly, writing results to disk. Write a manifest:
 # eval.yaml
 model:
   descriptor_kind: remedi
-  name: my-model            # cache id — use the checkpoint name
+  name: my-model            # cache id, use the checkpoint name
   model_dir: /path/to/published_model
   batch_size: 64
   device: cuda
@@ -152,7 +152,7 @@ uv run python scripts/evaluation/run_eval.py --config eval.yaml
 ## Outputs
 
 - **Option A:** a `torch.Tensor` of shape `(N, L*d_out)`, [one row per molecule](concepts.md#descriptor-shape).
-- **Option B:** under `output_root/` — benchmark `results.csv` (one row per
+- **Option B:** under `output_root/`, a benchmark `results.csv` (one row per
   dataset × descriptor × learner × target), a resolved `manifest.yaml`, and a
   `status.yaml` recording each task's success/failure.
 

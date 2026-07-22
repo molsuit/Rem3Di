@@ -1,20 +1,20 @@
 # Installation
 
-**What you'll do:** install `remedi` and its dependencies.
+This page covers installing `remedi` and its dependencies.
 
 ## Prerequisites
 
 - Python **≥ 3.12**
 - A CUDA **12.6** capable GPU for training and for computing descriptors at scale
   (CPU works for small runs).
-- [`uv`](https://docs.astral.sh/uv/) is recommended — it resolves the pinned
+- [`uv`](https://docs.astral.sh/uv/) is recommended, since it resolves the pinned
   torch/CUDA and git dependencies for you.
 
 ## Install with uv (recommended)
 
 ```bash
-git clone https://github.com/steffen-wedig/3DMolecularDescriptors.git
-cd 3DMolecularDescriptors
+git clone https://github.com/molsuit/Rem3Di.git
+cd Rem3Di
 uv sync                 # core install
 uv sync --extra eval    # + downstream learners (LightGBM, scikit-learn)
 ```
@@ -62,4 +62,4 @@ PY
 
 ## Next steps
 
-- [Quickstart](quickstart.md) — get descriptors in 5 minutes.
+- [Quickstart](quickstart.md): get descriptors in 5 minutes.

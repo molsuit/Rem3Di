@@ -1,7 +1,7 @@
 # Train a downstream model
 
-**What you'll do:** fit a predictor (Ridge, LightGBM, or MLP) on frozen Rem3Di
-descriptors to predict your own labels, and score it.
+This page fits a predictor (Ridge, LightGBM, or MLP) on frozen Rem3Di
+descriptors to predict your own labels, and scores it.
 
 ## Prerequisites
 
@@ -9,7 +9,7 @@ descriptors to predict your own labels, and score it.
 - Descriptors `X` `(N, D)` from [Evaluate a model](evaluate-a-model.md), and
   labels `y` `(N,)`.
 
-## Option A — quick in-memory fit (Python)
+## Option A: quick in-memory fit (Python)
 
 Any learner is a pydantic config with a `.build()`. Each learner exposes
 `fit_predict_regression` / `_binary` / `_multiclass` / `_multilabel`.
@@ -22,7 +22,7 @@ from remedi.evaluation.benchmark.learners import LinearLearnerConfig
 from remedi.evaluation.benchmark.metrics import metric_for
 from remedi.data_handling.benchmarks import EvalMetric
 
-# X: (N, D) descriptors, y: (N,) targets — split into train/val/test
+# X: (N, D) descriptors, y: (N,) targets; split into train/val/test
 idx = np.random.default_rng(0).permutation(len(X))
 tr, va, te = np.split(idx, [int(.6*len(X)), int(.8*len(X))])
 
@@ -51,11 +51,11 @@ learner = MlpLearnerConfig(
 Metrics available via `EvalMetric`: `rmse`, `mae`, `r2`, `spearman` (regression);
 `auroc`, `auprc`, `balanced_accuracy`, `macro_f1`, `macro_auroc` (classification).
 
-## Option B — from a labelled dataset (CLI)
+## Option B: from a labelled dataset (CLI)
 
 If your labels live in the dataset's [`tasks/` group](concepts.md#moleculedataset-zarr),
 the benchmark panel computes descriptors, reads labels + splits, fits, and scores
-in one shot — no manual descriptor handling. This is the same
+in a single run, with no manual descriptor handling. This is the same
 [`run_eval.py` flow](evaluate-a-model.md#option-b-benchmark-panel-cli): point
 `eval_root` at your labelled zarr(s) and list the learners you want. The runner
 infers the task type (regression / binary / multiclass / multilabel) from the
@@ -68,7 +68,7 @@ label columns (see `remedi/data_handling/dataset/tasks.py` and
 ## Outputs
 
 - **Option A:** `y_pred` for your test rows + the metric value you compute.
-- **Option B:** `results.csv` under `output_root/` — one row per target × learner.
+- **Option B:** `results.csv` under `output_root/`, one row per target × learner.
 
 ## Next steps
 

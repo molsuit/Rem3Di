@@ -1,11 +1,11 @@
 # Train from scratch
 
-**What you'll do:** pretrain a new Rem3Di descriptor model with self-supervised
+This page pretrains a new Rem3Di descriptor model with self-supervised
 denoising, producing a model directory you can then use for
 [evaluation](evaluate-a-model.md).
 
 The objective: noise the atomic embeddings, encode to a molecular descriptor,
-and have a decoder reconstruct the clean embeddings — so the descriptor must
+and have a decoder reconstruct the clean embeddings, so the descriptor must
 capture the structure. An optional VICReg term keeps descriptor dimensions
 non-degenerate. (`remedi/training/pretraining.py`.)
 
@@ -26,7 +26,7 @@ my_run/
 Copy a working pair from
 `configs/training/pcqm_ablation_novicreg/pcqm_baseline/` and edit the paths.
 
-`training_config.yaml` — the keys you'll usually touch:
+`training_config.yaml`, the keys you'll usually touch:
 
 ```yaml
 training_name: my_run
@@ -61,7 +61,7 @@ wandb_active: false
 
 `architecture_config.yaml` (`kind: encoder_decoder`) defines the MACE frontend,
 the encoder/decoder transformers, the pairwise positional encoding, and the
-pooling aggregator. Edit the example directly, or generate one in Python — see
+pooling aggregator. Edit the example directly, or generate one in Python; see
 `scripts/write_config_file.py` for a template using `EncoderDecoderArchitectureConfig`
 and friends (`remedi/configuration/architecture_config.py`). Set
 `mace_config.model_path` to your MACE file.
@@ -89,7 +89,7 @@ python scripts/run_online_embedding_denoising_pretraining.py \
 ## Outputs
 
 A timestamped run directory under `output_base/` containing exactly the files an
-[evaluation model directory](concepts.md#model-directory) needs — the best
+[evaluation model directory](concepts.md#model-directory) needs. The best
 checkpoint is saved whenever validation improves:
 
 - `encoder.pth`, `atomic_preprocessor.pth`, `geometric_preprocessor.pth`
@@ -97,5 +97,5 @@ checkpoint is saved whenever validation improves:
 
 ## Next steps
 
-- [Evaluate a model](evaluate-a-model.md) — point `model_dir` at the run directory.
+- [Evaluate a model](evaluate-a-model.md): point `model_dir` at the run directory.
 - Notebook: `examples/04_pretrain_mini.ipynb`.

@@ -1,10 +1,10 @@
 # Prepare a dataset
 
-**What you'll do:** turn SMILES or 3D structures into a **MoleculeDataset** zarr —
-the input format for [evaluation](evaluate-a-model.md) and
+This page turns SMILES or 3D structures into a **MoleculeDataset** zarr, the
+input format for [evaluation](evaluate-a-model.md) and
 [training](train-from-scratch.md).
 
-You do **not** precompute MACE features — the model computes them on the fly from
+You do not precompute MACE features; the model computes them on the fly from
 coordinates ([Concepts](concepts.md#foundation-model-frontend)). A dataset just needs 3D
 structures (and optionally labels).
 
@@ -16,8 +16,8 @@ structures (and optionally labels).
 ## From SMILES
 
 Datasets are built by a `DatasetConstructionOrchestrator` running a pipeline of
-stages (filter → generate conformers → copy data) over a molecule generator.
-`scripts/dataset_creation/load_from_smiles.py` is a ready template — copy it and
+stages (filter, generate conformers, copy data) over a molecule generator.
+`scripts/dataset_creation/load_from_smiles.py` is a ready template; copy it and
 edit the input/output paths:
 
 ```python
@@ -61,9 +61,9 @@ DatasetConstructionOrchestrator(
 
 Use the matching template scripts, same orchestrator pattern:
 
-- `scripts/dataset_creation/load_from_xyz.py` — xyz structures
-- `scripts/dataset_creation/load_from_sdf_structures.py` — sdf
-- `scripts/dataset_creation/load_qm9.py` — QM9
+- `scripts/dataset_creation/load_from_xyz.py`: xyz structures
+- `scripts/dataset_creation/load_from_sdf_structures.py`: sdf
+- `scripts/dataset_creation/load_qm9.py`: QM9
 
 Dataset download helpers live in `scripts/dataset_download/`.
 
@@ -79,7 +79,7 @@ reads labels and splits automatically.
 ## Outputs
 
 A zarr directory (`positions`, `atomic_numbers`, `molecule_ptr`, `total_charge`,
-`multiplicity`, optional `smiles`/`tasks`/`split`) — see
+`multiplicity`, optional `smiles`/`tasks`/`split`); see
 [Concepts](concepts.md#moleculedataset-zarr). Open it with
 `TrainingMoleculeDataset(path, get_item=atoms_getitem)`.
 

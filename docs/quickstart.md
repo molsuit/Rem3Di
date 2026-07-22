@@ -1,7 +1,7 @@
 # Quickstart
 
-**What you'll do:** load a published Rem3Di model and turn a small dataset of
-molecules into descriptor vectors — in a few minutes.
+This page loads a published Rem3Di model and turns a small dataset of molecules
+into descriptor vectors.
 
 ## Prerequisites
 
@@ -12,8 +12,8 @@ molecules into descriptor vectors — in a few minutes.
 
 ## Get descriptors
 
-`RemediCalculator` is the one-object way from a model directory to descriptors —
-it loads the checkpoint and embeds a dataset for you.
+`RemediCalculator` goes from a model directory to descriptors: it loads the
+checkpoint and embeds a dataset for you.
 
 ```python
 from remedi.evaluation.benchmark.descriptors import RemediCalculator
@@ -34,12 +34,12 @@ descriptors = calc.calculate(dataset)   # numpy array (N_molecules, D)
 print(descriptors.shape)
 ```
 
-`descriptors` has one row per molecule — feed it straight into any downstream model.
+`descriptors` has one row per molecule; feed it straight into any downstream model.
 
 > Running on a different machine than the model was trained on? The MACE path
-> baked into the config may not exist locally — pass
+> baked into the config may not exist locally, so pass
 > `RemediCalculator(model_dir=..., mace_model_path="/local/MACE.model")`. See
-> [Concepts → Foundation-model frontend](concepts.md#foundation-model-frontend).
+> [Concepts: Foundation-model frontend](concepts.md#foundation-model-frontend).
 
 ## Next steps
 
