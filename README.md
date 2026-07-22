@@ -22,14 +22,28 @@
 
 ## Documentation
 
-📖 Full usage docs — installation, quickstart, evaluating models, training downstream
-heads, training from scratch, and concepts — are online at
+📖 Full usage docs (installation, quickstart, evaluating models, training
+downstream heads, training from scratch, and concepts) are online at
 **<https://molsuit.github.io/Rem3Di/>**.
 
 
 
 ## Setup
-1. pip install from pyproject.toml
+
+Install with [uv](https://docs.astral.sh/uv/) (requires Python >=3.12):
+
+```bash
+uv pip install "remedi[cpu]"    # PyTorch + MACE, CPU descriptors
+uv pip install "remedi[cuda]"   # adds GPU accelerators
+```
+
+Or with pip:
+
+```bash
+pip install "remedi[cpu]"
+```
+
+See the [installation docs](https://molsuit.github.io/Rem3Di/) for extras, GPU builds, and full detail.
 
 ## Raw dataset download
 We work with a number of different datasets for benchmarking Rem3Di.
