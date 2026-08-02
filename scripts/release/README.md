@@ -95,3 +95,50 @@ One robustness suggestion while this is fresh: `PMAAggregatorConfig` does not se
 `extra="forbid"`, so an older config's `d_v_out` and `reduction` fields are **silently
 dropped** rather than rejected. Failing loudly there would make stale checkpoints
 diagnose themselves.
+
+---
+
+## Clean-room install, 2026-08-02 — what actually happens today
+
+Run in a fresh Python 3.12 venv on Linux, exactly as an external user would:
+`pip install "remedi[cpu]"`. Three independent failures, in the order you hit them.
+
+**1. `pip install` produces a package that cannot import.** `remedi` declares
+`torch>=2.5.1` with no upper bound, so pip resolves torch 2.13.0, while `mace-torch`
+hard-pins `e3nn==0.4.4`. e3nn 0.4.4's `o3/_wigner.py` calls `torch.load(constants.pt)`
+without `weights_only=False`, and torch ≥2.6 defaults that to `True`:
+
+```
+_pickle.UnpicklingError: Weights only load failed.
+  Unsupported global: GLOBAL slice was not an allowed global by default
+```
+
+Any import that reaches `e3nn.o3` dies, which includes
+`remedi.configuration.architecture_config`. Upgrading to `e3nn>=0.5` fixes it but
+conflicts with mace-torch's pin, so the actionable fix is a `torch<2.6` bound (or a
+mace-torch that accepts newer e3nn).
+
+**2. The wheel is missing `remedi.data_handling.dataset` entirely.** A one-character
+typo — `__init_.py` — means hatchling does not treat the directory as a package. The
+published wheel has 142 `.py` files against 147 in the repo. `RemediCalculator`,
+`MoleculeDataset` and `TrainingMoleculeDataset` are all unreachable, so **every code
+path in the README and the docs site fails at import from PyPI.** Fixed on branch
+`fix-dataset-package-init`; verified by dropping the five files into the installed
+wheel, after which the documented quickstart imports cleanly.
+
+**3. Pre-refactor checkpoints do not even parse.** With 1 and 2 worked around, the gate
+run against a MACE-POLAR checkpoint from the pre-PMA-rewrite lineage fails earlier than
+the shape mismatch documented above:
+
+```
+ok    all 4 required files present
+FAIL  config does not parse: ValidationError for EncoderOnlyArchitectureConfig
+      Value error, too many values to unpack (expected 2)
+```
+
+So the config schema diverged as well as the weights. Publishing such a checkpoint would
+give users a validation error before they ever reached `load_state_dict`.
+
+**Net:** 1 and 2 affect every user of the released package today and are worth fixing
+regardless of any weights release. 3 confirms that the route to publishing weights is a
+retrain against the current package, not a conversion.
