@@ -13,7 +13,9 @@ notebooks/
 backed_up_models/
 *.log
 raw_datasets/
-dataset
+# Anchored: a bare 'dataset' matched remedi/data_handling/dataset/ at any depth,
+# which excluded that whole subpackage from the built wheel.
+/dataset
 uv.lock
 .claude
 .env
