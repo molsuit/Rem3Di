@@ -22,6 +22,7 @@ from pydantic import (
 
 from remedi.configuration.config_utils import IrrepType
 from remedi.configuration.mace_config import MaceConfig
+from remedi.model.pooling_legacy import PMAAggregatorLegacy
 from remedi.model.pooling import AttnPool, MeanPool, PMAAggregator
 from remedi.model.preprocessing.radial_basis_functions import (
     BesselBasisFunctions,
@@ -248,6 +249,9 @@ class EmbeddingPreprocessConfig(BaseModel):
     # Subset of MACE message-passing layers to use. None = all layers.
     mace_layer_indices: list[int] | None = None
     pseudoscalar_dimension: int
+    # Load a checkpoint trained before the Rem3DiPseudoScalarTP rewrite. The two
+    # modules are not weight-compatible, so this selects the original one.
+    legacy_pseudoscalar: bool = False
     chiral_embedding_dimension: int
     gated: bool = True
     pseudoscalars: bool = True
@@ -553,8 +557,57 @@ class PMAAggregatorConfig(BaseModel):
         )
 
 
+class LegacyPMAAggregatorConfig(BaseModel):
+    """Pre-rewrite PMA, for loading checkpoints trained before the rewrite.
+
+    Differs from :class:`PMAAggregatorConfig` in two ways that are not renames,
+    which is why it exists as a separate variant rather than a flag:
+
+    * `head_dim` is the **total** Q/K width across heads, not the per-head
+      width. A checkpoint trained with `head_dim: 320` and `num_heads: 8` has
+      40-wide heads, where the current config would build 320-wide ones.
+    * There is no output projection `W_O`.
+
+    It also reduces over seeds internally, so `descriptor_seq_len` is 1 and the
+    descriptor is `(B, output_dim)` rather than `(B, num_seeds, output_dim)`.
+
+    Use `PMAAggregatorConfig` for anything new.
+    """
+
+    aggregator_type: Literal["pma_attention_legacy"] = "pma_attention_legacy"
+    head_dim: int
+    num_heads: int = 4
+    attn_dropout: float = 0.0
+    num_seeds: int = 16
+    use_mlp: bool = False
+
+    @property
+    def descriptor_seq_len(self) -> int:
+        # The legacy module means over seeds before returning.
+        return 1
+
+    def build(
+        self, input_dim: int, output_dim: int, output_dropout: float | None = None
+    ) -> nn.Module:
+        # output_dropout has no counterpart in the pre-rewrite module; accepted
+        # for interface parity and deliberately ignored so behaviour is exact.
+        del output_dropout
+        return PMAAggregatorLegacy(
+            d_in=input_dim,
+            d_out=output_dim,
+            num_heads=self.num_heads,
+            head_dim=self.head_dim,
+            k_seeds=self.num_seeds,
+            dropout=self.attn_dropout,
+            use_mlp=self.use_mlp,
+        )
+
+
 AggUnion = Annotated[
-    MeanAggregatorConfig | AttentionAggregatorConfig | PMAAggregatorConfig,
+    MeanAggregatorConfig
+    | AttentionAggregatorConfig
+    | PMAAggregatorConfig
+    | LegacyPMAAggregatorConfig,
     Field(discriminator="aggregator_type"),
 ]
 
