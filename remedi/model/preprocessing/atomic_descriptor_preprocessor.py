@@ -6,6 +6,9 @@ from remedi.data_handling.sample import PreprocessedSample
 from remedi.model.preprocessing.chiral_embedding_model import (
     ChiralEmbeddingModel,
 )
+from remedi.model.preprocessing.chiral_embedding_model_legacy import (
+    ChiralEmbeddingModelLegacy,
+)
 from remedi.utils.model_utils import (
     get_equivariant_irreps,
     get_invariant_indices,
@@ -283,7 +286,14 @@ class AtomicDescriptorPreprocessor(nn.Module):
             num_blocks=self.equivariant_irreps.num_irreps
         )
 
-        self.chiral_embedding_model = ChiralEmbeddingModel(
+        # Checkpoints predating the Rem3DiPseudoScalarTP rewrite need the module
+        # they were trained with; the two are not weight-compatible.
+        chiral_cls = (
+            ChiralEmbeddingModelLegacy
+            if getattr(self.config, "legacy_pseudoscalar", False)
+            else ChiralEmbeddingModel
+        )
+        self.chiral_embedding_model = chiral_cls(
             invariant_irreps=self.invariant_irreps,
             equivariant_irreps=self.equivariant_irreps,
             pseudoscalar_dimension=self.config.pseudoscalar_dimension,

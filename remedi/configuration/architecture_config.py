@@ -249,6 +249,9 @@ class EmbeddingPreprocessConfig(BaseModel):
     # Subset of MACE message-passing layers to use. None = all layers.
     mace_layer_indices: list[int] | None = None
     pseudoscalar_dimension: int
+    # Load a checkpoint trained before the Rem3DiPseudoScalarTP rewrite. The two
+    # modules are not weight-compatible, so this selects the original one.
+    legacy_pseudoscalar: bool = False
     chiral_embedding_dimension: int
     gated: bool = True
     pseudoscalars: bool = True
