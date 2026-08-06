@@ -1,5 +1,20 @@
 # Rem3Di documentation
 
+<div align="center">
+  <b>Learning smooth, chiral 3D molecular representations from equivariant atomistic foundation models</b>
+  <br><br>
+  Steffen&nbsp;Wedig &emsp;<b>&middot;</b>&emsp;
+  Felix&nbsp;Burton &emsp;<b>&middot;</b>&emsp;
+  Rokas&nbsp;Elijošius<sup>*</sup> &emsp;<b>&middot;</b>&emsp;
+  Christoph&nbsp;Schran<sup>*</sup> &emsp;<b>&middot;</b>&emsp;
+  Lars&nbsp;L.&nbsp;Schaaf<sup>*</sup>
+  <br><br>
+  <b>Paper:</b>
+  <a href="https://arxiv.org/abs/2607.19977" target="_blank"><b><u>arXiv (2026)</u></b></a> &emsp;<b>&middot;</b>&emsp;
+  <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank"><b><u>NeurIPS Workshop 2025</u></b></a>
+  <br><br>
+</div>
+
 **Rem3Di** (`remedi`) repurposes the latent features of a frozen atomistic
 foundation model (a machine-learned interatomic potential such as MACE) into a
 single fixed-length descriptor of a whole molecule. The descriptor reflects the

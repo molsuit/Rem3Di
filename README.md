@@ -9,7 +9,9 @@
   <a href="https://www.phy.cam.ac.uk/profile/dr-christoph-schran/" target="_blank">Christoph&nbsp;Schran</a><sup>*</sup> &emsp; <b>&middot;</b> &emsp;
   <a href="https://www.larsschaaf.com" target="_blank">Lars&nbsp;L.&nbsp;Schaaf</a><sup>*</sup>
   <br> <br>
-  <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank"><b><u>Paper Link</u></b></a>
+  <b>Paper:</b>
+  <a href="https://arxiv.org/abs/2607.19977" target="_blank"><b><u>arXiv (2026)</u></b></a> &emsp;<b>&middot;</b>&emsp;
+  <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank"><b><u>NeurIPS Workshop 2025</u></b></a>
   <br> <br>
 </div>
 
