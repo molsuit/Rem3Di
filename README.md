@@ -9,7 +9,7 @@
   <a href="https://www.phy.cam.ac.uk/profile/dr-christoph-schran/" target="_blank">Christoph&nbsp;Schran</a><sup>*</sup> &emsp; <b>&middot;</b> &emsp;
   <a href="https://www.larsschaaf.com" target="_blank">Lars&nbsp;L.&nbsp;Schaaf</a><sup>*</sup>
   <br> <br>
-  <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank"><b><u>Paper Link</u></b></a>
+  <a href="https://arxiv.org/abs/2607.19977" target="_blank"><img alt="Paper" src="https://img.shields.io/badge/Paper-arXiv-red"></a>
   &emsp;
   <a href="https://molsuit.github.io/Rem3Di/" target="_blank"><img alt="Documentation" src="https://img.shields.io/badge/Documentation-online-blue"></a>
   <br> <br>
@@ -104,16 +104,17 @@ remedi_descriptors = evaluate_molecular_descriptor_on_dataset(model, ds)
 
 ## Citation
 
-If you use any of this code in your work, please cite our paper
-(<a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank">OpenReview</a>):
+If you use parts of this code in your work, please cite our paper
+(<a href="https://arxiv.org/abs/2607.19977" target="_blank">arXiv</a>), first released at the NeurIPS 2025 Workshop on Symmetry and Geometry in Neural Representations. Arxiv:
 
-> Wedig, Steffen, et al. <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank">"REM3DI: Learning smooth, chiral 3D molecular representations from equivariant atomistic foundation models."</a> NeurIPS 2025 Workshop on Symmetry and Geometry in Neural Representations. 2025.
+<!-- > Wedig, S., Burton, F., Elijošius, R., Schran, C., & Schaaf, L. L. (2026). Rem3Di: Learning smooth, chiral 3D molecular descriptors from atomistic foundation models. arXiv preprint arXiv:2607.19977. -->
 
 ```bibtex
-@inproceedings{wedig2025rem3di,
+@article{wedig2026rem3di,
   title={REM3DI: Learning smooth, chiral 3D molecular representations from equivariant atomistic foundation models},
   author={Wedig, Steffen and Elijo{\v{s}}ius, Rokas and Schran, Christoph and Schaaf, Lars Leon},
-  booktitle={NeurIPS 2025 Workshop on Symmetry and Geometry in Neural Representations},
-  year={2025}
+  journal={arXiv preprint arXiv:2607.19977},
+  year={2026},
+  note={Previously released in 2025 at the NeurIPS 2025 Workshop on Symmetry and Geometry in Neural Representations}
 }
 ```
