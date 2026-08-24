@@ -10,8 +10,7 @@
   Lars&nbsp;L.&nbsp;Schaaf<sup>*</sup>
   <br><br>
   <b>Paper:</b>
-  <a href="https://arxiv.org/abs/2607.19977" target="_blank"><b><u>arXiv (2026)</u></b></a> &emsp;<b>&middot;</b>&emsp;
-  <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank"><b><u>NeurIPS Workshop 2025</u></b></a>
+  <a href="https://arxiv.org/abs/2607.19977v1" target="_blank"><b><u>arXiv (2026)</u></b></a>
   <br><br>
 </div>
 
@@ -28,11 +27,48 @@ directly for property prediction, virtual screening, and retrieval.
   <img src="header-rem3di.jpg" alt="Rem3Di" width="600"/>
 </p>
 
-<p align="center">
-  <strong>Paper:</strong>
-  <a href="https://openreview.net/challenge?redirect=%2Fpdf%3Fid%3DjOmZsvXoK5" target="_blank" rel="noopener">NeurIPS 2025 Workshop</a>
-  &middot; arXiv (coming soon)
-</p>
+## How Rem3Di works
+
+A frozen atomistic foundation model turns a 3D structure into per-atom
+*equivariant* features; Rem3Di contracts them into a single fixed-length
+descriptor.
+
+```
+            SMILES  /  3D structure
+                       │
+             conformer generation
+                       ▼
+        ┌─────────────────────────────┐
+        │   Frozen foundation MLIP    │
+        │         (e.g. MACE)         │
+        └──────────────┬──────────────┘
+                       │
+         per-atom equivariant features
+                       ▼
+        ┌─────────────────────────────┐
+        │       Chiral encoder        │
+        │ invariants + pseudoscalars  │
+        └──────────────┬──────────────┘
+                       │
+      global encoder + attention pooling
+                       ▼
+        ┌─────────────────────────────┐
+        │    Rem3Di descriptor  M     │
+        │    fixed-length, smooth,    │
+        │    permutation-invariant    │
+        └──────────────┬──────────────┘
+                       │
+           ┌───────────┼───────────┐
+           ▼           ▼           ▼
+       Property   Similarity   Retrieval
+      prediction   screening
+```
+
+The foundation model is **frozen** (no gradients). Chirality is captured by
+**pseudoscalar** channels — rotation-invariant but sign-flipping under mirror
+reflection, so enantiomers get different descriptors. The whole descriptor is
+pretrained self-supervised by **denoising** corrupted atom features, so no
+labels are needed to learn it.
 
 ## How to read these docs
 
@@ -53,15 +89,15 @@ you'll do, prerequisites, steps, outputs, and next steps.
 ## The three stages
 
 ```
-                     ┌─────────────────────────────────────────────┐
- SMILES / xyz  ──►   │ Prepare a dataset  →  MoleculeDataset (zarr) │
-                     └─────────────────────────────────────────────┘
-                                          │
-             ┌────────────────────────────┼────────────────────────────┐
-             ▼                            ▼                             ▼
-   Evaluate a model          Train a downstream model     Train from scratch
-   (published .pth →         (frozen descriptors +        (self-supervised
-    descriptors)              your labels → head)          denoising pretrain)
+           Prepare a dataset
+        (SMILES / xyz  →  zarr)
+                   │
+       ┌───────────┼───────────┐
+       ▼           ▼           ▼
+   Evaluate     Train a   Train from
+    a model   downstream    scratch
+              (+ labels)  (denoising
+                           pretrain)
 ```
 
 Most users only need the Evaluate and Train-downstream flows: take a published

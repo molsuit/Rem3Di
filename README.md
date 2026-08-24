@@ -10,8 +10,7 @@
   <a href="https://www.larsschaaf.com" target="_blank">Lars&nbsp;L.&nbsp;Schaaf</a><sup>*</sup>
   <br> <br>
   <b>Paper:</b>
-  <a href="https://arxiv.org/abs/2607.19977" target="_blank"><b><u>arXiv (2026)</u></b></a> &emsp;<b>&middot;</b>&emsp;
-  <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank"><b><u>NeurIPS Workshop 2025</u></b></a>
+  <a href="https://arxiv.org/abs/2607.19977" target="_blank"><b><u>arXiv (2026)</u></b></a>
   <br> <br>
 </div>
 
@@ -99,15 +98,15 @@ remedi_descriptors = evaluate_molecular_descriptor_on_dataset(model, ds)
 ## Citation
 
 If you use any of this code in your work, please cite our paper
-(<a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank">OpenReview</a>):
+(<a href="https://arxiv.org/abs/2607.19977" target="_blank">arXiv</a>):
 
-> Wedig, Steffen, et al. <a href="https://openreview.net/forum?id=jOmZsvXoK5&referrer" target="_blank">"REM3DI: Learning smooth, chiral 3D molecular representations from equivariant atomistic foundation models."</a> NeurIPS 2025 Workshop on Symmetry and Geometry in Neural Representations. 2025.
+> Wedig, Steffen, et al. <a href="https://arxiv.org/abs/2607.19977" target="_blank">"REM3DI: Learning smooth, chiral 3D molecular representations from equivariant atomistic foundation models."</a> arXiv preprint arXiv:2607.19977 (2026).
 
 ```bibtex
-@inproceedings{wedig2025rem3di,
+@article{wedig2026rem3di,
   title={REM3DI: Learning smooth, chiral 3D molecular representations from equivariant atomistic foundation models},
   author={Wedig, Steffen and Elijo{\v{s}}ius, Rokas and Schran, Christoph and Schaaf, Lars Leon},
-  booktitle={NeurIPS 2025 Workshop on Symmetry and Geometry in Neural Representations},
-  year={2025}
+  journal={arXiv preprint arXiv:2607.19977},
+  year={2026}
 }
 ```
