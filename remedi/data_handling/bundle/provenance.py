@@ -115,6 +115,32 @@ class GeometryLimits(BaseModel):
         return set(self.elements)
 
 
+class SmilesFilterRecord(BaseModel):
+    """The SMILES-side cleaning a preparer applied before assigning identity.
+
+    Mirrors ``FilterMoleculeStageConfig`` field for field, so a bundle records
+    exactly which parse -> standardize -> filter -> canonicalize -> dedupe knobs
+    produced its row set. ``element_set`` is either a named :class:`ElementSet`
+    preset or an explicit list of element symbols; ``None`` means the element
+    gate was off.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_atoms: int | None = 100
+    element_set: ElementSet | list[str] | None = ElementSet.mace_off
+
+    allow_charged: bool = True
+    allow_radicals: bool = True
+    allow_isotopes: bool = False
+    allow_multifragment: bool = False
+
+    strip_salts: bool = True
+    neutralize: bool = True
+
+    dedupe: bool = True
+
+
 class EtkdgParameters(BaseModel):
     """ETKDG knobs, recorded descriptively — not a reproduction contract (§1.2)."""
 
@@ -174,6 +200,8 @@ class BundleProvenance(BaseModel):
     #: Filled by ``write_bundle``; ``None`` on a bundle that has not been written.
     outputs: BundleOutputs | None = None
     geometry_limits: GeometryLimits = Field(default_factory=GeometryLimits)
+    #: The SMILES filter the preparer ran; ``None`` when it filtered nothing.
+    smiles_filter: SmilesFilterRecord | None = None
     conformers: ConformerGenerationRecord | None = None
     counts: BundleCounts = Field(default_factory=BundleCounts)
     #: Retraction notices carried forward.
