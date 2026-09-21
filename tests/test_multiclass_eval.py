@@ -15,11 +15,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from remedi.data_handling.benchmarks import (
-    BenchmarkManifest,
-    EvalMetric,
-    SplitVariant,
-)
+from remedi.data_handling.bundle import EvalMetric
 from remedi.data_handling.dataset.tasks import (
     TaskConfig,
     TaskScope,
@@ -38,7 +34,11 @@ from remedi.evaluation.benchmark.metrics import (
     macro_auroc_ovr,
     macro_f1,
 )
-from remedi.evaluation.benchmark.runner import _evaluate_cell, _task_kind
+from remedi.evaluation.benchmark.runner import (
+    BenchmarkCell,
+    _evaluate_cell,
+    _task_kind,
+)
 
 N_CLASSES = 5
 
@@ -167,11 +167,11 @@ def test_evaluate_cell_multiclass_single_row() -> None:
     va[va_i] = True
     te[te_i] = True
 
-    manifest = BenchmarkManifest(
+    cell = BenchmarkCell(
         dataset_id="chiral_cat",
         metric=EvalMetric.balanced_accuracy,
-        split_variant=SplitVariant.stratified,
-        source="local",
+        split_column="split",
+        seed=0,
     )
     rows = _evaluate_cell(
         LinearLearnerConfig(),
@@ -180,9 +180,8 @@ def test_evaluate_cell_multiclass_single_row() -> None:
         X,
         Y,
         ["chirality_type"],
-        manifest,
+        cell,
         "test_descriptor",
-        seed=0,
     )
     assert len(rows) == 1
     r = rows[0]
@@ -190,3 +189,6 @@ def test_evaluate_cell_multiclass_single_row() -> None:
     assert r.metric_name == EvalMetric.balanced_accuracy.value
     assert 0.0 <= r.metric_value <= 1.0
     assert r.n_test == int(te.sum())
+    # The cell's identity reaches the row: without these two columns five seed
+    # runs of one dataset are indistinguishable.
+    assert (r.dataset_id, r.split_column, r.seed) == ("chiral_cat", "split", 0)

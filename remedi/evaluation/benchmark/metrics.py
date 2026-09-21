@@ -23,7 +23,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from remedi.data_handling.benchmarks import EvalMetric
+from remedi.data_handling.bundle import EvalMetric
 
 
 def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:

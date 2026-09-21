@@ -239,8 +239,8 @@ def apply_smiles_filter(
     the row index into ``raw_smiles`` for ``kept_smiles_data[k]``. ``seen``
     is a caller-owned set used for dedupe; pass the same set across multiple
     calls to dedupe across batches with first-occurrence-wins semantics (this
-    is how ``TdcGenerator`` keeps train > valid > test priority across the
-    pyTDC frames). ``stats`` is an optional accumulator updated in place.
+    is how a split-ordered source keeps train > valid > test priority across
+    its frames). ``stats`` is an optional accumulator updated in place.
     """
     if seen is None:
         seen = set()

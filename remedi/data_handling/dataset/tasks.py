@@ -1,5 +1,7 @@
+from collections.abc import Sequence
 from enum import Enum, StrEnum
 
+import numpy as np
 from pydantic import BaseModel
 
 
@@ -27,6 +29,43 @@ class Split(int, Enum):
     valid = 1
     test = 2
     unassigned = 255
+
+
+#: The split names a prepared benchmark bundle uses (``BENCHMARK_DATA_FORMAT.md``
+#: §1.1) mapped onto the uint8 codes the zarr stores. The bundle is the
+#: human-facing artifact and spells the splits out; the codes are an internal
+#: detail of the zarr.
+SPLIT_CODE_BY_NAME: dict[str, Split] = {
+    "train": Split.train,
+    "valid": Split.valid,
+    "test": Split.test,
+    "unassigned": Split.unassigned,
+}
+
+
+def split_codes_from_names(values: Sequence[str]) -> np.ndarray:
+    """Convert bundle split names to the uint8 ``Split`` codes stored in a zarr.
+
+    Args:
+        values: one split name per structure, each of ``train`` / ``valid`` /
+            ``test`` / ``unassigned``.
+
+    Returns:
+        A ``uint8`` array of :class:`Split` codes, same length as ``values``.
+
+    Raises:
+        ValueError: if any entry is not a known split name; the message names
+            the offending values.
+    """
+    unknown = sorted({str(value) for value in values} - set(SPLIT_CODE_BY_NAME))
+    if unknown:
+        raise ValueError(
+            f"unknown split name(s) {unknown}; expected one of "
+            f"{sorted(SPLIT_CODE_BY_NAME)}"
+        )
+    return np.array(
+        [SPLIT_CODE_BY_NAME[str(value)].value for value in values], dtype="u1"
+    )
 
 
 class TaskType(str, Enum):

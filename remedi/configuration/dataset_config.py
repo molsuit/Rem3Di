@@ -110,8 +110,9 @@ class DatasetCreationConfig(BaseModel):
     N_structures: int | None = None
     N_sampled_conformers: int = 1
     # ETKDG retry budget per conformer. 200 is the validated production value
-    # (see ``BenchmarkBuildConfig`` for the empirical justification); raising
-    # it disproportionately inflates the wall-time tail on pathological mols.
+    # (see ``GenerateConformersConfig`` in the prepare manifest, which carries
+    # the same knob and the CYP timing experiment behind it); raising it
+    # disproportionately inflates the wall-time tail on pathological mols.
     max_embed_attempts: int = 200
     # MMFF94 BFGS step cap per conformer.
     max_MMFF_steps: int = 100

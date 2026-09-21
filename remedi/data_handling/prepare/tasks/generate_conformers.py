@@ -51,7 +51,6 @@ from remedi.data_handling.bundle import (
     GeometryLimits,
     MmffParameters,
     content_hash_of_table,
-    discover_bundles,
     expand_to_conformers,
     geometry_limit_violations,
     has_assigned_tetrahedral_centre,
@@ -67,7 +66,8 @@ from remedi.data_handling.dataset_creation.conformer_timing import (
     write_timings_jsonl,
 )
 from remedi.data_handling.dataset_creation.utils import embed_one_smiles
-from remedi.data_handling.prepare.context import PrepareContext
+from remedi.data_handling.prepare.context import BundleRoots, PrepareContext
+from remedi.data_handling.prepare.tasks.per_dataset import PerDatasetPrepareTask
 from remedi.evaluation.results import EvalResult, PydanticResult
 
 logger = logging.getLogger(__name__)
@@ -79,9 +79,8 @@ STEREO_MISMATCH_AFTER_EMBEDDING = "stereo_mismatch_after_embedding"
 #: next to the zarr today.
 TIMINGS_FILENAME = "conformer_timings.jsonl"
 
-#: The guards today's benchmark builds enforce (``configs/dataset_creation/
-#: benchmarks_template.yaml``: ``max_atoms: 100``, ``element_set: mace_off``)
-#: plus the two geometry guards ``FilterAtomsStage`` adds.
+#: The element gate the SMILES-stage filter already applied, plus the two
+#: geometry guards ``FilterAtomsStage`` adds.
 # No total-atom cap: the smiles-stage filter already bounds *heavy* atoms
 # (recorded in provenance ``smiles_filter``), and a 100-heavy-atom molecule
 # carries up to ~150 atoms once hydrogens are added. Today's benchmark builds
@@ -162,15 +161,14 @@ def _keep_frame(
     return violations[0] if violations else None
 
 
-class GenerateConformersConfig(BaseModel):
-    """ETKDG + MMFF94 over every row of one or more ``smiles``-stage bundles."""
+class GenerateConformersConfig(PerDatasetPrepareTask):
+    """ETKDG + MMFF94 over every row of one or more ``smiles``-stage bundles.
 
-    model_config = ConfigDict(extra="forbid")
+    ``dataset_ids`` defaults to every bundle under
+    ``PrepareContext.smiles_bundle_root``.
+    """
 
     kind: Literal["generate_conformers"] = "generate_conformers"
-
-    #: ``None`` means every bundle under ``PrepareContext.smiles_bundle_root``.
-    dataset_ids: list[str] | None = None
 
     n_conformers: int = Field(default=1, ge=1)
     # RDKit's ``params.maxIterations``. 200 covers essentially anything ETKDG
@@ -189,26 +187,9 @@ class GenerateConformersConfig(BaseModel):
 
     # ----------------------------------------------------------------- running
 
-    @property
-    def status_label(self) -> str | None:
-        """The dataset id, once the manifest has expanded this task onto one.
-
-        ``run_tasks`` appends it to the ``status.yaml`` entry name, so the file
-        answers "which of the 30 built" without reading a traceback.
-        """
-        if self.dataset_ids is not None and len(self.dataset_ids) == 1:
-            return self.dataset_ids[0].replace("/", "__")
-        return None
-
-    def resolve_dataset_ids(self, smiles_bundle_root: Path) -> list[str]:
-        """The dataset ids this task covers, discovering them when unset."""
-        if self.dataset_ids is not None:
-            return list(self.dataset_ids)
-        root = Path(smiles_bundle_root)
-        return [
-            directory.relative_to(root).as_posix()
-            for directory in discover_bundles(root)
-        ]
+    def discovery_root(self, roots: BundleRoots) -> Path:
+        """This task consumes ``smiles``-stage bundles."""
+        return roots.smiles_bundle_root
 
     def run(self, ctx: PrepareContext) -> Iterator[EvalResult]:
         """Generate conformers for every resolved dataset id.
@@ -218,7 +199,7 @@ class GenerateConformersConfig(BaseModel):
             ValueError: if a bundle is not at the ``smiles`` stage, or if the
                 expanded bundle fails the frame/row alignment gate.
         """
-        for dataset_id in self.resolve_dataset_ids(ctx.smiles_bundle_root):
+        for dataset_id in self.resolve_dataset_ids(ctx.roots()):
             yield self._run_one_dataset(ctx, dataset_id)
 
     def _run_one_dataset(self, ctx: PrepareContext, dataset_id: str) -> EvalResult:

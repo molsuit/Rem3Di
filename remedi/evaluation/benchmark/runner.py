@@ -1,17 +1,20 @@
 """Benchmark eval runner: descriptor x learner cross-product over all zarrs.
 
 Walks ``eval_config.eval_root`` via :func:`discover_benchmark_zarrs` — one
-manifest per benchmark, no registry import. For each ``(dataset, descriptor,
-learner)`` cell it:
+:class:`BenchmarkSpec` per benchmark, copied into the zarr at ingest, no
+registry import. For each ``(dataset, descriptor, learner)`` cell it:
 
-1. Loads the stored ``split`` column (or applies the optional override) to
-   partition rows into train / valid / test.
+1. Reads the split column **by name from the bundle's ``table.parquet``**,
+   which travels with the zarr, joined through ``ids/bundle_row``. That is
+   what lets a run pick a non-default split (a seed variant, a scaffold
+   variant) without re-ingesting anything; the zarr's own ``tasks/split``
+   array only ever holds the bundle's ``default_split``.
 2. Computes descriptors over the full dataset (cached on disk by
    ``(dataset_id, descriptor.name)``) and slices them by split.
 3. Dispatches to the matching ``Learner.fit_predict_*`` based on the
    benchmark's ``TaskSet`` shape — regression / binary / multilabel — passing
    train + valid + test (val drives early stopping where applicable).
-4. Scores on test with ``manifest.metric``.
+4. Scores on test with the spec's headline metric (``spec.metrics[0]``).
 
 Results are pydantic ``BenchmarkResultRow`` objects; the runner writes them as
 both a flat CSV and a yaml dump under ``output_dir``.
@@ -20,6 +23,7 @@ both a flat CSV and a yaml dump under ``output_dir``.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -28,13 +32,15 @@ import pandas as pd
 import pydantic_yaml as pyd_yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.data_handling.benchmarks import (
-    BenchmarkManifest,
+from remedi.data_handling.bundle import (
+    TABLE_FILENAME,
+    BenchmarkSpec,
     EvalMetric,
     discover_benchmark_zarrs,
+    read_table,
 )
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import Split, TaskType
+from remedi.data_handling.dataset.tasks import Split, TaskType, split_codes_from_names
 from remedi.evaluation.benchmark.descriptors import (
     DescriptorConfig,
     EcfpConfig,
@@ -64,6 +70,10 @@ class EvalConfig(BaseModel):
     descriptor_cache_dir: Path | None = None
     # Forwarded to learner.fit_predict_* methods that accept a seed.
     seed: int = 0
+    # Which split column of the bundle table to score on. ``None`` uses each
+    # benchmark's own ``default_split``; a name here must exist in every
+    # benchmark under ``eval_root``.
+    split_column: str | None = None
     # When True (default) a benchmark that raises is logged + recorded in
     # ``failures.yaml`` and the panel continues; ``results.csv`` is rewritten
     # after every dataset so a crash/timeout keeps everything completed so far.
@@ -72,8 +82,9 @@ class EvalConfig(BaseModel):
 
 
 class BenchmarkResultRow(BaseModel):
+    """One scored cell. Provenance beyond these fields lives in the bundle."""
+
     dataset_id: str
-    source: Literal["moleculenet", "tdc", "polaris", "local", "local_chiro"]
     descriptor_name: str
     learner_kind: str
     # Which target column this row scores. Set per-column for regression
@@ -82,9 +93,24 @@ class BenchmarkResultRow(BaseModel):
     target_col: str | None
     metric_name: str
     metric_value: float
+    # Which partition produced these folds and which seed the learner ran
+    # with: without both, five seed runs of one dataset are indistinguishable
+    # rows (§2.4).
+    split_column: str
+    seed: int
     n_train: int
     n_val: int
     n_test: int
+
+
+@dataclass(frozen=True)
+class BenchmarkCell:
+    """What identifies one scored cell, beyond the descriptor and the learner."""
+
+    dataset_id: str
+    metric: EvalMetric
+    split_column: str
+    seed: int
 
 
 class BenchmarkFailure(BaseModel):
@@ -179,18 +205,49 @@ def _score(y_test: np.ndarray, y_pred: np.ndarray, metric: EvalMetric) -> float:
 
 
 def _split_masks(
+    zarr_path: Path,
     dataset: MoleculeDataset,
-    override: np.ndarray | None,
+    split_column: str,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    if override is not None:
-        codes = np.asarray(override, dtype=np.uint8)
-    else:
-        if dataset.split is None:
-            raise ValueError(
-                "Dataset has no `split` column. Build it with the benchmark "
-                "ingest runner so the literature split is materialized."
-            )
-        codes = np.asarray(dataset.split[:], dtype=np.uint8)
+    """Train / valid / test boolean masks over the zarr's structures.
+
+    The split is read by name from the ``table.parquet`` that ``ingest_benchmark``
+    copied beside the zarr and gathered onto the zarr's rows through
+    ``ids/bundle_row``, so any of the bundle's split columns can be scored, not
+    just the one materialised into ``tasks/split``.
+
+    Raises:
+        ValueError: if the zarr carries no table, if ``split_column`` is not one
+            of its columns, if its ``structure_id`` column is not the row index,
+            or if a split value is not a known split name.
+    """
+    n_structures = dataset.N_structures
+    try:
+        table = read_table(zarr_path, columns=["structure_id", split_column])
+    except FileNotFoundError as error:
+        raise ValueError(
+            f"{zarr_path} has no {TABLE_FILENAME}; re-ingest it with the "
+            "ingest_benchmark prepare task, which copies the bundle beside the zarr"
+        ) from error
+    except Exception as error:  # pyarrow raises its own type for a missing column
+        available = [
+            name for name in read_table(zarr_path).columns if name.startswith("split")
+        ]
+        raise ValueError(
+            f"split column {split_column!r} is not in {zarr_path / TABLE_FILENAME}; "
+            f"its split columns are {available}"
+        ) from error
+
+    structure_ids = table["structure_id"].to_numpy(dtype=np.int64)
+    if not np.array_equal(structure_ids, np.arange(len(table), dtype=np.int64)):
+        raise ValueError(
+            f"{zarr_path / TABLE_FILENAME} violates invariant 1: structure_id is not "
+            "the row index, so predictions cannot be joined back to it"
+        )
+    rows = np.asarray(
+        dataset.bundle_rows_or_structure_ids[:n_structures], dtype=np.int64
+    )
+    codes = split_codes_from_names(table[split_column].to_numpy(dtype=object)[rows])
     return (
         codes == Split.train.value,
         codes == Split.valid.value,
@@ -205,9 +262,8 @@ def _evaluate_cell(
     X: np.ndarray,
     Y: np.ndarray,
     col_names: list[str],
-    manifest: BenchmarkManifest,
+    cell: BenchmarkCell,
     descriptor_name: str,
-    seed: int,
 ) -> list[BenchmarkResultRow]:
     """Evaluate one (descriptor x learner) cell, one row per scored target.
 
@@ -215,17 +271,19 @@ def _evaluate_cell(
     binary, multilabel and multiclass each yield a single row.
     """
     tr, va, te = splits
+    seed = cell.seed
     counts = dict(n_train=int(tr.sum()), n_val=int(va.sum()), n_test=int(te.sum()))
 
     def make_row(metric_value: float, target_col: str | None) -> BenchmarkResultRow:
         return BenchmarkResultRow(
-            dataset_id=manifest.dataset_id,
-            source=manifest.source,
+            dataset_id=cell.dataset_id,
             descriptor_name=descriptor_name,
             learner_kind=_learner_kind(learner_cfg),
             target_col=target_col,
-            metric_name=str(manifest.metric.value),
+            metric_name=str(cell.metric.value),
             metric_value=float(metric_value),
+            split_column=cell.split_column,
+            seed=seed,
             **counts,
         )
 
@@ -234,7 +292,7 @@ def _evaluate_cell(
         preds = learner_cfg.build().fit_predict_multilabel(
             X[tr], Y[tr], X[va], Y[va], X[te], seed
         )
-        rows.append(make_row(_score(Y[te], preds, manifest.metric), None))
+        rows.append(make_row(_score(Y[te], preds, cell.metric), None))
         return rows
 
     if kind == "multiclass":
@@ -245,7 +303,7 @@ def _evaluate_cell(
         preds = learner_cfg.build().fit_predict_multiclass(
             X[tr], y[tr], X[va], y[va], X[te], n_classes, seed
         )
-        rows.append(make_row(_score(y[te], preds, manifest.metric), None))
+        rows.append(make_row(_score(y[te], preds, cell.metric), None))
         return rows
 
     # regression / binary: score each target column independently.
@@ -253,7 +311,7 @@ def _evaluate_cell(
         preds = _fit_predict_single_column(
             learner_cfg.build(), kind == "regression", splits, X, Y[:, col], seed
         )
-        rows.append(make_row(_score(Y[te, col], preds, manifest.metric), name))
+        rows.append(make_row(_score(Y[te, col], preds, cell.metric), name))
     return rows
 
 
@@ -265,9 +323,8 @@ def evaluate_pairwise_cell(
     molecule_ids: np.ndarray,
     isomer_ids: np.ndarray,
     col_name: str,
-    manifest: BenchmarkManifest,
+    cell: BenchmarkCell,
     descriptor_name: str,
-    seed: int,
 ) -> list[BenchmarkResultRow]:
     """Evaluate one (descriptor x learner) cell for the pairwise ranking task.
 
@@ -279,17 +336,20 @@ def evaluate_pairwise_cell(
     """
     tr, va, te = splits
     y = Y[:, 0]
-    preds = _fit_predict_single_column(learner_cfg.build(), True, splits, X, y, seed)
+    preds = _fit_predict_single_column(
+        learner_cfg.build(), True, splits, X, y, cell.seed
+    )
     acc, n_pairs = pair_ranking_accuracy(y[te], preds, molecule_ids[te], isomer_ids[te])
     return [
         BenchmarkResultRow(
-            dataset_id=manifest.dataset_id,
-            source=manifest.source,
+            dataset_id=cell.dataset_id,
             descriptor_name=descriptor_name,
             learner_kind=_learner_kind(learner_cfg),
             target_col=col_name,
-            metric_name=str(manifest.metric.value),
+            metric_name=str(cell.metric.value),
             metric_value=float(acc),
+            split_column=cell.split_column,
+            seed=cell.seed,
             n_train=int(tr.sum()),
             n_val=int(va.sum()),
             n_test=int(n_pairs),
@@ -309,26 +369,35 @@ def _structure_group_ids(
 
 def evaluate_zarr(
     zarr_path: Path,
-    manifest: BenchmarkManifest,
+    spec: BenchmarkSpec,
     cfg: EvalConfig,
     *,
-    split_override: np.ndarray | None = None,
+    split_column: str | None = None,
 ) -> list[BenchmarkResultRow]:
+    """Every (descriptor x learner) cell of one prepared benchmark zarr."""
     dataset = MoleculeDataset.open_existing_dataset_from_dir(zarr_path)
     kind = _task_kind(dataset)
     assert dataset.config.tasks is not None  # narrowed by _task_kind
     col_names = [c.name for c in dataset.config.tasks.system_cols]
     Y = _build_targets_with_nan(dataset)
-    splits = _split_masks(dataset, split_override)
+    cell = BenchmarkCell(
+        dataset_id=spec.dataset_id,
+        # The first metric is the reported cell; the rest are computed at table
+        # time from the cached predictions (§1.3, §4.1).
+        metric=spec.metrics[0],
+        split_column=split_column or cfg.split_column or spec.default_split,
+        seed=cfg.seed,
+    )
+    splits = _split_masks(zarr_path, dataset, cell.split_column)
     cache_dir = cfg.descriptor_cache_dir or (cfg.output_dir / "descriptor_cache")
 
-    is_pairwise = manifest.metric == EvalMetric.pair_ranking_accuracy
+    is_pairwise = cell.metric == EvalMetric.pair_ranking_accuracy
     mol_ids, iso_ids = _structure_group_ids(dataset) if is_pairwise else (None, None)
 
     rows: list[BenchmarkResultRow] = []
     for desc_cfg in cfg.descriptors:
-        logger.info("%s: computing descriptor %s", manifest.dataset_id, desc_cfg.name)
-        X = compute_and_cache(desc_cfg, dataset, cache_dir, manifest.dataset_id)
+        logger.info("%s: computing descriptor %s", spec.dataset_id, desc_cfg.name)
+        X = compute_and_cache(desc_cfg, dataset, cache_dir, spec.dataset_id)
         for learner_cfg in cfg.learners:
             if is_pairwise:
                 assert mol_ids is not None and iso_ids is not None
@@ -340,9 +409,8 @@ def evaluate_zarr(
                     mol_ids,
                     iso_ids,
                     col_names[0],
-                    manifest,
+                    cell,
                     desc_cfg.name,
-                    cfg.seed,
                 )
             else:
                 cell_rows = _evaluate_cell(
@@ -352,14 +420,13 @@ def evaluate_zarr(
                     X,
                     Y,
                     col_names,
-                    manifest,
+                    cell,
                     desc_cfg.name,
-                    cfg.seed,
                 )
             for row in cell_rows:
                 logger.info(
                     "%s | %s | %s | %s: %s=%.4f",
-                    manifest.dataset_id,
+                    spec.dataset_id,
                     desc_cfg.name,
                     _learner_kind(learner_cfg),
                     row.target_col,
@@ -374,16 +441,16 @@ def run_eval(cfg: EvalConfig) -> list[BenchmarkResultRow]:
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
     rows: list[BenchmarkResultRow] = []
     failures: list[BenchmarkFailure] = []
-    for zarr_path, manifest in discover_benchmark_zarrs(cfg.eval_root):
-        logger.info("--- %s @ %s ---", manifest.dataset_id, zarr_path)
+    for zarr_path, spec in discover_benchmark_zarrs(cfg.eval_root):
+        logger.info("--- %s @ %s ---", spec.dataset_id, zarr_path)
         try:
-            rows.extend(evaluate_zarr(zarr_path, manifest, cfg))
+            rows.extend(evaluate_zarr(zarr_path, spec, cfg))
         except Exception as exc:  # one bad benchmark must not sink the panel
             logger.exception(
-                "benchmark %s failed; recording and continuing", manifest.dataset_id
+                "benchmark %s failed; recording and continuing", spec.dataset_id
             )
             failures.append(
-                BenchmarkFailure(dataset_id=manifest.dataset_id, error=repr(exc))
+                BenchmarkFailure(dataset_id=spec.dataset_id, error=repr(exc))
             )
             if not cfg.keep_going:
                 write_results(rows, cfg.output_dir, failures)

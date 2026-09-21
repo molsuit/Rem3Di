@@ -496,7 +496,7 @@ class FilterMoleculeStage(PipelineStage):
     ``structure_ids``) to the surviving rows.
 
     The internal ``_seen`` set persists across calls, so when a generator
-    emits multiple batches in priority order (e.g. ``TdcGenerator`` emits
+    emits multiple batches in priority order (e.g. a source that emits
     train → valid → test), the first occurrence of a duplicate SMILES wins
     even across batch boundaries.
     """
@@ -565,7 +565,7 @@ class FilterAtomsStage(PipelineStage):
     ) -> tuple[InputBatch, DataBatch | None]:
         if input_batch.molecules is None:
             raise ValueError(
-                "FilterAtomsStage requires `molecules` on the InputBatch; " "got None."
+                "FilterAtomsStage requires `molecules` on the InputBatch; got None."
             )
 
         cfg = self.config

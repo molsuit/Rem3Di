@@ -24,6 +24,7 @@ class MoleculeDataset:
         structure_ids: Array,
         molecule_ids: Array,
         isomer_ids: Array,
+        bundle_row: Array | None,
         total_charge: Array,
         multiplicity: Array,
         smiles: SmilesStorage | None,
@@ -44,6 +45,10 @@ class MoleculeDataset:
         self.structure_ids = structure_ids
         self.molecule_ids = molecule_ids
         self.isomer_ids = isomer_ids
+        # Row index into the source bundle's ``table.parquet``. Written by the
+        # benchmark ingest; ``None`` for the pretraining zarrs on disk, which
+        # predate the array and are far too expensive to re-ingest.
+        self.bundle_row = bundle_row
 
         self.total_charge = total_charge
         self.multiplicity = multiplicity
@@ -78,6 +83,7 @@ class MoleculeDataset:
         mol_id = ids["molecule_id"]
         stereo_id = ids["stereoisomer_id"]
         struct_id = ids["structure_id"]
+        bundle_row = ids["bundle_row"] if "bundle_row" in ids else None
 
         smiles = None
         isomeric_smiles = None
@@ -130,6 +136,7 @@ class MoleculeDataset:
             struct_id,
             mol_id,
             stereo_id,
+            bundle_row,
             total_charge,
             multiplicity,
             smiles=smiles,
@@ -223,6 +230,9 @@ class MoleculeDataset:
             ids, "stereoisomer_id", (0,), config.molecule_chunk, m_cps, "i8"
         )
         struct_id = _mk(ids, "structure_id", (0,), config.molecule_chunk, m_cps, "i8")
+        # The row of the source bundle's ``table.parquet`` each structure came
+        # from, so a prediction can always be joined back to the bundle (§2.3).
+        bundle_row = _mk(ids, "bundle_row", (0,), config.molecule_chunk, m_cps, "i8")
 
         smiles = None
         isomeric_smiles = None
@@ -308,6 +318,7 @@ class MoleculeDataset:
             struct_id,
             mol_id,
             stereo_id,
+            bundle_row,
             total_charge,
             multiplicity,
             smiles,
@@ -352,17 +363,45 @@ class MoleculeDataset:
         retrieved_structure_ids = struct_ids[mask]
         return retrieved_structure_ids
 
-    def get_smiles_per_structure(self):
-        if self.smiles is None:
-            return []
+    @property
+    def bundle_rows_or_structure_ids(self) -> Array:
+        """``ids/bundle_row`` when the dataset has one, else ``ids/structure_id``.
 
+        Bundle-sourced zarrs carry the bundle row explicitly; the pretraining
+        zarrs do not, and there ``structure_id`` is the row index anyway.
+        """
+        return self.structure_ids if self.bundle_row is None else self.bundle_row
+
+    def get_smiles_per_structure(self) -> list[str]:
+        """One isomeric SMILES per structure, in the dataset's structure order.
+
+        A benchmark zarr is ingested with ``contains_smiles=False`` and keeps
+        the bundle's ``table.parquet`` beside it, so the SMILES are read from
+        the table and gathered by ``ids/bundle_row``. Everything else reads the
+        zarr's own SMILES store.
+        """
         n_struct = self.N_structures
         if n_struct == 0:
             return []
 
-        mol_ids = np.asarray(self.molecule_ids[:n_struct], dtype=np.int64)
+        table_path = self.path / "table.parquet"
+        if table_path.is_file():
+            import pandas as pd
+
+            table = pd.read_parquet(table_path, columns=["isomeric_smiles"])
+            rows = np.asarray(
+                self.bundle_rows_or_structure_ids[:n_struct], dtype=np.int64
+            )
+            return table["isomeric_smiles"].to_numpy(dtype=object)[rows].tolist()
+
+        if self.isomeric_smiles is None:
+            return []
+        # ``isomer_ids``, not ``molecule_ids``: the isomeric store is indexed by
+        # stereoisomer, and indexing it with the constitution id returned the
+        # wrong SMILES whenever a molecule had more than one stereoisomer.
+        isomer_ids = np.asarray(self.isomer_ids[:n_struct], dtype=np.int64)
         smiles_array = np.asarray(self.isomeric_smiles.to_list(), dtype=object)
-        return smiles_array[mol_ids].tolist()
+        return smiles_array[isomer_ids].tolist()
 
     def get_all_molecules(self, N_molecules: int | None = None) -> list[Atoms]:
         n_struct = self.N_structures

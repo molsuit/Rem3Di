@@ -76,7 +76,8 @@ class ChiralReportConfig(BaseModel):
     """Per-class confusion-matrix report for the chiral-type classification."""
 
     kind: Literal["chiral_report"] = "chiral_report"
-    # Directory of the prepared chiral_cat zarr (built by build_chiral_cat.py).
+    # Directory of the prepared chiral_cat zarr (built by the ingest_benchmark
+    # prepare task from the ChiralCat bundle).
     zarr_path: Path
     dataset_id: str = "chiral_cat"
     # Probe fit on the frozen embedding. Focal-loss MLP by default — the right

@@ -71,8 +71,8 @@ def main() -> None:
         else default_output_path(args.n_structures)
     )
 
-    # Match the benchmark filter config (configs/dataset_creation/benchmarks_local.yaml)
-    # so pretrain SMILES go through the same canonicalization as eval SMILES.
+    # Match the SMILES filter the remedi-data preparers apply to the benchmark
+    # bundles so pretrain SMILES go through the same canonicalization.
     smiles_filter = FilterMoleculeStageConfig(
         max_atoms=100,
         element_set=ElementSet.mace_off,

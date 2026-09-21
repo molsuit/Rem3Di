@@ -51,6 +51,10 @@ class ShardAlignedWriter:
         self._buf_sizes: list[np.ndarray] = []  # per-molecule atom counts
         self._buf_mid: list[np.ndarray] = []
         self._buf_iso: list[np.ndarray] = []
+        # Explicit per-structure ids supplied by a bundle source; empty when
+        # every append derived them from the shard cursor.
+        self._buf_sid: list[np.ndarray] = []
+        self._buf_brow: list[np.ndarray] = []
         self._buf_q: list[np.ndarray] = []
         self._buf_mult: list[np.ndarray] = []
         self._buf_tsys: list[np.ndarray] = []
@@ -81,7 +85,24 @@ class ShardAlignedWriter:
         atom_targets,
         atom_masks,
         split=None,
+        *,
+        structure_ids=None,
+        bundle_rows=None,
     ) -> None:
+        """Buffer one batch of structures for the next shard-aligned flush.
+
+        Args:
+            structure_ids: authoritative ``ids/structure_id`` values for this
+                batch. ``None`` (the pretraining corpora) derives them from
+                the shard cursor as ``arange``.
+            bundle_rows: authoritative ``ids/bundle_row`` values. ``None``
+                falls back to ``structure_ids``, and to ``arange`` when that
+                is ``None`` too.
+
+        Raises:
+            ValueError: if a supplied id array does not have one entry per
+                structure in the batch.
+        """
         P = np.asarray(positions, dtype="f4", order="C")
         Z = np.asarray(atomic_numbers, dtype="u1", order="C")
         M = np.asarray(molecule_ids, dtype="i8", order="C")
@@ -113,6 +134,7 @@ class ShardAlignedWriter:
         self._buf_iso.append(R)
         self._buf_q.append(Q)
         self._buf_mult.append(S_mult)
+        self._buffer_row_ids(structure_ids, bundle_rows, n_mols)
 
         if atom_targets is not None:
             if self.ds.targets_atom is None:
@@ -148,6 +170,38 @@ class ShardAlignedWriter:
 
         self._flush(final=False)
 
+    def _buffer_row_ids(self, structure_ids, bundle_rows, n_mols: int) -> None:
+        """Buffer the explicit ``structure_id`` / ``bundle_row`` of one batch.
+
+        Both default to the shard cursor (``arange``), which is what every
+        non-bundle source wants; ``bundle_rows`` defaults to ``structure_ids``
+        when only the latter is given, because a conformers-stage bundle's
+        ``structure_id`` *is* its table row.
+        """
+        start = self._mol_cursor
+        if structure_ids is None and bundle_rows is None:
+            rows = np.arange(start, start + n_mols, dtype="i8")
+            self._buf_sid.append(rows)
+            self._buf_brow.append(rows)
+            return
+        supplied: dict[str, np.ndarray] = {}
+        for name, values in (
+            ("structure_ids", structure_ids),
+            ("bundle_rows", bundle_rows),
+        ):
+            if values is None:
+                continue
+            array = np.asarray(values, dtype="i8", order="C")
+            if array.shape != (n_mols,):
+                raise ValueError(
+                    f"{name} must have length {n_mols}, got shape {array.shape}"
+                )
+            supplied[name] = array
+        structure_array = supplied.get("structure_ids", supplied.get("bundle_rows"))
+        assert structure_array is not None  # one of the two was supplied
+        self._buf_sid.append(structure_array)
+        self._buf_brow.append(supplied.get("bundle_rows", structure_array))
+
     def finalize(self) -> None:
         """Flush every remaining buffered row (the final, partial shards are
         written here, exactly once each), then trim arrays to the exact
@@ -167,6 +221,8 @@ class ShardAlignedWriter:
         ds.atomic_numbers.resize((self._atom_cursor,))
         ds.ptr.resize((self._mol_cursor + 1,))
         ds.structure_ids.resize((self._mol_cursor,))
+        if ds.bundle_row is not None:
+            ds.bundle_row.resize((self._mol_cursor,))
         ds.molecule_ids.resize((self._mol_cursor,))
         ds.isomer_ids.resize((self._mol_cursor,))
         ds.total_charge.resize((self._mol_cursor,))
@@ -244,6 +300,17 @@ class ShardAlignedWriter:
             self._buf_at = [at[off:]]
             self._buf_amask = [am[off:]]
 
+    def _write_id_block(
+        self, start: int, stop: int, structure_ids: np.ndarray, bundle_rows: np.ndarray
+    ) -> None:
+        """Write one flush block of ``ids/structure_id`` and ``ids/bundle_row``."""
+        ds = self.ds
+        ds.structure_ids.resize((stop,))
+        ds.structure_ids[start:stop] = structure_ids
+        if ds.bundle_row is not None:
+            ds.bundle_row.resize((stop,))
+            ds.bundle_row[start:stop] = bundle_rows
+
     def _flush_mol_axis(self, final: bool) -> None:
         if self._mol_flushed >= self._mol_cursor:
             return
@@ -257,6 +324,8 @@ class ShardAlignedWriter:
         sizes = np.concatenate(self._buf_sizes, axis=0)
         mid = np.concatenate(self._buf_mid, axis=0)
         iso = np.concatenate(self._buf_iso, axis=0)
+        sid = np.concatenate(self._buf_sid, axis=0)
+        brow = np.concatenate(self._buf_brow, axis=0)
         q = np.concatenate(self._buf_q, axis=0)
         mult = np.concatenate(self._buf_mult, axis=0)
         has_sys = ds.targets_system is not None
@@ -282,12 +351,11 @@ class ShardAlignedWriter:
             ds.ptr[b + 1 : stop + 1] = ends
             self._ptr_base = int(ends[-1])
 
-            ds.structure_ids.resize((stop,))
+            self._write_id_block(b, stop, sid[off : off + n], brow[off : off + n])
             ds.molecule_ids.resize((stop,))
             ds.isomer_ids.resize((stop,))
             ds.total_charge.resize((stop,))
             ds.multiplicity.resize((stop,))
-            ds.structure_ids[b:stop] = np.arange(b, stop, dtype="i8")
             ds.molecule_ids[b:stop] = mid[off : off + n]
             ds.isomer_ids[b:stop] = iso[off : off + n]
             ds.total_charge[b:stop] = q[off : off + n]
@@ -306,6 +374,8 @@ class ShardAlignedWriter:
         self._buf_sizes = [sizes[off:]]
         self._buf_mid = [mid[off:]]
         self._buf_iso = [iso[off:]]
+        self._buf_sid = [sid[off:]]
+        self._buf_brow = [brow[off:]]
         self._buf_q = [q[off:]]
         self._buf_mult = [mult[off:]]
         if has_sys:

@@ -11,6 +11,7 @@ It is deliberately torch-free.
 """
 
 from remedi.data_handling.bundle.bundle import (
+    DATASET_CONFIG_FILENAME,
     PROVENANCE_FILENAME,
     SPEC_FILENAME,
     STRUCTURES_FILENAME,
@@ -18,9 +19,11 @@ from remedi.data_handling.bundle.bundle import (
     Bundle,
     BundleValidationError,
     content_hash_of_table,
+    discover_benchmark_zarrs,
     discover_bundles,
     normalize_table,
     read_bundle,
+    read_spec,
     read_table,
     sha256_of_file,
     write_bundle,
@@ -76,6 +79,7 @@ from remedi.data_handling.bundle.validate import (
 
 __all__ = [
     "CONFORMER_EMBEDDING_FAILED",
+    "DATASET_CONFIG_FILENAME",
     "ENANTIOMER_PARTNER_FAILED",
     "FIXED_COLUMNS",
     "PROVENANCE_FILENAME",
@@ -112,6 +116,7 @@ __all__ = [
     "canonical_smiles_pair",
     "content_hash_of_table",
     "count_stereoisomer_straddling_constitutions",
+    "discover_benchmark_zarrs",
     "discover_bundles",
     "expand_to_conformers",
     "geometry_limit_violations",
@@ -120,6 +125,7 @@ __all__ = [
     "mirror_isomeric_smiles",
     "normalize_table",
     "read_bundle",
+    "read_spec",
     "read_table",
     "sha256_of_file",
     "stereochemistry_from_frame",

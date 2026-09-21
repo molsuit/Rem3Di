@@ -9,21 +9,28 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pydantic_yaml as pyd_yaml
 import pytest
 import yaml
 from pydantic import ValidationError
 
-from remedi.data_handling.bundle import read_bundle
+from remedi.data_handling.bundle import BenchmarkTask, read_bundle
+from remedi.data_handling.dataset.tasks import TaskType
 from remedi.data_handling.prepare import (
     GenerateConformersConfig,
+    IngestBenchmarkConfig,
     PrepareContext,
     PrepareManifest,
+    VerifyBenchmarkConfig,
     prepare,
 )
 from remedi.evaluation.framework.task_runner import RunReport
 
-from .helpers.bundle_fixtures import write_smiles_bundle
+from .helpers.bundle_fixtures import (
+    write_conformers_bundle,
+    write_smiles_bundle,
+)
 
 
 def build_manifest(
@@ -90,11 +97,77 @@ def test_the_shipped_template_parses() -> None:
 
     manifest = PrepareManifest.model_validate(document)
 
-    (task,) = manifest.tasks
-    assert isinstance(task, GenerateConformersConfig)
-    assert task.max_embed_attempts == 200
-    assert task.max_mmff_steps == 100
-    assert task.mmff_non_bonded_threshold == 100.0
+    generate, ingest, verify = manifest.tasks
+    assert isinstance(generate, GenerateConformersConfig)
+    assert generate.max_embed_attempts == 200
+    assert generate.max_mmff_steps == 100
+    assert generate.mmff_non_bonded_threshold == 100.0
+    assert isinstance(ingest, IngestBenchmarkConfig)
+    assert ingest.overwrite is False
+    assert isinstance(verify, VerifyBenchmarkConfig)
+    assert verify.check_zarr is True
+
+
+def test_each_task_kind_resolves_against_the_root_it_reads(tmp_path: Path) -> None:
+    """The three kinds discover from different roots, and expansion knows which."""
+    write_smiles_bundle(tmp_path / "bundles", dataset_id="from_smiles")
+    write_conformers_bundle(
+        tmp_path / "benchmark_bundles",
+        dataset_id="from_conformers",
+        tasks=[BenchmarkTask(name="y", task_type=TaskType.regression)],
+        metrics=["RMSE"],
+        targets=np.linspace(0.0, 1.0, 10),
+    )
+    manifest = PrepareManifest(
+        smiles_bundle_root=tmp_path / "bundles",
+        benchmark_root=tmp_path / "benchmark_bundles",
+        output_root=tmp_path / "prepare_out",
+        tasks=[
+            GenerateConformersConfig(n_workers=1),
+            IngestBenchmarkConfig(),
+            VerifyBenchmarkConfig(),
+        ],
+    )
+
+    expanded = manifest.expand_tasks()
+
+    assert [(task.kind, task.dataset_ids) for task in expanded] == [
+        ("generate_conformers", ["from_smiles"]),
+        ("ingest_benchmark", ["from_conformers"]),
+        ("verify_benchmark", ["from_conformers"]),
+    ]
+
+
+def test_ingest_and_verify_run_through_the_manifest(tmp_path: Path) -> None:
+    write_conformers_bundle(
+        tmp_path / "benchmark_bundles",
+        dataset_id="toy",
+        tasks=[BenchmarkTask(name="y", task_type=TaskType.regression)],
+        metrics=["RMSE"],
+        targets=np.linspace(0.0, 1.0, 10),
+    )
+    manifest = PrepareManifest(
+        smiles_bundle_root=tmp_path / "bundles",
+        benchmark_root=tmp_path / "benchmark_bundles",
+        output_root=tmp_path / "prepare_out",
+        tasks=[IngestBenchmarkConfig(), VerifyBenchmarkConfig()],
+    )
+
+    report = prepare(manifest)
+
+    assert (report.n_tasks, report.n_failed) == (2, 0)
+    assert [entry.name for entry in report.statuses] == [
+        "0_ingest_benchmark_toy",
+        "1_verify_benchmark_toy",
+    ]
+    # The zarr and both per-dataset summaries landed under output_root, and the
+    # bundle travelled with the zarr so the eval side can discover it.
+    zarr_path = manifest.output_root / "toy"
+    assert (zarr_path / "dataset_config.yaml").is_file()
+    assert (zarr_path / "benchmark.yaml").is_file()
+    assert (zarr_path / "table.parquet").is_file()
+    assert (manifest.output_root / "ingest_benchmark" / "toy.yaml").is_file()
+    assert (manifest.output_root / "verify_benchmark" / "toy.yaml").is_file()
 
 
 def test_manifest_rejects_unknown_fields_and_empty_task_lists(tmp_path: Path) -> None:

@@ -334,6 +334,65 @@ def read_table(directory: Path, columns: list[str] | None = None) -> pd.DataFram
     return pd.read_parquet(table_path, columns=columns)
 
 
+#: Written by ``MoleculeDataset.create_empty_dataset``; its presence is what
+#: distinguishes an ingested zarr directory from a plain bundle directory.
+DATASET_CONFIG_FILENAME = "dataset_config.yaml"
+
+
+def read_spec(directory: Path) -> BenchmarkSpec:
+    """Read ``benchmark.yaml`` alone, without touching the table or geometry.
+
+    Raises:
+        FileNotFoundError: if the directory holds no ``benchmark.yaml``.
+        BundleValidationError: if it is not a mapping, or declares a
+            ``format_version`` this reader does not support.
+    """
+    directory = Path(directory)
+    spec_path = directory / SPEC_FILENAME
+    if not spec_path.is_file():
+        raise FileNotFoundError(f"{directory} has no {SPEC_FILENAME}")
+    raw_spec = yaml.safe_load(spec_path.read_text())
+    if not isinstance(raw_spec, dict):
+        raise BundleValidationError(directory, [f"{SPEC_FILENAME} is not a mapping"])
+    if raw_spec.get("format_version") != 1:
+        raise BundleValidationError(
+            directory,
+            [
+                f"format_version {raw_spec.get('format_version')!r} is not supported "
+                "(this reader is 1)"
+            ],
+        )
+    return BenchmarkSpec.model_validate(raw_spec)
+
+
+def discover_benchmark_zarrs(root: Path) -> list[tuple[Path, BenchmarkSpec]]:
+    """Every ingested benchmark zarr directly under ``root``, with its spec.
+
+    A benchmark zarr is a directory that carries both a ``benchmark.yaml``
+    (copied there by ``ingest_benchmark``, which is what makes it
+    self-describing) and a ``dataset_config.yaml`` (which is what makes it a
+    zarr rather than a bundle). Anything else under ``root`` — the prepare
+    run's own files, an unrelated pretraining zarr, a bundle directory — is
+    silently skipped, so one directory can hold a whole eval panel.
+
+    Args:
+        root: the eval root; a missing directory yields an empty list.
+
+    Returns:
+        ``(zarr_path, spec)`` pairs, sorted by path.
+    """
+    root = Path(root)
+    if not root.is_dir():
+        return []
+    discovered: list[tuple[Path, BenchmarkSpec]] = []
+    for directory in sorted(path for path in root.iterdir() if path.is_dir()):
+        if (directory / SPEC_FILENAME).is_file() and (
+            directory / DATASET_CONFIG_FILENAME
+        ).is_file():
+            discovered.append((directory, read_spec(directory)))
+    return discovered
+
+
 def discover_bundles(root: Path) -> list[Path]:
     """Every bundle directory under ``root``, sorted. A bundle has a benchmark.yaml."""
     root = Path(root)

@@ -1,20 +1,30 @@
-"""Synthetic prepared-benchmark bundles for the prepare-side tests.
+"""Synthetic prepared-benchmark bundles for the prepare- and eval-side tests.
 
-The same idea as ``tests/test_bundle_format.py``'s six-row fixture, but with
-**one row per stereoisomer** — the shape a ``smiles``-stage bundle actually has
-and the shape ``expand_to_conformers`` requires. Two variants:
+Two families, both real bundles written through ``write_bundle`` so every
+invariant of §1.1 is enforced on the fixture itself:
 
-* the default six rows carry one enantiomer pair, an achiral molecule, a meso
-  compound, a lone chiral molecule and a second achiral molecule;
-* the ``require_enantiomer_pairs`` variant is three enantiomer pairs, because
-  invariant 4 refuses a null ``enantiomer_of`` when that flag is set.
+**``smiles``-stage** (``write_smiles_bundle``) — six rows, one per
+stereoisomer, the shape ``expand_to_conformers`` requires. The default six
+carry one enantiomer pair, an achiral molecule, a meso compound, a lone chiral
+molecule and a second achiral molecule; the ``require_enantiomer_pairs``
+variant is three enantiomer pairs, because invariant 4 refuses a null
+``enantiomer_of`` when that flag is set.
+
+**``conformers``-stage** (``write_conformers_bundle`` + ``ingest_tiny_bundle``)
+— ten achiral rows with caller-supplied tasks, labels and split columns, plus
+the real ``ingest_benchmark`` task that turns one into a zarr. Every eval test
+builds its zarr this way, so the ingest path and the eval path cannot drift.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
+from ase import Atoms
+from rdkit import Chem
+from rdkit.Chem import AllChem
 
 from remedi.data_handling.bundle import (
     BenchmarkSpec,
@@ -133,3 +143,157 @@ def write_smiles_bundle(
         dataset_id=dataset_id, require_enantiomer_pairs=require_enantiomer_pairs
     )
     return write_bundle(bundle, Path(root) / dataset_id)
+
+
+# ------------------------------------------------- conformers-stage fixtures
+
+#: Ten small achiral molecules. Achiral on purpose: invariant 9 (perceive the
+#: stereochemistry back out of the frame) only runs on a SMILES with an
+#: assigned tetrahedral centre, so an achiral fixture is immune to the ETKDG
+#: seed and stays a *fast* fixture rather than a chemistry test.
+ACHIRAL_TEN_SMILES: list[str] = [
+    "CCO",
+    "c1ccccc1",
+    "CC(=O)O",
+    "CCN",
+    "OC",
+    "CC",
+    "CCC",
+    "CCCC",
+    "CCCCC",
+    "CCCCCC",
+]
+
+#: Six train, two valid, two test — enough for a learner fit with a held-out
+#: fold, and the shape the eval tests assert their row counts against.
+TEN_ROW_SPLIT: list[str] = ["train"] * 6 + ["valid"] * 2 + ["test"] * 2
+
+
+def embed_frames(smiles_values: Sequence[str]) -> list[Atoms]:
+    """One ETKDG + MMFF frame per SMILES, stamped with its ``structure_id``.
+
+    A fixed ETKDG seed, unlike the production task, because a fixture must not
+    move between runs; §1.2's "no reproduction contract" applies to published
+    coordinates, not to ten test molecules.
+    """
+    frames: list[Atoms] = []
+    for structure_id, smiles in enumerate(smiles_values):
+        molecule = Chem.AddHs(Chem.MolFromSmiles(smiles))
+        parameters = AllChem.ETKDGv3()
+        parameters.randomSeed = 0xF00D
+        if AllChem.EmbedMolecule(molecule, parameters) != 0:
+            raise ValueError(f"the fixture SMILES {smiles!r} failed to embed")
+        AllChem.MMFFOptimizeMolecule(molecule, maxIters=100)
+        frames.append(
+            Atoms(
+                numbers=[atom.GetAtomicNum() for atom in molecule.GetAtoms()],
+                positions=molecule.GetConformer().GetPositions(),
+                pbc=[0, 0, 0],
+                info={"structure_id": structure_id},
+            )
+        )
+    return frames
+
+
+def make_conformers_spec(
+    *,
+    dataset_id: str,
+    tasks: list[BenchmarkTask],
+    metrics: list[str],
+    split_columns: list[str] | None = None,
+    extra_columns: list[str] | None = None,
+) -> BenchmarkSpec:
+    """A ``conformers``-stage spec over caller-supplied tasks and metrics."""
+    return BenchmarkSpec(
+        dataset_id=dataset_id,
+        description="A synthetic conformers-stage bundle for the eval tests.",
+        tasks=tasks,
+        metrics=metrics,
+        stage="conformers",
+        geometry_origin="etkdg_mmff",
+        split_columns=split_columns or ["split"],
+        default_split=(split_columns or ["split"])[0],
+        split_group="stereoisomer_id",
+        extra_columns=extra_columns or [],
+        source_kind="synthetic",
+    )
+
+
+def make_conformers_bundle(
+    *,
+    dataset_id: str,
+    tasks: list[BenchmarkTask],
+    metrics: list[str],
+    targets: np.ndarray,
+    smiles: Sequence[str] = tuple(ACHIRAL_TEN_SMILES),
+    splits: dict[str, list[str]] | None = None,
+) -> Bundle:
+    """A conformers-stage bundle with one embedded frame per SMILES.
+
+    Args:
+        targets: ``(n_rows, n_tasks)``; ``NaN`` marks a missing label, exactly
+            as the format's only missingness encoding does.
+        splits: split column name -> one value per row. Defaults to a single
+            ``split`` column with the 6/2/2 partition.
+    """
+    splits = splits or {"split": list(TEN_ROW_SPLIT)}
+    spec = make_conformers_spec(
+        dataset_id=dataset_id,
+        tasks=tasks,
+        metrics=metrics,
+        split_columns=list(splits),
+    )
+    smiles_values = list(smiles)
+    table = assign_identity(smiles_values).to_frame()
+    targets = np.asarray(targets, dtype=np.float64).reshape(len(smiles_values), -1)
+    for column, task in enumerate(tasks):
+        table[task.name] = targets[:, column]
+    for column_name, values in splits.items():
+        table[column_name] = list(values)
+    provenance = BundleProvenance(
+        dataset_id=dataset_id,
+        preparer=PreparerRecord(
+            repo="molsuit/remedi-data", script="tests/helpers/bundle_fixtures.py"
+        ),
+        source=SourceRecord(package_versions={"synthetic": "1.0"}),
+        counts=BundleCounts(source_molecules=len(smiles_values)),
+    )
+    return Bundle(
+        spec=spec,
+        table=table[spec.expected_columns()],
+        structures=embed_frames(smiles_values),
+        provenance=provenance,
+    )
+
+
+def write_conformers_bundle(root: Path, **kwargs) -> Path:
+    """Write :func:`make_conformers_bundle` to ``root/<dataset_id>``."""
+    bundle = make_conformers_bundle(**kwargs)
+    return write_bundle(bundle, Path(root) / bundle.spec.dataset_id)
+
+
+def ingest_tiny_bundle(
+    benchmark_root: Path, output_root: Path, dataset_id: str
+) -> Path:
+    """Run the real ``ingest_benchmark`` task on one bundle. Returns the zarr path.
+
+    Every eval test builds its zarr through this rather than hand-writing zarr
+    arrays, so the ingest path and the eval path cannot drift apart.
+    """
+    from remedi.data_handling.prepare import IngestBenchmarkConfig, PrepareContext
+
+    task = IngestBenchmarkConfig(
+        dataset_ids=[dataset_id],
+        batch_size=4,
+        atom_chunk=8,
+        molecule_chunk=4,
+        atom_chunks_per_shard=4,
+        molecule_chunks_per_shard=4,
+    )
+    context = PrepareContext(
+        smiles_bundle_root=Path(benchmark_root),
+        benchmark_root=Path(benchmark_root),
+        output_root=Path(output_root),
+    )
+    list(task.run(context))
+    return Path(output_root) / dataset_id

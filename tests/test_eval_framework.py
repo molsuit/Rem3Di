@@ -1,8 +1,9 @@
 """Framework runner: fault tolerance, shared resources, decoupled plotting.
 
-CPU-only — uses ECFP descriptors over hand-built synthetic benchmark zarrs, so
-the whole framework (manifest -> runner -> tasks -> artifacts -> status) is
-exercised without a GPU / a trained model.
+CPU-only — ECFP descriptors over benchmark zarrs built by the real
+``ingest_benchmark`` prepare task from real bundles, so the whole framework
+(manifest -> runner -> tasks -> artifacts -> status) is exercised without a GPU
+or a trained model.
 """
 
 from __future__ import annotations
@@ -14,22 +15,9 @@ import pandas as pd
 import pydantic_yaml as pyd_yaml
 import pytest
 
-from remedi.configuration.dataset_config import DatasetConfig
-from remedi.data_handling.benchmarks import (
-    BenchmarkManifest,
-    EvalMetric,
-    SplitVariant,
-)
+from remedi.data_handling.bundle import BenchmarkTask
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import (
-    TaskConfig,
-    TaskScope,
-    TaskSet,
-    TaskType,
-)
-from remedi.data_handling.dataset_creation.shard_aligned_writer import (
-    ShardAlignedWriter,
-)
+from remedi.data_handling.dataset.tasks import TaskType
 from remedi.evaluation.benchmark.descriptors import EcfpConfig
 from remedi.evaluation.benchmark.learners import LinearLearnerConfig
 from remedi.evaluation.framework import (
@@ -44,71 +32,31 @@ from remedi.evaluation.framework import (
 from remedi.evaluation.framework.runner import RunReport
 from remedi.evaluation.results import ArrayResult, FigureResult, TableResult
 
-_SMILES = [
-    "CCO",
-    "c1ccccc1",
-    "CC(=O)O",
-    "CCN",
-    "OC",
-    "CC",
-    "CCC",
-    "CCCC",
-    "CCCCC",
-    "CCCCCC",
-]
-_SPLIT = np.array([0] * 6 + [1] * 2 + [2] * 2, dtype="u1")
+from .helpers.bundle_fixtures import (
+    ACHIRAL_TEN_SMILES,
+    ingest_tiny_bundle,
+    write_conformers_bundle,
+)
+
+_N_ROWS = len(ACHIRAL_TEN_SMILES)
 
 
-def _build_reg_zarr(path: Path, targets: np.ndarray) -> None:
-    n, atoms_per = len(_SMILES), 3
-    cfg = DatasetConfig(
-        atom_chunk=8,
-        molecule_chunk=4,
-        atom_chunks_per_shard=4,
-        molecule_chunks_per_shard=4,
-        contains_smiles=True,
-        tasks=TaskSet.from_list(
-            [
-                TaskConfig(
-                    name="y", task_type=TaskType.regression, scope=TaskScope.system
-                )
-            ]
-        ),
+def _build_reg_zarr(tmp_path: Path, dataset_id: str, targets: np.ndarray) -> Path:
+    """One regression bundle ingested into ``tmp_path/datasets/<dataset_id>``."""
+    write_conformers_bundle(
+        tmp_path / "bundles",
+        dataset_id=dataset_id,
+        tasks=[BenchmarkTask(name="y", task_type=TaskType.regression)],
+        metrics=["RMSE"],
+        targets=targets,
     )
-    ds = MoleculeDataset.create_empty_dataset(path, cfg)
-    s2i = ds.smiles.append_new_lines(_SMILES)
-    i2i = ds.isomeric_smiles.append_new_lines(_SMILES)
-    writer = ShardAlignedWriter(ds)
-    writer.append_batch(
-        positions=np.zeros((n * atoms_per, 3), dtype="f4"),
-        atomic_numbers=np.full(n * atoms_per, 6, dtype="u1"),
-        batch_ptr_cumsum=np.arange(1, n + 1) * atoms_per,
-        molecule_ids=np.array([s2i[s] for s in _SMILES], dtype="i8"),
-        stereoisomer_ids=np.array([i2i[s] for s in _SMILES], dtype="i8"),
-        total_charge=np.zeros(n, dtype="f4"),
-        multiplicity=np.ones(n, dtype="f4"),
-        system_targets=np.asarray(targets, dtype="f4").reshape(-1, 1),
-        system_masks=np.ones((n, 1), dtype="u1"),
-        atom_targets=None,
-        atom_masks=None,
-        split=_SPLIT,
-    )
-    ds.smiles.close()
-    ds.isomeric_smiles.close()
-    writer.finalize()
-    BenchmarkManifest(
-        dataset_id=path.name,
-        metric=EvalMetric.rmse,
-        split_variant=SplitVariant.scaffold,
-        source="moleculenet",  # type: ignore[arg-type]
-    ).to_zarr_dir(path)
+    return ingest_tiny_bundle(tmp_path / "bundles", tmp_path / "datasets", dataset_id)
 
 
 def _manifest(tmp_path: Path) -> EvalManifest:
     eval_root = tmp_path / "datasets"
-    eval_root.mkdir()
-    _build_reg_zarr(eval_root / "toy_a", np.linspace(0, 1, 10))
-    _build_reg_zarr(eval_root / "toy_b", np.linspace(1, 0, 10))
+    _build_reg_zarr(tmp_path, "toy_a", np.linspace(0, 1, _N_ROWS))
+    _build_reg_zarr(tmp_path, "toy_b", np.linspace(1, 0, _N_ROWS))
     return EvalManifest(
         model=EcfpConfig(name="ecfp_256", length=256),
         output_root=tmp_path / "eval_out" / "model_x",
@@ -178,10 +126,8 @@ def test_fail_fast_raises(tmp_path: Path) -> None:
 
 
 def test_shared_resource_built_once(tmp_path: Path) -> None:
-    eval_root = tmp_path / "datasets"
-    eval_root.mkdir()
-    _build_reg_zarr(eval_root / "toy_a", np.linspace(0, 1, 10))
-    ds = MoleculeDataset.open_existing_dataset_from_dir(eval_root / "toy_a")
+    zarr_path = _build_reg_zarr(tmp_path, "toy_a", np.linspace(0, 1, _N_ROWS))
+    ds = MoleculeDataset.open_existing_dataset_from_dir(zarr_path)
     spec = EmbeddingSpec(
         dataset_id="toy_a",
         descriptor=EcfpConfig(name="ecfp_256", length=256),
@@ -236,8 +182,7 @@ def test_retrieval_task_tanimoto_on_cpu(tmp_path: Path) -> None:
     )
 
     eval_root = tmp_path / "datasets"
-    eval_root.mkdir()
-    _build_reg_zarr(eval_root / "corpus", np.linspace(0, 1, 10))
+    _build_reg_zarr(tmp_path, "corpus", np.linspace(0, 1, _N_ROWS))
 
     manifest = EvalManifest(
         model=EcfpConfig(name="ecfp_256", length=256),
@@ -269,8 +214,7 @@ def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
     from remedi.evaluation.framework import DescriptorAnalysisConfig
 
     eval_root = tmp_path / "datasets"
-    eval_root.mkdir()
-    _build_reg_zarr(eval_root / "corpus", np.linspace(0, 1, 10))
+    _build_reg_zarr(tmp_path, "corpus", np.linspace(0, 1, _N_ROWS))
 
     manifest = EvalManifest(
         model=EcfpConfig(name="ecfp_256", length=256),

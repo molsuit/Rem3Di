@@ -11,8 +11,9 @@ The architecture is the *unified* ``kind: regression`` config whose single head
 carries ``n_classes`` — that and ``mace_config`` (which switches the preprocessor
 to on-the-fly MACE) are the only things that make it a classifier. The
 train/valid split is the **stored stratified split** materialized into the zarr
-by ``build_chiral_cat.py`` (``split_config`` in the training yaml is not used for
-this task); the test fold is held out for the eval framework
+by the ``ingest_benchmark`` prepare task, which copies it from the ChiralCat
+bundle's ``default_split`` column (``split_config`` in the training yaml is not
+used for this task); the test fold is held out for the eval framework
 (``chiral_report`` / ``benchmark_panel``).
 
 Best-by-balanced-accuracy checkpoints are written in the REM3DI layout
@@ -85,8 +86,8 @@ def _stored_split_indices(dataset: MoleculeDataset) -> tuple[np.ndarray, np.ndar
     """Train / valid index arrays from the materialized stratified split."""
     if dataset.split is None:
         raise ValueError(
-            "Dataset has no `split` column. Build it with build_chiral_cat.py so "
-            "the stratified split is materialized."
+            "Dataset has no `split` column. Build it with the ingest_benchmark "
+            "prepare task so the bundle's stratified split is materialized."
         )
     codes = np.asarray(dataset.split[:], dtype=np.uint8)
     train_idx = np.nonzero(codes == Split.train.value)[0]

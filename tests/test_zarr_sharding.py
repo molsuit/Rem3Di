@@ -185,9 +185,9 @@ def test_all_buffered_until_shard_complete(tmp_path: Path, monkeypatch) -> None:
     after_loop = dict(store.counter)
 
     # Nothing flushed yet: no data writes happened during the append loop.
-    assert after_loop.get("set", 0) == before.get(
-        "set", 0
-    ), "data was written before a shard completed — buffering bypassed"
+    assert after_loop.get("set", 0) == before.get("set", 0), (
+        "data was written before a shard completed — buffering bypassed"
+    )
     assert after_loop.get("get", 0) == before.get("get", 0)
 
     writer.finalize()  # single partial-shard write here
@@ -202,3 +202,96 @@ def test_all_buffered_until_shard_complete(tmp_path: Path, monkeypatch) -> None:
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_row_ids_default_to_the_shard_cursor(tmp_path: Path) -> None:
+    """A source that supplies no ids gets ``arange`` in both id arrays.
+
+    The pretraining corpora never carry a bundle row; ``ids/bundle_row`` must
+    still be dense and equal to ``ids/structure_id`` so anything reading
+    ``bundle_rows_or_structure_ids`` behaves identically on both kinds of zarr.
+    """
+    cfg = DatasetConfig(
+        atom_chunk=8,
+        molecule_chunk=4,
+        atom_chunks_per_shard=4,
+        molecule_chunks_per_shard=4,
+        contains_smiles=False,
+    )
+    dataset = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
+    writer = ShardAlignedWriter(dataset)
+    # Two batches, so the second must continue the cursor rather than restart.
+    _append(writer, n_mols=5, atoms_per=3)
+    _append(writer, n_mols=7, atoms_per=3)
+    writer.finalize()
+
+    expected = np.arange(12, dtype="i8")
+    np.testing.assert_array_equal(np.asarray(dataset.structure_ids[:]), expected)
+    assert dataset.bundle_row is not None
+    np.testing.assert_array_equal(np.asarray(dataset.bundle_row[:]), expected)
+    np.testing.assert_array_equal(
+        np.asarray(dataset.bundle_rows_or_structure_ids[:]), expected
+    )
+
+
+def test_explicit_row_ids_are_written_verbatim(tmp_path: Path) -> None:
+    """A bundle source's ids reach the zarr unchanged, including a gap."""
+    cfg = DatasetConfig(
+        atom_chunk=8,
+        molecule_chunk=4,
+        atom_chunks_per_shard=4,
+        molecule_chunks_per_shard=4,
+        contains_smiles=False,
+    )
+    dataset = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
+    writer = ShardAlignedWriter(dataset)
+    bundle_rows = np.array([3, 1, 4, 1, 5], dtype="i8")
+    writer.append_batch(
+        positions=np.zeros((15, 3), dtype="f4"),
+        atomic_numbers=np.full(15, 6, dtype="u1"),
+        batch_ptr_cumsum=np.arange(1, 6) * 3,
+        molecule_ids=np.arange(5),
+        stereoisomer_ids=np.arange(5),
+        total_charge=np.zeros(5, dtype="f4"),
+        multiplicity=np.ones(5, dtype="f4"),
+        system_targets=None,
+        system_masks=None,
+        atom_targets=None,
+        atom_masks=None,
+        structure_ids=np.arange(5, dtype="i8"),
+        bundle_rows=bundle_rows,
+    )
+    writer.finalize()
+
+    np.testing.assert_array_equal(np.asarray(dataset.bundle_row[:]), bundle_rows)
+    np.testing.assert_array_equal(
+        np.asarray(dataset.structure_ids[:]), np.arange(5, dtype="i8")
+    )
+
+
+def test_a_wrong_length_id_array_is_refused(tmp_path: Path) -> None:
+    cfg = DatasetConfig(
+        atom_chunk=8,
+        molecule_chunk=4,
+        atom_chunks_per_shard=4,
+        molecule_chunks_per_shard=4,
+        contains_smiles=False,
+    )
+    dataset = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
+    writer = ShardAlignedWriter(dataset)
+
+    with pytest.raises(ValueError, match="bundle_rows must have length 5"):
+        writer.append_batch(
+            positions=np.zeros((15, 3), dtype="f4"),
+            atomic_numbers=np.full(15, 6, dtype="u1"),
+            batch_ptr_cumsum=np.arange(1, 6) * 3,
+            molecule_ids=np.arange(5),
+            stereoisomer_ids=np.arange(5),
+            total_charge=np.zeros(5, dtype="f4"),
+            multiplicity=np.ones(5, dtype="f4"),
+            system_targets=None,
+            system_masks=None,
+            atom_targets=None,
+            atom_masks=None,
+            bundle_rows=np.arange(4, dtype="i8"),
+        )

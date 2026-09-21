@@ -49,3 +49,21 @@ tasks:
       reject_zero_hydrogen: true
       min_hydrogen_heavy_ratio: 0.0
       min_interatomic_distance: 0.5
+
+  - kind: ingest_benchmark
+    # null (or omitted) means every bundle under `benchmark_root`.
+    dataset_ids: null
+    # Bundle rows per pipeline batch.
+    batch_size: 256
+    # False skips a dataset whose zarr already exists under `output_root`.
+    overwrite: false
+    # zarr chunk / shard geometry; the defaults match `DatasetConfig`.
+    atom_chunk: 8192
+    molecule_chunk: 4096
+    atom_chunks_per_shard: 64
+    molecule_chunks_per_shard: 256
+
+  - kind: verify_benchmark
+    dataset_ids: null
+    # False re-asserts the bundle only, without opening the zarr.
+    check_zarr: true

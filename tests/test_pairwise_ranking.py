@@ -6,14 +6,10 @@ import math
 
 import numpy as np
 
-from remedi.data_handling.benchmarks import (
-    BenchmarkManifest,
-    EvalMetric,
-    SplitVariant,
-)
+from remedi.data_handling.bundle import EvalMetric
 from remedi.evaluation.benchmark.learners import LinearLearnerConfig
 from remedi.evaluation.benchmark.pairwise import pair_ranking_accuracy
-from remedi.evaluation.benchmark.runner import evaluate_pairwise_cell
+from remedi.evaluation.benchmark.runner import BenchmarkCell, evaluate_pairwise_cell
 
 
 def test_perfect_ranking_pools_conformers() -> None:
@@ -104,11 +100,11 @@ def test_evaluate_pairwise_cell_end_to_end() -> None:
     va = np.zeros_like(tr)
     splits = (tr, va, te)
 
-    manifest = BenchmarkManifest(
+    cell = BenchmarkCell(
         dataset_id="chiral_docking",
         metric=EvalMetric.pair_ranking_accuracy,
-        split_variant=SplitVariant.predefined,
-        source="local_chiro",
+        split_column="split",
+        seed=0,
     )
     rows = evaluate_pairwise_cell(
         LinearLearnerConfig(ridge_alpha=0.01),
@@ -118,12 +114,16 @@ def test_evaluate_pairwise_cell_end_to_end() -> None:
         mol_ids,
         iso_ids,
         "docking_top_score",
-        manifest,
+        cell,
         "score_oracle",
-        seed=0,
     )
     (row,) = rows
     assert row.metric_name == "pair-ranking-accuracy"
     assert row.target_col == "docking_top_score"
     assert row.n_test == 2  # two enantiomer pairs scored
     assert row.metric_value == 1.0
+    assert (row.dataset_id, row.split_column, row.seed) == (
+        "chiral_docking",
+        "split",
+        0,
+    )

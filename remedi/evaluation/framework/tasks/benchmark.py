@@ -19,7 +19,8 @@ from typing import Literal
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from remedi.data_handling.benchmarks import (
+from remedi.data_handling.bundle import (
+    BenchmarkSpec,
     EvalMetric,
     discover_benchmark_zarrs,
 )
@@ -27,6 +28,7 @@ from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.evaluation.benchmark.descriptors import DescriptorConfig
 from remedi.evaluation.benchmark.learners import LearnerConfig
 from remedi.evaluation.benchmark.runner import (
+    BenchmarkCell,
     BenchmarkFailure,
     BenchmarkResultRow,
     _build_targets_with_nan,
@@ -56,6 +58,10 @@ class BenchmarkPanelConfig(BaseModel):
     # Descriptors evaluated in addition to the run's model (e.g. an ECFP
     # baseline). The run's model (``ctx.model``) is always evaluated first.
     baseline_descriptors: list[DescriptorConfig] = Field(default_factory=list)
+    # Which split column of the bundle table to score on. ``None`` uses each
+    # benchmark's own ``default_split``; a name here must exist in every
+    # benchmark under ``eval_root``.
+    split_column: str | None = None
 
     def run(self, ctx: EvalContext) -> Iterator[EvalResult]:
         out = ctx.task_dir("benchmark")
@@ -63,16 +69,14 @@ class BenchmarkPanelConfig(BaseModel):
         rows: list[BenchmarkResultRow] = []
         failures: list[BenchmarkFailure] = []
 
-        for zarr_path, manifest in discover_benchmark_zarrs(self.eval_root):
-            logger.info("--- %s @ %s ---", manifest.dataset_id, zarr_path)
+        for zarr_path, spec in discover_benchmark_zarrs(self.eval_root):
+            logger.info("--- %s @ %s ---", spec.dataset_id, zarr_path)
             try:
-                rows.extend(
-                    self._evaluate_dataset(ctx, zarr_path, manifest, descriptors)
-                )
+                rows.extend(self._evaluate_dataset(ctx, zarr_path, spec, descriptors))
             except Exception as exc:  # one bad benchmark must not sink the panel
-                logger.exception("benchmark %s failed; recording", manifest.dataset_id)
+                logger.exception("benchmark %s failed; recording", spec.dataset_id)
                 failures.append(
-                    BenchmarkFailure(dataset_id=manifest.dataset_id, error=repr(exc))
+                    BenchmarkFailure(dataset_id=spec.dataset_id, error=repr(exc))
                 )
             # Crash-safe incremental write after each dataset.
             self._write_csv(rows, out)
@@ -88,15 +92,25 @@ class BenchmarkPanelConfig(BaseModel):
             )
 
     def _evaluate_dataset(
-        self, ctx: EvalContext, zarr_path: Path, manifest, descriptors
+        self,
+        ctx: EvalContext,
+        zarr_path: Path,
+        spec: BenchmarkSpec,
+        descriptors: list[DescriptorConfig],
     ) -> list[BenchmarkResultRow]:
         dataset = MoleculeDataset.open_existing_dataset_from_dir(zarr_path)
         kind = _task_kind(dataset)
         assert dataset.config.tasks is not None  # narrowed by _task_kind
         col_names = [c.name for c in dataset.config.tasks.system_cols]
         Y = _build_targets_with_nan(dataset)
-        splits = _split_masks(dataset, None)
-        is_pairwise = manifest.metric == EvalMetric.pair_ranking_accuracy
+        cell = BenchmarkCell(
+            dataset_id=spec.dataset_id,
+            metric=spec.metrics[0],
+            split_column=self.split_column or spec.default_split,
+            seed=ctx.seed,
+        )
+        splits = _split_masks(zarr_path, dataset, cell.split_column)
+        is_pairwise = cell.metric == EvalMetric.pair_ranking_accuracy
         mol_ids, iso_ids = (
             _structure_group_ids(dataset) if is_pairwise else (None, None)
         )
@@ -104,7 +118,7 @@ class BenchmarkPanelConfig(BaseModel):
         for desc in descriptors:
             X = ctx.resources.get(
                 EmbeddingSpec(
-                    dataset_id=manifest.dataset_id,
+                    dataset_id=spec.dataset_id,
                     descriptor=desc,
                     dataset=dataset,
                     cache_dir=ctx.resource_cache_dir,
@@ -122,9 +136,8 @@ class BenchmarkPanelConfig(BaseModel):
                             mol_ids,
                             iso_ids,
                             col_names[0],
-                            manifest,
+                            cell,
                             desc.name,
-                            ctx.seed,
                         )
                     )
                 else:
@@ -136,9 +149,8 @@ class BenchmarkPanelConfig(BaseModel):
                             X,
                             Y,
                             col_names,
-                            manifest,
+                            cell,
                             desc.name,
-                            ctx.seed,
                         )
                     )
         return rows

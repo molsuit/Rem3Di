@@ -15,15 +15,18 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi.data_handling.bundle import discover_bundles
-from remedi.data_handling.prepare.tasks.generate_conformers import (
+from remedi.data_handling.prepare.context import BundleRoots
+from remedi.data_handling.prepare.tasks import (
     GenerateConformersConfig,
+    IngestBenchmarkConfig,
+    VerifyBenchmarkConfig,
 )
 
-# Discriminated union of prepare-task configs. A one-member union today;
-# ``ingest_benchmark`` and ``verify_benchmark`` (§3) join it at build-order
-# step 4, and the manifest and runner stay agnostic to the membership.
+# Discriminated union of prepare-task configs. The manifest and the runner are
+# agnostic to the membership: a new kind joins here and is runnable from a
+# manifest, and ``expand_tasks`` below expands it per dataset like the rest.
 PrepareTask = Annotated[
-    GenerateConformersConfig,
+    GenerateConformersConfig | IngestBenchmarkConfig | VerifyBenchmarkConfig,
     Field(discriminator="kind"),
 ]
 
@@ -46,16 +49,26 @@ class PrepareManifest(BaseModel):
     # run continues; set False to fail fast.
     keep_going: bool = True
 
+    def bundle_roots(self) -> BundleRoots:
+        """The two roots a task resolves its dataset ids against."""
+        return BundleRoots(
+            smiles_bundle_root=Path(self.smiles_bundle_root),
+            benchmark_root=Path(self.benchmark_root),
+        )
+
     def expand_tasks(self) -> list[PrepareTask]:
         """One task per resolved dataset id, so failures isolate per dataset.
 
-        A task with ``dataset_ids: null`` covers every bundle under
-        ``smiles_bundle_root``; expanding it into one copy per id is what gives
-        ``status.yaml`` a row per dataset instead of one row for the panel.
+        A task with ``dataset_ids: null`` covers every bundle under the root it
+        reads (``smiles_bundle_root`` for ``generate_conformers``,
+        ``benchmark_root`` for ``ingest_benchmark`` / ``verify_benchmark``);
+        expanding it into one copy per id is what gives ``status.yaml`` a row
+        per dataset instead of one row for the panel.
         """
+        roots = self.bundle_roots()
         expanded: list[PrepareTask] = []
         for task in self.tasks:
-            for dataset_id in task.resolve_dataset_ids(self.smiles_bundle_root):
+            for dataset_id in task.resolve_dataset_ids(roots):
                 expanded.append(task.model_copy(update={"dataset_ids": [dataset_id]}))
         return expanded
 

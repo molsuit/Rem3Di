@@ -45,8 +45,8 @@ SplitGroup = Literal["molecule_id", "stereoisomer_id"]
 class EvalMetric(StrEnum):
     """Metrics a bundle may ask for. Values are the strings written to yaml.
 
-    Carried over verbatim from ``remedi.data_handling.benchmarks`` so that the
-    registry can be deleted without changing any recorded metric name.
+    Carried over verbatim from the deleted ``remedi.data_handling.benchmarks``
+    so that the registry's removal changed no recorded metric name.
     """
 
     rmse = "RMSE"

@@ -123,8 +123,10 @@ class DatasetConstructionOrchestrator:
         if output_data.systems_index.shape[0] != N_atoms_batch:
             raise ValueError("systems_index must have length N_atoms")
 
-        molecule_ids, stereoisomer_ids = self.get_mol_ids_for_batch(
-            output_data.smiles_data, output_data.structure_ids
+        molecule_ids, stereoisomer_ids, batch_structure_ids = (
+            self.get_mol_ids_for_batch(
+                output_data.smiles_data, output_data.structure_ids
+            )
         )
 
         if output_data.regression_data is not None:
@@ -153,13 +155,38 @@ class DatasetConstructionOrchestrator:
             atom_target,
             atom_mask,
             split,
+            structure_ids=batch_structure_ids,
+            bundle_rows=batch_structure_ids,
         )
 
     def get_mol_ids_for_batch(
-        self, smiles_data: list[SmilesData], structure_ids: list[StructureID]
-    ):
+        self,
+        smiles_data: list[SmilesData] | None,
+        structure_ids: list[StructureID],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+        """The ``(molecule_id, stereoisomer_id, structure_id)`` of one batch.
+
+        For the pretraining corpora (``contains_smiles``) the two identity ids
+        are *derived* by appending the canonical SMILES to the dataset's SMILES
+        store and reading back the assigned index, and the structure id is left
+        to the writer's shard cursor (``None`` here).
+
+        For a prepared benchmark bundle the ids are **authoritative** — the
+        preparer assigned them, the split is keyed to them and ``enantiomer_of``
+        points at them — so all three are copied verbatim off the batch
+        (``BENCHMARK_DATA_FORMAT.md`` §2.3).
+
+        Raises:
+            ValueError: if a ``contains_smiles`` dataset is handed a batch
+                without one :class:`SmilesData` per structure.
+        """
         if self.dataset.config.contains_smiles:
-            assert len(smiles_data) == len(structure_ids)
+            if smiles_data is None or len(smiles_data) != len(structure_ids):
+                raise ValueError(
+                    "a contains_smiles dataset needs one SmilesData per structure, "
+                    f"got {None if smiles_data is None else len(smiles_data)} for "
+                    f"{len(structure_ids)} structures"
+                )
 
             new_smiles = [sd.nonisomeric_smiles for sd in smiles_data]
             new_smiles_to_id_map = self.dataset.smiles.append_new_lines(new_smiles)
@@ -173,12 +200,14 @@ class DatasetConstructionOrchestrator:
             stereoisomer_ids = np.array(
                 [new_isomeric_smiles_to_id_map[s] for s in new_isomeric_smiles]
             )
+            return molecule_ids, stereoisomer_ids, None
 
-        else:
-            molecule_ids = np.array([sid.molecule_id for sid in structure_ids])
-            stereoisomer_ids = np.array([sid.stereoisomer_id for sid in structure_ids])
-
-        return molecule_ids, stereoisomer_ids
+        molecule_ids = np.array([sid.molecule_id for sid in structure_ids])
+        stereoisomer_ids = np.array([sid.stereoisomer_id for sid in structure_ids])
+        batch_structure_ids = np.array(
+            [sid.structure_id for sid in structure_ids], dtype="i8"
+        )
+        return molecule_ids, stereoisomer_ids, batch_structure_ids
 
     def finalize(self):
         # Close all the files, ensure that everything is stored correctly
@@ -235,8 +264,7 @@ class DatasetConstructionOrchestrator:
                 )
             per_batch_append = self._append_time / self._num_batches
             lines.append(
-                f"    Append: {self._append_time:.3f}s "
-                f"({per_batch_append:.4f}s/batch)"
+                f"    Append: {self._append_time:.3f}s ({per_batch_append:.4f}s/batch)"
             )
 
         logger.info("\n".join(lines))

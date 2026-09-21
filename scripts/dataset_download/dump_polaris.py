@@ -15,7 +15,8 @@ Usage::
         --out-root /path/to/polaris_raw --force
 
 For each entry in ``_DATASETS`` a parquet ``<dataset_id>.parquet`` is written
-under ``--out-root`` with a fixed schema consumed by ``PolarisOfflineGenerator``:
+under ``--out-root`` with a fixed schema consumed by the ``remedi-data``
+polaris preparer (``preparers/polaris/prepare.py``), which turns it into bundles:
 
 * ``smiles`` -- str
 * ``split`` -- uint8 Split code (0=train, 1=valid, 2=test, 255=unassigned)
@@ -79,8 +80,8 @@ _NON_TASK_COLUMNS = {
 }
 
 # Curated polaris datasets. (dataset_id, polaris-hub slug, source SMILES column.)
-# Matches ``POLARIS_BENCHMARKS`` in ``remedi/data_handling/benchmarks.py``;
-# add new entries to both places.
+# This list is the only place the panel's polaris membership is declared; the
+# remedi-data polaris preparer turns each dump into one bundle.
 _DATASETS: tuple[tuple[str, str, str], ...] = (
     (
         "polaris_antiviral_admet",
