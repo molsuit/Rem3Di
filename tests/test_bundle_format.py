@@ -46,6 +46,8 @@ from remedi.data_handling.bundle import (
     mirror_isomeric_smiles,
     read_bundle,
     read_table,
+    stereochemistry_from_frame,
+    tetrahedral_stereo_smiles,
     validate_bundle,
     write_bundle,
 )
@@ -788,3 +790,51 @@ def test_read_table_reads_columns_without_validating(tmp_path: Path) -> None:
     assert list(subset.columns) == ["stereoisomer_id", "split"]
     with pytest.raises(FileNotFoundError):
         read_table(tmp_path / "nowhere")
+
+
+# --- invariant 9 only compares what the SMILES actually specifies -----------
+
+
+def _embedded_frame(isomeric_smiles: str) -> Atoms:
+    from rdkit.Chem import AllChem
+
+    molecule = Chem.AddHs(Chem.MolFromSmiles(isomeric_smiles))
+    parameters = AllChem.ETKDGv3()
+    parameters.randomSeed = 7
+    assert AllChem.EmbedMolecule(molecule, parameters) == 0
+    return Atoms(
+        numbers=[atom.GetAtomicNum() for atom in molecule.GetAtoms()],
+        positions=molecule.GetConformer().GetPositions(),
+    )
+
+
+@pytest.mark.parametrize(
+    "isomeric_smiles",
+    [
+        # One assigned and one unassigned tetrahedral centre: the embedding
+        # picks some configuration for the second, which must not count.
+        "C[C@H](O)C(C)N",
+        # Unspecified double bond next to an assigned centre: 3D perception
+        # always yields E or Z, which must not count either.
+        "CC=C[C@H](C)O",
+        # Unspecified imine.
+        "N=C(N)NC[C@@H]1COc2ccccc2O1",
+    ],
+)
+def test_invariant_9_ignores_stereo_the_smiles_leaves_unspecified(
+    isomeric_smiles: str,
+) -> None:
+    frame = _embedded_frame(isomeric_smiles)
+    assert stereochemistry_from_frame(isomeric_smiles, frame) == (
+        tetrahedral_stereo_smiles(isomeric_smiles)
+    )
+
+
+def test_invariant_9_still_sees_an_inverted_assigned_centre() -> None:
+    isomeric_smiles = "C[C@H](O)C(C)N"
+    frame = _embedded_frame(isomeric_smiles)
+    reflected = frame.copy()
+    reflected.set_positions(frame.get_positions() * np.array([-1.0, 1.0, 1.0]))
+    assert stereochemistry_from_frame(isomeric_smiles, reflected) != (
+        tetrahedral_stereo_smiles(isomeric_smiles)
+    )

@@ -79,8 +79,9 @@ def stereochemistry_from_frame(isomeric_smiles: str, atoms: Atoms) -> str | None
     """Tetrahedral stereo perceived from ``atoms`` for invariant 9.
 
     The result is a canonical SMILES with tetrahedral centres only (see
-    :func:`tetrahedral_stereo_smiles` for why double-bond stereo is dropped)
-    and is meant to be compared to ``tetrahedral_stereo_smiles(isomeric_smiles)``.
+    :func:`tetrahedral_stereo_smiles` for why double-bond stereo is dropped),
+    restricted to the centres ``isomeric_smiles`` assigns, and is meant to be
+    compared to ``tetrahedral_stereo_smiles(isomeric_smiles)``.
 
     The molecular graph comes from ``isomeric_smiles`` (with explicit hydrogens
     added) and only the *stereochemistry* is re-perceived from the coordinates.
@@ -108,6 +109,15 @@ def stereochemistry_from_frame(isomeric_smiles: str, atoms: Atoms) -> str | None
         Chem.AssignStereochemistryFrom3D(molecule)
     except (ValueError, RuntimeError):
         return None
+    # Only centres the SMILES actually assigns are compared: a source that
+    # leaves a centre unspecified is not contradicted by whichever
+    # configuration the embedding happened to pick for it. Heavy-atom indices
+    # are shared between ``template`` and its ``AddHs`` copy.
+    for template_atom in template.GetAtoms():
+        if template_atom.GetChiralTag() == Chem.ChiralType.CHI_UNSPECIFIED:
+            molecule.GetAtomWithIdx(template_atom.GetIdx()).SetChiralTag(
+                Chem.ChiralType.CHI_UNSPECIFIED
+            )
     return _tetrahedral_only_canonical_smiles(molecule)
 
 
