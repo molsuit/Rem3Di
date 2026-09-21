@@ -108,7 +108,13 @@ def stereochemistry_from_frame(isomeric_smiles: str, atoms: Atoms) -> str | None
         return None
 
 
-def _has_assigned_tetrahedral_centre(isomeric_smiles: str) -> bool:
+def has_assigned_tetrahedral_centre(isomeric_smiles: str) -> bool:
+    """Whether ``isomeric_smiles`` declares at least one assigned tetrahedral centre.
+
+    Invariant 9 only applies to those rows, so both the validator and the
+    ``generate_conformers`` prepare task gate on this before comparing a frame's
+    perceived stereochemistry to the SMILES column.
+    """
     molecule = Chem.MolFromSmiles(isomeric_smiles)
     if molecule is None:
         return False
@@ -305,7 +311,7 @@ def _check_geometry_matches_smiles(bundle: Bundle) -> list[str]:
     for row_index in range(n_rows):
         isomeric_smiles = str(bundle.table["isomeric_smiles"].iloc[row_index])
         if isomeric_smiles not in has_centre:
-            has_centre[isomeric_smiles] = _has_assigned_tetrahedral_centre(
+            has_centre[isomeric_smiles] = has_assigned_tetrahedral_centre(
                 isomeric_smiles
             )
             try:
@@ -329,10 +335,16 @@ def _check_geometry_matches_smiles(bundle: Bundle) -> list[str]:
     return []
 
 
-def _geometry_limit_violations(
+def geometry_limit_violations(
     atoms: Atoms, limits: GeometryLimits, allowed_symbols: set[str] | None
 ) -> list[str]:
-    """Which of the invariant-10 guards one frame violates."""
+    """Which of the invariant-10 guards one frame violates.
+
+    Returns the guard names (``max_atoms``, ``element_gate``, ...), which double
+    as ``counts.dropped`` keys: the ``generate_conformers`` prepare task calls
+    this to drop a violating frame *before* ``write_bundle`` would refuse the
+    whole bundle for it.
+    """
     violations: list[str] = []
     if limits.max_atoms is not None and len(atoms) > limits.max_atoms:
         violations.append("max_atoms")
@@ -381,7 +393,7 @@ def _check_geometry_limits(bundle: Bundle, limits: GeometryLimits) -> list[str]:
     }
     offenders: dict[str, list[int]] = {name: [] for name in reasons}
     for index, atoms in enumerate(bundle.structures):
-        for violation in _geometry_limit_violations(atoms, limits, allowed_symbols):
+        for violation in geometry_limit_violations(atoms, limits, allowed_symbols):
             offenders[violation].append(index)
     return [
         f"10: {reasons[name]} in {_summarise_rows(rows)}"

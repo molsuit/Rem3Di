@@ -1,10 +1,24 @@
+"""The batch dataclasses passed between generators, pipeline stages and the writer.
+
+Deliberately torch-free at import time: ``torch`` appears only in
+:class:`DataBatch`'s annotations, which ``from __future__ import annotations``
+leaves as strings. ``remedi-data`` preparers import
+``generators.utils`` (which builds :class:`SmilesData`) in the core install,
+where torch is not necessarily present.
+"""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
-import torch
 from ase import Atoms
 
 from remedi.data_handling.dataset_creation.structure_ids import StructureID
+
+if TYPE_CHECKING:  # pragma: no cover - annotations only
+    import torch
 
 
 @dataclass(slots=True)

@@ -1,0 +1,49 @@
+# Prepare-manifest template (BENCHMARK_DATA_FORMAT.md §3).
+#
+# Copy, fill the <PLACEHOLDER> paths, then:
+#
+#   uv run python scripts/dataset_creation/prepare_benchmarks.py \
+#       --config configs/dataset_creation/prepare_benchmarks_local.yaml
+#
+# Each task is expanded to one task per dataset id, so one dataset failing is
+# recorded in `status.yaml` and the rest of the panel still finishes.
+
+# Where the `smiles`-stage bundles written by the remedi-data preparers live.
+smiles_bundle_root: <PLACEHOLDER>/remedi-data/bundles
+# Where the published `conformers`-stage bundles are written.
+benchmark_root: <PLACEHOLDER>/datasets/benchmark_bundles
+# Where manifest.yaml, status.yaml, the per-task summaries and (step 4) the
+# zarrs are written.
+output_root: <PLACEHOLDER>/datasets/benchmarks
+
+seed: 0
+# False fails the run on the first failing dataset instead of recording it.
+keep_going: true
+
+tasks:
+  - kind: generate_conformers
+    # null (or omitted) means every bundle under `smiles_bundle_root`.
+    dataset_ids: null
+    # Settled decision §9.7: one conformer per stereoisomer, as today.
+    n_conformers: 1
+    # ETKDG retry budget per conformer (RDKit `params.maxIterations`). 200
+    # covers essentially anything ETKDG can embed; raising it inflates wall
+    # time on pathological molecules without improving yield.
+    max_embed_attempts: 200
+    max_mmff_steps: 100
+    # MMFF94 non-bonded cutoff in Angstrom; 100.0 is RDKit's default and
+    # already includes every atom pair for drug-sized molecules.
+    mmff_non_bonded_threshold: 100.0
+    # null means os.cpu_count(); 1 runs in-process without a worker pool.
+    n_workers: null
+    # False skips a dataset whose conformers-stage bundle already exists.
+    overwrite: false
+    # Invariant 10: recorded in provenance.yaml, enforced by write_bundle, and
+    # applied per frame here so a violator is dropped instead of sinking the
+    # dataset.
+    geometry_limits:
+      max_atoms: 100
+      elements: mace_off
+      reject_zero_hydrogen: true
+      min_hydrogen_heavy_ratio: 0.0
+      min_interatomic_distance: 0.5

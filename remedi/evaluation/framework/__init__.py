@@ -17,8 +17,9 @@ from remedi.evaluation.framework.resources import (
     ResourceCache,
     ResourceSpec,
 )
-from remedi.evaluation.framework.runner import RunReport, run_manifest
-from remedi.evaluation.framework.task import EvalTask, TaskStatus
+from remedi.evaluation.framework.runner import run_manifest
+from remedi.evaluation.framework.task import RunnableTask, TaskStatus
+from remedi.evaluation.framework.task_runner import RunReport, run_tasks
 from remedi.evaluation.framework.tasks import (
     BenchmarkPanelConfig,
     DescriptorAnalysisConfig,
@@ -31,16 +32,17 @@ __all__ = [
     "EmbeddingSpec",
     "EvalContext",
     "EvalManifest",
-    "EvalTask",
     "FingerprintSpec",
     "IndexSpec",
     "ResourceCache",
     "ResourceSpec",
     "RetrievalConfig",
     "RunReport",
+    "RunnableTask",
     "TaskConfig",
     "TaskStatus",
     "register_plotter",
     "render",
     "run_manifest",
+    "run_tasks",
 ]

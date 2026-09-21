@@ -66,6 +66,8 @@ from remedi.data_handling.bundle.stage_transition import (
 )
 from remedi.data_handling.bundle.validate import (
     count_stereoisomer_straddling_constitutions,
+    geometry_limit_violations,
+    has_assigned_tetrahedral_centre,
     minimum_interatomic_distance,
     stereochemistry_from_frame,
     validate_bundle,
@@ -111,6 +113,8 @@ __all__ = [
     "count_stereoisomer_straddling_constitutions",
     "discover_bundles",
     "expand_to_conformers",
+    "geometry_limit_violations",
+    "has_assigned_tetrahedral_centre",
     "minimum_interatomic_distance",
     "mirror_isomeric_smiles",
     "normalize_table",
