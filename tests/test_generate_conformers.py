@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 import yaml
 from rdkit import Chem
+from rdkit.Chem import AllChem
 
 from remedi.data_handling.bundle import (
     CONFORMER_EMBEDDING_FAILED,
@@ -376,3 +377,73 @@ def test_frames_outside_the_geometry_limits_are_dropped(tmp_path: Path) -> None:
     assert all(len(atoms) <= 10 for atoms in bundle.structures)
     assert bundle.provenance.counts.dropped["max_atoms"] > 0
     assert len(bundle.table) < 6
+
+
+# ------------------------------------------- RDKit raising from inside itself
+
+
+#: What RDKit's BFGS line search throws on a pathological molecule. It is a
+#: bare RuntimeError out of the C++ layer, not an RDKit-specific exception
+#: type, and it cost AMES, LD50_Zhu and Solubility_AqSolDB their whole
+#: generate_conformers task on the first full TDC panel run.
+INVARIANT_VIOLATION = (
+    "Invariant Violation\n\tbad direction in linearSearch\n\t"
+    "Violation occurred on line 100 in file Numerics/Optimizer/BFGSOpt.h"
+)
+
+
+def raise_invariant_violation(*args, **kwargs):
+    raise RuntimeError(INVARIANT_VIOLATION)
+
+
+def test_a_raising_mmff_becomes_a_failure_record_not_an_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(AllChem, "MMFFOptimizeMoleculeConfs", raise_invariant_violation)
+
+    result = embed_one_smiles("CCO", 1, 200, 100)
+
+    assert result.positions is None
+    assert result.atomic_numbers is None
+    assert result.timing.status == "mmff_failed"
+    assert "bad direction in linearSearch" in (result.timing.error_msg or "")
+    # The phase timing is still recorded, which is what the jsonl is for.
+    assert result.timing.t_embed_s > 0.0
+
+
+def test_a_raising_embedding_becomes_a_failure_record_not_an_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(AllChem, "EmbedMultipleConfs", raise_invariant_violation)
+
+    result = embed_one_smiles("CCO", 1, 200, 100)
+
+    assert result.timing.status == "embed_failed"
+    assert "bad direction in linearSearch" in (result.timing.error_msg or "")
+
+
+def test_one_raising_molecule_does_not_sink_the_dataset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The point of the guard: the other five stereoisomers still get written."""
+    real_mmff = AllChem.MMFFOptimizeMoleculeConfs
+    calls = {"n": 0}
+
+    def raise_on_the_first_molecule(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError(INVARIANT_VIOLATION)
+        return real_mmff(*args, **kwargs)
+
+    monkeypatch.setattr(
+        AllChem, "MMFFOptimizeMoleculeConfs", raise_on_the_first_molecule
+    )
+    manifest = build_manifest(tmp_path)
+
+    report = prepare(manifest)
+
+    assert report.n_failed == 0
+    bundle = read_bundle(manifest.benchmark_root / DATASET_ID)
+    assert len(bundle.table) == 5
+    # The raise is accounted for like any other yield loss.
+    assert bundle.provenance.counts.dropped[CONFORMER_EMBEDDING_FAILED] == 1

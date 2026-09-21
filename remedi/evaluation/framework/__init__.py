@@ -12,7 +12,6 @@ from remedi.evaluation.framework.context import EvalContext
 from remedi.evaluation.framework.plotting import register_plotter, render
 from remedi.evaluation.framework.resources import (
     EmbeddingSpec,
-    FingerprintSpec,
     IndexSpec,
     ResourceCache,
     ResourceSpec,
@@ -32,7 +31,6 @@ __all__ = [
     "EmbeddingSpec",
     "EvalContext",
     "EvalManifest",
-    "FingerprintSpec",
     "IndexSpec",
     "ResourceCache",
     "ResourceSpec",

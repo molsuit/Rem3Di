@@ -56,21 +56,34 @@ class PrepareManifest(BaseModel):
             benchmark_root=Path(self.benchmark_root),
         )
 
-    def expand_tasks(self) -> list[PrepareTask]:
-        """One task per resolved dataset id, so failures isolate per dataset.
+    def expand_task(self, task: PrepareTask) -> list[PrepareTask]:
+        """One copy of ``task`` per dataset id it covers, resolved *now*.
 
         A task with ``dataset_ids: null`` covers every bundle under the root it
         reads (``smiles_bundle_root`` for ``generate_conformers``,
         ``benchmark_root`` for ``ingest_benchmark`` / ``verify_benchmark``);
         expanding it into one copy per id is what gives ``status.yaml`` a row
         per dataset instead of one row for the panel.
+
+        **When** this runs matters. ``generate_conformers`` *creates* the
+        bundles that the later two kinds discover, so resolving every task's
+        ids up front sees only the conformers bundles that happened to exist
+        before the run started. :func:`remedi.data_handling.prepare.runner.prepare`
+        therefore calls this once per manifest task, immediately before that
+        group runs.
         """
-        roots = self.bundle_roots()
-        expanded: list[PrepareTask] = []
-        for task in self.tasks:
-            for dataset_id in task.resolve_dataset_ids(roots):
-                expanded.append(task.model_copy(update={"dataset_ids": [dataset_id]}))
-        return expanded
+        return [
+            task.model_copy(update={"dataset_ids": [dataset_id]})
+            for dataset_id in task.resolve_dataset_ids(self.bundle_roots())
+        ]
+
+    def expand_tasks(self) -> list[PrepareTask]:
+        """Every manifest task expanded per dataset, resolved against *today's* disk.
+
+        A preview of the run's shape. The runner does **not** use this — see
+        :meth:`expand_task` for why the resolution has to be deferred.
+        """
+        return [expanded for task in self.tasks for expanded in self.expand_task(task)]
 
     def resolved_dataset_ids(self) -> list[str]:
         """Every dataset id under ``smiles_bundle_root``, in discovery order."""

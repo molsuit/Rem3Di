@@ -393,6 +393,56 @@ def discover_benchmark_zarrs(root: Path) -> list[tuple[Path, BenchmarkSpec]]:
     return discovered
 
 
+def read_provenance(directory: Path) -> BundleProvenance:
+    """Read ``provenance.yaml`` alone, without touching the table or geometry.
+
+    Raises:
+        FileNotFoundError: if the directory holds no ``provenance.yaml``.
+    """
+    directory = Path(directory)
+    provenance_path = directory / PROVENANCE_FILENAME
+    if not provenance_path.is_file():
+        raise FileNotFoundError(f"{directory} has no {PROVENANCE_FILENAME}")
+    return BundleProvenance.model_validate(yaml.safe_load(provenance_path.read_text()))
+
+
+def structures_identity(directory: Path) -> str:
+    """The hash identifying the *data* anything derived from this bundle saw (§7c).
+
+    The geometry of record is ``structures.extxyz``, so its ``file_sha256`` is
+    the identity whenever the bundle has one; a ``smiles``-stage bundle has no
+    frames, and there the table's ``content_sha256`` is the whole of its
+    content. This is what a descriptor cache key must carry: two ingests of one
+    ``dataset_id`` that dropped a different number of rows are *different data*
+    under the same name, and a cache keyed on the name alone silently serves
+    the wrong matrix (observed as a row-count mismatch at scoring time).
+
+    Args:
+        directory: a bundle directory, or a zarr directory that
+            ``ingest_benchmark`` copied the bundle files into.
+
+    Raises:
+        FileNotFoundError: if there is no ``provenance.yaml`` to read. A zarr
+            that was not built from a bundle has no such identity; point the
+            descriptor cache at bundle-backed zarrs, or re-ingest.
+        BundleValidationError: if the provenance records no outputs at all.
+    """
+    directory = Path(directory)
+    provenance = read_provenance(directory)
+    outputs = provenance.outputs
+    if outputs is None:
+        raise BundleValidationError(
+            directory,
+            [
+                f"{PROVENANCE_FILENAME} records no outputs, so the data this "
+                "directory holds has no content hash to key a cache on"
+            ],
+        )
+    if outputs.structures_extxyz is not None:
+        return outputs.structures_extxyz.file_sha256
+    return outputs.table_parquet.content_sha256
+
+
 def discover_bundles(root: Path) -> list[Path]:
     """Every bundle directory under ``root``, sorted. A bundle has a benchmark.yaml."""
     root = Path(root)

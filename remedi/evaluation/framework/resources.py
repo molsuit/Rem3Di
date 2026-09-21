@@ -24,6 +24,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
+from remedi.data_handling.bundle import structures_identity
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.evaluation.benchmark.descriptors import (
     DescriptorConfig,
@@ -75,20 +76,34 @@ class ResourceCache:
 
 @dataclass
 class EmbeddingSpec:
-    """An ``(N, D)`` descriptor matrix over ``dataset``, disk-cached by name.
+    """An ``(N, D)`` descriptor matrix over ``dataset``, disk-cached by content.
 
-    ``dataset`` is the opened :class:`MoleculeDataset`; ``dataset_id`` and the
-    descriptor's ``name`` form the on-disk cache key (reusing
-    :func:`compute_and_cache`'s ``{dataset_id}__{name}.npz`` convention).
+    ``dataset`` is the opened :class:`MoleculeDataset`. The in-memory key is
+    the on-disk one: ``dataset_id``, the descriptor's ``name``, the hash of the
+    *data* and the hash of the *model* (§7c, see
+    :func:`remedi.evaluation.benchmark.descriptors.descriptor_cache_path`). The
+    name alone is not an identity — two ingests of one endpoint, or two
+    checkpoints under one label, would otherwise share a matrix.
     """
 
     dataset_id: str
     descriptor: DescriptorConfig
     dataset: MoleculeDataset
     cache_dir: Path
+    # Memoised so that repeated ``cache.get(spec)`` calls do not re-read the
+    # provenance yaml (and, for a REM3DI model, re-hash the checkpoint).
+    _memoised_key: str | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def key(self) -> str:
-        return f"embedding::{self.dataset_id}::{self.descriptor.name}"
+        if self._memoised_key is None:
+            self._memoised_key = (
+                f"embedding::{self.dataset_id}::{self.descriptor.name}"
+                f"::{structures_identity(Path(self.dataset.path))[:12]}"
+                f"::{self.descriptor.identity()[:12]}"
+            )
+        return self._memoised_key
 
     def build(self, cache: ResourceCache) -> np.ndarray:
         del cache  # no dependencies
@@ -112,44 +127,6 @@ class IndexSpec:
         index = self.index_config.build()
         index.fit(X)
         return index
-
-
-@dataclass
-class FingerprintSpec:
-    """An ECFP fingerprint matrix over a dataset's SMILES, disk-cached as npz.
-
-    The reference descriptor for the Tanimoto retrieval baseline / any task that
-    needs fingerprints alongside the learned embedding.
-    """
-
-    dataset_id: str
-    dataset: MoleculeDataset
-    cache_dir: Path
-    radius: int = 2
-    n_bits: int = 2048
-    # Extra options forwarded to the molfeat featurizer kind string.
-    kind: str = "ecfp"
-
-    def key(self) -> str:
-        return (
-            f"fingerprint::{self.dataset_id}::{self.kind}{self.n_bits}_r{self.radius}"
-        )
-
-    def _cache_path(self) -> Path:
-        return Path(self.cache_dir) / f"{self.dataset_id}__{self.kind}{self.n_bits}.npz"
-
-    def build(self, cache: ResourceCache) -> np.ndarray:
-        del cache
-        path = self._cache_path()
-        if path.exists():
-            return np.asarray(np.load(path)["X"], dtype=np.float32)
-        from molfeat.trans.fp import FPVecTransformer
-
-        feat = FPVecTransformer(kind=self.kind, length=self.n_bits, radius=self.radius)
-        X = np.asarray(feat(self.dataset.get_smiles_per_structure()), dtype=np.float32)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(path, X=X)
-        return X
 
 
 @dataclass

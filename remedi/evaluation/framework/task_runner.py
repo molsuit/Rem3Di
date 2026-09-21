@@ -62,6 +62,7 @@ def run_tasks(
     *,
     keep_going: bool,
     flush: Callable[[list[TaskStatus]], None] | None = None,
+    first_index: int = 0,
 ) -> list[TaskStatus]:
     """Run each task, serialising artifacts as they are yielded.
 
@@ -77,13 +78,18 @@ def run_tasks(
         out: the run's output root; artifacts serialise relative to it.
         keep_going: False re-raises the first failure after recording it.
         flush: called with the statuses so far after each task.
+        first_index: the number the first task's ``status.yaml`` name counts
+            from. A prepare run calls this once per manifest task, expanding
+            each into its per-dataset tasks only when that group is about to
+            run, so the offset is what keeps the entry names unique and
+            monotonic across groups.
 
     Returns:
         One :class:`TaskStatus` per task that was started, in order.
     """
     statuses: list[TaskStatus] = []
-    for index, task in enumerate(tasks):
-        name = task_status_name(task, index)
+    for offset, task in enumerate(tasks):
+        name = task_status_name(task, first_index + offset)
         logger.info("=== task %s ===", name)
         started = time.monotonic()
         try:

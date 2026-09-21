@@ -300,3 +300,78 @@ def test_keep_going_false_stops_at_the_first_failure_but_keeps_the_status(
     assert [entry.name for entry in status.statuses] == ["0_generate_conformers_broken"]
     assert status.n_failed == 1
     assert status.n_tasks == 2
+
+
+# --------------------------------------------------- lazy, per-group expansion
+
+
+def test_ingest_discovers_the_bundles_generate_conformers_just_wrote(
+    tmp_path: Path,
+) -> None:
+    """The pipeline defect: `dataset_ids: null` must resolve when the group runs.
+
+    Resolving every task's ids up front makes `ingest_benchmark` see the
+    `benchmark_root` as it was *before* the run, so on a fresh panel it finds
+    nothing at all — on the 22-endpoint TDC run that was 22 + 7 + 7 status
+    entries instead of 66.
+    """
+    write_smiles_bundle(tmp_path / "bundles", dataset_id="fresh")
+    manifest = PrepareManifest(
+        smiles_bundle_root=tmp_path / "bundles",
+        benchmark_root=tmp_path / "benchmark_bundles",
+        output_root=tmp_path / "prepare_out",
+        tasks=[
+            GenerateConformersConfig(n_workers=1),
+            IngestBenchmarkConfig(),
+            VerifyBenchmarkConfig(),
+        ],
+    )
+    # Nothing to ingest yet, which is exactly what eager expansion would see.
+    assert [task.kind for task in manifest.expand_tasks()] == ["generate_conformers"]
+
+    report = prepare(manifest)
+
+    assert (report.n_tasks, report.n_failed) == (3, 0)
+    assert [entry.name for entry in report.statuses] == [
+        "0_generate_conformers_fresh",
+        "1_ingest_benchmark_fresh",
+        "2_verify_benchmark_fresh",
+    ]
+    assert (manifest.output_root / "fresh" / "dataset_config.yaml").is_file()
+    assert (manifest.output_root / "fresh" / "table.parquet").is_file()
+
+    status = pyd_yaml.parse_yaml_file_as(
+        RunReport, manifest.output_root / "status.yaml"
+    )
+    assert status.n_tasks == 3
+    assert all(entry.ok for entry in status.statuses)
+
+
+def test_status_entry_names_stay_unique_across_groups(tmp_path: Path) -> None:
+    """Each group counts on from the last, so two groups never collide."""
+    for dataset_id in ("alpha", "zeta"):
+        write_conformers_bundle(
+            tmp_path / "benchmark_bundles",
+            dataset_id=dataset_id,
+            tasks=[BenchmarkTask(name="y", task_type=TaskType.regression)],
+            metrics=["RMSE"],
+            targets=np.linspace(0.0, 1.0, 10),
+        )
+    manifest = PrepareManifest(
+        smiles_bundle_root=tmp_path / "bundles",
+        benchmark_root=tmp_path / "benchmark_bundles",
+        output_root=tmp_path / "prepare_out",
+        tasks=[IngestBenchmarkConfig(), VerifyBenchmarkConfig()],
+    )
+
+    report = prepare(manifest)
+
+    names = [entry.name for entry in report.statuses]
+    assert names == [
+        "0_ingest_benchmark_alpha",
+        "1_ingest_benchmark_zeta",
+        "2_verify_benchmark_alpha",
+        "3_verify_benchmark_zeta",
+    ]
+    assert len(set(names)) == len(names)
+    assert report.n_tasks == 4

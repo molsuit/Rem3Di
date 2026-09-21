@@ -19,6 +19,7 @@ are deterministic / pre-trained.
 
 from __future__ import annotations
 
+import hashlib
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
@@ -30,6 +31,7 @@ from ase import Atoms
 from pydantic import BaseModel, Field
 from torch.utils.data import DataLoader, Subset
 
+from remedi.data_handling.bundle import sha256_of_file, structures_identity
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
@@ -265,6 +267,15 @@ class EcfpConfig(BaseModel):
     def build(self) -> EcfpCalculator:
         return EcfpCalculator(fingerprint=self.fingerprint, length=self.length)
 
+    def identity(self) -> str:
+        """sha256 over the config: every knob that changes the matrix (§7c).
+
+        ``name`` is a label the user picks and is free to reuse, so it cannot
+        be the cache key on its own — ``fingerprint`` and ``length`` decide the
+        numbers and both ride in here.
+        """
+        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
+
 
 class RemediConfig(BaseModel):
     descriptor_kind: Literal["remedi"] = "remedi"
@@ -278,6 +289,36 @@ class RemediConfig(BaseModel):
     # checkpoint config (which is absolute and machine-specific). Set this when
     # running a checkpoint on a different machine than it was trained on.
     mace_model_path: Path | None = None
+    # Filled in on first use by :meth:`identity` and then serialised into the
+    # run's manifest.yaml, so a results table records *which* weights produced
+    # it. Set it by hand only to pin an identity deliberately.
+    checkpoint_sha256: str | None = None
+
+    def identity(self) -> str:
+        """sha256 over the checkpoint weights, computed once and memoised (§7c).
+
+        The weights are the descriptor: ``batch_size`` and ``device`` change
+        nothing about the matrix and must not split the cache, while two
+        checkpoints under one ``name`` must never share it.
+
+        Raises:
+            FileNotFoundError: if ``model_dir`` holds no ``.pth`` file.
+        """
+        if self.checkpoint_sha256 is None:
+            self.checkpoint_sha256 = self._hash_checkpoint()
+        return self.checkpoint_sha256
+
+    def _hash_checkpoint(self) -> str:
+        checkpoint_files = sorted(Path(self.model_dir).glob("*.pth"))
+        if not checkpoint_files:
+            raise FileNotFoundError(
+                f"{self.model_dir} holds no .pth checkpoint file, so the "
+                f"descriptor {self.name!r} has no identity to key its cache on"
+            )
+        digest = hashlib.sha256()
+        for path in checkpoint_files:
+            digest.update(f"{path.name}:{sha256_of_file(path)}\n".encode())
+        return digest.hexdigest()
 
     def build(self) -> RemediCalculator:
         return RemediCalculator(
@@ -296,20 +337,52 @@ DescriptorConfig = Annotated[
 # -- Cache helper ------------------------------------------------------------
 
 
+def descriptor_cache_path(
+    config: EcfpConfig | RemediConfig,
+    dataset: MoleculeDataset,
+    cache_dir: Path,
+    dataset_id: str,
+) -> Path:
+    """Where the descriptor matrix for one (dataset, descriptor) pair is cached.
+
+    ``{dataset_id}__{name}__{structures}__{model}.npz`` (§7c). The two hashes
+    are what make the key *correct* rather than merely conventional:
+
+    ``structures``
+        identifies the data — see
+        :func:`remedi.data_handling.bundle.structures_identity`. Keying on
+        ``dataset_id`` alone served a matrix computed on an earlier ingest of
+        the same endpoint, and the row-count mismatch only surfaced as an
+        ``IndexError`` when the split mask was applied.
+    ``model``
+        identifies the descriptor — the checkpoint weights for a REM3DI model,
+        the config itself for a fingerprint — so a renamed or retrained model
+        cannot inherit another one's vectors.
+
+    Twelve hex characters of each is 48 bits per hash; these are collision
+    guards on a directory of at most a few hundred files, not signatures.
+    """
+    return Path(cache_dir) / (
+        f"{dataset_id}__{config.name}"
+        f"__{structures_identity(Path(dataset.path))[:12]}"
+        f"__{config.identity()[:12]}.npz"
+    )
+
+
 def compute_and_cache(
     config: EcfpConfig | RemediConfig,
     dataset: MoleculeDataset,
     cache_dir: Path,
     dataset_id: str,
 ) -> np.ndarray:
-    """Compute the descriptor matrix, caching by ``(dataset_id, config.name)``.
+    """Compute the descriptor matrix, caching it under :func:`descriptor_cache_path`.
 
-    The cache key uses the user-supplied ``config.name``; the user changes it
-    when descriptor params change (or deletes the npz to force recompute).
-    Cache files live at ``{cache_dir}/{dataset_id}__{config.name}.npz``.
+    Raises:
+        FileNotFoundError: if the dataset directory carries no
+            ``provenance.yaml`` to identify its contents by.
     """
     cache_dir = Path(cache_dir)
-    cache_path = cache_dir / f"{dataset_id}__{config.name}.npz"
+    cache_path = descriptor_cache_path(config, dataset, cache_dir, dataset_id)
     if cache_path.exists():
         return np.asarray(np.load(cache_path)["X"])
     X = config.build().calculate(dataset)
