@@ -23,6 +23,7 @@ from remedi.data_handling.bundle import (
     has_assigned_tetrahedral_centre,
     read_bundle,
     stereochemistry_from_frame,
+    tetrahedral_stereo_smiles,
 )
 from remedi.data_handling.dataset_creation.conformer_timing import (
     ConformerTimingRecord,
@@ -168,7 +169,7 @@ def test_generate_conformers_writes_a_valid_conformers_bundle(tmp_path: Path) ->
         perceived = stereochemistry_from_frame(
             str(isomeric_smiles), bundle.structures[row_index]
         )
-        assert perceived == _canonical(str(isomeric_smiles))
+        assert perceived == tetrahedral_stereo_smiles(str(isomeric_smiles))
 
     record = bundle.provenance.conformers
     assert record is not None
@@ -181,7 +182,7 @@ def test_generate_conformers_writes_a_valid_conformers_bundle(tmp_path: Path) ->
     assert record.parent_bundle_content_sha256 == content_hash_of_table(parent.table)
 
     # geometry_limits, notices, source and preparer all reach the far side.
-    assert bundle.provenance.geometry_limits.max_atoms == 100
+    assert bundle.provenance.geometry_limits.max_atoms is None
     assert bundle.provenance.geometry_limits.min_interatomic_distance == 0.5
     assert bundle.provenance.notices == parent.provenance.notices
     assert bundle.provenance.source == parent.provenance.source

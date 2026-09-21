@@ -70,6 +70,7 @@ from remedi.data_handling.bundle.validate import (
     has_assigned_tetrahedral_centre,
     minimum_interatomic_distance,
     stereochemistry_from_frame,
+    tetrahedral_stereo_smiles,
     validate_bundle,
 )
 
@@ -122,6 +123,7 @@ __all__ = [
     "read_table",
     "sha256_of_file",
     "stereochemistry_from_frame",
+    "tetrahedral_stereo_smiles",
     "validate_bundle",
     "write_bundle",
 ]

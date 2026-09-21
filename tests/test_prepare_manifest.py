@@ -51,7 +51,7 @@ def test_manifest_round_trips_through_yaml(tmp_path: Path) -> None:
     (task,) = reloaded.tasks
     assert isinstance(task, GenerateConformersConfig)
     assert task.kind == "generate_conformers"
-    assert task.geometry_limits.max_atoms == 100
+    assert task.geometry_limits.max_atoms is None
     assert task.geometry_limits.min_interatomic_distance == 0.5
     assert task.geometry_limits.allowed_element_symbols() is not None
 

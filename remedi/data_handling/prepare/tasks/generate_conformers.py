@@ -50,7 +50,6 @@ from remedi.data_handling.bundle import (
     EtkdgParameters,
     GeometryLimits,
     MmffParameters,
-    canonical_smiles_pair,
     content_hash_of_table,
     discover_bundles,
     expand_to_conformers,
@@ -58,6 +57,7 @@ from remedi.data_handling.bundle import (
     has_assigned_tetrahedral_centre,
     read_bundle,
     stereochemistry_from_frame,
+    tetrahedral_stereo_smiles,
     write_bundle,
 )
 from remedi.data_handling.bundle.bundle import SPEC_FILENAME
@@ -82,8 +82,12 @@ TIMINGS_FILENAME = "conformer_timings.jsonl"
 #: The guards today's benchmark builds enforce (``configs/dataset_creation/
 #: benchmarks_template.yaml``: ``max_atoms: 100``, ``element_set: mace_off``)
 #: plus the two geometry guards ``FilterAtomsStage`` adds.
+# No total-atom cap: the smiles-stage filter already bounds *heavy* atoms
+# (recorded in provenance ``smiles_filter``), and a 100-heavy-atom molecule
+# carries up to ~150 atoms once hydrogens are added. Today's benchmark builds
+# apply no atom limit on the geometry side either.
 DEFAULT_GEOMETRY_LIMITS = GeometryLimits(
-    max_atoms=100,
+    max_atoms=None,
     elements=ElementSet.mace_off,
     reject_zero_hydrogen=True,
     min_hydrogen_heavy_ratio=0.0,
@@ -144,7 +148,7 @@ def _keep_frame(
     isomeric_smiles: str,
     atoms: Atoms,
     *,
-    canonical_isomeric: str,
+    canonical_isomeric: str | None,
     check_stereochemistry: bool,
     limits: GeometryLimits,
     allowed_symbols: set[str] | None,
@@ -152,7 +156,7 @@ def _keep_frame(
     """``None`` to keep the frame, else the ``counts.dropped`` key to drop it under."""
     if check_stereochemistry:
         perceived = stereochemistry_from_frame(isomeric_smiles, atoms)
-        if perceived != canonical_isomeric:
+        if perceived is None or perceived != canonical_isomeric:
             return STEREO_MISMATCH_AFTER_EMBEDDING
     violations = geometry_limit_violations(atoms, limits, allowed_symbols)
     return violations[0] if violations else None
@@ -375,10 +379,7 @@ class GenerateConformersConfig(BaseModel):
         outcome: _EmbeddingOutcome,
         allowed_symbols: set[str] | None,
     ) -> list[Atoms]:
-        try:
-            canonical_isomeric = canonical_smiles_pair(isomeric_smiles).isomeric
-        except ValueError:
-            canonical_isomeric = isomeric_smiles
+        canonical_isomeric = tetrahedral_stereo_smiles(isomeric_smiles)
         check_stereochemistry = has_assigned_tetrahedral_centre(isomeric_smiles)
         kept: list[Atoms] = []
         for atoms in frames:

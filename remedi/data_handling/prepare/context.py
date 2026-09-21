@@ -24,6 +24,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+@dataclass(frozen=True)
+class BundleRoots:
+    """The two bundle roots a per-dataset prepare task may discover ids from.
+
+    ``generate_conformers`` discovers under ``smiles_bundle_root``;
+    ``ingest_benchmark`` and ``verify_benchmark`` under ``benchmark_root``.
+    Passing both keeps :meth:`PrepareManifest.expand_tasks` from having to know
+    which task reads which root.
+    """
+
+    smiles_bundle_root: Path
+    benchmark_root: Path
+
+
 @dataclass
 class PrepareContext:
     """Roots and seed for one prepare run."""
@@ -32,6 +46,13 @@ class PrepareContext:
     benchmark_root: Path
     output_root: Path
     seed: int = 0
+
+    def roots(self) -> BundleRoots:
+        """The two bundle roots, for a task resolving its dataset ids."""
+        return BundleRoots(
+            smiles_bundle_root=self.smiles_bundle_root,
+            benchmark_root=self.benchmark_root,
+        )
 
     def task_dir(self, name: str) -> Path:
         """Create + return ``output_root/<name>`` for a task's artifacts."""

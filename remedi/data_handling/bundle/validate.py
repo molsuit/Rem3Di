@@ -15,7 +15,6 @@ import pandas as pd
 from ase import Atoms
 from rdkit import Chem
 
-from remedi.data_handling.bundle.identity import canonical_smiles_pair
 from remedi.data_handling.bundle.provenance import GeometryLimits
 from remedi.data_handling.bundle.spec import (
     FIXED_COLUMNS,
@@ -77,7 +76,11 @@ def count_stereoisomer_straddling_constitutions(
 
 
 def stereochemistry_from_frame(isomeric_smiles: str, atoms: Atoms) -> str | None:
-    """Canonical isomeric SMILES perceived from ``atoms`` for invariant 9.
+    """Tetrahedral stereo perceived from ``atoms`` for invariant 9.
+
+    The result is a canonical SMILES with tetrahedral centres only (see
+    :func:`tetrahedral_stereo_smiles` for why double-bond stereo is dropped)
+    and is meant to be compared to ``tetrahedral_stereo_smiles(isomeric_smiles)``.
 
     The molecular graph comes from ``isomeric_smiles`` (with explicit hydrogens
     added) and only the *stereochemistry* is re-perceived from the coordinates.
@@ -103,9 +106,34 @@ def stereochemistry_from_frame(isomeric_smiles: str, atoms: Atoms) -> str | None
     molecule.AddConformer(conformer, assignId=True)
     try:
         Chem.AssignStereochemistryFrom3D(molecule)
-        return Chem.MolToSmiles(Chem.RemoveHs(molecule))
     except (ValueError, RuntimeError):
         return None
+    return _tetrahedral_only_canonical_smiles(molecule)
+
+
+def tetrahedral_stereo_smiles(isomeric_smiles: str) -> str | None:
+    """Canonical SMILES of ``isomeric_smiles`` keeping tetrahedral stereo only.
+
+    This is the reference that :func:`stereochemistry_from_frame` is compared
+    against. Double-bond and imine geometry is deliberately dropped from both
+    sides: a source SMILES usually leaves such bonds unspecified, while
+    perceiving them from a 3D frame always yields E or Z, which would make a
+    correct frame look like a mismatch. Returns ``None`` for an unparsable
+    SMILES.
+    """
+    molecule = Chem.MolFromSmiles(isomeric_smiles)
+    if molecule is None:
+        return None
+    return _tetrahedral_only_canonical_smiles(molecule)
+
+
+def _tetrahedral_only_canonical_smiles(molecule: Chem.Mol) -> str:
+    """Clear every double-bond stereo mark, then canonicalise without explicit H."""
+    stripped = Chem.RWMol(molecule)
+    for bond in stripped.GetBonds():
+        bond.SetStereo(Chem.BondStereo.STEREONONE)
+        bond.SetBondDir(Chem.BondDir.NONE)
+    return Chem.MolToSmiles(Chem.RemoveHs(stripped.GetMol()))
 
 
 def has_assigned_tetrahedral_centre(isomeric_smiles: str) -> bool:
@@ -306,7 +334,7 @@ def _check_geometry_matches_smiles(bundle: Bundle) -> list[str]:
         return []
     n_rows = min(len(bundle.structures), len(bundle.table))
     has_centre: dict[str, bool] = {}
-    canonical: dict[str, str] = {}
+    reference: dict[str, str | None] = {}
     mismatched: list[int] = []
     for row_index in range(n_rows):
         isomeric_smiles = str(bundle.table["isomeric_smiles"].iloc[row_index])
@@ -314,18 +342,13 @@ def _check_geometry_matches_smiles(bundle: Bundle) -> list[str]:
             has_centre[isomeric_smiles] = has_assigned_tetrahedral_centre(
                 isomeric_smiles
             )
-            try:
-                canonical[isomeric_smiles] = canonical_smiles_pair(
-                    isomeric_smiles
-                ).isomeric
-            except ValueError:
-                canonical[isomeric_smiles] = isomeric_smiles
+            reference[isomeric_smiles] = tetrahedral_stereo_smiles(isomeric_smiles)
         if not has_centre[isomeric_smiles]:
             continue
         perceived = stereochemistry_from_frame(
             isomeric_smiles, bundle.structures[row_index]
         )
-        if perceived != canonical[isomeric_smiles]:
+        if perceived is None or perceived != reference[isomeric_smiles]:
             mismatched.append(row_index)
     if mismatched:
         return [

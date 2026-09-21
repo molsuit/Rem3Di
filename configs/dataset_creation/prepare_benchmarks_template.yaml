@@ -42,7 +42,9 @@ tasks:
     # applied per frame here so a violator is dropped instead of sinking the
     # dataset.
     geometry_limits:
-      max_atoms: 100
+      # null: the smiles-stage filter already bounds heavy atoms at 100, and
+      # hydrogens push the total well past that.
+      max_atoms: null
       elements: mace_off
       reject_zero_hydrogen: true
       min_hydrogen_heavy_ratio: 0.0

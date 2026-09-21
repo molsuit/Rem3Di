@@ -99,6 +99,14 @@ def embed_one_smiles(
 
     t0 = perf_counter()
     ids = AllChem.EmbedMultipleConfs(mol, numConfs=int(n_confs), params=params)
+    used_random_coordinates = False
+    if not ids:
+        # Bridged ring systems, quaternary centres and macrocycles routinely
+        # defeat the distance-geometry start; random initial coordinates are
+        # RDKit's documented fallback and recover most of them.
+        params.useRandomCoords = True
+        ids = AllChem.EmbedMultipleConfs(mol, numConfs=int(n_confs), params=params)
+        used_random_coordinates = True
     t_embed_s = perf_counter() - t0
 
     if not ids:
@@ -145,6 +153,7 @@ def embed_one_smiles(
             t_embed_s=t_embed_s,
             t_mmff_s=t_mmff_s,
             status="ok",
+            used_random_coordinates=used_random_coordinates,
         ),
     )
 

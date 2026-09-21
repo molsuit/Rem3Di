@@ -36,6 +36,9 @@ class ConformerTimingRecord(BaseModel):
     t_mmff_s: float
     status: ConformerTimingStatus
     error_msg: str | None = None
+    # True when the plain ETKDG start produced nothing and the conformer came
+    # from the random-initial-coordinates retry.
+    used_random_coordinates: bool = False
 
 
 @dataclass
