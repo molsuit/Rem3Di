@@ -29,7 +29,7 @@ from ase.data.colors import jmol_colors
 from datashader.utils import export_image
 
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.evaluation.descriptor_analysis.tmqm_clustering_utils import (
+from remedi.latent_evaluation.tmqm_clustering_utils import (
     get_metal_center_type,
 )
 

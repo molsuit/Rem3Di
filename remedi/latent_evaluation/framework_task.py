@@ -18,15 +18,15 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.evaluation.descriptor_analysis import (
+from remedi.evaluation.framework.context import EvalContext
+from remedi.evaluation.framework.resources import EmbeddingSpec
+from remedi.evaluation.results import EvalResult
+from remedi.latent_evaluation import (
     DescriptorAnalysisContext,
     DescriptorAnalysisTask,
     DescriptorNormalizationConfig,
     ProjectionConfig,
 )
-from remedi.evaluation.framework.context import EvalContext
-from remedi.evaluation.framework.resources import EmbeddingSpec
-from remedi.evaluation.results import EvalResult
 
 logger = logging.getLogger(__name__)
 

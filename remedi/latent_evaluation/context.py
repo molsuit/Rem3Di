@@ -9,7 +9,7 @@ import torch
 from pydantic import BaseModel, Field
 
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.evaluation.descriptor_analysis.clustering import (
+from remedi.latent_evaluation.clustering import (
     PCACalculator,
     UMAPCalculator,
 )

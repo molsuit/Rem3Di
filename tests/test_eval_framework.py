@@ -23,6 +23,7 @@ from remedi.evaluation.benchmark.learners import LinearLearnerConfig
 from remedi.evaluation.framework import (
     BenchmarkPanelConfig,
     EmbeddingSpec,
+    EvalContext,
     EvalManifest,
     ResourceCache,
     register_plotter,
@@ -87,30 +88,33 @@ def test_run_manifest_writes_results_status_and_manifest(tmp_path: Path) -> None
     assert any("results.csv" in a["file_name"] for a in st.artifacts)
 
 
-def _failing_retrieval_task(tmp_path: Path):
-    """A valid union task that raises at run time (dataset path doesn't exist)."""
-    from remedi.evaluation.framework import RetrievalConfig
-    from remedi.evaluation.retrieval.config import (
-        TanimotoSimilarityTaskConfig,
-    )
+def _failing_panel_task(tmp_path: Path) -> BenchmarkPanelConfig:
+    """A valid union task that raises at run time.
 
-    return RetrievalConfig(
-        dataset_path=tmp_path / "does_not_exist",
-        dataset_id="missing",
-        tasks=[TanimotoSimilarityTaskConfig(k=3)],
+    Its eval root holds a directory that *looks* like an ingested benchmark
+    zarr but whose ``benchmark.yaml`` does not parse, so discovery raises before
+    the panel's own per-dataset fault tolerance can catch anything.
+    """
+    broken_root = tmp_path / "broken_root"
+    broken = broken_root / "broken_dataset"
+    broken.mkdir(parents=True, exist_ok=True)
+    (broken / "benchmark.yaml").write_text("format_version: 99\n")
+    (broken / "dataset_config.yaml").write_text("{}\n")
+    return BenchmarkPanelConfig(
+        eval_root=broken_root, learners=[LinearLearnerConfig(ridge_alpha=1.0)]
     )
 
 
 def test_keep_going_records_failed_task_but_finishes(tmp_path: Path) -> None:
     manifest = _manifest(tmp_path)
-    manifest.tasks.append(_failing_retrieval_task(tmp_path))
+    manifest.tasks.append(_failing_panel_task(tmp_path))
     report = run_manifest(manifest)  # must not raise
 
     assert report.n_failed == 1
-    by_kind = {s.kind: s for s in report.statuses}
-    assert by_kind["benchmark_panel"].ok
-    assert not by_kind["retrieval"].ok
-    assert by_kind["retrieval"].error and by_kind["retrieval"].traceback
+    healthy, broken = report.statuses
+    assert healthy.ok and healthy.kind == "benchmark_panel"
+    assert not broken.ok
+    assert broken.error and broken.traceback
     # The healthy task's artifacts still landed.
     assert (manifest.output_root / "benchmark" / "results.csv").exists()
 
@@ -118,7 +122,7 @@ def test_keep_going_records_failed_task_but_finishes(tmp_path: Path) -> None:
 def test_fail_fast_raises(tmp_path: Path) -> None:
     manifest = _manifest(tmp_path)
     manifest.keep_going = False
-    manifest.tasks.append(_failing_retrieval_task(tmp_path))
+    manifest.tasks.append(_failing_panel_task(tmp_path))
     with pytest.raises(Exception):  # noqa: B017 - any error from the failing task
         run_manifest(manifest)
     # status.yaml was still flushed in the finally block.
@@ -172,64 +176,36 @@ def test_plotter_registry_renders_from_loaded_artifact(tmp_path: Path) -> None:
     assert (tmp_path / "plots" / "demo.png").exists()
 
 
-def test_retrieval_task_tanimoto_on_cpu(tmp_path: Path) -> None:
-    """Retrieval task end-to-end on CPU: an ECFP 'model' as the embedding, the
-    Tanimoto sub-task sharing one EmbeddingSpec + IndexSpec. (Nearest-molecule
-    needs a GPU re-embedder, so it is exercised in the GPU smoke, not here.)"""
-    from remedi.evaluation.framework import RetrievalConfig
-    from remedi.evaluation.retrieval.config import (
-        TanimotoSimilarityTaskConfig,
-    )
-
-    eval_root = tmp_path / "datasets"
-    _build_reg_zarr(tmp_path, "corpus", np.linspace(0, 1, _N_ROWS))
-
-    manifest = EvalManifest(
-        model=EcfpConfig(name="ecfp_256", length=256),
-        output_root=tmp_path / "eval_out" / "model_x",
-        tasks=[
-            RetrievalConfig(
-                dataset_path=eval_root / "corpus",
-                dataset_id="corpus",
-                tasks=[
-                    TanimotoSimilarityTaskConfig(
-                        k=3, n_query_sample=5, n_global_pairs=20
-                    )
-                ],
-            )
-        ],
-    )
-    report = run_manifest(manifest)
-    out = manifest.output_root
-    assert report.n_failed == 0
-    assert (out / "retrieval" / "tanimoto_similarity.yaml").exists()
-    assert (out / "retrieval" / "retrieval_report.yaml").exists()
-    assert (out / "retrieval" / "tanimoto_results.csv").exists()
-
-
 def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
-    """Descriptor-analysis task end-to-end on CPU: capacity diagnostic over an
-    ECFP embedding, artifacts re-rooted under descriptor_analysis/."""
-    from remedi.evaluation.descriptor_analysis import CapacityDiagnosticTask
-    from remedi.evaluation.framework import DescriptorAnalysisConfig
+    """The moved descriptor-analysis task still runs on a framework context.
+
+    ``DescriptorAnalysisConfig`` left the ``TaskConfig`` union in step 8 (it now
+    lives in :mod:`remedi.latent_evaluation`), so it is driven here through an
+    explicit :class:`EvalContext` instead of a manifest. Capacity diagnostic
+    over an ECFP embedding, artifacts re-rooted under ``descriptor_analysis/``.
+    """
+    from remedi.latent_evaluation import CapacityDiagnosticTask
+    from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
 
     eval_root = tmp_path / "datasets"
     _build_reg_zarr(tmp_path, "corpus", np.linspace(0, 1, _N_ROWS))
 
-    manifest = EvalManifest(
+    out = tmp_path / "eval_out" / "model_x"
+    out.mkdir(parents=True)
+    ctx = EvalContext(
+        output_root=out,
+        resource_cache_dir=tmp_path / "cache",
+        resources=ResourceCache(),
         model=EcfpConfig(name="ecfp_256", length=256),
-        output_root=tmp_path / "eval_out" / "model_x",
-        tasks=[
-            DescriptorAnalysisConfig(
-                dataset_path=eval_root / "corpus",
-                dataset_id="corpus",
-                tasks=[CapacityDiagnosticTask()],
-            )
-        ],
     )
-    report = run_manifest(manifest)
-    out = manifest.output_root
-    assert report.n_failed == 0
+    task = DescriptorAnalysisConfig(
+        dataset_path=eval_root / "corpus",
+        dataset_id="corpus",
+        tasks=[CapacityDiagnosticTask()],
+    )
+    for artifact in task.run(ctx):
+        artifact.serialize_to(out)
+
     assert (out / "descriptor_analysis" / "capacity_diagnostic.yaml").exists()
 
 

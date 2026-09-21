@@ -1,12 +1,11 @@
 """Run a unified evaluation manifest (model x tasks) fault-tolerantly.
 
-One manifest describes one model's full evaluation — a benchmark panel, a
-retrieval panel, etc. Tasks share embeddings / indices via the run's
-:class:`ResourceCache`; artifacts are written incrementally and a failing task
-is recorded in ``status.yaml`` rather than sinking the run.
+One manifest describes one model's full evaluation — currently the benchmark
+panel. Tasks share embeddings via the run's :class:`ResourceCache`; artifacts
+are written incrementally and a failing task is recorded in ``status.yaml``
+rather than sinking the run.
 
-This is the single eval entrypoint — it superseded the former separate
-benchmark / retrieval runner scripts.
+This is the single eval entrypoint.
 
 Usage::
 

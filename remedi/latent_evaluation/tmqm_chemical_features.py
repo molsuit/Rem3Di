@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from pymatgen.core import Molecule
 from pymatgen.core.local_env import MinimumDistanceNN
 
-from remedi.evaluation.descriptor_analysis.tmqm_clustering_utils import (
+from remedi.latent_evaluation.tmqm_clustering_utils import (
     TM_numbers,
 )
 

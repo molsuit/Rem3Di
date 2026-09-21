@@ -260,6 +260,8 @@ class LightGBMLearner(Learner):
         num_leaves: int = 31,
         min_child_samples: int = 20,
         subsample: float = 0.9,
+        # LightGBM ignores `subsample` entirely unless `subsample_freq > 0`.
+        subsample_freq: int = 1,
         colsample_bytree: float = 0.9,
         early_stopping_rounds: int = 50,
     ) -> None:
@@ -269,6 +271,7 @@ class LightGBMLearner(Learner):
             num_leaves=num_leaves,
             min_child_samples=min_child_samples,
             subsample=subsample,
+            subsample_freq=subsample_freq,
             colsample_bytree=colsample_bytree,
         )
         self.early_stopping_rounds = early_stopping_rounds
@@ -736,6 +739,8 @@ class LightGBMLearnerConfig(BaseModel):
     num_leaves: int = 31
     min_child_samples: int = 20
     subsample: float = 0.9
+    # LightGBM ignores `subsample` entirely unless `subsample_freq > 0`.
+    subsample_freq: int = 1
     colsample_bytree: float = 0.9
     early_stopping_rounds: int = 50
 
@@ -746,6 +751,7 @@ class LightGBMLearnerConfig(BaseModel):
             num_leaves=self.num_leaves,
             min_child_samples=self.min_child_samples,
             subsample=self.subsample,
+            subsample_freq=self.subsample_freq,
             colsample_bytree=self.colsample_bytree,
             early_stopping_rounds=self.early_stopping_rounds,
         )

@@ -17,7 +17,7 @@
 # Each argument is one *eval config directory* (as produced by
 # generate_pcqm_novicreg_eval_configs.py) holding a unified `manifest.yaml`.
 # Each is pinned to its own GPU via CUDA_VISIBLE_DEVICES and run as a background
-# process executing the manifest (benchmark + retrieval, fault-tolerant) via
+# process executing the manifest (the benchmark panel, fault-tolerant) via
 # run_eval.py; the job waits for all and fails if any single model eval fails.
 #
 # Not meant to be submitted by hand -- use:
@@ -50,7 +50,7 @@ nvidia-smi --list-gpus
 CONFIG_DIRS=("$@")
 
 # Launch one model eval per GPU as a background process running its unified
-# manifest (benchmark + retrieval). The framework runner is itself fault
+# manifest (the benchmark panel). The framework runner is itself fault
 # tolerant — a failing task is recorded in status.yaml and the others still run
 # — and run_eval.py exits non-zero if any task failed, so the node job surfaces
 # it. Resource caches are keyed by model name, so the four concurrent processes

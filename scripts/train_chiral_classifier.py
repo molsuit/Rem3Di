@@ -13,8 +13,8 @@ to on-the-fly MACE) are the only things that make it a classifier. The
 train/valid split is the **stored stratified split** materialized into the zarr
 by the ``ingest_benchmark`` prepare task, which copies it from the ChiralCat
 bundle's ``default_split`` column (``split_config`` in the training yaml is not
-used for this task); the test fold is held out for the eval framework
-(``chiral_report`` / ``benchmark_panel``).
+used for this task); the test fold is held out for the eval framework's
+``benchmark_panel``, whose multiclass cells carry the per-class report.
 
 Best-by-balanced-accuracy checkpoints are written in the REM3DI layout
 (``encoder.pth`` / ``atomic_preprocessor.pth`` / ``geometric_preprocessor.pth``)

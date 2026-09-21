@@ -5,20 +5,29 @@ and returns a float; the caller picks the right one via :func:`metric_for`.
 Multilabel inputs (``ClinTox``/``SIDER``/``Tox21``) come in as ``(N, K)``;
 per-column metrics are averaged with NaN-column skipping so single-class test
 folds don't crash the panel.
+
+:func:`multiclass_report` is the one non-scalar entry: the per-class table and
+confusion matrix that every multiclass cell emits alongside its headline
+number. It replaced the chirality-specific per-class report task (§6), so every
+future multiclass benchmark gets per-class reporting for free.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 import numpy as np
+import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.metrics import (
     average_precision_score,
     balanced_accuracy_score,
+    confusion_matrix,
     f1_score,
     mean_absolute_error,
     mean_squared_error,
+    precision_recall_fscore_support,
     r2_score,
     roc_auc_score,
 )
@@ -121,6 +130,80 @@ def macro_auroc_ovr(y_true: np.ndarray, y_pred: np.ndarray) -> float:
             average="macro",
             labels=np.arange(yp.shape[1]),
         )
+    )
+
+
+@dataclass(frozen=True)
+class MulticlassReport:
+    """The per-class picture a single balanced-accuracy number hides.
+
+    ``per_class`` is one row per class in label order, with the columns
+    ``class_id``, ``class_name``, ``precision``, ``recall``, ``f1`` and
+    ``support``. ``confusion_matrix`` is the integer ``(n_classes, n_classes)``
+    matrix, rows indexed by true class and columns by predicted class, over the
+    fixed label order ``0 … n_classes - 1`` — so a class absent from the test
+    fold keeps its row and column instead of shifting the others.
+    """
+
+    per_class: pd.DataFrame
+    confusion_matrix: np.ndarray
+    class_names: list[str]
+
+
+def class_display_names(
+    n_classes: int, class_names: Sequence[str] | None = None
+) -> list[str]:
+    """Display names for classes ``0 … n_classes - 1``.
+
+    ``class_names`` comes from the bundle's ``BenchmarkTask.class_names``, which
+    the spec already validates to have exactly ``n_classes`` entries; anything
+    else (including ``None``) falls back to ``class_0 … class_{n-1}``.
+    """
+    if class_names is not None and len(class_names) == n_classes:
+        return [str(name) for name in class_names]
+    return [f"class_{index}" for index in range(n_classes)]
+
+
+def multiclass_report(
+    y_true: np.ndarray,
+    probabilities: np.ndarray,
+    n_classes: int,
+    class_names: Sequence[str] | None = None,
+) -> MulticlassReport:
+    """Per-class precision / recall / F1 / support plus the confusion matrix.
+
+    Args:
+        y_true: ``(n,)`` integer class indices of the scored fold.
+        probabilities: ``(n, n_classes)`` class probabilities; the predicted
+            label is the argmax. A 1-D array is taken to be labels already.
+        n_classes: the declared class count, which pins the label order.
+        class_names: display names, one per class; see
+            :func:`class_display_names` for the fallback.
+
+    Returns:
+        The :class:`MulticlassReport` for this fold. Classes with no predicted
+        and no true instance score 0 rather than raising (``zero_division=0``).
+    """
+    true_labels, predicted_labels = _multiclass_labels(y_true, probabilities)
+    labels = np.arange(n_classes)
+    names = class_display_names(n_classes, class_names)
+
+    precision, recall, f1, support = precision_recall_fscore_support(
+        true_labels, predicted_labels, labels=labels, zero_division=0
+    )
+    per_class = pd.DataFrame(
+        {
+            "class_id": labels,
+            "class_name": names,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "support": support,
+        }
+    )
+    matrix = confusion_matrix(true_labels, predicted_labels, labels=labels)
+    return MulticlassReport(
+        per_class=per_class, confusion_matrix=matrix, class_names=names
     )
 
 

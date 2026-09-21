@@ -6,7 +6,7 @@ import pytest
 import torch
 from e3nn.o3 import Irreps
 
-from remedi.evaluation.descriptor_analysis.mace_invariant_stats import (
+from remedi.latent_evaluation.mace_invariant_stats import (
     _CovarianceAccumulator,
     _ReservoirSampler,
     _Welford,

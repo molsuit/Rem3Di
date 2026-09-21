@@ -1,6 +1,6 @@
 """The per-run context handed to every eval task.
 
-Generalises ``descriptor_analysis.DescriptorAnalysisContext``: it owns the
+Generalises ``latent_evaluation.DescriptorAnalysisContext``: it owns the
 :class:`ResourceCache` (so tasks share embeddings / indices), the run's output
 root and seed, and the descriptor model the run evaluates. Tasks pull shared
 inputs via ``ctx.resources.get(spec)`` and write into ``ctx.task_dir(name)``.

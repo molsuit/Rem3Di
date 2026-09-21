@@ -11,7 +11,7 @@ from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from remedi.evaluation.descriptor_analysis import (
+from remedi.latent_evaluation import (
     CapacityDiagnosticTask,
     CoordinationNumberColor,
     DBlockColor,
@@ -23,7 +23,7 @@ from remedi.evaluation.descriptor_analysis import (
     ProjectionConfig,
     ProjectionPlotTask,
 )
-from remedi.evaluation.evaluation_utils import (
+from remedi.latent_evaluation.descriptor_embedding import (
     evaluate_molecular_descriptor_on_dataset,
 )
 from remedi.model.remedi_model import REM3DIModel

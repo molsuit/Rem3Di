@@ -9,15 +9,15 @@ import torch
 from pydantic import BaseModel, ConfigDict
 
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.evaluation.descriptor_analysis.analysis_tasks import (
+from remedi.evaluation.results import EvalResult
+from remedi.latent_evaluation.analysis_tasks import (
     DescriptorAnalysisTask,
 )
-from remedi.evaluation.descriptor_analysis.context import (
+from remedi.latent_evaluation.context import (
     DescriptorAnalysisContext,
     DescriptorNormalizationConfig,
     ProjectionConfig,
 )
-from remedi.evaluation.results import EvalResult
 
 logger = logging.getLogger(__name__)
 

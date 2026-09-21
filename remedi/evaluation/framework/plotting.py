@@ -4,8 +4,8 @@ Tasks emit *pure-data* artifacts (:class:`TableResult`, :class:`ArrayResult`,
 :class:`PydanticResult`). Plotting is separate: a plotter is registered against
 an artifact "kind" (a free-form tag, e.g. ``"benchmark_results"``) and turns a
 loaded artifact into one or more :class:`FigureResult`. Because artifacts
-round-trip from disk, figures can be regenerated offline (``replot``) without
-re-running the eval.
+round-trip from disk, figures can be regenerated offline without re-running the
+eval.
 
 Usage::
 

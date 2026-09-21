@@ -6,7 +6,9 @@ Covers:
   * The focal-loss MLP path runs (CPU-gated opt-in).
   * The three multiclass metrics behave on perfect / chance predictions.
   * ``_task_kind`` classifies a single multiclass column as ``"multiclass"``.
-  * ``_evaluate_cell`` produces exactly one scored row for the multiclass kind.
+  * ``_evaluate_cell`` produces exactly one scored row for the multiclass kind,
+    plus the per-class report every multiclass cell now carries.
+  * The panel task writes that report out per cell, with the spec's class names.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from remedi.evaluation.benchmark.metrics import (
     balanced_accuracy,
     macro_auroc_ovr,
     macro_f1,
+    multiclass_report,
 )
 from remedi.evaluation.benchmark.runner import (
     BenchmarkCell,
@@ -41,6 +44,7 @@ from remedi.evaluation.benchmark.runner import (
 )
 
 N_CLASSES = 5
+CLASS_NAMES = ["achiral", "central", "axial", "helical", "planar"]
 
 
 def _synthetic_multiclass(n_per_class: int, d: int, seed: int = 0):
@@ -172,8 +176,10 @@ def test_evaluate_cell_multiclass_single_row() -> None:
         metric=EvalMetric.balanced_accuracy,
         split_column="split",
         seed=0,
+        n_classes=N_CLASSES,
+        class_names=tuple(CLASS_NAMES),
     )
-    rows = _evaluate_cell(
+    evaluation = _evaluate_cell(
         LinearLearnerConfig(),
         "multiclass",
         (tr, va, te),
@@ -183,8 +189,8 @@ def test_evaluate_cell_multiclass_single_row() -> None:
         cell,
         "test_descriptor",
     )
-    assert len(rows) == 1
-    r = rows[0]
+    assert len(evaluation.rows) == 1
+    r = evaluation.rows[0]
     assert r.target_col is None
     assert r.metric_name == EvalMetric.balanced_accuracy.value
     assert 0.0 <= r.metric_value <= 1.0
@@ -192,3 +198,100 @@ def test_evaluate_cell_multiclass_single_row() -> None:
     # The cell's identity reaches the row: without these two columns five seed
     # runs of one dataset are indistinguishable.
     assert (r.dataset_id, r.split_column, r.seed) == ("chiral_cat", "split", 0)
+
+    # ... and the per-class picture the single number hides comes with it.
+    report = evaluation.report
+    assert report is not None
+    assert list(report.per_class["class_name"]) == CLASS_NAMES
+    assert len(report.per_class) == N_CLASSES
+    assert report.confusion_matrix.shape == (N_CLASSES, N_CLASSES)
+    assert int(report.confusion_matrix.sum()) == int(te.sum())
+
+
+def test_multiclass_report_shape_and_fallback_names() -> None:
+    """Fixed label order, one row per declared class, generated names by default."""
+    y_true = np.array([0, 0, 1, 1])
+    # Class 2 never appears in the fold: it keeps its row and its column.
+    probabilities = np.eye(3)[[0, 1, 1, 1]]
+
+    report = multiclass_report(y_true, probabilities, 3)
+    assert list(report.per_class["class_name"]) == ["class_0", "class_1", "class_2"]
+    assert list(report.per_class["support"]) == [2, 2, 0]
+    assert int(report.confusion_matrix.sum()) == len(y_true)
+    # zero_division=0 rather than a raise for the class with no support.
+    assert report.per_class.loc[2, "f1"] == 0.0
+
+    named = multiclass_report(y_true, probabilities, 3, ["a", "b", "c"])
+    assert named.class_names == ["a", "b", "c"]
+
+
+def test_panel_task_writes_the_per_class_report_per_cell(tmp_path) -> None:
+    """A multiclass benchmark's cell artifacts land under its own directory and
+    are headed with the class names the bundle spec declares."""
+    import pandas as pd
+
+    from remedi.data_handling.bundle import BenchmarkTask
+    from remedi.evaluation.benchmark.descriptors import EcfpConfig
+    from remedi.evaluation.framework import (
+        BenchmarkPanelConfig,
+        EvalManifest,
+        run_manifest,
+    )
+    from remedi.evaluation.results import ArrayResult
+
+    from .helpers.bundle_fixtures import (
+        ACHIRAL_TEN_SMILES,
+        TEN_ROW_SPLIT,
+        ingest_tiny_bundle,
+        write_conformers_bundle,
+    )
+
+    n_rows = len(ACHIRAL_TEN_SMILES)
+    n_classes = 3
+    class_names = ["achiral", "central", "axial"]
+    write_conformers_bundle(
+        tmp_path / "bundles",
+        dataset_id="toy_multiclass",
+        tasks=[
+            BenchmarkTask(
+                name="chirality_type",
+                task_type=TaskType.multiclass,
+                n_classes=n_classes,
+                class_names=class_names,
+            )
+        ],
+        metrics=["balanced-accuracy"],
+        targets=(np.arange(n_rows) % n_classes).astype(float),
+    )
+    ingest_tiny_bundle(tmp_path / "bundles", tmp_path / "datasets", "toy_multiclass")
+
+    manifest = EvalManifest(
+        model=EcfpConfig(name="ecfp_256", length=256),
+        output_root=tmp_path / "eval_out" / "model_x",
+        tasks=[
+            BenchmarkPanelConfig(
+                eval_root=tmp_path / "datasets",
+                learners=[LinearLearnerConfig(ridge_alpha=1.0)],
+            )
+        ],
+    )
+    report = run_manifest(manifest)
+    assert report.n_failed == 0
+
+    cell_dir = (
+        manifest.output_root / "benchmark" / "toy_multiclass" / "ecfp_256__linear"
+    )
+    per_class = pd.read_csv(cell_dir / "per_class.csv")
+    assert len(per_class) == n_classes
+    assert list(per_class["class_name"]) == class_names
+
+    confusion = pd.read_csv(cell_dir / "confusion_matrix.csv")
+    assert list(confusion.columns) == ["true_class", *class_names]
+    assert list(confusion["true_class"]) == class_names
+    # The fixture's 6/2/2 partition: the whole test fold is accounted for.
+    n_test = sum(label == "test" for label in TEN_ROW_SPLIT)
+    assert confusion[class_names].to_numpy().sum() == n_test
+
+    arrays = ArrayResult.load(cell_dir / "confusion_matrix.npz")
+    assert arrays["confusion_matrix"].shape == (n_classes, n_classes)
+    assert [str(label) for label in arrays["labels"]] == class_names

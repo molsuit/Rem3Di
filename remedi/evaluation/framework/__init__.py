@@ -12,29 +12,21 @@ from remedi.evaluation.framework.context import EvalContext
 from remedi.evaluation.framework.plotting import register_plotter, render
 from remedi.evaluation.framework.resources import (
     EmbeddingSpec,
-    IndexSpec,
     ResourceCache,
     ResourceSpec,
 )
 from remedi.evaluation.framework.runner import run_manifest
 from remedi.evaluation.framework.task import RunnableTask, TaskStatus
 from remedi.evaluation.framework.task_runner import RunReport, run_tasks
-from remedi.evaluation.framework.tasks import (
-    BenchmarkPanelConfig,
-    DescriptorAnalysisConfig,
-    RetrievalConfig,
-)
+from remedi.evaluation.framework.tasks import BenchmarkPanelConfig
 
 __all__ = [
     "BenchmarkPanelConfig",
-    "DescriptorAnalysisConfig",
     "EmbeddingSpec",
     "EvalContext",
     "EvalManifest",
-    "IndexSpec",
     "ResourceCache",
     "ResourceSpec",
-    "RetrievalConfig",
     "RunReport",
     "RunnableTask",
     "TaskConfig",

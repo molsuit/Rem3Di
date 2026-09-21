@@ -18,7 +18,7 @@ For every model under an eval root (one ``<model>/benchmark/results.csv`` +
 
 Usage::
 
-    uv run python scripts/evaluation/correlate_capacity_downstream.py \\
+    uv run python scripts/latent_evaluation/correlate_capacity_downstream.py \\
         --eval-root /path/to/evaluation_results/pcqm_ablation_novicreg
 """
 
@@ -36,7 +36,7 @@ import yaml
 from pydantic import BaseModel
 from scipy.stats import spearmanr
 
-from remedi.evaluation.descriptor_analysis.capacity_diagnostic import (
+from remedi.latent_evaluation.capacity_diagnostic import (
     run_latent_space_capacity_diagnostic,
 )
 

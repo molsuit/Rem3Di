@@ -8,10 +8,10 @@ import numpy as np
 from matplotlib.lines import Line2D
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.evaluation.descriptor_analysis.context import (
+from remedi.latent_evaluation.context import (
     DescriptorAnalysisContext,
 )
-from remedi.evaluation.descriptor_analysis.tmqm_clustering_utils import (
+from remedi.latent_evaluation.tmqm_clustering_utils import (
     get_atomic_num_colors,
     get_block_colors,
     get_coordination_numbers,

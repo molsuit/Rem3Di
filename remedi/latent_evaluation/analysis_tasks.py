@@ -14,20 +14,20 @@ from ase.visualize.plot import plot_atoms
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.evaluation.descriptor_analysis.capacity_diagnostic import (
-    LatentCapacityReportModel,
-    get_descriptor_norm_distribution,
-    run_latent_space_capacity_diagnostic,
-)
-from remedi.evaluation.descriptor_analysis.coloring import ColorProvider
-from remedi.evaluation.descriptor_analysis.context import (
-    DescriptorAnalysisContext,
-)
 from remedi.evaluation.results import (
     ChemiscopeResult,
     EvalResult,
     FigureResult,
     PydanticResult,
+)
+from remedi.latent_evaluation.capacity_diagnostic import (
+    LatentCapacityReportModel,
+    get_descriptor_norm_distribution,
+    run_latent_space_capacity_diagnostic,
+)
+from remedi.latent_evaluation.coloring import ColorProvider
+from remedi.latent_evaluation.context import (
+    DescriptorAnalysisContext,
 )
 
 
@@ -163,7 +163,7 @@ def _metal_env_features(ctx: DescriptorAnalysisContext) -> list[Any]:
     """Cached per-structure chemical descriptors (one pymatgen pass)."""
     feats = ctx.cache.get("metal_env_features")
     if feats is None:
-        from remedi.evaluation.descriptor_analysis.tmqm_chemical_features import (
+        from remedi.latent_evaluation.tmqm_chemical_features import (
             compute_metal_environment_features,
         )
 

@@ -1,3 +1,16 @@
+"""Descriptor-space analysis — what the latent space *looks like*.
+
+Capacity diagnostics, clustering, UMAP/PCA projections, chemiscope exports and
+the MACE invariant statistics. This is intrinsic analysis of a descriptor
+matrix, not prediction evaluation, so it lives outside the benchmark framework
+(``remedi.evaluation``) and is not part of the paper's probe panel.
+
+It keeps its ``EvalTask`` shape: :class:`DescriptorAnalysisConfig` (in
+:mod:`remedi.latent_evaluation.framework_task`) is still a runnable framework
+task, but it is deliberately **not** a member of the framework's ``TaskConfig``
+union, so a manifest cannot reach it until this family is worked on again.
+"""
+
 from .analysis_tasks import (
     CapacityDiagnosticTask,
     ChemiscopeClusterTask,

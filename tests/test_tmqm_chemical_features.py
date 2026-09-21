@@ -9,8 +9,9 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from remedi.evaluation.descriptor_analysis import analysis_tasks
-from remedi.evaluation.descriptor_analysis.analysis_tasks import (
+from remedi.evaluation.results import ChemiscopeResult
+from remedi.latent_evaluation import analysis_tasks
+from remedi.latent_evaluation.analysis_tasks import (
     ChemiscopeClusterTask,
     ClusterAxisAnalysisTask,
     ClusterChemicalFingerprintTask,
@@ -20,15 +21,14 @@ from remedi.evaluation.descriptor_analysis.analysis_tasks import (
     _suggest_label,
     compute_hdbscan_labels,
 )
-from remedi.evaluation.descriptor_analysis.context import (
+from remedi.latent_evaluation.context import (
     DescriptorAnalysisContext,
 )
-from remedi.evaluation.descriptor_analysis.tmqm_chemical_features import (
+from remedi.latent_evaluation.tmqm_chemical_features import (
     MetalEnvironmentFeatures,
     compute_metal_environment_features,
     metal_block,
 )
-from remedi.evaluation.results import ChemiscopeResult
 
 
 def _ring(z: float, radius: float = 1.21, n: int = 5) -> np.ndarray:

@@ -481,6 +481,43 @@ def test_spec_validators() -> None:
         BenchmarkSpec(**{**make_spec().model_dump(), "csv_name": "esol.csv"})
 
 
+def test_class_names_are_only_valid_on_a_matching_multiclass_task() -> None:
+    """``class_names`` is the display labelling of a multiclass task's classes,
+    so it needs one name per declared class and nothing else may carry it."""
+    task = BenchmarkTask(
+        name="chirality_class",
+        task_type=TaskType.multiclass,
+        n_classes=3,
+        class_names=["achiral", "central", "axial"],
+    )
+    assert task.class_names == ["achiral", "central", "axial"]
+    # Absent is fine — the report falls back to class_0 … class_{n-1}.
+    assert (
+        BenchmarkTask(
+            name="chirality_class", task_type=TaskType.multiclass, n_classes=3
+        ).class_names
+        is None
+    )
+    with pytest.raises(ValueError):  # too few names for the declared classes
+        BenchmarkTask(
+            name="chirality_class",
+            task_type=TaskType.multiclass,
+            n_classes=3,
+            class_names=["achiral", "central"],
+        )
+    with pytest.raises(ValueError):  # too many
+        BenchmarkTask(
+            name="chirality_class",
+            task_type=TaskType.multiclass,
+            n_classes=2,
+            class_names=["achiral", "central", "axial"],
+        )
+    with pytest.raises(ValueError):  # class_names on a non-multiclass task
+        BenchmarkTask(
+            name="logp", task_type=TaskType.regression, class_names=["low", "high"]
+        )
+
+
 def test_expected_columns_is_the_declared_order() -> None:
     spec = BenchmarkSpec(
         dataset_id="ordered",

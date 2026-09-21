@@ -17,8 +17,8 @@ same checkpoint and rerun after loading the trained ``atomic_preprocessor.pth``
 on top — the script structure is unchanged.)
 
 Usage:
-    uv run python scripts/evaluation/analyze_mace_invariants.py \\
-        --config scripts/evaluation/analyze_mace_invariants.yaml
+    uv run python scripts/latent_evaluation/analyze_mace_invariants.py \\
+        --config scripts/latent_evaluation/analyze_mace_invariants.yaml
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from remedi.data_handling.dataset.training_dataset import (
     atoms_getitem,
 )
 from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
-from remedi.evaluation.descriptor_analysis.mace_invariant_stats import (
+from remedi.latent_evaluation.mace_invariant_stats import (
     AnalysisReport,
     LayerSpec,
     LayerStreamStats,

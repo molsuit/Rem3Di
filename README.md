@@ -85,7 +85,9 @@ One note re. training: For training we create new dataset object (class Training
 ```python
 import torch
 from remedi.configuration.architecture_config import EncoderOnlyArchitectureConfig
-from remedi.evaluation.evaluation_utils import evaluate_molecular_descriptor_on_dataset
+from remedi.latent_evaluation.descriptor_embedding import (
+    evaluate_molecular_descriptor_on_dataset,
+)
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     pos_emb_getitem,

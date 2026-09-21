@@ -187,8 +187,8 @@ class RemediCalculator(DescriptorCalculator):
         This is the ad-hoc counterpart to :meth:`calculate` (which streams a
         whole on-disk dataset): it takes molecules that are *not* in the zarr —
         e.g. a brand-new query molecule conformer — and pushes them through the
-        same encoder so the resulting vector lives in the same space as a built
-        :class:`~remedi.evaluation.retrieval.vector_store.VectorStore`.
+        same encoder so the resulting vectors live in the same space as the
+        cached matrix :meth:`calculate` produces.
 
         ``total_charge`` / ``multiplicity`` default to neutral singlet and apply
         to every molecule; supply per-molecule values via the ASE ``info`` dict

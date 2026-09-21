@@ -7,6 +7,12 @@ from the shared :class:`ResourceCache` (so a baseline fingerprint / the model
 embedding is computed once and reused) and keeps the fault-tolerant, incremental
 write behaviour: one failing benchmark is recorded in ``failures.yaml`` and the
 panel continues, with ``results.csv`` rewritten after every dataset.
+
+A multiclass cell also carries a :class:`MulticlassReport`; this task is what
+serialises it, under ``benchmark/<dataset_id>/<descriptor>__<learner>/`` as
+``per_class.csv``, ``confusion_matrix.csv`` and ``confusion_matrix.npz``. The
+npz is the plot input: :mod:`framework.builtin_plotters` registers a
+row-normalised heatmap for the ``confusion_matrix`` artifact kind.
 """
 
 from __future__ import annotations
@@ -16,6 +22,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 
@@ -27,20 +34,28 @@ from remedi.data_handling.bundle import (
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.evaluation.benchmark.descriptors import DescriptorConfig
 from remedi.evaluation.benchmark.learners import LearnerConfig
+from remedi.evaluation.benchmark.metrics import MulticlassReport
 from remedi.evaluation.benchmark.runner import (
     BenchmarkCell,
     BenchmarkFailure,
     BenchmarkResultRow,
     _build_targets_with_nan,
     _evaluate_cell,
+    _learner_kind,
     _split_masks,
     _structure_group_ids,
     _task_kind,
     evaluate_pairwise_cell,
+    multiclass_labelling,
 )
 from remedi.evaluation.framework.context import EvalContext
 from remedi.evaluation.framework.resources import EmbeddingSpec
-from remedi.evaluation.results import EvalResult, PydanticResult, TableResult
+from remedi.evaluation.results import (
+    ArrayResult,
+    EvalResult,
+    PydanticResult,
+    TableResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,15 +86,21 @@ class BenchmarkPanelConfig(BaseModel):
 
         for zarr_path, spec in discover_benchmark_zarrs(self.eval_root):
             logger.info("--- %s @ %s ---", spec.dataset_id, zarr_path)
+            dataset_rows: list[BenchmarkResultRow] = []
+            dataset_results: list[EvalResult] = []
             try:
-                rows.extend(self._evaluate_dataset(ctx, zarr_path, spec, descriptors))
+                dataset_rows, dataset_results = self._evaluate_dataset(
+                    ctx, zarr_path, spec, descriptors
+                )
             except Exception as exc:  # one bad benchmark must not sink the panel
                 logger.exception("benchmark %s failed; recording", spec.dataset_id)
                 failures.append(
                     BenchmarkFailure(dataset_id=spec.dataset_id, error=repr(exc))
                 )
+            rows.extend(dataset_rows)
             # Crash-safe incremental write after each dataset.
             self._write_csv(rows, out)
+            yield from dataset_results
 
         yield TableResult(
             file_name=Path("benchmark/results.csv"),
@@ -97,17 +118,21 @@ class BenchmarkPanelConfig(BaseModel):
         zarr_path: Path,
         spec: BenchmarkSpec,
         descriptors: list[DescriptorConfig],
-    ) -> list[BenchmarkResultRow]:
+    ) -> tuple[list[BenchmarkResultRow], list[EvalResult]]:
+        """Every cell of one benchmark: its result rows and its cell artifacts."""
         dataset = MoleculeDataset.open_existing_dataset_from_dir(zarr_path)
         kind = _task_kind(dataset)
         assert dataset.config.tasks is not None  # narrowed by _task_kind
         col_names = [c.name for c in dataset.config.tasks.system_cols]
         Y = _build_targets_with_nan(dataset)
+        n_classes, class_names = multiclass_labelling(spec)
         cell = BenchmarkCell(
             dataset_id=spec.dataset_id,
             metric=spec.metrics[0],
             split_column=self.split_column or spec.default_split,
             seed=ctx.seed,
+            n_classes=n_classes,
+            class_names=class_names,
         )
         splits = _split_masks(zarr_path, dataset, cell.split_column)
         is_pairwise = cell.metric == EvalMetric.pair_ranking_accuracy
@@ -115,6 +140,7 @@ class BenchmarkPanelConfig(BaseModel):
             _structure_group_ids(dataset) if is_pairwise else (None, None)
         )
         rows: list[BenchmarkResultRow] = []
+        results: list[EvalResult] = []
         for desc in descriptors:
             X = ctx.resources.get(
                 EmbeddingSpec(
@@ -140,20 +166,28 @@ class BenchmarkPanelConfig(BaseModel):
                             desc.name,
                         )
                     )
-                else:
-                    rows.extend(
-                        _evaluate_cell(
-                            learner_cfg,
-                            kind,
-                            splits,
-                            X,
-                            Y,
-                            col_names,
-                            cell,
+                    continue
+                evaluation = _evaluate_cell(
+                    learner_cfg,
+                    kind,
+                    splits,
+                    X,
+                    Y,
+                    col_names,
+                    cell,
+                    desc.name,
+                )
+                rows.extend(evaluation.rows)
+                if evaluation.report is not None:
+                    results.extend(
+                        _multiclass_artifacts(
+                            evaluation.report,
+                            spec.dataset_id,
                             desc.name,
+                            _learner_kind(learner_cfg),
                         )
                     )
-        return rows
+        return rows, results
 
     @staticmethod
     def _frame(rows: list[BenchmarkResultRow]) -> pd.DataFrame:
@@ -161,3 +195,36 @@ class BenchmarkPanelConfig(BaseModel):
 
     def _write_csv(self, rows: list[BenchmarkResultRow], out_dir: Path) -> None:
         self._frame(rows).to_csv(out_dir / "results.csv", index=False)
+
+
+def _multiclass_artifacts(
+    report: MulticlassReport,
+    dataset_id: str,
+    descriptor_name: str,
+    learner_kind: str,
+) -> list[EvalResult]:
+    """The three per-cell artifacts of a multiclass cell's report.
+
+    They land under ``benchmark/<dataset_id>/<descriptor>__<learner>/`` so one
+    panel run can hold a report per cell without any of them colliding. The
+    confusion-matrix CSV is the human-readable form (a leading ``true_class``
+    column, one column per predicted class); the npz is the machine-readable
+    one the heatmap plotter re-renders from.
+    """
+    out_rel = Path("benchmark") / dataset_id / f"{descriptor_name}__{learner_kind}"
+    names = report.class_names
+    confusion_frame = pd.DataFrame(report.confusion_matrix, columns=names)
+    confusion_frame.insert(0, "true_class", names)
+    return [
+        TableResult(file_name=out_rel / "per_class.csv", frame=report.per_class),
+        TableResult(file_name=out_rel / "confusion_matrix.csv", frame=confusion_frame),
+        ArrayResult(
+            file_name=out_rel / "confusion_matrix.npz",
+            arrays={
+                "confusion_matrix": report.confusion_matrix,
+                # The display names, not the integer indices: they are what the
+                # registered heatmap plotter labels its axes with.
+                "labels": np.asarray(names, dtype=np.str_),
+            },
+        ),
+    ]

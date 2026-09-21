@@ -1,18 +1,16 @@
 """Shared, lazily-computed eval resources — compute once, share across tasks.
 
-The expensive inputs to descriptor evaluation are the **embedding matrix** a
-model produces over a dataset and the **kNN index** built on top of it. Several
-tasks in one run want the same ones (the two retrieval sub-tasks share an
-embedding + index; a descriptor-analysis task reuses the embedding). This
-module formalises the ad-hoc ``DescriptorAnalysisContext.cache`` dict into a
-typed, memoised provider.
+The expensive input to descriptor evaluation is the **embedding matrix** a
+model produces over a dataset: every benchmark cell of one dataset, across
+learners, wants the same one. This module formalises the ad-hoc caching that
+preceded it into a typed, memoised provider.
 
 A :class:`ResourceSpec` is a small value object with a stable ``key()`` and a
-``build(cache)`` that may itself pull other resources from the cache (so an
-``IndexSpec`` composes the ``EmbeddingSpec`` it indexes, and they dedupe). The
-:class:`ResourceCache` memoises by key for the lifetime of one run; on-disk
-persistence is delegated to the builders that already have it
-(:func:`compute_and_cache` for embeddings), so re-runs stay cheap.
+``build(cache)`` that may itself pull other resources from the cache, so
+composed specs dedupe. The :class:`ResourceCache` memoises by key for the
+lifetime of one run; on-disk persistence is delegated to the builders that
+already have it (:func:`compute_and_cache` for embeddings), so re-runs stay
+cheap.
 """
 
 from __future__ import annotations
@@ -29,10 +27,6 @@ from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.evaluation.benchmark.descriptors import (
     DescriptorConfig,
     compute_and_cache,
-)
-from remedi.evaluation.retrieval.vector_store import (
-    RetrievalIndex,
-    RetrievalIndexConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -110,38 +104,3 @@ class EmbeddingSpec:
         return compute_and_cache(
             self.descriptor, self.dataset, self.cache_dir, self.dataset_id
         )
-
-
-@dataclass
-class IndexSpec:
-    """A fitted nearest-neighbour index over an :class:`EmbeddingSpec` matrix."""
-
-    embedding: EmbeddingSpec
-    index_config: RetrievalIndexConfig
-
-    def key(self) -> str:
-        return f"index::{self.embedding.key()}::{self.index_config.index_kind}"
-
-    def build(self, cache: ResourceCache) -> RetrievalIndex:
-        X = np.ascontiguousarray(cache.get(self.embedding), dtype=np.float32)
-        index = self.index_config.build()
-        index.fit(X)
-        return index
-
-
-@dataclass
-class _CallableSpec:
-    """Adapter wrapping a plain ``(key, thunk)`` as a :class:`ResourceSpec`.
-
-    For one-off in-memory resources that don't warrant their own spec class.
-    """
-
-    _key: str
-    _thunk: Any = field(repr=False)
-
-    def key(self) -> str:
-        return self._key
-
-    def build(self, cache: ResourceCache) -> Any:
-        del cache
-        return self._thunk()

@@ -14,8 +14,8 @@ The 2D coordinates + colors are also written to an ``.npz`` so the figure can be
 re-styled without re-fitting UMAP.
 
 Run with:
-    uv run python scripts/evaluation/embedding_umap.py
-    uv run python scripts/evaluation/embedding_umap.py --color-by alpha
+    uv run python scripts/latent_evaluation/embedding_umap.py
+    uv run python scripts/latent_evaluation/embedding_umap.py --color-by alpha
 """
 
 from __future__ import annotations

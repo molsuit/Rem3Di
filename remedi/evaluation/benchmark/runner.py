@@ -51,7 +51,11 @@ from remedi.evaluation.benchmark.learners import (
     Learner,
     LearnerConfig,
 )
-from remedi.evaluation.benchmark.metrics import metric_for
+from remedi.evaluation.benchmark.metrics import (
+    MulticlassReport,
+    metric_for,
+    multiclass_report,
+)
 from remedi.evaluation.benchmark.pairwise import pair_ranking_accuracy
 
 logger = logging.getLogger(__name__)
@@ -105,12 +109,35 @@ class BenchmarkResultRow(BaseModel):
 
 @dataclass(frozen=True)
 class BenchmarkCell:
-    """What identifies one scored cell, beyond the descriptor and the learner."""
+    """What identifies one scored cell, beyond the descriptor and the learner.
+
+    ``n_classes`` / ``class_names`` are the multiclass labelling the benchmark
+    spec declares (:class:`BenchmarkTask`). They carry no identity — they only
+    say how the cell's per-class report is shaped and headed — and both are
+    ``None`` for every other task kind. With ``n_classes`` unset the multiclass
+    path falls back to the class count observed in the labels.
+    """
 
     dataset_id: str
     metric: EvalMetric
     split_column: str
     seed: int
+    n_classes: int | None = None
+    class_names: tuple[str, ...] | None = None
+
+
+@dataclass
+class CellEvaluation:
+    """What one (descriptor x learner) cell produced.
+
+    ``rows`` is what lands in ``results.csv`` — one per scored target column.
+    ``report`` is set on a multiclass cell only: the per-class table and
+    confusion matrix over the test fold, which the panel task writes out as its
+    own artifacts (the flat result row cannot carry them).
+    """
+
+    rows: list[BenchmarkResultRow]
+    report: MulticlassReport | None = None
 
 
 class BenchmarkFailure(BaseModel):
@@ -264,11 +291,12 @@ def _evaluate_cell(
     col_names: list[str],
     cell: BenchmarkCell,
     descriptor_name: str,
-) -> list[BenchmarkResultRow]:
+) -> CellEvaluation:
     """Evaluate one (descriptor x learner) cell, one row per scored target.
 
     Regression yields one row per target column (a fresh learner per column);
-    binary, multilabel and multiclass each yield a single row.
+    binary, multilabel and multiclass each yield a single row. A multiclass cell
+    additionally carries its :class:`MulticlassReport` over the test fold.
     """
     tr, va, te = splits
     seed = cell.seed
@@ -293,18 +321,24 @@ def _evaluate_cell(
             X[tr], Y[tr], X[va], Y[va], X[te], seed
         )
         rows.append(make_row(_score(Y[te], preds, cell.metric), None))
-        return rows
+        return CellEvaluation(rows=rows)
 
     if kind == "multiclass":
-        # One column of integer class indices; the class count spans the whole
-        # dataset (the stratified split guarantees every class is present).
+        # One column of integer class indices. The spec's declared class count
+        # wins; without it the count spans the whole dataset (the stratified
+        # split guarantees every class is present).
         y = Y[:, 0]
-        n_classes = int(np.nanmax(y)) + 1
+        n_classes = cell.n_classes or int(np.nanmax(y)) + 1
         preds = learner_cfg.build().fit_predict_multiclass(
             X[tr], y[tr], X[va], y[va], X[te], n_classes, seed
         )
         rows.append(make_row(_score(y[te], preds, cell.metric), None))
-        return rows
+        # Every multiclass cell gets the per-class picture, not just the
+        # headline number the flat leaderboard can carry (§6).
+        report = multiclass_report(
+            y[te].astype(int), preds, n_classes, cell.class_names
+        )
+        return CellEvaluation(rows=rows, report=report)
 
     # regression / binary: score each target column independently.
     for col, name in enumerate(col_names):
@@ -312,7 +346,7 @@ def _evaluate_cell(
             learner_cfg.build(), kind == "regression", splits, X, Y[:, col], seed
         )
         rows.append(make_row(_score(Y[te, col], preds, cell.metric), name))
-    return rows
+    return CellEvaluation(rows=rows)
 
 
 def evaluate_pairwise_cell(
@@ -367,6 +401,25 @@ def _structure_group_ids(
     )
 
 
+def multiclass_labelling(
+    spec: BenchmarkSpec,
+) -> tuple[int | None, tuple[str, ...] | None]:
+    """The declared class count and display names of a multiclass benchmark.
+
+    ``(None, None)`` for every benchmark that is not single-column multiclass —
+    the multiclass path then falls back to the class count it observes in the
+    labels and to ``class_0 … class_{n-1}`` names.
+    """
+    multiclass_tasks = [
+        task for task in spec.tasks if task.task_type is TaskType.multiclass
+    ]
+    if len(multiclass_tasks) != 1:
+        return None, None
+    task = multiclass_tasks[0]
+    names = tuple(task.class_names) if task.class_names is not None else None
+    return task.n_classes, names
+
+
 def evaluate_zarr(
     zarr_path: Path,
     spec: BenchmarkSpec,
@@ -380,6 +433,7 @@ def evaluate_zarr(
     assert dataset.config.tasks is not None  # narrowed by _task_kind
     col_names = [c.name for c in dataset.config.tasks.system_cols]
     Y = _build_targets_with_nan(dataset)
+    n_classes, class_names = multiclass_labelling(spec)
     cell = BenchmarkCell(
         dataset_id=spec.dataset_id,
         # The first metric is the reported cell; the rest are computed at table
@@ -387,6 +441,8 @@ def evaluate_zarr(
         metric=spec.metrics[0],
         split_column=split_column or cfg.split_column or spec.default_split,
         seed=cfg.seed,
+        n_classes=n_classes,
+        class_names=class_names,
     )
     splits = _split_masks(zarr_path, dataset, cell.split_column)
     cache_dir = cfg.descriptor_cache_dir or (cfg.output_dir / "descriptor_cache")
@@ -413,6 +469,9 @@ def evaluate_zarr(
                     desc_cfg.name,
                 )
             else:
+                # The per-class report a multiclass cell also produces is not
+                # representable in the flat CSV this entrypoint writes; the
+                # framework panel task is what serialises it.
                 cell_rows = _evaluate_cell(
                     learner_cfg,
                     kind,
@@ -422,7 +481,7 @@ def evaluate_zarr(
                     col_names,
                     cell,
                     desc_cfg.name,
-                )
+                ).rows
             for row in cell_rows:
                 logger.info(
                     "%s | %s | %s | %s: %s=%.4f",

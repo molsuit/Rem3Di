@@ -68,6 +68,12 @@ class BenchmarkTask(BaseModel):
     ``n_classes`` is required for, and only meaningful on, a ``multiclass``
     task; the column then stores the integer class index as a ``float64``
     (§1.1) and invariant 7 checks it lies in ``0 … n_classes - 1``.
+
+    ``class_names`` is the optional display labelling of those classes, in
+    class-index order, and is what the per-class report and confusion matrix of
+    a multiclass cell are headed with. It is presentation only — nothing branches
+    on it — and when it is absent the report falls back to
+    ``class_0 … class_{n-1}``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -75,6 +81,7 @@ class BenchmarkTask(BaseModel):
     name: str = Field(min_length=1)
     task_type: TaskType
     n_classes: int | None = None
+    class_names: list[str] | None = None
 
     @model_validator(mode="after")
     def check_class_count(self) -> BenchmarkTask:
@@ -88,11 +95,23 @@ class BenchmarkTask(BaseModel):
                     f"task {self.name!r} declares n_classes={self.n_classes}, "
                     "which must be at least 2"
                 )
-        elif self.n_classes is not None:
-            raise ValueError(
-                f"task {self.name!r} is {self.task_type.value} and must not "
-                "declare n_classes"
-            )
+            if self.class_names is not None and len(self.class_names) != self.n_classes:
+                raise ValueError(
+                    f"task {self.name!r} declares n_classes={self.n_classes} but "
+                    f"{len(self.class_names)} class_names; give one name per class "
+                    "or none at all"
+                )
+        else:
+            if self.n_classes is not None:
+                raise ValueError(
+                    f"task {self.name!r} is {self.task_type.value} and must not "
+                    "declare n_classes"
+                )
+            if self.class_names is not None:
+                raise ValueError(
+                    f"task {self.name!r} is {self.task_type.value} and must not "
+                    "declare class_names"
+                )
         return self
 
 
