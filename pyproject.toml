@@ -94,13 +94,22 @@ build-backend = "hatchling.build"
 packages = ["remedi"]
 
 [tool.ruff]
+# The QM9-OR split generators are the original author scripts, kept verbatim as
+# a reference for how qm9or_splits.csv was produced; they import another package.
+extend-exclude = ["preparers/qm9or"]
 lint.select = ["I", "UP", "F", "E", "W", "C90", "B", "A", "RUF"]
 lint.ignore = ["E501", "B008"]
+
+# Each preparer runs its own suite from its own directory (their conftest
+# modules share a name): `uv run --no-sync pytest preparers/<name>`.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
     "pytest",
+    "pytest-cov",
     "ty>=0.0.32",
     "ruff"
 ]
@@ -108,6 +117,11 @@ dev = [
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
+
+# The benchmark preparers are workspace members with their own dependencies;
+# `uv sync --all-packages` installs them into the shared venv.
+[tool.uv.workspace]
+members = ["preparers/tdc", "preparers/chiralcat"]
 
 # Local-dev only (uv): these are stripped from the built package's metadata.
 [tool.uv.sources]

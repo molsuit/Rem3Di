@@ -1,0 +1,71 @@
+# ChiralCat dataset ingestion pipeline.
+#
+# One config drives every stage: extract -> validate -> repair -> rebuild.
+# All paths are relative to this file. Inputs live in the gitignored
+# benchmark_data/ at the repository root; each is pinned by its sha256.
+#
+# Class order follows the paper:
+#   achiral=0, central=1, axial=2, helical=3, planar=4
+
+extraction:
+  data_dir: ../../benchmark_data/raw/chiralcat
+  conformer_id: 0          # take one representative 3D conformer per molecule
+  add_hydrogens: true      # place explicit Hs geometrically (AddHs addCoords=True)
+
+  standardize:
+    strip_salts: true      # remove counter-ion salt fragments (stereo-safe)
+    neutralize: true       # neutralize charges via Uncharger (stereo-safe)
+
+  # Sources are processed in order; the first occurrence of a canonical SMILES
+  # wins. The data contains no conflicting labels, so order only affects the
+  # recorded source attribution.
+  sources:
+    # Chiral molecules with a per-molecule "chiral type" field.
+    - kind: typed
+      path: chiral_data_3d_aug.pkl
+      sha256: 8e5f286832c4e6221a4ede52d24aa84996bf907b6c948d9e9a8bdfc207b7ae11
+      drop_types: [unknown]
+
+    - kind: typed
+      path: chiral_data_3d_aug_from_huo.pkl
+      sha256: bfe977391a65f7a32a5785cacdf6e37a093c21006b5a0879417383aa90f67080
+      drop_types: [unknown]
+
+    # Canonical axial set (all molecules are axial).
+    - kind: fixed_label
+      path: axial_535.pkl
+      sha256: 074eddecd731321e8e739653fce9064c23c281a123f5db14f08923146c843b65
+      label: axial
+
+    # Achiral (negative) molecules; no chiral type field.
+    - kind: fixed_label
+      path: chiral_for_no.pkl
+      sha256: 87c9a999b77f4bb8186db35f8659d930e5e7057bf3288e4d80ea4e7967867e05
+      label: achiral
+
+validation:
+  corrections_file: corrections.yaml
+  audit_central_stereo: true        # re-run the 3D stereocentre audit every build
+  on_uncovered_mislabel: warn       # warn | error | ignore
+
+repair:
+  enabled: true
+  embed_seed: 0xC0FFEE
+  mmff_iters: 2000
+
+# Frozen Architector/xtb geometries of the flagged sandwich complexes, keyed by
+# their fragmented source SMILES (see README, "Frozen organometallic rebuilds").
+organometallic:
+  enabled: true
+  target_class: planar
+  rebuilt_structures:
+    path: organometallic_rebuilds.extxyz
+    sha256: db9ca64d58818f4c726c7ca043007d6b115765a74fa34a3214154f124f82ad14
+
+output:
+  directory: ../../benchmark_data/curated/chiralcat
+  dataset_index: dataset.csv
+  dataset_extxyz: dataset.extxyz
+  rejected_index: rejected.csv
+  rejected_extxyz: rejected.extxyz
+  run_report: run_report.json

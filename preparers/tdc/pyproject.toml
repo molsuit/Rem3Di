@@ -1,0 +1,26 @@
+[project]
+name = "remedi-prepare-tdc"
+version = "0.1.0"
+description = "PyTDC ADMET group -> smiles-stage benchmark bundles"
+requires-python = ">=3.12"
+dependencies = [
+    "remedi",
+    "pandas",
+    "pydantic",
+    # Pinned: the frozen split__seed{1..5} columns are PyTDC's own
+    # get_train_valid_split output, recorded in every bundle's provenance.
+    "PyTDC==0.3.6",
+]
+
+[project.scripts]
+prepare-tdc = "remedi_prepare_tdc.prepare:main"
+
+[tool.uv.sources]
+remedi = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["remedi_prepare_tdc"]

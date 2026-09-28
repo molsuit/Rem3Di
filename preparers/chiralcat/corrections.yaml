@@ -1,0 +1,204 @@
+# Manual label corrections to the `central` class, derived from a combined audit:
+#   - RDKit graph stereo  : Chem.FindPotentialStereo (Atom_Tetrahedral)
+#   - RDKit 3D stereo     : Chem.AssignStereochemistryFrom3D on the real conformer
+#
+# Applied during extraction (keyed by canonical isomeric SMILES). The realised
+# changes are recorded in output/run_report.json and the `correction` column of
+# output/dataset.csv.
+#
+# relabel : high / very-high confidence the molecule is mislabelled and the
+#           correct class is known -> change the label.
+# delete  : moderate confidence (molecule is chiral but NOT central, or exotic /
+#           ambiguous) -> remove rather than guess the correct sub-class.
+
+corrections:
+  # ---- relabel central -> achiral (verified NOT stereogenic) -------------------
+  - kind: relabel
+    smiles: "OC1(c2ccccc2)CCNCC1"
+    to_class: achiral
+    confidence: very_high
+    reason: "4-hydroxy-4-phenylpiperidine; C4's two ring arms are symmetry-equivalent -> not stereogenic"
+
+  - kind: relabel
+    smiles: "Cc1cc(C)nc(N2CCC(O)(c3ccccc3)CC2)n1"
+    to_class: achiral
+    confidence: very_high
+    reason: "4-hydroxy-4-phenylpiperidine on a pyrimidine; symmetric C4 -> not stereogenic"
+
+  - kind: relabel
+    smiles: "CCC1(C)CC(=O)NC(=O)C1"
+    to_class: achiral
+    confidence: very_high
+    reason: "3-ethyl-3-methylglutarimide; quaternary C sits on a symmetric ring -> not stereogenic"
+
+  - kind: relabel
+    smiles: "CCC1(c2ccc(C)cc2)C(=O)NC(=S)NC1=O"
+    to_class: achiral
+    confidence: very_high
+    reason: "5-ethyl-5-aryl-2-thiobarbiturate; symmetric ring around the quaternary C -> not stereogenic"
+
+  - kind: relabel
+    smiles: "CCCCOC(=O)CC(CC(=O)OCCCC)NC(=O)c1cc([N+](=O)[O-])cc([N+](=O)[O-])c1"
+    to_class: achiral
+    confidence: very_high
+    reason: "central CH bears two identical -CH2C(=O)OBu arms -> not stereogenic"
+
+  - kind: relabel
+    smiles: "CN(O)C(N)=O"
+    to_class: achiral
+    confidence: high
+    reason: "N-hydroxy-N-methylurea; trivalent amine N undergoes rapid pyramidal inversion -> not configurationally chiral"
+
+  # ---- delete (chiral but not central / exotic / ambiguous) -------------------
+  - kind: delete
+    smiles: "Cc1cccc(C(=O)O)c1-c1c(C)cccc1C(=O)O"
+    confidence: moderate
+    reason: "ortho,ortho'-disubstituted biphenyl diacid -> axial atropisomer, not central"
+
+  - kind: delete
+    smiles: "c1ccc2c(c1)CCc1cccc3c4c5c(cccc5c-2c13)CCc1ccccc1-4"
+    confidence: moderate
+    reason: "fused polycyclic aromatic -> helical chirality, not central"
+
+  - kind: delete
+    smiles: "Cc1ccc2c(c1)CN1CN2Cc2cc(C)ccc21"
+    confidence: moderate
+    reason: "Troger's-base-type cage; chirality at inversion-locked bridgehead N, not a tetrahedral C"
+
+  - kind: delete
+    smiles: "CS(C)(=N)=NC(N)=O"
+    confidence: moderate
+    reason: "sulfondiimide S(VI) centre; genuine but exotic heteroatom stereochemistry, unverifiable by either tool"
+
+  - kind: delete
+    smiles: "O=C1c2c(ccc3ccccc23)CC12Cc1ccc3ccccc3c1C2=O"
+    confidence: moderate
+    reason: "spiro-fused bis-dione; symmetric spiro centre, chirality status ambiguous"
+
+  - kind: delete
+    smiles: "CCC1=C(C)c2cc3c(CC)c(C)c(cc4nc(cc5[nH]c(cc1n2)c(C)c5CC)C(C)=C4CC)n3C"
+    confidence: moderate
+    reason: "N-methyl porphyrinoid macrocycle; chirality source ambiguous (no tetrahedral centre)"
+
+  # ---- keep: reviewed, genuinely chiral, unperceived by the 3D audit -------
+  # The 3D stereocentre audit reads tetrahedral tags off the conformer, which
+  # misses these three families. Each was reviewed and deliberately kept as
+  # `central`; recording that here stops the audit re-flagging them every build.
+
+  # phosphorus (19)
+  - kind: keep
+    smiles: "COc1cccc(OC)c1-c1cccc2c1P(C(C)(C)C)CO2"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "CC(C)(C)P1COc2cccc(-n3c(-c4ccccc4)ccc3-c3ccccc3)c21"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "COc1ccccc1-c1cccc2c1P(C(C)(C)C)CO2"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "COc1c(-c2ccccc2)cc(-c2ccccc2)c(OC)c1-c1cccc2c1P(C(C)(C)C)CO2"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "CC(C)(C)P1COc2cccc(-c3c(Oc4ccccc4)cccc3Oc3ccccc3)c21"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "COc1cccc(OC)c1-c1cccc2c1P(C(C)(C)C)C(C)(C)O2"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "CC(C)(C)P1COc2cccc(-c3cccc4c3P(C(C)(C)C)CO4)c21"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "CC(C)Oc1cccc(OC(C)C)c1-c1cccc2c1P(C(C)(C)C)CO2"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "COc1c(C)cc(C)c(OC)c1-c1cccc2c1P(C(C)(C)C)CO2"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "COc1c(C(C)C)cc(C(C)C)c(OC)c1-c1cccc2c1P(C(C)(C)C)CO2"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "CC(C)(C)P1COc2cccc(-c3c4c(cc5c3OCC5)CCO4)c21"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "CC(C)(C)P1COc2cccc(-c3c4ccccc4cc4ccccc34)c21"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "C[P@](c1nc2ccccc2nc1[P@@](C)C(C)(C)C)C(C)(C)C"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "Cc1ccccc1P(CCP(c1ccccc1)c1ccccc1C)c1ccccc1"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "COc1ccccc1[P@@](CC[P@@](c1ccccc1)c1ccccc1OC)c1ccccc1"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "CP(c1ccccc1P(C)C(C)(C)C)C(C)(C)C"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "CP(c1nc2ccccc2nc1P(C)C(C)(C)C)C(C)(C)C"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "COc1ccccc1P(CCP(c1ccccc1)c1ccccc1OC)c1ccccc1"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+  - kind: keep
+    smiles: "C[P@](c1ccccc1[P@@](C)C(C)(C)C)C(C)(C)C"
+    confidence: high
+    reason: "P(III) phosphine; the lone pair is the fourth substituent, which RDKit does not treat as a CIP-rankable ligand, so no R/S is assigned from 3D"
+
+  # selenium (1)
+  - kind: keep
+    smiles: "Cc1cc(C)c([Se](=O)c2ccccc2)c(C)c1"
+    confidence: high
+    reason: "selenoxide; Se=O stereocentre is not perceived as tetrahedral by AssignStereochemistryFrom3D"
+
+  # organometallic (8)
+  - kind: keep
+    smiles: "CO[C]([O])[CH][CH][CH]CC=O.[C-]#[O+].[C-]#[O+].[C-]#[O+].[Fe]"
+    confidence: high
+    reason: "haptic organometallic (ferrocene / (arene)Fe(CO)3 family); planar-chiral or metal-centred, stored as disconnected fragments so AssignStereochemistryFrom3D perceives no tetrahedral centre"
+  - kind: keep
+    smiles: "OC[C]1[CH][CH][CH][CH]1.[CH]1[CH][CH][CH][CH]1.[Fe]"
+    confidence: high
+    reason: "haptic organometallic (ferrocene / (arene)Fe(CO)3 family); planar-chiral or metal-centred, stored as disconnected fragments so AssignStereochemistryFrom3D perceives no tetrahedral centre"
+  - kind: keep
+    smiles: "O=C1[CH][CH][CH][CH][CH][C]1OC(=O)c1ccccc1.[C-]#[O+].[C-]#[O+].[C-]#[O+].[Fe]"
+    confidence: high
+    reason: "haptic organometallic (ferrocene / (arene)Fe(CO)3 family); planar-chiral or metal-centred, stored as disconnected fragments so AssignStereochemistryFrom3D perceives no tetrahedral centre"
+  - kind: keep
+    smiles: "CC(=O)O[C]1[CH][CH][CH][CH][CH]C1=O.[C-]#[O+].[C-]#[O+].[C-]#[O+].[Fe]"
+    confidence: high
+    reason: "haptic organometallic (ferrocene / (arene)Fe(CO)3 family); planar-chiral or metal-centred, stored as disconnected fragments so AssignStereochemistryFrom3D perceives no tetrahedral centre"
+  - kind: keep
+    smiles: "O=C1[CH][CH][CH][CH]C1.[C-]#[O+].[C-]#[O+].[C-]#[O+].[Fe]"
+    confidence: high
+    reason: "haptic organometallic (ferrocene / (arene)Fe(CO)3 family); planar-chiral or metal-centred, stored as disconnected fragments so AssignStereochemistryFrom3D perceives no tetrahedral centre"
+  - kind: keep
+    smiles: "O=C1[CH][CH][CH][CH]CC1.[C-]#[O+].[C-]#[O+].[C-]#[O+].[Fe]"
+    confidence: high
+    reason: "haptic organometallic (ferrocene / (arene)Fe(CO)3 family); planar-chiral or metal-centred, stored as disconnected fragments so AssignStereochemistryFrom3D perceives no tetrahedral centre"
+  - kind: keep
+    smiles: "O=C1[CH][CH][CH][CH][C]2C=CC=C[C]21.[C-]#[O+].[C-]#[O+].[C-]#[O+].[Fe]"
+    confidence: high
+    reason: "haptic organometallic (ferrocene / (arene)Fe(CO)3 family); planar-chiral or metal-centred, stored as disconnected fragments so AssignStereochemistryFrom3D perceives no tetrahedral centre"
+  - kind: keep
+    smiles: "O=C1[CH][CH][CH][CH][CH][CH]1.[C-]#[O+].[C-]#[O+].[C-]#[O+].[Fe]"
+    confidence: high
+    reason: "haptic organometallic (ferrocene / (arene)Fe(CO)3 family); planar-chiral or metal-centred, stored as disconnected fragments so AssignStereochemistryFrom3D perceives no tetrahedral centre"
