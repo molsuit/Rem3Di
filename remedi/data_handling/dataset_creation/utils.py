@@ -2,10 +2,8 @@ from time import perf_counter
 
 import numpy as np
 import torch
-from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import AllChem
-from rdkit.Chem.rdDistGeom import EmbedMultipleConfs
 from torch import Tensor
 
 from remedi.data_handling.dataset_creation.conformer_timing import (
@@ -186,32 +184,3 @@ def embed_one_smiles(
             used_random_coordinates=used_random_coordinates,
         ),
     )
-
-
-def get_ase_atoms_with_conformers(smiles, N_conformers: int) -> list[Atoms]:
-    # print(smiles)
-    mol = Chem.MolFromSmiles(smiles)
-
-    if mol is None:
-        raise ValueError
-
-    mol = Chem.AddHs(mol)
-
-    EmbedMultipleConfs(
-        mol, numConfs=N_conformers, numThreads=N_conformers, maxAttempts=500
-    )
-
-    AllChem.MMFFOptimizeMoleculeConfs(mol, maxIters=500, nonBondedThresh=500.0)
-
-    ase_confs = [
-        Atoms(
-            positions=conf.GetPositions(),
-            numbers=[atom.GetAtomicNum() for atom in mol.GetAtoms()],
-        )
-        for conf in mol.GetConformers()
-    ]
-
-    if len(ase_confs) == 0:
-        raise ValueError
-
-    return ase_confs

@@ -2,15 +2,11 @@ import os
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
-from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from ase import Atoms
 from tqdm import tqdm
-
-if TYPE_CHECKING:
-    from mace.calculators.mace_torchsim import MaceTorchSimModel
 
 from remedi.configuration.dataset_config import (
     DatasetCreationConfig,
@@ -442,48 +438,6 @@ class ConformerGenerationStage(PipelineStage):
         """
         out_path = self.config.path / "conformer_timings.jsonl"
         write_timings_jsonl(self._timing_records, out_path)
-
-
-class ParallelRelaxStage(PipelineStage):
-    def __init__(self, mace_model: "MaceTorchSimModel", device, dtype, N_steps: int):
-        self.mace_model = mace_model
-
-        self._device = device
-        self._dtype = dtype
-
-        self.N_steps = N_steps
-
-    def __call__(self, input_batch, data_batch):
-        import torch_sim as ts
-        from torch_sim.optimizers import fire
-
-        state = ts.initialize_state(
-            input_batch.molecules, device=self._device, dtype=self._dtype
-        )
-
-        init_fn, update_fn = fire(
-            model=self.mace_model,
-        )
-
-        state = init_fn(state)
-
-        for _step in range(self.N_steps):
-            state = update_fn(state)
-
-        print(f"Final max force: {torch.linalg.norm(state.forces, dim=1)} eV")
-
-        input_batch.molecules = ts.io.state_to_atoms(state)
-
-        return input_batch, data_batch
-
-
-class EnantiomaiPairConformalSamplingStage(PipelineStage):
-    pass
-
-
-class MolecularDynamicsConformalSampling(PipelineStage):
-    # Sample Conformers from MD simulation
-    pass
 
 
 class FilterMoleculeStage(PipelineStage):

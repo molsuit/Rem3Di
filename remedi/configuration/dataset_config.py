@@ -105,8 +105,6 @@ class DatasetCreationConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     path: Path
-    relaxation_tolerance: float | None = None
-    relaxation_steps: int | None = None
     N_structures: int | None = None
     N_sampled_conformers: int = 1
     # ETKDG retry budget per conformer. 200 is the validated production value
