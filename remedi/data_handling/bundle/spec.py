@@ -1,8 +1,11 @@
-"""``benchmark.yaml`` — the :class:`BenchmarkSpec` of a prepared benchmark bundle.
+"""``dataset.yaml``: the :class:`DatasetSpec` of a bundle or a dataset.
 
-See ``BENCHMARK_DATA_FORMAT.md`` §1.3. The spec says *what a bundle is and how to
-score it*; everything source-specific (csv names, column names, downloader
-arguments) lives in the preparer and never reaches this package.
+See ``BENCHMARK_DATA_FORMAT.md`` §10.2. The same spec heads two kinds of
+directory: a **bundle** (a table with one row per stereoisomer, before any
+structures exist; ``geometry_origin`` unset) and a **dataset** (a zarr with the
+table beside it, one row per structure; ``geometry_origin`` set). Labels are
+top level, because a pretraining corpus has labels too; everything only scoring
+needs lives in the optional ``evaluation`` block.
 """
 
 from __future__ import annotations
@@ -19,35 +22,25 @@ from remedi.data_handling.dataset.tasks import (
     TaskType,
 )
 
-#: The six fixed leading columns of ``table.parquet`` (§1.1), in order.
-FIXED_COLUMNS: tuple[str, ...] = (
-    "structure_id",
-    "stereoisomer_id",
-    "molecule_id",
-    "isomeric_smiles",
-    "nonisomeric_smiles",
-    "enantiomer_of",
-)
+#: The identity columns every table starts with, in order.
+IDENTITY_COLUMNS: tuple[str, ...] = ("stereoisomer_id", "molecule_id", "enantiomer_of")
+#: Present iff the spec declares ``smiles: true``.
+SMILES_COLUMNS: tuple[str, ...] = ("isomeric_smiles", "nonisomeric_smiles")
+#: The per-structure physics a dataset table carries and the zarr stores.
+CHARGE_COLUMNS: tuple[str, ...] = ("total_charge", "multiplicity")
 
-#: The only values a split column may hold (§1.1 invariant 5).
+#: The only values a split column may hold (invariant 5).
 SPLIT_VALUES: frozenset[str] = frozenset({"train", "valid", "test", "unassigned"})
 
-#: The bundle stage names (§1.2).
-BundleStage = Literal["smiles", "conformers"]
-
-#: Where the coordinates of a ``conformers``-stage bundle came from (§1.3).
+#: Where a dataset's coordinates came from.
 GeometryOrigin = Literal["source", "etkdg_mmff"]
 
-#: The identity level a split column must be constant within (§1.1 invariant 6).
+#: The identity level a split column must be constant within (invariant 6).
 SplitGroup = Literal["molecule_id", "stereoisomer_id"]
 
 
 class EvalMetric(StrEnum):
-    """Metrics a bundle may ask for. Values are the strings written to yaml.
-
-    Carried over verbatim from the deleted ``remedi.data_handling.benchmarks``
-    so that the registry's removal changed no recorded metric name.
-    """
+    """Metrics an evaluation may ask for. Values are the strings written to yaml."""
 
     rmse = "RMSE"
     mae = "MAE"
@@ -62,18 +55,37 @@ class EvalMetric(StrEnum):
     pair_ranking_accuracy = "pair-ranking-accuracy"
 
 
-class BenchmarkTask(BaseModel):
-    """One scored column of ``table.parquet``.
+#: The metrics computed alongside the headline one, per task type (§7e).
+METRICS_BY_TASK_TYPE: dict[TaskType, tuple[EvalMetric, ...]] = {
+    TaskType.classification: (EvalMetric.auroc, EvalMetric.auprc),
+    TaskType.regression: (
+        EvalMetric.mae,
+        EvalMetric.rmse,
+        EvalMetric.spearman,
+        EvalMetric.r2,
+    ),
+}
+
+
+def metrics_with_headline(
+    headline: EvalMetric, task_type: TaskType
+) -> list[EvalMetric]:
+    """``headline`` first, then the rest of its task type's family, without repeats."""
+    ordered = [headline]
+    for metric in METRICS_BY_TASK_TYPE.get(task_type, ()):
+        if metric not in ordered:
+            ordered.append(metric)
+    return ordered
+
+
+class LabelColumn(BaseModel):
+    """One label column of ``table.parquet``.
 
     ``n_classes`` is required for, and only meaningful on, a ``multiclass``
-    task; the column then stores the integer class index as a ``float64``
-    (§1.1) and invariant 7 checks it lies in ``0 … n_classes - 1``.
-
-    ``class_names`` is the optional display labelling of those classes, in
-    class-index order, and is what the per-class report and confusion matrix of
-    a multiclass cell are headed with. It is presentation only — nothing branches
-    on it — and when it is absent the report falls back to
-    ``class_0 … class_{n-1}``.
+    label; the column then stores the integer class index as a ``float64`` and
+    invariant 7 checks it lies in ``0 … n_classes - 1``. A ``classification``
+    label holds only 0 and 1. ``class_names`` is the optional display labelling
+    of the classes, in class-index order; presentation only.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -84,67 +96,56 @@ class BenchmarkTask(BaseModel):
     class_names: list[str] | None = None
 
     @model_validator(mode="after")
-    def check_class_count(self) -> BenchmarkTask:
+    def check_class_count(self) -> LabelColumn:
         if self.task_type is TaskType.multiclass:
             if self.n_classes is None:
                 raise ValueError(
-                    f"task {self.name!r} is multiclass and must declare n_classes"
+                    f"label {self.name!r} is multiclass and must declare n_classes"
                 )
             if self.n_classes < 2:
                 raise ValueError(
-                    f"task {self.name!r} declares n_classes={self.n_classes}, "
+                    f"label {self.name!r} declares n_classes={self.n_classes}, "
                     "which must be at least 2"
                 )
             if self.class_names is not None and len(self.class_names) != self.n_classes:
                 raise ValueError(
-                    f"task {self.name!r} declares n_classes={self.n_classes} but "
+                    f"label {self.name!r} declares n_classes={self.n_classes} but "
                     f"{len(self.class_names)} class_names; give one name per class "
                     "or none at all"
                 )
         else:
             if self.n_classes is not None:
                 raise ValueError(
-                    f"task {self.name!r} is {self.task_type.value} and must not "
+                    f"label {self.name!r} is {self.task_type.value} and must not "
                     "declare n_classes"
                 )
             if self.class_names is not None:
                 raise ValueError(
-                    f"task {self.name!r} is {self.task_type.value} and must not "
+                    f"label {self.name!r} is {self.task_type.value} and must not "
                     "declare class_names"
                 )
         return self
 
 
-class BenchmarkSpec(BaseModel):
-    """``benchmark.yaml`` (§1.3). A reader refuses any ``format_version`` but 1."""
+class EvaluationSpec(BaseModel):
+    """How a dataset is scored. Absent on a corpus that is only trained on."""
 
     model_config = ConfigDict(extra="forbid")
 
-    format_version: Literal[1] = 1
-    dataset_id: str = Field(min_length=1)
-    description: str = ""
-
-    tasks: list[BenchmarkTask] = Field(min_length=1)
+    #: Every metric to compute; the first is the headline cell.
     metrics: list[EvalMetric] = Field(min_length=1)
-
-    stage: BundleStage
-    geometry_origin: GeometryOrigin | None = None
-
     split_columns: list[str] = Field(min_length=1)
     default_split: str
-    # Declared per bundle with no default: molecule_id for the chiral benchmarks,
-    # stereoisomer_id for the drug-property panel, which keeps the public
-    # row-level splits (§1.1).
+    # Declared per dataset with no default: molecule_id for the chiral
+    # benchmarks, stereoisomer_id for the drug-property panel, which keeps the
+    # public row-level splits (§1.1).
     split_group: SplitGroup
+    #: Orphan rule at conformer generation: drop a stereoisomer whose mirror
+    #: partner failed, instead of only nulling its ``enantiomer_of``.
     require_enantiomer_pairs: bool = False
 
-    extra_columns: list[str] = Field(default_factory=list)
-
-    # Provenance only. The reader never branches on this.
-    source_kind: str = Field(min_length=1)
-
     @model_validator(mode="after")
-    def check_consistency(self) -> BenchmarkSpec:
+    def check_split_columns(self) -> EvaluationSpec:
         if self.default_split not in self.split_columns:
             raise ValueError(
                 f"default_split {self.default_split!r} is not one of "
@@ -158,48 +159,87 @@ class BenchmarkSpec(BaseModel):
                     f"split column {column_name!r} must be named 'split' or "
                     "'split__<variant>'"
                 )
-        if self.stage == "conformers" and self.geometry_origin is None:
-            raise ValueError("a conformers-stage bundle must declare geometry_origin")
-        if self.stage == "smiles" and self.geometry_origin is not None:
-            raise ValueError("a smiles-stage bundle must leave geometry_origin unset")
+        return self
 
-        task_names = [task.name for task in self.tasks]
-        if len(set(task_names)) != len(task_names):
-            raise ValueError(f"duplicate task names in {task_names}")
 
+class DatasetSpec(BaseModel):
+    """``dataset.yaml``. A reader refuses any ``format_version`` but 1."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    format_version: Literal[1] = 1
+    dataset_id: str = Field(min_length=1)
+    description: str = ""
+    #: Opt-in: the table carries ``isomeric_smiles`` and ``nonisomeric_smiles``.
+    smiles: bool = False
+    #: Set on a dataset (structures exist), unset on a bundle.
+    geometry_origin: GeometryOrigin | None = None
+    labels: list[LabelColumn] = Field(default_factory=list)
+    extra_columns: list[str] = Field(default_factory=list)
+    evaluation: EvaluationSpec | None = None
+    # Provenance only. The reader never branches on this.
+    source_kind: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def check_consistency(self) -> DatasetSpec:
+        names = self.label_names()
+        if len(set(names)) != len(names):
+            raise ValueError(f"duplicate label names in {names}")
+        if self.evaluation is not None and not self.labels:
+            raise ValueError("an evaluation block needs at least one label to score")
         seen: set[str] = set()
         for column_name in self.expected_columns():
             if column_name in seen:
                 raise ValueError(
                     f"column name {column_name!r} is declared more than once across "
-                    "the fixed columns, tasks, split columns and extra columns"
+                    "the fixed columns, labels, split columns and extra columns"
                 )
             seen.add(column_name)
         return self
 
+    @property
+    def has_structures(self) -> bool:
+        """True for a dataset (one row per structure), False for a bundle."""
+        return self.geometry_origin is not None
+
+    def split_columns(self) -> list[str]:
+        return [] if self.evaluation is None else list(self.evaluation.split_columns)
+
+    def fixed_columns(self) -> list[str]:
+        """The leading columns: ids, SMILES if declared, charge if structures exist."""
+        columns = ["structure_id"] if self.has_structures else []
+        columns += IDENTITY_COLUMNS
+        if self.smiles:
+            columns += SMILES_COLUMNS
+        if self.has_structures:
+            columns += CHARGE_COLUMNS
+        return columns
+
     def expected_columns(self) -> list[str]:
         """The exact ordered column list ``table.parquet`` must have (invariant 7)."""
         return [
-            *FIXED_COLUMNS,
-            *(task.name for task in self.tasks),
-            *self.split_columns,
+            *self.fixed_columns(),
+            *self.label_names(),
+            *self.split_columns(),
             *self.extra_columns,
         ]
 
-    def task_names(self) -> list[str]:
-        return [task.name for task in self.tasks]
+    def label_names(self) -> list[str]:
+        return [label.name for label in self.labels]
+
+    def with_structures(self, geometry_origin: GeometryOrigin) -> DatasetSpec:
+        """The spec of the dataset built from this bundle."""
+        return DatasetSpec.model_validate(
+            {**self.model_dump(), "geometry_origin": geometry_origin}
+        )
 
     def task_set(self) -> TaskSet:
-        """The zarr-side :class:`TaskSet` these tasks become at ingest.
-
-        Every bundle task is a per-structure label, so all of them land in
-        ``system_cols``.
-        """
+        """The zarr-side :class:`TaskSet` the labels become: all per structure."""
         return TaskSet.from_list(
             [
                 TaskConfig(
-                    name=task.name, task_type=task.task_type, scope=TaskScope.system
+                    name=label.name, task_type=label.task_type, scope=TaskScope.system
                 )
-                for task in self.tasks
+                for label in self.labels
             ]
         )

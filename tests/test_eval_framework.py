@@ -1,9 +1,8 @@
 """Framework runner: fault tolerance, shared resources, decoupled plotting.
 
-CPU-only — ECFP descriptors over benchmark zarrs built by the real
-``ingest_benchmark`` prepare task from real bundles, so the whole framework
-(manifest -> runner -> tasks -> artifacts -> status) is exercised without a GPU
-or a trained model.
+CPU-only — ECFP descriptors over benchmark datasets written by the real
+``write_dataset``, so the whole framework (manifest -> runner -> tasks ->
+artifacts -> status) is exercised without a GPU or a trained model.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ import pandas as pd
 import pydantic_yaml as pyd_yaml
 import pytest
 
-from remedi.data_handling.bundle import BenchmarkTask
+from remedi.data_handling.bundle import EvalMetric, LabelColumn
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset.tasks import TaskType
 from remedi.evaluation.benchmark.descriptors import EcfpConfig
@@ -33,25 +32,20 @@ from remedi.evaluation.framework import (
 from remedi.evaluation.framework.runner import RunReport
 from remedi.evaluation.results import ArrayResult, FigureResult, TableResult
 
-from .helpers.bundle_fixtures import (
-    ACHIRAL_TEN_SMILES,
-    ingest_tiny_bundle,
-    write_conformers_bundle,
-)
+from .helpers.bundle_fixtures import ACHIRAL_TEN_SMILES, write_small_dataset
 
 _N_ROWS = len(ACHIRAL_TEN_SMILES)
 
 
 def _build_reg_zarr(tmp_path: Path, dataset_id: str, targets: np.ndarray) -> Path:
-    """One regression bundle ingested into ``tmp_path/datasets/<dataset_id>``."""
-    write_conformers_bundle(
-        tmp_path / "bundles",
+    """One regression dataset at ``tmp_path/datasets/<dataset_id>``."""
+    return write_small_dataset(
+        tmp_path / "datasets",
         dataset_id=dataset_id,
-        tasks=[BenchmarkTask(name="y", task_type=TaskType.regression)],
-        metrics=["RMSE"],
+        labels=[LabelColumn(name="y", task_type=TaskType.regression)],
+        metrics=[EvalMetric.rmse],
         targets=targets,
     )
-    return ingest_tiny_bundle(tmp_path / "bundles", tmp_path / "datasets", dataset_id)
 
 
 def _manifest(tmp_path: Path) -> EvalManifest:
@@ -91,14 +85,15 @@ def test_run_manifest_writes_results_status_and_manifest(tmp_path: Path) -> None
 def _failing_panel_task(tmp_path: Path) -> BenchmarkPanelConfig:
     """A valid union task that raises at run time.
 
-    Its eval root holds a directory that *looks* like an ingested benchmark
-    zarr but whose ``benchmark.yaml`` does not parse, so discovery raises before
-    the panel's own per-dataset fault tolerance can catch anything.
+    Its eval root holds a directory that *looks* like a dataset but whose
+    ``dataset.yaml`` declares an unsupported format version, so discovery
+    raises before the panel's own per-dataset fault tolerance can catch
+    anything.
     """
     broken_root = tmp_path / "broken_root"
     broken = broken_root / "broken_dataset"
     broken.mkdir(parents=True, exist_ok=True)
-    (broken / "benchmark.yaml").write_text("format_version: 99\n")
+    (broken / "dataset.yaml").write_text("format_version: 99\n")
     (broken / "dataset_config.yaml").write_text("{}\n")
     return BenchmarkPanelConfig(
         eval_root=broken_root, learners=[LinearLearnerConfig(ridge_alpha=1.0)]

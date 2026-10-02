@@ -27,9 +27,8 @@ import pandas as pd
 from pydantic import BaseModel, Field
 
 from remedi.data_handling.bundle import (
-    BenchmarkSpec,
+    DatasetSpec,
     EvalMetric,
-    discover_benchmark_zarrs,
 )
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.evaluation.benchmark.descriptors import DescriptorConfig
@@ -45,7 +44,9 @@ from remedi.evaluation.benchmark.runner import (
     _split_masks,
     _structure_group_ids,
     _task_kind,
+    discover_benchmarks,
     evaluate_pairwise_cell,
+    evaluation_of,
     multiclass_labelling,
 )
 from remedi.evaluation.framework.context import EvalContext
@@ -84,7 +85,7 @@ class BenchmarkPanelConfig(BaseModel):
         rows: list[BenchmarkResultRow] = []
         failures: list[BenchmarkFailure] = []
 
-        for zarr_path, spec in discover_benchmark_zarrs(self.eval_root):
+        for zarr_path, spec in discover_benchmarks(self.eval_root):
             logger.info("--- %s @ %s ---", spec.dataset_id, zarr_path)
             dataset_rows: list[BenchmarkResultRow] = []
             dataset_results: list[EvalResult] = []
@@ -116,7 +117,7 @@ class BenchmarkPanelConfig(BaseModel):
         self,
         ctx: EvalContext,
         zarr_path: Path,
-        spec: BenchmarkSpec,
+        spec: DatasetSpec,
         descriptors: list[DescriptorConfig],
     ) -> tuple[list[BenchmarkResultRow], list[EvalResult]]:
         """Every cell of one benchmark: its result rows and its cell artifacts."""
@@ -128,8 +129,8 @@ class BenchmarkPanelConfig(BaseModel):
         n_classes, class_names = multiclass_labelling(spec)
         cell = BenchmarkCell(
             dataset_id=spec.dataset_id,
-            metric=spec.metrics[0],
-            split_column=self.split_column or spec.default_split,
+            metric=evaluation_of(spec).metrics[0],
+            split_column=self.split_column or evaluation_of(spec).default_split,
             seed=ctx.seed,
             n_classes=n_classes,
             class_names=class_names,

@@ -1,12 +1,12 @@
-"""PyTDC ``admet_group`` -> one ``smiles``-stage benchmark bundle per endpoint.
+"""PyTDC ``admet_group`` -> one bundle per endpoint.
 
-``BENCHMARK_DATA_FORMAT.md`` step 2. For each of the 22 ADMET group endpoints
-this reads the downloaded ``train_val.csv`` + ``test.csv``, cleans the SMILES
-with the shared SMILES filter
-(:func:`remedi.data_handling.chemistry.smiles_filter.filter_smiles` with the
-defaults of ``SmilesFilterConfig``), assigns bundle identity, freezes the five
-seeded train/valid partitions as ``split__seed{1..5}`` alongside the fixed
-``test`` fold, and writes ``benchmark_data/bundles/<dataset_id>/``.
+``BENCHMARK_DATA_FORMAT.md`` §5c and §10. For each of the 22 ADMET group
+endpoints (listed in ``endpoints.yaml`` next to this module) this reads the
+downloaded ``train_val.csv`` + ``test.csv``, cleans the SMILES with the shared
+SMILES filter (:func:`remedi.data_handling.chemistry.smiles_filter.filter_smiles`),
+merges replicate measurements, assigns identity, freezes the five seeded
+train/valid partitions as ``split__seed{1..5}`` alongside the fixed ``test``
+fold, and writes ``benchmark_data/bundles/<dataset_id>/``.
 
 Run from the repository root::
 
@@ -19,12 +19,8 @@ files are missing and this script is meant to be reproducible offline.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import logging
-import os
-import shutil
 import statistics
-import subprocess
 import sys
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
@@ -35,26 +31,27 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rdkit import rdBase
 
 from remedi.data_handling.bundle import (
-    PROVENANCE_FILENAME,
-    SPEC_FILENAME,
-    TABLE_FILENAME,
-    BenchmarkSpec,
-    BenchmarkTask,
+    METRICS_BY_TASK_TYPE,
     Bundle,
     BundleCounts,
     BundleProvenance,
+    BundleValidationError,
+    DatasetSpec,
     EvalMetric,
+    EvaluationSpec,
     FileHash,
     IdentityTable,
+    LabelColumn,
     PreparerRecord,
     SourceRecord,
     assign_identity,
     canonical_smiles_pair,
-    read_bundle,
+    metrics_with_headline,
     sha256_of_file,
     write_bundle,
 )
@@ -66,19 +63,19 @@ from remedi.data_handling.dataset.tasks import TaskType
 
 logger = logging.getLogger("preparers.tdc")
 
-#: This module's path inside the ``Rem3Di`` repository, for provenance.
-PREPARER_SCRIPT = "preparers/tdc/remedi_prepare_tdc/prepare.py"
 PREPARER_REPO = "molsuit/Rem3Di"
 #: The ``Rem3Di`` checkout this module lives in; the default data paths hang off it.
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_RAW_ROOT = REPOSITORY_ROOT / "benchmark_data" / "raw" / "tdc"
 DEFAULT_BUNDLE_ROOT = REPOSITORY_ROOT / "benchmark_data" / "bundles"
+ENDPOINTS_FILE = Path(__file__).with_name("endpoints.yaml")
 SOURCE_KIND = "tdc_admet_group"
 
 #: The column names PyTDC uses in every ``admet_group`` csv.
 SMILES_COLUMN = "Drug"
 LABEL_COLUMN = "Y"
 IDENTIFIER_COLUMN = "Drug_ID"
+SOURCE_FILENAMES = ("train_val.csv", "test.csv")
 
 #: The one ``extra_columns`` entry every TDC bundle carries: how many source
 #: rows went into this row's label (1 for a compound measured once).
@@ -100,8 +97,13 @@ AGGREGATION_NOTICE = (
     "column records how many source rows each label was aggregated from."
 )
 
-#: Directory name used next to ``bundle_root`` while a bundle is being written.
-STAGING_DIRECTORY_NAME = ".preparer-staging"
+#: ``tdc.metadata.admet_metrics`` values -> the bundle's metric enum.
+TDC_METRIC_TO_EVAL_METRIC: dict[str, EvalMetric] = {
+    "mae": EvalMetric.mae,
+    "spearman": EvalMetric.spearman,
+    "roc-auc": EvalMetric.auroc,
+    "pr-auc": EvalMetric.auprc,
+}
 
 
 class TdcPreparationError(RuntimeError):
@@ -112,137 +114,45 @@ class TdcPreparationError(RuntimeError):
 
 
 class TdcEndpoint(BaseModel):
-    """One ``admet_group`` benchmark and the names it takes in a bundle.
-
-    ``dataset_id`` is the PyTDC benchmark name as the Rem3Di registry spells it
-    and is also the bundle directory name; ``task_name`` is the registry's short
-    label and becomes the scored column of ``table.parquet``.
-    """
+    """One ``admet_group`` benchmark and the names it takes in a bundle."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    #: The PyTDC benchmark name as the registry spells it; the bundle directory.
     dataset_id: str = Field(min_length=1)
-    task_name: str = Field(min_length=1)
+    #: The registry's short label; the label column of ``table.parquet``.
+    label_name: str = Field(min_length=1)
     property_description: str = Field(min_length=1)
 
 
-#: All 22 endpoints of the TDC ADMET benchmark group (§5c).
-TDC_ENDPOINTS: tuple[TdcEndpoint, ...] = (
-    TdcEndpoint(
-        dataset_id="Caco2_Wang",
-        task_name="Caco-2",
-        property_description="Caco-2 cell effective permeability",
-    ),
-    TdcEndpoint(
-        dataset_id="HIA_Hou",
-        task_name="HIA",
-        property_description="human intestinal absorption",
-    ),
-    TdcEndpoint(
-        dataset_id="Pgp_Broccatelli",
-        task_name="Pgp",
-        property_description="P-glycoprotein inhibition",
-    ),
-    TdcEndpoint(
-        dataset_id="Bioavailability_Ma",
-        task_name="Bioavailability",
-        property_description="oral bioavailability",
-    ),
-    TdcEndpoint(
-        dataset_id="Lipophilicity_AstraZeneca",
-        task_name="Lipophilicity",
-        property_description="octanol/water distribution coefficient (logD at pH 7.4)",
-    ),
-    TdcEndpoint(
-        dataset_id="Solubility_AqSolDB",
-        task_name="Solubility",
-        property_description="aqueous solubility (log mol/L)",
-    ),
-    TdcEndpoint(
-        dataset_id="BBB_Martins",
-        task_name="BBB",
-        property_description="blood-brain barrier penetration",
-    ),
-    TdcEndpoint(
-        dataset_id="PPBR_AZ",
-        task_name="PPBR",
-        property_description="human plasma protein binding rate",
-    ),
-    TdcEndpoint(
-        dataset_id="VDss_Lombardo",
-        task_name="VDss",
-        property_description="volume of distribution at steady state",
-    ),
-    TdcEndpoint(
-        dataset_id="CYP2C9_Veith",
-        task_name="CYP2C9-I",
-        property_description="CYP2C9 inhibition",
-    ),
-    TdcEndpoint(
-        dataset_id="CYP2D6_Veith",
-        task_name="CYP2D6-I",
-        property_description="CYP2D6 inhibition",
-    ),
-    TdcEndpoint(
-        dataset_id="CYP3A4_Veith",
-        task_name="CYP3A4-I",
-        property_description="CYP3A4 inhibition",
-    ),
-    TdcEndpoint(
-        dataset_id="CYP2C9_Substrate_CarbonMangels",
-        task_name="CYP2C9-S",
-        property_description="CYP2C9 substrate",
-    ),
-    TdcEndpoint(
-        dataset_id="CYP2D6_Substrate_CarbonMangels",
-        task_name="CYP2D6-S",
-        property_description="CYP2D6 substrate",
-    ),
-    TdcEndpoint(
-        dataset_id="CYP3A4_Substrate_CarbonMangels",
-        task_name="CYP3A4-S",
-        property_description="CYP3A4 substrate",
-    ),
-    TdcEndpoint(
-        dataset_id="Half_Life_Obach",
-        task_name="Half-life",
-        property_description="drug half life in the human body",
-    ),
-    TdcEndpoint(
-        dataset_id="Clearance_Hepatocyte_AZ",
-        task_name="CL-hepa",
-        property_description="drug clearance in human hepatocytes",
-    ),
-    TdcEndpoint(
-        dataset_id="Clearance_Microsome_AZ",
-        task_name="CL-micro",
-        property_description="drug clearance in human liver microsomes",
-    ),
-    TdcEndpoint(
-        dataset_id="LD50_Zhu",
-        task_name="LD50",
-        property_description="acute toxicity (median lethal dose)",
-    ),
-    TdcEndpoint(
-        dataset_id="hERG",
-        task_name="hERG",
-        property_description="hERG channel blocking",
-    ),
-    TdcEndpoint(
-        dataset_id="AMES",
-        task_name="AMES",
-        property_description="Ames mutagenicity",
-    ),
-    TdcEndpoint(
-        dataset_id="DILI",
-        task_name="DILI",
-        property_description="drug-induced liver injury",
-    ),
-)
+class TdcEndpointCatalog(BaseModel):
+    """``endpoints.yaml``: every endpoint this preparer knows, in run order."""
 
-ENDPOINTS_BY_DATASET_ID: dict[str, TdcEndpoint] = {
-    endpoint.dataset_id: endpoint for endpoint in TDC_ENDPOINTS
-}
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    endpoints: list[TdcEndpoint] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def check_unique_names(self) -> TdcEndpointCatalog:
+        for field_name in ("dataset_id", "label_name"):
+            values = [getattr(endpoint, field_name) for endpoint in self.endpoints]
+            duplicates = sorted({value for value in values if values.count(value) > 1})
+            if duplicates:
+                raise ValueError(f"duplicate {field_name} values {duplicates}")
+        return self
+
+    @classmethod
+    def from_yaml(cls, path: Path) -> TdcEndpointCatalog:
+        return cls.model_validate(yaml.safe_load(Path(path).read_text()))
+
+    def dataset_ids(self) -> list[str]:
+        return [endpoint.dataset_id for endpoint in self.endpoints]
+
+
+#: All 22 endpoints of the TDC ADMET benchmark group (§5c).
+TDC_ENDPOINTS: tuple[TdcEndpoint, ...] = tuple(
+    TdcEndpointCatalog.from_yaml(ENDPOINTS_FILE).endpoints
+)
 
 
 # -------------------------------------------------------------- the config
@@ -260,19 +170,17 @@ class TdcPreparerConfig(BaseModel):
     #: The ``get_train_valid_split`` seeds frozen into the bundle. The first one
     #: is what the bare ``split`` column aliases (§5c).
     seeds: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5], min_length=1)
-    #: Today's ingest defaults; recorded verbatim in ``provenance.yaml``.
+    #: Recorded verbatim in ``provenance.yaml``.
     smiles_filter: SmilesFilterConfig = Field(default_factory=SmilesFilterConfig)
     #: Restrict the run to these dataset ids; empty means all 22.
     only: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def check_selection(self) -> TdcPreparerConfig:
-        unknown = sorted(set(self.only) - set(ENDPOINTS_BY_DATASET_ID))
+        known = {endpoint.dataset_id for endpoint in TDC_ENDPOINTS}
+        unknown = sorted(set(self.only) - known)
         if unknown:
-            raise ValueError(
-                f"unknown dataset ids {unknown}; known: "
-                f"{sorted(ENDPOINTS_BY_DATASET_ID)}"
-            )
+            raise ValueError(f"unknown dataset ids {unknown}; known: {sorted(known)}")
         if len(set(self.seeds)) != len(self.seeds):
             raise ValueError(f"duplicate seeds in {self.seeds}")
         if not self.smiles_filter.dedupe:
@@ -293,15 +201,6 @@ class TdcPreparerConfig(BaseModel):
         """``[split, split__seed1, …]`` — the bare name first, then one per seed."""
         return ["split", *(f"split__seed{seed}" for seed in self.seeds)]
 
-    def staging_root(self) -> Path:
-        """Where a bundle is assembled before its files are renamed into place.
-
-        Deliberately *outside* ``bundle_root``: ``discover_bundles`` globs for
-        ``benchmark.yaml`` recursively, and a concurrent reader must not find a
-        half-written bundle.
-        """
-        return self.bundle_root.parent / STAGING_DIRECTORY_NAME
-
 
 # ------------------------------------------------------------- PyTDC quirks
 
@@ -317,41 +216,60 @@ def patch_tdc_print_sys() -> None:
     a 'bad bond stereo' SMILES). Provide the symbol so the intended
     skip-and-continue runs.
     """
-    import tdc.utils.split as _tdc_split
+    import tdc.utils.split as tdc_split_module
 
-    if hasattr(_tdc_split, "print_sys"):
+    if hasattr(tdc_split_module, "print_sys"):
         return
     try:
-        from tdc.utils import print_sys as _print_sys
+        from tdc.utils import print_sys
     except ImportError:
 
-        def _print_sys(msg: str, *args: object, **kwargs: object) -> None:
-            logger.warning("tdc skipped: %s", msg)
+        def print_sys(message: str, *args: object, **kwargs: object) -> None:
+            logger.warning("tdc skipped: %s", message)
 
     # setattr keeps ty happy — print_sys is intentionally not declared on
     # tdc.utils.split (the bug we're patching).
-    setattr(_tdc_split, "print_sys", _print_sys)  # noqa: B010
+    setattr(tdc_split_module, "print_sys", print_sys)  # noqa: B010
 
 
-# ------------------------------------------------------- metrics and tasks
+def _resolve_tdc_directory_name(group: Any, dataset_id: str) -> str:
+    """The lowercase directory PyTDC stores an endpoint under."""
+    from tdc.utils import fuzzy_search
+
+    return str(fuzzy_search(dataset_id, group.dataset_names))
 
 
-#: ``tdc.metadata.admet_metrics`` values -> the bundle's metric enum.
-TDC_METRIC_TO_EVAL_METRIC: dict[str, EvalMetric] = {
-    "mae": EvalMetric.mae,
-    "spearman": EvalMetric.spearman,
-    "roc-auc": EvalMetric.auroc,
-    "pr-auc": EvalMetric.auprc,
-}
+def load_admet_group(raw_root: Path) -> Any:
+    """Open the pinned ``admet_group`` download without touching the network."""
+    marker = raw_root / "admet_group"
+    if not marker.is_dir():
+        raise TdcPreparationError(
+            f"{marker} does not exist; the admet_group download must be in place "
+            "(this script never downloads)"
+        )
+    patch_tdc_print_sys()
+    from tdc.benchmark_group import admet_group
 
-#: Metrics computed alongside the headline one (§7e); they are free.
-CLASSIFICATION_METRICS: tuple[EvalMetric, ...] = (EvalMetric.auroc, EvalMetric.auprc)
-REGRESSION_METRICS: tuple[EvalMetric, ...] = (
-    EvalMetric.mae,
-    EvalMetric.rmse,
-    EvalMetric.spearman,
-    EvalMetric.r2,
-)
+    return admet_group(path=str(raw_root))
+
+
+def tdc_default_metrics() -> dict[str, str]:
+    """``tdc.metadata.admet_metrics``: lowercase endpoint name -> metric name."""
+    from tdc.metadata import admet_metrics
+
+    return dict(admet_metrics)
+
+
+def package_versions() -> dict[str, str]:
+    """``PyTDC`` and ``rdkit`` versions, pinned into every bundle (§5c)."""
+    try:
+        pytdc_version = installed_version("PyTDC")
+    except PackageNotFoundError as error:  # pragma: no cover - PyTDC is a hard dep
+        raise TdcPreparationError("PyTDC is not installed") from error
+    return {"PyTDC": pytdc_version, "rdkit": rdBase.rdkitVersion}
+
+
+# ------------------------------------------------------------------ metrics
 
 
 def headline_metric(tdc_metric: str) -> EvalMetric:
@@ -366,26 +284,11 @@ def headline_metric(tdc_metric: str) -> EvalMetric:
 
 
 def task_type_for_metric(metric: EvalMetric) -> TaskType:
-    """Classification iff the TDC default metric is a ranking/threshold metric."""
-    if metric in CLASSIFICATION_METRICS:
-        return TaskType.classification
-    return TaskType.regression
-
-
-def metrics_for_endpoint(tdc_metric: str) -> list[EvalMetric]:
-    """The TDC default first, then the rest of its family, de-duplicated (§7e)."""
-    headline = headline_metric(tdc_metric)
-    task_type = task_type_for_metric(headline)
-    family = (
-        CLASSIFICATION_METRICS
-        if task_type is TaskType.classification
-        else REGRESSION_METRICS
-    )
-    ordered: list[EvalMetric] = []
-    for metric in (headline, *family):
-        if metric not in ordered:
-            ordered.append(metric)
-    return ordered
+    """The task type whose metric family holds ``metric``."""
+    for task_type, family in METRICS_BY_TASK_TYPE.items():
+        if metric in family:
+            return task_type
+    raise TdcPreparationError(f"metric {metric.value} belongs to no task type")
 
 
 # ------------------------------------------------------------ source tables
@@ -425,7 +328,7 @@ def read_source_table(raw_root: Path, tdc_directory_name: str) -> SourceTable:
     """Read the two csvs of one endpoint from the pinned download."""
     endpoint_directory = raw_root / "admet_group" / tdc_directory_name
     frames: list[pd.DataFrame] = []
-    for filename in ("train_val.csv", "test.csv"):
+    for filename in SOURCE_FILENAMES:
         path = endpoint_directory / filename
         if not path.is_file():
             raise TdcPreparationError(f"missing raw file {path}")
@@ -441,7 +344,7 @@ def source_file_hashes(raw_root: Path, tdc_directory_name: str) -> dict[str, Fil
                 raw_root / "admet_group" / tdc_directory_name / filename
             )
         )
-        for filename in ("train_val.csv", "test.csv")
+        for filename in SOURCE_FILENAMES
     }
 
 
@@ -462,8 +365,7 @@ def train_valid_labels(
     ``BenchmarkGroup.get_train_valid_split`` returns re-indexed *copies* of the
     ``train_val`` rows, so the partition has to be matched back by content.
     Rows that agree in every column are interchangeable; when such a group is
-    split across train and valid the earlier positions are labelled ``train``,
-    which reproduces the train-before-valid priority the previous generator had.
+    split across train and valid the earlier positions are labelled ``train``.
 
     Raises:
         TdcPreparationError: if a returned row is not in ``train_val`` or if a
@@ -502,6 +404,19 @@ def split_column_values(
         *train_valid_labels(source.train_val, train, valid),
         *(["test"] * len(source.test)),
     ]
+
+
+def raw_split_columns(
+    group: Any, dataset_id: str, source: SourceTable, seeds: Sequence[int]
+) -> dict[str, list[str]]:
+    """Every split column over the raw rows; ``split`` aliases the first seed (§5c)."""
+    columns: dict[str, list[str]] = {}
+    for seed in seeds:
+        train, valid = group.get_train_valid_split(
+            seed=seed, benchmark=dataset_id, split_type="default"
+        )
+        columns[f"split__seed{seed}"] = split_column_values(source, train, valid)
+    return {"split": list(columns[f"split__seed{seeds[0]}"]), **columns}
 
 
 # --------------------------------------------- filtering, aggregation, ids
@@ -552,12 +467,20 @@ def aggregate_label(values: Sequence[float], task_type: TaskType) -> float | Non
     it. A compound measured once keeps its measurement bit for bit.
 
     Raises:
-        TdcPreparationError: if ``values`` is empty.
+        TdcPreparationError: if ``values`` is empty, or a classification value
+            is neither 0 nor 1. The vote would silently turn such a value into
+            a class, so the 0/1 invariant ``write_bundle`` checks could no
+            longer see it.
     """
     if not values:
         raise TdcPreparationError("cannot aggregate an empty list of measurements")
     if task_type is not TaskType.classification:
         return statistics.fmean(values)
+    invalid = sorted({value for value in values if value not in (0.0, 1.0)})
+    if invalid:
+        raise TdcPreparationError(
+            f"classification measurements {invalid} are neither 0 nor 1"
+        )
     positive_votes = sum(1 for value in values if value == 1.0)
     negative_votes = len(values) - positive_votes
     if positive_votes == negative_votes:
@@ -579,6 +502,11 @@ class AggregatedRows:
     merged_rows: int
     #: Compounds dropped because their classification votes tied exactly.
     label_ties: int
+
+    @property
+    def rows_with_replicates(self) -> int:
+        """How many rows carry more than one measurement."""
+        return sum(1 for count in self.measurement_counts if count > 1)
 
 
 def aggregate_by_canonical_smiles(
@@ -602,8 +530,7 @@ def aggregate_by_canonical_smiles(
     measurement_counts: list[int] = []
     label_ties = 0
     for positions in positions_by_smiles.values():
-        measurements = [labels[position] for position in positions]
-        label = aggregate_label(measurements, task_type)
+        label = aggregate_label([labels[position] for position in positions], task_type)
         if label is None:
             label_ties += 1
             continue
@@ -619,89 +546,6 @@ def aggregate_by_canonical_smiles(
         merged_rows=len(canonical) - len(positions_by_smiles),
         label_ties=label_ties,
     )
-
-
-# ------------------------------------------------------------- table + spec
-
-
-def build_table(
-    identity: IdentityTable,
-    task_name: str,
-    labels: Sequence[float],
-    split_values: dict[str, list[str]],
-    measurement_counts: Sequence[int],
-) -> pd.DataFrame:
-    """The six fixed columns, the task column, the split columns, ``n_measurements``.
-
-    Raises:
-        TdcPreparationError: on a missing label, an ``unassigned`` split value or
-            a non-positive measurement count — none can happen on this source
-            and all would be silent corruption downstream.
-    """
-    table = identity.to_frame()
-    table[task_name] = pd.Series(list(labels), dtype="float64", index=table.index)
-    if table[task_name].isna().any():
-        raise TdcPreparationError(
-            f"task column {task_name!r} has NaN labels; TDC always supplies one"
-        )
-    for column_name, values in split_values.items():
-        table[column_name] = pd.Series(list(values), dtype="str", index=table.index)
-        if (table[column_name] == "unassigned").any():
-            raise TdcPreparationError(
-                f"split column {column_name!r} has unassigned rows"
-            )
-    table[MEASUREMENT_COUNT_COLUMN] = pd.Series(
-        list(measurement_counts), dtype="float64", index=table.index
-    )
-    if (table[MEASUREMENT_COUNT_COLUMN] < 1).any():
-        raise TdcPreparationError(
-            f"{MEASUREMENT_COUNT_COLUMN} must be at least 1 on every row"
-        )
-    return table
-
-
-def build_spec(
-    endpoint: TdcEndpoint,
-    tdc_metric: str,
-    split_columns: Sequence[str],
-) -> BenchmarkSpec:
-    """``benchmark.yaml`` for one endpoint."""
-    metrics = metrics_for_endpoint(tdc_metric)
-    return BenchmarkSpec(
-        dataset_id=endpoint.dataset_id,
-        description=(
-            f"TDC ADMET benchmark group endpoint {endpoint.dataset_id} "
-            f"({endpoint.property_description}), from tdcommons.ai. Rows are the "
-            "union of the official train_val and test folds after the Rem3Di "
-            "SMILES filter, one row per stereoisomer with replicate "
-            "measurements aggregated; the fixed TDC test fold plus five seeded "
-            "train/valid partitions are frozen as the split columns."
-        ),
-        tasks=[
-            BenchmarkTask(
-                name=endpoint.task_name,
-                task_type=task_type_for_metric(metrics[0]),
-            )
-        ],
-        metrics=metrics,
-        stage="smiles",
-        split_columns=list(split_columns),
-        default_split="split",
-        split_group="stereoisomer_id",
-        require_enantiomer_pairs=False,
-        extra_columns=[MEASUREMENT_COUNT_COLUMN],
-        source_kind=SOURCE_KIND,
-    )
-
-
-def check_classification_labels(task_name: str, labels: Sequence[float]) -> None:
-    """A classification task column must hold exactly the two labels 0 and 1."""
-    observed = sorted({float(value) for value in labels})
-    if not set(observed) <= {0.0, 1.0}:
-        raise TdcPreparationError(
-            f"classification task {task_name!r} has labels {observed[:10]}, "
-            "expected only 0.0 and 1.0"
-        )
 
 
 def check_row_accounting(
@@ -720,66 +564,74 @@ def check_row_accounting(
         )
 
 
-def write_bundle_atomically(
-    bundle: Bundle, directory: Path, staging_root: Path
-) -> Path:
-    """``write_bundle`` into a staging directory, then rename the files into place.
+# ------------------------------------------------------------- table + spec
 
-    Another process reads the bundle root while this runs, so no reader may see
-    a half-written ``table.parquet``. The three files are moved one at a time —
-    ``os.replace`` is atomic per file within a filesystem — with
-    ``provenance.yaml``, which carries the hashes of the other two, last. The
-    bundle directory itself is created if missing and never removed; the
-    staging directory is, as soon as its files are in place.
+
+def build_table(
+    identity: IdentityTable,
+    label_name: str,
+    labels: Sequence[float],
+    split_values: dict[str, list[str]],
+    measurement_counts: Sequence[int],
+) -> pd.DataFrame:
+    """Identity and SMILES columns, the label, the split columns, ``n_measurements``.
+
+    Raises:
+        TdcPreparationError: on a missing label, an ``unassigned`` split value or
+            a non-positive measurement count — none can happen on this source,
+            the format allows the first two, and all would be silent corruption
+            downstream.
     """
-    directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    staging_root = Path(staging_root)
-    staging = staging_root / directory.name
-    shutil.rmtree(staging, ignore_errors=True)
-    try:
-        write_bundle(bundle, staging)
-        for filename in (TABLE_FILENAME, SPEC_FILENAME, PROVENANCE_FILENAME):
-            os.replace(staging / filename, directory / filename)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-        with contextlib.suppress(OSError):
-            staging_root.rmdir()
-    return directory
-
-
-def preparer_record(repository_root: Path) -> PreparerRecord:
-    """``preparer:`` — this script and the git sha of the checkout it ran from."""
-    return PreparerRecord(
-        repo=PREPARER_REPO,
-        script=PREPARER_SCRIPT,
-        git_sha=git_head_sha(repository_root),
-    )
-
-
-def git_head_sha(repository_root: Path) -> str | None:
-    """``git rev-parse HEAD`` in ``repository_root``, or ``None`` if unavailable."""
-    try:
-        completed = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=repository_root,
-            capture_output=True,
-            text=True,
-            check=True,
+    table = identity.to_frame()
+    table[label_name] = pd.Series(list(labels), dtype="float64", index=table.index)
+    if table[label_name].isna().any():
+        raise TdcPreparationError(
+            f"label column {label_name!r} has NaN labels; TDC always supplies one"
         )
-    except (OSError, subprocess.CalledProcessError) as error:
-        logger.warning("could not read the git sha of %s: %s", repository_root, error)
-        return None
-    return completed.stdout.strip() or None
+    for column_name, values in split_values.items():
+        table[column_name] = pd.Series(list(values), dtype="str", index=table.index)
+        if (table[column_name] == "unassigned").any():
+            raise TdcPreparationError(
+                f"split column {column_name!r} has unassigned rows"
+            )
+    table[MEASUREMENT_COUNT_COLUMN] = pd.Series(
+        list(measurement_counts), dtype="float64", index=table.index
+    )
+    if (table[MEASUREMENT_COUNT_COLUMN] < 1).any():
+        raise TdcPreparationError(
+            f"{MEASUREMENT_COUNT_COLUMN} must be at least 1 on every row"
+        )
+    return table
 
 
-def package_versions() -> dict[str, str]:
-    """``PyTDC`` and ``rdkit`` versions, pinned into every bundle (§5c)."""
-    try:
-        pytdc_version = installed_version("PyTDC")
-    except PackageNotFoundError as error:  # pragma: no cover - PyTDC is a hard dep
-        raise TdcPreparationError("PyTDC is not installed") from error
-    return {"PyTDC": pytdc_version, "rdkit": rdBase.rdkitVersion}
+def build_spec(
+    endpoint: TdcEndpoint, tdc_metric: str, split_columns: Sequence[str]
+) -> DatasetSpec:
+    """``dataset.yaml`` for one endpoint."""
+    headline = headline_metric(tdc_metric)
+    task_type = task_type_for_metric(headline)
+    return DatasetSpec(
+        dataset_id=endpoint.dataset_id,
+        description=(
+            f"TDC ADMET benchmark group endpoint {endpoint.dataset_id} "
+            f"({endpoint.property_description}), from tdcommons.ai. Rows are the "
+            "union of the official train_val and test folds after the Rem3Di "
+            "SMILES filter, one row per stereoisomer with replicate "
+            "measurements aggregated; the fixed TDC test fold plus five seeded "
+            "train/valid partitions are frozen as the split columns."
+        ),
+        smiles=True,
+        labels=[LabelColumn(name=endpoint.label_name, task_type=task_type)],
+        extra_columns=[MEASUREMENT_COUNT_COLUMN],
+        evaluation=EvaluationSpec(
+            metrics=metrics_with_headline(headline, task_type),
+            split_columns=list(split_columns),
+            default_split="split",
+            split_group="stereoisomer_id",
+            require_enantiomer_pairs=False,
+        ),
+        source_kind=SOURCE_KIND,
+    )
 
 
 # ------------------------------------------------------------- the endpoint
@@ -790,18 +642,24 @@ class EndpointReport:
     """What one prepared endpoint came out as, for the run summary."""
 
     dataset_id: str
-    task_name: str
+    label_name: str
     headline_metric: EvalMetric
     task_type: TaskType
-    source_molecules: int
-    final_rows: int
-    dropped: dict[str, int]
-    per_split: dict[str, int]
-    straddling_constitutions: int
     #: How many bundle rows carry more than one measurement.
-    aggregated_rows: int
-    content_sha256: str
+    rows_with_replicates: int
+    #: The provenance as written, counts and output hashes filled in.
+    provenance: BundleProvenance
     directory: Path
+
+    @property
+    def counts(self) -> BundleCounts:
+        return self.provenance.counts
+
+    @property
+    def content_sha256(self) -> str:
+        if self.provenance.outputs is None:  # pragma: no cover - the writer fills it
+            raise TdcPreparationError(f"{self.directory} has no output hashes")
+        return self.provenance.outputs.table_parquet.content_sha256
 
 
 def prepare_endpoint(
@@ -811,54 +669,48 @@ def prepare_endpoint(
     tdc_metric: str,
     preparer: PreparerRecord,
 ) -> EndpointReport:
-    """Read, clean, split and write one endpoint; re-read the bundle to verify."""
+    """Read, clean, split, aggregate and write one endpoint.
+
+    Raises:
+        TdcPreparationError: on a source problem this preparer detects.
+        BundleValidationError: if the table violates a format invariant.
+    """
     tdc_directory_name = _resolve_tdc_directory_name(group, endpoint.dataset_id)
     source = read_source_table(config.raw_root, tdc_directory_name)
     spec = build_spec(endpoint, tdc_metric, config.split_columns())
-
-    raw_split_values: dict[str, list[str]] = {}
-    for seed in config.seeds:
-        train, valid = group.get_train_valid_split(
-            seed=seed, benchmark=endpoint.dataset_id, split_type="default"
-        )
-        raw_split_values[f"split__seed{seed}"] = split_column_values(
-            source, train, valid
-        )
-    # `split` aliases the first seed (§5c).
-    raw_split_values["split"] = list(raw_split_values[f"split__seed{config.seeds[0]}"])
+    task_type = spec.labels[0].task_type
+    split_columns = raw_split_columns(group, endpoint.dataset_id, source, config.seeds)
 
     filtered = filter_source_smiles(source.raw_smiles(), config.smiles_filter)
     raw_labels = source.labels()
-    kept_labels = [raw_labels[index] for index in filtered.kept_row_indices]
-    task_type = spec.tasks[0].task_type
-    if task_type is TaskType.classification:
-        check_classification_labels(endpoint.task_name, kept_labels)
-
     aggregated = aggregate_by_canonical_smiles(
-        filtered.isomeric_smiles, kept_labels, task_type
+        filtered.isomeric_smiles,
+        [raw_labels[index] for index in filtered.kept_row_indices],
+        task_type,
     )
     kept_raw_indices = [
         filtered.kept_row_indices[position] for position in aggregated.first_positions
     ]
 
-    dropped = dict(filtered.dropped)
-    dropped[DUPLICATE_SMILES] = aggregated.merged_rows
-    dropped[DUPLICATE_LABEL_TIE] = aggregated.label_ties
+    dropped = {
+        **filtered.dropped,
+        DUPLICATE_SMILES: aggregated.merged_rows,
+        DUPLICATE_LABEL_TIE: aggregated.label_ties,
+    }
     check_row_accounting(len(source), len(kept_raw_indices), dropped)
 
     table = build_table(
         identity=aggregated.identity,
-        task_name=endpoint.task_name,
+        label_name=endpoint.label_name,
         labels=aggregated.labels,
         split_values={
             column_name: [
-                raw_split_values[column_name][index] for index in kept_raw_indices
+                split_columns[column_name][index] for index in kept_raw_indices
             ]
-            for column_name in spec.split_columns
+            for column_name in spec.split_columns()
         },
         measurement_counts=aggregated.measurement_counts,
     )
-
     provenance = BundleProvenance(
         dataset_id=endpoint.dataset_id,
         preparer=preparer,
@@ -872,57 +724,18 @@ def prepare_endpoint(
     )
 
     directory = config.bundle_root / endpoint.dataset_id
-    write_bundle_atomically(
-        Bundle(spec=spec, table=table, structures=None, provenance=provenance),
-        directory,
-        config.staging_root(),
+    written = write_bundle(
+        Bundle(spec=spec, table=table, provenance=provenance), directory
     )
-    written = read_bundle(directory)
-    counts = written.provenance.counts
-    if written.provenance.outputs is None:  # pragma: no cover - write_bundle fills it
-        raise TdcPreparationError(f"{directory} was written without output hashes")
     return EndpointReport(
         dataset_id=endpoint.dataset_id,
-        task_name=endpoint.task_name,
-        headline_metric=spec.metrics[0],
+        label_name=endpoint.label_name,
+        headline_metric=headline_metric(tdc_metric),
         task_type=task_type,
-        source_molecules=counts.source_molecules,
-        final_rows=counts.final_rows,
-        dropped=dict(counts.dropped),
-        per_split=dict(counts.per_split),
-        straddling_constitutions=counts.stereoisomer_straddling_constitutions,
-        aggregated_rows=int((written.table[MEASUREMENT_COUNT_COLUMN] > 1.0).sum()),
-        content_sha256=written.provenance.outputs.table_parquet.content_sha256,
+        rows_with_replicates=aggregated.rows_with_replicates,
+        provenance=written,
         directory=directory,
     )
-
-
-def _resolve_tdc_directory_name(group: Any, dataset_id: str) -> str:
-    """The lowercase directory PyTDC stores an endpoint under."""
-    from tdc.utils import fuzzy_search
-
-    return str(fuzzy_search(dataset_id, group.dataset_names))
-
-
-def load_admet_group(raw_root: Path) -> Any:
-    """Open the pinned ``admet_group`` download without touching the network."""
-    marker = raw_root / "admet_group"
-    if not marker.is_dir():
-        raise TdcPreparationError(
-            f"{marker} does not exist; the admet_group download must be in place "
-            "(this script never downloads)"
-        )
-    patch_tdc_print_sys()
-    from tdc.benchmark_group import admet_group
-
-    return admet_group(path=str(raw_root))
-
-
-def tdc_default_metrics() -> dict[str, str]:
-    """``tdc.metadata.admet_metrics``: lowercase endpoint name -> metric name."""
-    from tdc.metadata import admet_metrics
-
-    return dict(admet_metrics)
 
 
 # --------------------------------------------------------------------- main
@@ -931,35 +744,36 @@ def tdc_default_metrics() -> dict[str, str]:
 def format_report(reports: Iterable[EndpointReport]) -> str:
     """A fixed-width summary of a run, one line per endpoint."""
     header = (
-        f"{'dataset_id':32s} {'task':16s} {'metric':9s} {'source':>7s} "
+        f"{'dataset_id':32s} {'label':16s} {'metric':9s} {'source':>7s} "
         f"{'final':>7s} {'inval':>6s} {'filt':>6s} {'dup':>6s} {'tie':>4s} "
         f"{'aggr':>5s} {'train':>7s} {'valid':>6s} {'test':>6s} {'straddle':>8s} "
         f"{'content_sha256':14s}"
     )
     lines = [header, "-" * len(header)]
     for report in reports:
+        counts = report.counts
         lines.append(
-            f"{report.dataset_id:32s} {report.task_name:16s} "
-            f"{report.headline_metric.value:9s} {report.source_molecules:7d} "
-            f"{report.final_rows:7d} {report.dropped.get('invalid_smiles', 0):6d} "
-            f"{report.dropped.get('smiles_filter', 0):6d} "
-            f"{report.dropped.get(DUPLICATE_SMILES, 0):6d} "
-            f"{report.dropped.get(DUPLICATE_LABEL_TIE, 0):4d} "
-            f"{report.aggregated_rows:5d} "
-            f"{report.per_split.get('train', 0):7d} "
-            f"{report.per_split.get('valid', 0):6d} "
-            f"{report.per_split.get('test', 0):6d} "
-            f"{report.straddling_constitutions:8d} "
+            f"{report.dataset_id:32s} {report.label_name:16s} "
+            f"{report.headline_metric.value:9s} {counts.source_molecules:7d} "
+            f"{counts.final_rows:7d} {counts.dropped.get('invalid_smiles', 0):6d} "
+            f"{counts.dropped.get('smiles_filter', 0):6d} "
+            f"{counts.dropped.get(DUPLICATE_SMILES, 0):6d} "
+            f"{counts.dropped.get(DUPLICATE_LABEL_TIE, 0):4d} "
+            f"{report.rows_with_replicates:5d} "
+            f"{counts.per_split.get('train', 0):7d} "
+            f"{counts.per_split.get('valid', 0):6d} "
+            f"{counts.per_split.get('test', 0):6d} "
+            f"{counts.stereoisomer_straddling_constitutions:8d} "
             f"{report.content_sha256[:14]:14s}"
         )
     return "\n".join(lines)
 
 
-def run(config: TdcPreparerConfig, repository_root: Path) -> list[EndpointReport]:
+def run(config: TdcPreparerConfig) -> list[EndpointReport]:
     """Prepare every selected endpoint. Returns one report each."""
     group = load_admet_group(config.raw_root)
     metrics = tdc_default_metrics()
-    preparer = preparer_record(repository_root)
+    preparer = PreparerRecord.for_script(PREPARER_REPO, Path(__file__))
     reports: list[EndpointReport] = []
     for endpoint in config.selected_endpoints():
         directory_name = _resolve_tdc_directory_name(group, endpoint.dataset_id)
@@ -1014,8 +828,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         only=list(arguments.only),
     )
     try:
-        reports = run(config, REPOSITORY_ROOT)
-    except TdcPreparationError as error:
+        reports = run(config)
+    except (TdcPreparationError, BundleValidationError) as error:
         logger.error("%s", error)
         return 1
     print(format_report(reports))

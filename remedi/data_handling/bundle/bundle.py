@@ -1,68 +1,68 @@
-"""Reading and writing a *prepared benchmark bundle* directory (§1).
+"""Reading and writing the three files of a bundle or a dataset (§10.1).
 
-A bundle is one directory::
+A **bundle** directory is exactly::
 
-    <benchmark_root>/<dataset_id>/
-        benchmark.yaml       # BenchmarkSpec                     (required)
-        table.parquet        # one row per structure             (required)
-        structures.extxyz    # 3D geometries, row-aligned        (iff stage: conformers)
-        provenance.yaml      # BundleProvenance                  (required)
+    <bundle_root>/<dataset_id>/
+        dataset.yaml       # DatasetSpec (geometry_origin unset)
+        table.parquet      # one row per stereoisomer
+        provenance.yaml    # BundleProvenance
 
-Nothing else. ``write_bundle`` refuses to write an invalid bundle and
-``read_bundle`` re-validates everything it reads, so a preparer that writes the
-wrong columns fails loudly on the first read.
+A **dataset** directory is a zarr (written by ``dataset_build.write_dataset``)
+with the same three files beside it, its table holding one row per structure.
+``write_bundle`` refuses to write an invalid bundle and ``read_bundle`` (which
+reads either kind) re-validates the table and its recorded hash on every open.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 import yaml
-from ase import Atoms
-from ase.io import read as ase_read
-from ase.io import write as ase_write
 
 from remedi.data_handling.bundle.provenance import (
     BundleOutputs,
     BundleProvenance,
-    StructuresOutputRecord,
     TableOutputRecord,
 )
-from remedi.data_handling.bundle.spec import BenchmarkSpec
+from remedi.data_handling.bundle.spec import DatasetSpec
 from remedi.data_handling.bundle.validate import (
     count_stereoisomer_straddling_constitutions,
-    validate_bundle,
+    validate_table,
 )
 
-SPEC_FILENAME = "benchmark.yaml"
+SPEC_FILENAME = "dataset.yaml"
 TABLE_FILENAME = "table.parquet"
-STRUCTURES_FILENAME = "structures.extxyz"
 PROVENANCE_FILENAME = "provenance.yaml"
+#: Written by ``MoleculeDataset.create_empty_dataset``; its presence is what
+#: distinguishes a dataset directory from a bundle directory.
+DATASET_CONFIG_FILENAME = "dataset_config.yaml"
+#: The format version this reader understands.
+FORMAT_VERSION = 1
 
 
 class BundleValidationError(ValueError):
-    """Raised when a bundle violates the format. Lists every problem found."""
+    """Raised when a bundle or dataset violates the format. Lists every problem."""
 
     def __init__(self, directory: Path | None, problems: list[str]):
         self.directory = directory
         self.problems = list(problems)
         where = f" in {directory}" if directory is not None else ""
         super().__init__(
-            f"invalid benchmark bundle{where}:\n  " + "\n  ".join(self.problems)
+            f"invalid bundle or dataset{where}:\n  " + "\n  ".join(self.problems)
         )
 
 
 @dataclass
 class Bundle:
-    """A prepared benchmark bundle held in memory."""
+    """The three files of a bundle or dataset, held in memory."""
 
-    spec: BenchmarkSpec
+    spec: DatasetSpec
     table: pd.DataFrame
-    structures: list[Atoms] | None
     provenance: BundleProvenance
 
 
@@ -114,8 +114,8 @@ def content_hash_of_table(table: pd.DataFrame) -> str:
 # ------------------------------------------------------------- normalisation
 
 
-def normalize_table(table: pd.DataFrame, spec: BenchmarkSpec) -> pd.DataFrame:
-    """Coerce the declared columns to the dtypes of §1.1, leaving extras alone.
+def normalize_table(table: pd.DataFrame, spec: DatasetSpec) -> pd.DataFrame:
+    """Coerce the declared columns to their format dtypes, in declared order.
 
     Applied on both sides of the disk round trip so that ``content_sha256`` is
     a property of the data and not of the parquet reader's dtype guesses.
@@ -124,14 +124,14 @@ def normalize_table(table: pd.DataFrame, spec: BenchmarkSpec) -> pd.DataFrame:
     for column_name in ("structure_id", "stereoisomer_id", "molecule_id"):
         if column_name in normalized.columns:
             normalized[column_name] = normalized[column_name].astype("int64")
-    for column_name in ("isomeric_smiles", "nonisomeric_smiles", *spec.split_columns):
+    for column_name in ("isomeric_smiles", "nonisomeric_smiles", *spec.split_columns()):
         if column_name in normalized.columns:
             normalized[column_name] = normalized[column_name].astype("str")
     if "enantiomer_of" in normalized.columns:
         normalized["enantiomer_of"] = normalized["enantiomer_of"].astype("Int64")
-    for task in spec.tasks:
-        if task.name in normalized.columns:
-            normalized[task.name] = normalized[task.name].astype("float64")
+    for column_name in ("total_charge", "multiplicity", *spec.label_names()):
+        if column_name in normalized.columns:
+            normalized[column_name] = normalized[column_name].astype("float64")
     ordered = [
         column_name
         for column_name in spec.expected_columns()
@@ -140,179 +140,163 @@ def normalize_table(table: pd.DataFrame, spec: BenchmarkSpec) -> pd.DataFrame:
     remaining = [
         column_name for column_name in normalized.columns if column_name not in ordered
     ]
-    return normalized[ordered + remaining]
+    return normalized[ordered + remaining].reset_index(drop=True)
 
 
-# ------------------------------------------------------------------ counting
-
-
-def _fill_derived_provenance(
-    provenance: BundleProvenance, spec: BenchmarkSpec, table: pd.DataFrame
+def fill_derived_provenance(
+    provenance: BundleProvenance, spec: DatasetSpec, table: pd.DataFrame
 ) -> BundleProvenance:
-    """Fill the parts of ``provenance.yaml`` that follow from the data itself."""
+    """A copy of ``provenance`` with everything that follows from the data filled in.
+
+    ``outputs`` is left to the writer, which knows the file it wrote.
+    """
+    if provenance.dataset_id != spec.dataset_id:
+        raise BundleValidationError(
+            None,
+            [
+                f"provenance.dataset_id {provenance.dataset_id!r} != "
+                f"spec.dataset_id {spec.dataset_id!r}"
+            ],
+        )
     filled = provenance.model_copy(deep=True)
-    filled.dataset_id = spec.dataset_id
     filled.prepared_at = datetime.now(UTC)
     filled.counts.final_rows = len(table)
-    filled.counts.per_split = {
-        str(value): int(count)
-        for value, count in table[spec.default_split].value_counts().items()
+    filled.counts.per_label_non_null = {
+        label: int(table[label].notna().sum()) for label in spec.label_names()
     }
-    filled.counts.per_task_non_null = {
-        task.name: int(table[task.name].notna().sum()) for task in spec.tasks
-    }
-    filled.counts.stereoisomer_straddling_constitutions = (
-        count_stereoisomer_straddling_constitutions(table, spec.default_split)
-    )
+    if spec.evaluation is not None:
+        default_split = spec.evaluation.default_split
+        filled.counts.per_split = {
+            str(value): int(count)
+            for value, count in table[default_split].value_counts().items()
+        }
+        filled.counts.stereoisomer_straddling_constitutions = (
+            count_stereoisomer_straddling_constitutions(table, default_split)
+        )
     return filled
 
 
 # ------------------------------------------------------------------------ io
 
 
-def write_bundle(bundle: Bundle, directory: Path) -> Path:
-    """Validate ``bundle`` and write the four files. Returns ``directory``.
+def _dump_yaml(model, path: Path, **dump_options) -> None:
+    path.write_text(
+        yaml.safe_dump(
+            model.model_dump(mode="json", exclude_none=True, **dump_options),
+            sort_keys=False,
+            allow_unicode=True,
+        )
+    )
 
-    Raises:
-        BundleValidationError: if any invariant of §1.1 is violated. Nothing is
-            written in that case.
+
+def write_table_files(
+    directory: Path,
+    spec: DatasetSpec,
+    table: pd.DataFrame,
+    provenance: BundleProvenance,
+    *,
+    structures_sha256: str | None = None,
+) -> BundleProvenance:
+    """Write ``dataset.yaml``, ``table.parquet`` and ``provenance.yaml`` atomically.
+
+    ``table`` must already be normalized and validated. Each file is written
+    under a temporary name in ``directory`` and renamed into place (atomic per
+    file on one filesystem), ``provenance.yaml``, which carries the hashes of
+    the others, last; a concurrent reader never sees a half-written table.
+    Returns the provenance as written.
     """
     directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    written = fill_derived_provenance(provenance, spec, table)
+    staged: list[tuple[Path, Path]] = []
+    try:
+        spec_staging = directory / f".{SPEC_FILENAME}.partial"
+        _dump_yaml(spec, spec_staging)
+        staged.append((spec_staging, directory / SPEC_FILENAME))
+        table_staging = directory / f".{TABLE_FILENAME}.partial"
+        table.to_parquet(table_staging, index=False)
+        staged.append((table_staging, directory / TABLE_FILENAME))
+        written.outputs = BundleOutputs(
+            table_parquet=TableOutputRecord(
+                file_sha256=sha256_of_file(table_staging),
+                content_sha256=content_hash_of_table(table),
+                rows=len(table),
+            ),
+            structures_sha256=structures_sha256,
+        )
+        provenance_staging = directory / f".{PROVENANCE_FILENAME}.partial"
+        _dump_yaml(written, provenance_staging, by_alias=True)
+        staged.append((provenance_staging, directory / PROVENANCE_FILENAME))
+        for staging_path, final_path in staged:
+            os.replace(staging_path, final_path)
+    finally:
+        for staging_path, _ in staged:
+            staging_path.unlink(missing_ok=True)
+    return written
+
+
+def write_bundle(bundle: Bundle, directory: Path) -> BundleProvenance:
+    """Validate ``bundle`` and write its three files. Returns the written provenance.
+
+    Raises:
+        BundleValidationError: if the spec declares structures (that is a
+            dataset, written by ``dataset_build.write_dataset``) or any table
+            invariant is violated. Nothing is written in that case.
+    """
+    directory = Path(directory)
+    if bundle.spec.has_structures:
+        raise BundleValidationError(
+            directory,
+            ["a bundle has no structures; leave geometry_origin unset"],
+        )
     table = normalize_table(bundle.table, bundle.spec)
-    to_write = Bundle(
-        spec=bundle.spec,
-        table=table,
-        structures=bundle.structures,
-        provenance=bundle.provenance,
-    )
-    problems = validate_bundle(to_write)
+    problems = validate_table(bundle.spec, table)
     if problems:
         raise BundleValidationError(directory, problems)
-
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / SPEC_FILENAME).write_text(
-        yaml.safe_dump(
-            bundle.spec.model_dump(mode="json", exclude_none=True),
-            sort_keys=False,
-            allow_unicode=True,
-        )
-    )
-    table.to_parquet(directory / TABLE_FILENAME, index=False)
-    if bundle.structures is not None:
-        ase_write(directory / STRUCTURES_FILENAME, bundle.structures, format="extxyz")
-
-    provenance = _fill_derived_provenance(bundle.provenance, bundle.spec, table)
-    outputs = BundleOutputs(
-        table_parquet=TableOutputRecord(
-            file_sha256=sha256_of_file(directory / TABLE_FILENAME),
-            content_sha256=content_hash_of_table(table),
-            rows=len(table),
-        )
-    )
-    if bundle.structures is not None:
-        outputs.structures_extxyz = StructuresOutputRecord(
-            file_sha256=sha256_of_file(directory / STRUCTURES_FILENAME),
-            frames=len(bundle.structures),
-        )
-    provenance.outputs = outputs
-    (directory / PROVENANCE_FILENAME).write_text(
-        yaml.safe_dump(
-            provenance.model_dump(mode="json", by_alias=True, exclude_none=True),
-            sort_keys=False,
-            allow_unicode=True,
-        )
-    )
-    return directory
+    return write_table_files(directory, bundle.spec, table, bundle.provenance)
 
 
 def read_bundle(directory: Path) -> Bundle:
-    """Read and fully validate a bundle directory.
+    """Read and validate the three files of a bundle or dataset directory.
 
     Raises:
-        FileNotFoundError: if one of the required files is missing.
-        BundleValidationError: if ``format_version`` is not 1, if any invariant
-            of §1.1 is violated, or if the recorded hashes do not match.
+        FileNotFoundError: if one of the three files is missing.
+        BundleValidationError: if ``format_version`` is not supported, a table
+            invariant is violated, or the recorded table hash does not match.
     """
     directory = Path(directory)
-    for filename in (SPEC_FILENAME, TABLE_FILENAME, PROVENANCE_FILENAME):
-        if not (directory / filename).is_file():
-            raise FileNotFoundError(f"{directory} has no {filename}")
-
-    raw_spec = yaml.safe_load((directory / SPEC_FILENAME).read_text())
-    if not isinstance(raw_spec, dict):
-        raise BundleValidationError(directory, [f"{SPEC_FILENAME} is not a mapping"])
-    format_version = raw_spec.get("format_version")
-    if format_version != 1:
-        raise BundleValidationError(
-            directory,
-            [f"format_version {format_version!r} is not supported (this reader is 1)"],
-        )
-    spec = BenchmarkSpec.model_validate(raw_spec)
-    provenance = BundleProvenance.model_validate(
-        yaml.safe_load((directory / PROVENANCE_FILENAME).read_text())
-    )
-
-    table = normalize_table(pd.read_parquet(directory / TABLE_FILENAME), spec)
-    structures_path = directory / STRUCTURES_FILENAME
-    structures: list[Atoms] | None = None
-    if structures_path.is_file():
-        structures = list(ase_read(structures_path, index=":"))
-    elif spec.stage == "conformers":
-        raise FileNotFoundError(
-            f"{directory} is a conformers-stage bundle but has no {STRUCTURES_FILENAME}"
-        )
-
-    bundle = Bundle(
-        spec=spec, table=table, structures=structures, provenance=provenance
-    )
-    problems = validate_bundle(bundle)
-    problems += _check_recorded_hashes(bundle, directory)
+    spec = read_spec(directory)
+    provenance = read_provenance(directory)
+    table = normalize_table(read_table(directory), spec)
+    problems = validate_table(spec, table)
+    problems += _check_recorded_table_hash(table, provenance)
     if problems:
         raise BundleValidationError(directory, problems)
-    return bundle
+    return Bundle(spec=spec, table=table, provenance=provenance)
 
 
-def _check_recorded_hashes(bundle: Bundle, directory: Path) -> list[str]:
-    """Compare the table's content hash and the extxyz file hash to the record.
+def _check_recorded_table_hash(
+    table: pd.DataFrame, provenance: BundleProvenance
+) -> list[str]:
+    """Compare the table's content hash and row count to the record.
 
     ``sha256(table.parquet)`` is deliberately *not* enforced: it is a writer
     hash and moves with compression or row-group settings (§1.4).
     """
-    problems: list[str] = []
-    outputs = bundle.provenance.outputs
+    outputs = provenance.outputs
     if outputs is None:
         return [f"{PROVENANCE_FILENAME} has no outputs block"]
-    recorded_content = outputs.table_parquet.content_sha256
-    actual_content = content_hash_of_table(bundle.table)
-    if recorded_content != actual_content:
+    problems: list[str] = []
+    actual_content = content_hash_of_table(table)
+    if outputs.table_parquet.content_sha256 != actual_content:
         problems.append(
             f"{TABLE_FILENAME} content_sha256 is {actual_content} but "
-            f"{PROVENANCE_FILENAME} records {recorded_content}"
+            f"{PROVENANCE_FILENAME} records {outputs.table_parquet.content_sha256}"
         )
-    if outputs.table_parquet.rows != len(bundle.table):
+    if outputs.table_parquet.rows != len(table):
         problems.append(
             f"{PROVENANCE_FILENAME} records {outputs.table_parquet.rows} rows but "
-            f"{TABLE_FILENAME} has {len(bundle.table)}"
-        )
-    structures_path = directory / STRUCTURES_FILENAME
-    if structures_path.is_file():
-        if outputs.structures_extxyz is None:
-            problems.append(
-                f"{STRUCTURES_FILENAME} exists but {PROVENANCE_FILENAME} does not "
-                "record it"
-            )
-        else:
-            actual_file = sha256_of_file(structures_path)
-            if outputs.structures_extxyz.file_sha256 != actual_file:
-                problems.append(
-                    f"{STRUCTURES_FILENAME} file_sha256 is {actual_file} but "
-                    f"{PROVENANCE_FILENAME} records "
-                    f"{outputs.structures_extxyz.file_sha256}"
-                )
-    elif outputs.structures_extxyz is not None:
-        problems.append(
-            f"{PROVENANCE_FILENAME} records {STRUCTURES_FILENAME} but the file is "
-            "absent"
+            f"{TABLE_FILENAME} has {len(table)}"
         )
     return problems
 
@@ -320,30 +304,20 @@ def _check_recorded_hashes(bundle: Bundle, directory: Path) -> list[str]:
 def read_table(directory: Path, columns: list[str] | None = None) -> pd.DataFrame:
     """Read ``table.parquet`` alone, optionally only ``columns``, without validating.
 
-    For consumers that want a few columns (ids, splits, a label) and do not
-    need the geometry or the invariants. Use :func:`read_bundle` whenever the
-    bundle is being *used* rather than inspected.
-
     Raises:
         FileNotFoundError: if the directory holds no ``table.parquet``.
     """
-    directory = Path(directory)
-    table_path = directory / TABLE_FILENAME
+    table_path = Path(directory) / TABLE_FILENAME
     if not table_path.is_file():
         raise FileNotFoundError(f"{directory} has no {TABLE_FILENAME}")
     return pd.read_parquet(table_path, columns=columns)
 
 
-#: Written by ``MoleculeDataset.create_empty_dataset``; its presence is what
-#: distinguishes an ingested zarr directory from a plain bundle directory.
-DATASET_CONFIG_FILENAME = "dataset_config.yaml"
-
-
-def read_spec(directory: Path) -> BenchmarkSpec:
-    """Read ``benchmark.yaml`` alone, without touching the table or geometry.
+def read_spec(directory: Path) -> DatasetSpec:
+    """Read ``dataset.yaml`` alone.
 
     Raises:
-        FileNotFoundError: if the directory holds no ``benchmark.yaml``.
+        FileNotFoundError: if the directory holds no ``dataset.yaml``.
         BundleValidationError: if it is not a mapping, or declares a
             ``format_version`` this reader does not support.
     """
@@ -354,82 +328,43 @@ def read_spec(directory: Path) -> BenchmarkSpec:
     raw_spec = yaml.safe_load(spec_path.read_text())
     if not isinstance(raw_spec, dict):
         raise BundleValidationError(directory, [f"{SPEC_FILENAME} is not a mapping"])
-    if raw_spec.get("format_version") != 1:
+    if raw_spec.get("format_version") != FORMAT_VERSION:
         raise BundleValidationError(
             directory,
             [
                 f"format_version {raw_spec.get('format_version')!r} is not supported "
-                "(this reader is 1)"
+                f"(this reader is {FORMAT_VERSION})"
             ],
         )
-    return BenchmarkSpec.model_validate(raw_spec)
-
-
-def discover_benchmark_zarrs(root: Path) -> list[tuple[Path, BenchmarkSpec]]:
-    """Every ingested benchmark zarr directly under ``root``, with its spec.
-
-    A benchmark zarr is a directory that carries both a ``benchmark.yaml``
-    (copied there by ``ingest_benchmark``, which is what makes it
-    self-describing) and a ``dataset_config.yaml`` (which is what makes it a
-    zarr rather than a bundle). Anything else under ``root`` — the prepare
-    run's own files, an unrelated pretraining zarr, a bundle directory — is
-    silently skipped, so one directory can hold a whole eval panel.
-
-    Args:
-        root: the eval root; a missing directory yields an empty list.
-
-    Returns:
-        ``(zarr_path, spec)`` pairs, sorted by path.
-    """
-    root = Path(root)
-    if not root.is_dir():
-        return []
-    discovered: list[tuple[Path, BenchmarkSpec]] = []
-    for directory in sorted(path for path in root.iterdir() if path.is_dir()):
-        if (directory / SPEC_FILENAME).is_file() and (
-            directory / DATASET_CONFIG_FILENAME
-        ).is_file():
-            discovered.append((directory, read_spec(directory)))
-    return discovered
+    return DatasetSpec.model_validate(raw_spec)
 
 
 def read_provenance(directory: Path) -> BundleProvenance:
-    """Read ``provenance.yaml`` alone, without touching the table or geometry.
+    """Read ``provenance.yaml`` alone.
 
     Raises:
         FileNotFoundError: if the directory holds no ``provenance.yaml``.
     """
-    directory = Path(directory)
-    provenance_path = directory / PROVENANCE_FILENAME
+    provenance_path = Path(directory) / PROVENANCE_FILENAME
     if not provenance_path.is_file():
         raise FileNotFoundError(f"{directory} has no {PROVENANCE_FILENAME}")
     return BundleProvenance.model_validate(yaml.safe_load(provenance_path.read_text()))
 
 
 def structures_identity(directory: Path) -> str:
-    """The hash identifying the *data* anything derived from this bundle saw (§7c).
+    """The hash identifying the *data* anything derived from a directory saw (§7c).
 
-    The geometry of record is ``structures.extxyz``, so its ``file_sha256`` is
-    the identity whenever the bundle has one; a ``smiles``-stage bundle has no
-    frames, and there the table's ``content_sha256`` is the whole of its
-    content. This is what a descriptor cache key must carry: two ingests of one
-    ``dataset_id`` that dropped a different number of rows are *different data*
-    under the same name, and a cache keyed on the name alone silently serves
-    the wrong matrix (observed as a row-count mismatch at scoring time).
-
-    Args:
-        directory: a bundle directory, or a zarr directory that
-            ``ingest_benchmark`` copied the bundle files into.
+    For a dataset that is ``structures_sha256``, the hash of the zarr's
+    structures; for a bundle, the table's ``content_sha256``. A descriptor cache
+    key must carry it: two builds of one ``dataset_id`` that dropped a different
+    number of rows are different data under the same name.
 
     Raises:
-        FileNotFoundError: if there is no ``provenance.yaml`` to read. A zarr
-            that was not built from a bundle has no such identity; point the
-            descriptor cache at bundle-backed zarrs, or re-ingest.
+        FileNotFoundError: if there is no ``provenance.yaml`` to read.
         BundleValidationError: if the provenance records no outputs at all.
     """
     directory = Path(directory)
-    provenance = read_provenance(directory)
-    outputs = provenance.outputs
+    outputs = read_provenance(directory).outputs
     if outputs is None:
         raise BundleValidationError(
             directory,
@@ -438,14 +373,42 @@ def structures_identity(directory: Path) -> str:
                 "directory holds has no content hash to key a cache on"
             ],
         )
-    if outputs.structures_extxyz is not None:
-        return outputs.structures_extxyz.file_sha256
+    if outputs.structures_sha256 is not None:
+        return outputs.structures_sha256
     return outputs.table_parquet.content_sha256
 
 
+def is_dataset_directory(directory: Path) -> bool:
+    """A dataset directory holds a zarr (``dataset_config.yaml``) and ``dataset.yaml``."""
+    directory = Path(directory)
+    return (directory / SPEC_FILENAME).is_file() and (
+        directory / DATASET_CONFIG_FILENAME
+    ).is_file()
+
+
 def discover_bundles(root: Path) -> list[Path]:
-    """Every bundle directory under ``root``, sorted. A bundle has a benchmark.yaml."""
+    """Every bundle directory under ``root`` (recursively), sorted."""
     root = Path(root)
     if not root.is_dir():
         return []
-    return sorted(path.parent for path in root.rglob(SPEC_FILENAME) if path.is_file())
+    return sorted(
+        path.parent
+        for path in root.rglob(SPEC_FILENAME)
+        if path.is_file() and not is_dataset_directory(path.parent)
+    )
+
+
+def discover_datasets(root: Path) -> list[tuple[Path, DatasetSpec]]:
+    """Every dataset directly under ``root``, with its spec, sorted by path.
+
+    Anything else under ``root`` (run files, a bundle, a zarr without a spec)
+    is skipped, so one directory can hold a whole panel.
+    """
+    root = Path(root)
+    if not root.is_dir():
+        return []
+    return [
+        (directory, read_spec(directory))
+        for directory in sorted(path for path in root.iterdir() if path.is_dir())
+        if is_dataset_directory(directory)
+    ]

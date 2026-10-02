@@ -227,10 +227,10 @@ def test_multiclass_report_shape_and_fallback_names() -> None:
 
 def test_panel_task_writes_the_per_class_report_per_cell(tmp_path) -> None:
     """A multiclass benchmark's cell artifacts land under its own directory and
-    are headed with the class names the bundle spec declares."""
+    are headed with the class names the dataset spec declares."""
     import pandas as pd
 
-    from remedi.data_handling.bundle import BenchmarkTask
+    from remedi.data_handling.bundle import LabelColumn
     from remedi.evaluation.benchmark.descriptors import EcfpConfig
     from remedi.evaluation.framework import (
         BenchmarkPanelConfig,
@@ -242,28 +242,26 @@ def test_panel_task_writes_the_per_class_report_per_cell(tmp_path) -> None:
     from .helpers.bundle_fixtures import (
         ACHIRAL_TEN_SMILES,
         TEN_ROW_SPLIT,
-        ingest_tiny_bundle,
-        write_conformers_bundle,
+        write_small_dataset,
     )
 
     n_rows = len(ACHIRAL_TEN_SMILES)
     n_classes = 3
     class_names = ["achiral", "central", "axial"]
-    write_conformers_bundle(
-        tmp_path / "bundles",
+    write_small_dataset(
+        tmp_path / "datasets",
         dataset_id="toy_multiclass",
-        tasks=[
-            BenchmarkTask(
+        labels=[
+            LabelColumn(
                 name="chirality_type",
                 task_type=TaskType.multiclass,
                 n_classes=n_classes,
                 class_names=class_names,
             )
         ],
-        metrics=["balanced-accuracy"],
+        metrics=[EvalMetric.balanced_accuracy],
         targets=(np.arange(n_rows) % n_classes).astype(float),
     )
-    ingest_tiny_bundle(tmp_path / "bundles", tmp_path / "datasets", "toy_multiclass")
 
     manifest = EvalManifest(
         model=EcfpConfig(name="ecfp_256", length=256),

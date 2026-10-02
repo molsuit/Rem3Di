@@ -7,7 +7,7 @@ is exercised by the end-to-end eval test).
 
 The cache key carries the hash of the *data* and the hash of the *model*, not
 just the dataset id and a user-chosen name. That is not cosmetic: keying on the
-name alone served a matrix computed on an earlier ingest of the same endpoint,
+name alone served a matrix computed on an earlier build of the same endpoint,
 and the row-count mismatch surfaced only as an ``IndexError`` when the split
 mask was applied, four datasets into a panel.
 """
@@ -27,7 +27,6 @@ from remedi.data_handling.bundle import (
     BundleOutputs,
     BundleProvenance,
     PreparerRecord,
-    StructuresOutputRecord,
     TableOutputRecord,
     structures_identity,
 )
@@ -56,23 +55,18 @@ _SMILES = ["CCO", "c1ccccc1", "CC(=O)O", "CCN", "O=C(O)c1ccccc1"]
 
 
 def write_stub_dataset(directory: Path, structures_sha256: str | None) -> _StubDataset:
-    """A directory that looks, to the cache key, like an ingested benchmark zarr.
+    """A directory that looks, to the cache key, like a dataset.
 
-    ``structures_sha256=None`` stands for a ``smiles``-stage bundle: no extxyz
-    record, so the identity falls back to the table's content hash.
+    ``structures_sha256=None`` stands for a bundle: no structures, so the
+    identity falls back to the table's content hash.
     """
     directory.mkdir(parents=True, exist_ok=True)
     outputs = BundleOutputs(
-        **{
-            "table.parquet": TableOutputRecord(
-                file_sha256="f" * 64, content_sha256="c" * 64, rows=len(_SMILES)
-            )
-        }
+        table_parquet=TableOutputRecord(
+            file_sha256="f" * 64, content_sha256="c" * 64, rows=len(_SMILES)
+        ),
+        structures_sha256=structures_sha256,
     )
-    if structures_sha256 is not None:
-        outputs.structures_extxyz = StructuresOutputRecord(
-            file_sha256=structures_sha256, frames=len(_SMILES)
-        )
     provenance = BundleProvenance(
         dataset_id=directory.name,
         preparer=PreparerRecord(repo="tests", script="test_eval_descriptors.py"),
@@ -160,7 +154,7 @@ def test_compute_and_cache_uses_dataset_id_namespace(tmp_path: Path) -> None:
 def test_same_dataset_id_different_structures_do_not_share_a_cache_file(
     tmp_path: Path,
 ) -> None:
-    """The defect this key exists to prevent: a re-ingest under the same name."""
+    """The defect this key exists to prevent: a rebuild under the same name."""
     cfg = EcfpConfig(length=64, name="ecfp")
     first = write_stub_dataset(tmp_path / "first" / "HIA_Hou", "a" * 64)
     second = write_stub_dataset(tmp_path / "second" / "HIA_Hou", "b" * 64)
@@ -192,7 +186,7 @@ def test_a_reused_descriptor_name_with_different_settings_splits_the_cache(
 def test_the_structures_hash_falls_back_to_the_table_content_hash(
     tmp_path: Path,
 ) -> None:
-    ds = write_stub_dataset(tmp_path / "smiles_stage", None)
+    ds = write_stub_dataset(tmp_path / "bundle", None)
 
     assert structures_identity(ds.path) == "c" * 64
 

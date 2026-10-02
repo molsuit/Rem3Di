@@ -1,7 +1,7 @@
 """Benchmark eval runner: descriptor x learner cross-product over all zarrs.
 
-Walks ``eval_config.eval_root`` via :func:`discover_benchmark_zarrs` — one
-:class:`BenchmarkSpec` per benchmark, copied into the zarr at ingest, no
+Walks ``eval_config.eval_root`` via :func:`discover_datasets` — one
+:class:`DatasetSpec` per benchmark, written beside the zarr, no
 registry import. For each ``(dataset, descriptor, learner)`` cell it:
 
 1. Reads the split column **by name from the bundle's ``table.parquet``**,
@@ -14,7 +14,7 @@ registry import. For each ``(dataset, descriptor, learner)`` cell it:
 3. Dispatches to the matching ``Learner.fit_predict_*`` based on the
    benchmark's ``TaskSet`` shape — regression / binary / multilabel — passing
    train + valid + test (val drives early stopping where applicable).
-4. Scores on test with the spec's headline metric (``spec.metrics[0]``).
+4. Scores on test with the spec's headline metric (``spec.evaluation.metrics[0]``).
 
 Results are pydantic ``BenchmarkResultRow`` objects; the runner writes them as
 both a flat CSV and a yaml dump under ``output_dir``.
@@ -34,9 +34,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from remedi.data_handling.bundle import (
     TABLE_FILENAME,
-    BenchmarkSpec,
+    DatasetSpec,
     EvalMetric,
-    discover_benchmark_zarrs,
+    EvaluationSpec,
+    discover_datasets,
     read_table,
 )
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
@@ -112,7 +113,7 @@ class BenchmarkCell:
     """What identifies one scored cell, beyond the descriptor and the learner.
 
     ``n_classes`` / ``class_names`` are the multiclass labelling the benchmark
-    spec declares (:class:`BenchmarkTask`). They carry no identity — they only
+    spec declares (:class:`LabelColumn`). They carry no identity — they only
     say how the cell's per-class report is shaped and headed — and both are
     ``None`` for every other task kind. With ``n_classes`` unset the multiclass
     path falls back to the class count observed in the labels.
@@ -401,8 +402,24 @@ def _structure_group_ids(
     )
 
 
+def evaluation_of(spec: DatasetSpec) -> EvaluationSpec:
+    """The spec's evaluation block.
+
+    Raises:
+        ValueError: if the dataset declares none (a corpus, not a benchmark).
+    """
+    if spec.evaluation is None:
+        raise ValueError(f"{spec.dataset_id} declares no evaluation block")
+    return spec.evaluation
+
+
+def discover_benchmarks(root: Path) -> list[tuple[Path, DatasetSpec]]:
+    """Every dataset directly under ``root`` that declares an evaluation block."""
+    return [(path, spec) for path, spec in discover_datasets(root) if spec.evaluation]
+
+
 def multiclass_labelling(
-    spec: BenchmarkSpec,
+    spec: DatasetSpec,
 ) -> tuple[int | None, tuple[str, ...] | None]:
     """The declared class count and display names of a multiclass benchmark.
 
@@ -411,7 +428,7 @@ def multiclass_labelling(
     labels and to ``class_0 … class_{n-1}`` names.
     """
     multiclass_tasks = [
-        task for task in spec.tasks if task.task_type is TaskType.multiclass
+        task for task in spec.labels if task.task_type is TaskType.multiclass
     ]
     if len(multiclass_tasks) != 1:
         return None, None
@@ -422,7 +439,7 @@ def multiclass_labelling(
 
 def evaluate_zarr(
     zarr_path: Path,
-    spec: BenchmarkSpec,
+    spec: DatasetSpec,
     cfg: EvalConfig,
     *,
     split_column: str | None = None,
@@ -438,8 +455,10 @@ def evaluate_zarr(
         dataset_id=spec.dataset_id,
         # The first metric is the reported cell; the rest are computed at table
         # time from the cached predictions (§1.3, §4.1).
-        metric=spec.metrics[0],
-        split_column=split_column or cfg.split_column or spec.default_split,
+        metric=evaluation_of(spec).metrics[0],
+        split_column=split_column
+        or cfg.split_column
+        or evaluation_of(spec).default_split,
         seed=cfg.seed,
         n_classes=n_classes,
         class_names=class_names,
@@ -500,7 +519,7 @@ def run_eval(cfg: EvalConfig) -> list[BenchmarkResultRow]:
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
     rows: list[BenchmarkResultRow] = []
     failures: list[BenchmarkFailure] = []
-    for zarr_path, spec in discover_benchmark_zarrs(cfg.eval_root):
+    for zarr_path, spec in discover_benchmarks(cfg.eval_root):
         logger.info("--- %s @ %s ---", spec.dataset_id, zarr_path)
         try:
             rows.extend(evaluate_zarr(zarr_path, spec, cfg))

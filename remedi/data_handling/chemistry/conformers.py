@@ -349,3 +349,19 @@ def _run_pool[Key: Hashable](
                     key,
                     _failure(smiles_by_key[key], config, "other_error", repr(error)),
                 )
+
+
+def charge_and_multiplicity(isomeric_smiles: str) -> tuple[float, float]:
+    """``(total formal charge, spin multiplicity)`` of the molecule a SMILES describes.
+
+    Multiplicity is ``2S + 1`` with ``2S`` the number of unpaired (radical)
+    electrons, so a closed-shell molecule is 1.0.
+
+    Raises:
+        ValueError: if RDKit cannot parse the SMILES.
+    """
+    molecule = Chem.MolFromSmiles(isomeric_smiles)
+    if molecule is None:
+        raise ValueError(f"RDKit could not parse SMILES {isomeric_smiles!r}")
+    unpaired = sum(atom.GetNumRadicalElectrons() for atom in molecule.GetAtoms())
+    return float(Chem.GetFormalCharge(molecule)), float(unpaired + 1)

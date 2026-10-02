@@ -1,0 +1,76 @@
+# The 22 endpoints of the PyTDC ADMET benchmark group (BENCHMARK_DATA_FORMAT.md §5c).
+#
+# dataset_id: the PyTDC benchmark name as the Rem3Di registry spells it; also the
+#   bundle directory name.
+# label_name: the registry's short label; the label column of table.parquet.
+# property_description: what is measured; goes into the bundle description.
+#
+# The headline metric is not listed here: it is read from PyTDC's own
+# tdc.metadata.admet_metrics at run time.
+endpoints:
+  - dataset_id: Caco2_Wang
+    label_name: Caco-2
+    property_description: Caco-2 cell effective permeability
+  - dataset_id: HIA_Hou
+    label_name: HIA
+    property_description: human intestinal absorption
+  - dataset_id: Pgp_Broccatelli
+    label_name: Pgp
+    property_description: P-glycoprotein inhibition
+  - dataset_id: Bioavailability_Ma
+    label_name: Bioavailability
+    property_description: oral bioavailability
+  - dataset_id: Lipophilicity_AstraZeneca
+    label_name: Lipophilicity
+    property_description: octanol/water distribution coefficient (logD at pH 7.4)
+  - dataset_id: Solubility_AqSolDB
+    label_name: Solubility
+    property_description: aqueous solubility (log mol/L)
+  - dataset_id: BBB_Martins
+    label_name: BBB
+    property_description: blood-brain barrier penetration
+  - dataset_id: PPBR_AZ
+    label_name: PPBR
+    property_description: human plasma protein binding rate
+  - dataset_id: VDss_Lombardo
+    label_name: VDss
+    property_description: volume of distribution at steady state
+  - dataset_id: CYP2C9_Veith
+    label_name: CYP2C9-I
+    property_description: CYP2C9 inhibition
+  - dataset_id: CYP2D6_Veith
+    label_name: CYP2D6-I
+    property_description: CYP2D6 inhibition
+  - dataset_id: CYP3A4_Veith
+    label_name: CYP3A4-I
+    property_description: CYP3A4 inhibition
+  - dataset_id: CYP2C9_Substrate_CarbonMangels
+    label_name: CYP2C9-S
+    property_description: CYP2C9 substrate
+  - dataset_id: CYP2D6_Substrate_CarbonMangels
+    label_name: CYP2D6-S
+    property_description: CYP2D6 substrate
+  - dataset_id: CYP3A4_Substrate_CarbonMangels
+    label_name: CYP3A4-S
+    property_description: CYP3A4 substrate
+  - dataset_id: Half_Life_Obach
+    label_name: Half-life
+    property_description: drug half life in the human body
+  - dataset_id: Clearance_Hepatocyte_AZ
+    label_name: CL-hepa
+    property_description: drug clearance in human hepatocytes
+  - dataset_id: Clearance_Microsome_AZ
+    label_name: CL-micro
+    property_description: drug clearance in human liver microsomes
+  - dataset_id: LD50_Zhu
+    label_name: LD50
+    property_description: acute toxicity (median lethal dose)
+  - dataset_id: hERG
+    label_name: hERG
+    property_description: hERG channel blocking
+  - dataset_id: AMES
+    label_name: AMES
+    property_description: Ames mutagenicity
+  - dataset_id: DILI
+    label_name: DILI
+    property_description: drug-induced liver injury

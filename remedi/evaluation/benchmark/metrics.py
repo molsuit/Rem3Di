@@ -155,7 +155,7 @@ def class_display_names(
 ) -> list[str]:
     """Display names for classes ``0 … n_classes - 1``.
 
-    ``class_names`` comes from the bundle's ``BenchmarkTask.class_names``, which
+    ``class_names`` comes from the bundle's ``LabelColumn.class_names``, which
     the spec already validates to have exactly ``n_classes`` entries; anything
     else (including ``None``) falls back to ``class_0 … class_{n-1}``.
     """

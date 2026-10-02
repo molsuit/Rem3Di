@@ -1,0 +1,48 @@
+# Dataset build template (BENCHMARK_DATA_FORMAT.md §10.4).
+#
+# Copy, fill the <PLACEHOLDER> paths, then:
+#
+#   uv run python scripts/dataset_creation/build_datasets.py \
+#       --config configs/dataset_creation/build_datasets_local.yaml
+#
+# Every bundle is one task, so one dataset failing is recorded in `status.yaml`
+# and the rest still finish. Re-running skips a dataset already built from the
+# same bundle content with the same conformer settings.
+
+# Where the SMILES bundles written by the preparers live.
+bundle_root: <PLACEHOLDER>/Rem3Di/benchmark_data/bundles
+# Where the datasets (zarr + table files), manifest.yaml and status.yaml go.
+zarr_root: <PLACEHOLDER>/datasets/benchmarks
+# null means every bundle under bundle_root.
+dataset_ids: null
+
+conformers:
+  # Settled decision §9.7: one conformer per stereoisomer.
+  n_conformers: 1
+  # ETKDG retry budget (RDKit `params.maxIterations`); 200 covers essentially
+  # anything ETKDG can embed, more only inflates wall time.
+  max_embed_attempts: 200
+  max_mmff_steps: 100
+  # MMFF94 non-bonded cutoff in Angstrom; RDKit's default.
+  mmff_non_bonded_threshold: 100.0
+
+# Invariant 10: recorded in provenance.yaml and enforced per frame.
+geometry_limits:
+  max_atoms: null
+  elements: mace_off
+  reject_zero_hydrogen: true
+  min_hydrogen_heavy_ratio: 0.0
+  min_interatomic_distance: 0.5
+
+zarr:
+  atom_chunk: 8192
+  molecule_chunk: 4096
+  atom_chunks_per_shard: 64
+  molecule_chunks_per_shard: 256
+
+# null means every CPU; 1 embeds in-process without a worker pool.
+n_workers: null
+overwrite: false
+# Verify every dataset under zarr_root after building.
+verify: true
+keep_going: true

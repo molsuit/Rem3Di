@@ -146,9 +146,7 @@ class ArrayResult(EvalResult):
         # ty matches `**dict` against savez's named `allow_pickle: bool` param —
         # a false positive; the values are all ndarrays.
         if self.compressed:
-            np.savez_compressed(
-                output_path, **self.arrays
-            )  # ty: ignore[invalid-argument-type]
+            np.savez_compressed(output_path, **self.arrays)  # ty: ignore[invalid-argument-type]
         else:
             np.savez(output_path, **self.arrays)  # ty: ignore[invalid-argument-type]
         return self._manifest_entry()

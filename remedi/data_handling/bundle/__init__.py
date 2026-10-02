@@ -1,26 +1,25 @@
-"""The *prepared benchmark bundle* format (``BENCHMARK_DATA_FORMAT.md`` §1).
+"""The bundle and dataset format (``BENCHMARK_DATA_FORMAT.md`` §10).
 
-One directory per benchmark — ``benchmark.yaml``, ``table.parquet``, optionally
-``structures.extxyz``, ``provenance.yaml`` — written by a ``remedi-data``
-preparer and read by this package. This subpackage owns the schema
-(:mod:`spec`, :mod:`provenance`), the identity assignment (:mod:`identity`),
-the invariants (:mod:`validate`), the disk io (:mod:`bundle`) and the
-``smiles`` -> ``conformers`` row expansion (:mod:`stage_transition`).
-
-It is deliberately torch-free.
+A bundle is a table (``dataset.yaml``, ``table.parquet``, ``provenance.yaml``)
+with one row per stereoisomer; a dataset is a zarr with the same three files
+beside it and one table row per structure. This subpackage owns the schema
+(:mod:`spec`, :mod:`provenance`), identity assignment (:mod:`identity`), the
+invariants (:mod:`validate`), the disk io of the three files (:mod:`bundle`)
+and the bundle -> dataset row expansion (:mod:`expansion`). It is torch-free.
 """
 
 from remedi.data_handling.bundle.bundle import (
     DATASET_CONFIG_FILENAME,
+    FORMAT_VERSION,
     PROVENANCE_FILENAME,
     SPEC_FILENAME,
-    STRUCTURES_FILENAME,
     TABLE_FILENAME,
     Bundle,
     BundleValidationError,
     content_hash_of_table,
-    discover_benchmark_zarrs,
     discover_bundles,
+    discover_datasets,
+    is_dataset_directory,
     normalize_table,
     read_bundle,
     read_provenance,
@@ -29,6 +28,13 @@ from remedi.data_handling.bundle.bundle import (
     sha256_of_file,
     structures_identity,
     write_bundle,
+    write_table_files,
+)
+from remedi.data_handling.bundle.expansion import (
+    CONFORMER_EMBEDDING_FAILED,
+    ENANTIOMER_PARTNER_FAILED,
+    ExpandedDataset,
+    expand_to_structures,
 )
 from remedi.data_handling.bundle.identity import (
     CanonicalSmilesPair,
@@ -43,79 +49,73 @@ from remedi.data_handling.bundle.provenance import (
     BundleOutputs,
     BundleProvenance,
     ConformerGenerationRecord,
-    EtkdgParameters,
     FileHash,
-    MmffParameters,
     PreparerRecord,
     SourceRecord,
-    StructuresOutputRecord,
     TableOutputRecord,
+    git_head_sha,
 )
 from remedi.data_handling.bundle.spec import (
-    FIXED_COLUMNS,
+    METRICS_BY_TASK_TYPE,
     SPLIT_VALUES,
-    BenchmarkSpec,
-    BenchmarkTask,
-    BundleStage,
+    DatasetSpec,
     EvalMetric,
+    EvaluationSpec,
     GeometryOrigin,
+    LabelColumn,
     SplitGroup,
-)
-from remedi.data_handling.bundle.stage_transition import (
-    CONFORMER_EMBEDDING_FAILED,
-    ENANTIOMER_PARTNER_FAILED,
-    ExpandedBundle,
-    expand_to_conformers,
+    metrics_with_headline,
 )
 from remedi.data_handling.bundle.validate import (
     count_stereoisomer_straddling_constitutions,
     has_assigned_tetrahedral_centre,
     stereochemistry_from_frame,
+    structure_problems,
     tetrahedral_stereo_smiles,
-    validate_bundle,
+    validate_table,
 )
 
 __all__ = [
     "CONFORMER_EMBEDDING_FAILED",
     "DATASET_CONFIG_FILENAME",
     "ENANTIOMER_PARTNER_FAILED",
-    "FIXED_COLUMNS",
+    "FORMAT_VERSION",
+    "METRICS_BY_TASK_TYPE",
     "PROVENANCE_FILENAME",
     "SPEC_FILENAME",
     "SPLIT_VALUES",
-    "STRUCTURES_FILENAME",
     "TABLE_FILENAME",
-    "BenchmarkSpec",
-    "BenchmarkTask",
     "Bundle",
     "BundleCounts",
     "BundleOutputs",
     "BundleProvenance",
-    "BundleStage",
     "BundleValidationError",
     "CanonicalSmilesPair",
     "ConformerGenerationRecord",
-    "EtkdgParameters",
+    "DatasetSpec",
     "EvalMetric",
-    "ExpandedBundle",
+    "EvaluationSpec",
+    "ExpandedDataset",
     "FileHash",
     "GeometryOrigin",
     "IdentityTable",
-    "MmffParameters",
+    "LabelColumn",
     "PreparerRecord",
     "SmilesParseError",
     "SourceRecord",
     "SplitGroup",
-    "StructuresOutputRecord",
     "TableOutputRecord",
     "assign_identity",
     "canonical_smiles_pair",
     "content_hash_of_table",
     "count_stereoisomer_straddling_constitutions",
-    "discover_benchmark_zarrs",
     "discover_bundles",
-    "expand_to_conformers",
+    "discover_datasets",
+    "expand_to_structures",
+    "git_head_sha",
     "has_assigned_tetrahedral_centre",
+    "is_dataset_directory",
+    "metrics_with_headline",
     "mirror_isomeric_smiles",
     "normalize_table",
     "read_bundle",
@@ -124,8 +124,10 @@ __all__ = [
     "read_table",
     "sha256_of_file",
     "stereochemistry_from_frame",
+    "structure_problems",
     "structures_identity",
     "tetrahedral_stereo_smiles",
-    "validate_bundle",
+    "validate_table",
     "write_bundle",
+    "write_table_files",
 ]

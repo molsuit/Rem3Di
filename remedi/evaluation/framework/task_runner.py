@@ -14,7 +14,6 @@ and :mod:`remedi.evaluation.framework.task` only, so importing it from
 from __future__ import annotations
 
 import logging
-import subprocess
 import time
 import traceback
 from collections.abc import Callable, Sequence
@@ -23,6 +22,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from remedi.data_handling.bundle.provenance import git_head_sha
 from remedi.evaluation.framework.task import (
     RunnableTask,
     TaskStatus,
@@ -39,20 +39,6 @@ class RunReport(BaseModel):
     n_tasks: int
     n_failed: int
     statuses: list[TaskStatus]
-
-
-def git_sha() -> str | None:
-    """The HEAD sha of the repository the process runs in, best effort."""
-    try:
-        completed = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        return completed.stdout.strip() or None
-    except Exception:  # git missing / not a repo — provenance is best-effort
-        return None
 
 
 def run_tasks(
@@ -127,7 +113,7 @@ def run_tasks(
 def make_run_report(n_tasks: int, statuses: list[TaskStatus]) -> RunReport:
     """Assemble the report written as ``status.yaml`` and returned to the caller."""
     return RunReport(
-        git_sha=git_sha(),
+        git_sha=git_head_sha(Path.cwd()),
         n_tasks=n_tasks,
         n_failed=sum(not status.ok for status in statuses),
         statuses=statuses,

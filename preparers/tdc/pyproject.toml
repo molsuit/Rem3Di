@@ -1,12 +1,13 @@
 [project]
 name = "remedi-prepare-tdc"
 version = "0.1.0"
-description = "PyTDC ADMET group -> smiles-stage benchmark bundles"
+description = "PyTDC ADMET group -> one bundle per endpoint"
 requires-python = ">=3.12"
 dependencies = [
     "remedi",
     "pandas",
     "pydantic",
+    "pyyaml",
     # Pinned: the frozen split__seed{1..5} columns are PyTDC's own
     # get_train_valid_split output, recorded in every bundle's provenance.
     "PyTDC==0.3.6",

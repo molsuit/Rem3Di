@@ -17,8 +17,6 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem
 
-from remedi.data_handling.bundle.spec import FIXED_COLUMNS
-
 
 class SmilesParseError(ValueError):
     """Raised when RDKit cannot parse a SMILES string."""
@@ -88,18 +86,16 @@ class IdentityTable:
         return len(self.isomeric_smiles)
 
     def to_frame(self) -> pd.DataFrame:
-        """The six fixed leading columns of §1.1, in order, with ``structure_id``."""
-        frame = pd.DataFrame(
+        """The fixed leading columns of a bundle with ``smiles: true``, in order."""
+        return pd.DataFrame(
             {
-                "structure_id": np.arange(len(self), dtype="int64"),
                 "stereoisomer_id": self.stereoisomer_id,
                 "molecule_id": self.molecule_id,
+                "enantiomer_of": self.enantiomer_of,
                 "isomeric_smiles": pd.array(self.isomeric_smiles, dtype="str"),
                 "nonisomeric_smiles": pd.array(self.nonisomeric_smiles, dtype="str"),
-                "enantiomer_of": self.enantiomer_of,
             }
         )
-        return frame[list(FIXED_COLUMNS)]
 
 
 def assign_identity(isomeric_smiles: Sequence[str]) -> IdentityTable:

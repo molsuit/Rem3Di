@@ -51,9 +51,7 @@ class _NpzResult(EvalResult):
         output_path = directory / self.file_name
         output_path.parent.mkdir(parents=True, exist_ok=True)
         arrays: dict[str, np.ndarray] = dict(self.arrays)
-        np.savez_compressed(
-            str(output_path), **arrays
-        )  # ty: ignore[invalid-argument-type]
+        np.savez_compressed(str(output_path), **arrays)  # ty: ignore[invalid-argument-type]
         return {"path": str(output_path)}
 
 

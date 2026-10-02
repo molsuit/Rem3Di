@@ -1,1 +1,1 @@
-"""PyTDC ``admet_group`` preparer: one ``smiles``-stage bundle per endpoint."""
+"""PyTDC ``admet_group`` preparer: one bundle per endpoint."""

@@ -1,22 +1,23 @@
-"""End-to-end runner test over real, ingested benchmark zarrs.
+"""End-to-end runner test over real benchmark datasets.
 
-Every zarr here is built by the actual ``ingest_benchmark`` prepare task from a
-real bundle, so discovery, the copied ``benchmark.yaml``, the split read out of
-``table.parquet`` and the runner's cross-product are all exercised on the same
-artifacts a prepare run produces. Pins: one row per scored target, the metric
-and the cell identity (``split_column`` / ``seed``) reach ``results.csv``, a
-non-default split column can be selected without re-ingesting, and one failing
-benchmark does not sink the panel.
+Every dataset here is written by the real ``write_dataset``, so discovery, the
+``dataset.yaml`` beside the zarr, the split read out of ``table.parquet`` and
+the runner's cross-product are all exercised on the same artifacts a build
+produces. Pins: one row per scored target, the metric and the cell identity
+(``split_column`` / ``seed``) reach ``results.csv``, a non-default split column
+can be selected without rebuilding, a corpus without an evaluation block is not
+scored, and one failing benchmark does not sink the panel.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from remedi.data_handling.bundle import BenchmarkTask
+from remedi.data_handling.bundle import EvalMetric, LabelColumn
 from remedi.data_handling.dataset.tasks import TaskType
 from remedi.evaluation.benchmark.descriptors import EcfpConfig
 from remedi.evaluation.benchmark.learners import LinearLearnerConfig
@@ -29,8 +30,7 @@ from remedi.evaluation.benchmark.runner import (
 from .helpers.bundle_fixtures import (
     ACHIRAL_TEN_SMILES,
     TEN_ROW_SPLIT,
-    ingest_tiny_bundle,
-    write_conformers_bundle,
+    write_small_dataset,
 )
 
 N_ROWS = len(ACHIRAL_TEN_SMILES)
@@ -44,36 +44,35 @@ def build_zarr(
     tmp_path: Path,
     dataset_id: str,
     *,
-    tasks: list[BenchmarkTask],
-    metrics: list[str],
+    labels: list[LabelColumn],
+    metrics: list[EvalMetric] | None,
     targets: np.ndarray,
     splits: dict[str, list[str]] | None = None,
 ) -> Path:
-    """One bundle -> one ingested zarr under ``tmp_path/datasets``."""
-    write_conformers_bundle(
-        tmp_path / "bundles",
+    """One dataset under ``tmp_path/datasets``."""
+    return write_small_dataset(
+        tmp_path / "datasets",
         dataset_id=dataset_id,
-        tasks=tasks,
+        labels=labels,
         metrics=metrics,
         targets=targets,
         splits=splits,
     )
-    return ingest_tiny_bundle(tmp_path / "bundles", tmp_path / "datasets", dataset_id)
 
 
 def regression_zarr(tmp_path: Path, dataset_id: str = "toy_reg", **kwargs) -> Path:
     return build_zarr(
         tmp_path,
         dataset_id,
-        tasks=[BenchmarkTask(name="y", task_type=TaskType.regression)],
-        metrics=["RMSE"],
+        labels=[LabelColumn(name="y", task_type=TaskType.regression)],
+        metrics=[EvalMetric.rmse],
         targets=np.linspace(0.0, 1.0, N_ROWS),
         **kwargs,
     )
 
 
-def eval_config(tmp_path: Path, **overrides) -> EvalConfig:
-    defaults = dict(
+def eval_config(tmp_path: Path, **overrides: Any) -> EvalConfig:
+    defaults: dict[str, Any] = dict(
         eval_root=tmp_path / "datasets",
         output_dir=tmp_path / "eval_out",
         descriptors=[EcfpConfig(name="ecfp_512", length=512)],
@@ -114,8 +113,8 @@ def test_run_eval_binary_classification_dispatch(tmp_path: Path) -> None:
     build_zarr(
         tmp_path,
         "toy_cls",
-        tasks=[BenchmarkTask(name="y", task_type=TaskType.classification)],
-        metrics=["AUROC"],
+        labels=[LabelColumn(name="y", task_type=TaskType.classification)],
+        metrics=[EvalMetric.auroc],
         targets=np.array([0.0, 1.0] * (N_ROWS // 2)),
     )
 
@@ -167,11 +166,11 @@ def test_run_eval_multitarget_regression_one_row_per_column(tmp_path: Path) -> N
     build_zarr(
         tmp_path,
         "toy_multireg",
-        tasks=[
-            BenchmarkTask(name=f"y{index}", task_type=TaskType.regression)
+        labels=[
+            LabelColumn(name=f"y{index}", task_type=TaskType.regression)
             for index in range(3)
         ],
-        metrics=["MAE"],
+        metrics=[EvalMetric.mae],
         targets=targets,
     )
 
@@ -243,11 +242,11 @@ def test_run_eval_keeps_going_when_one_benchmark_fails(tmp_path: Path) -> None:
     build_zarr(
         tmp_path,
         "toy_mixed",
-        tasks=[
-            BenchmarkTask(name="r", task_type=TaskType.regression),
-            BenchmarkTask(name="c", task_type=TaskType.classification),
+        labels=[
+            LabelColumn(name="r", task_type=TaskType.regression),
+            LabelColumn(name="c", task_type=TaskType.classification),
         ],
-        metrics=["RMSE"],
+        metrics=[EvalMetric.rmse],
         targets=np.stack(
             [np.linspace(0.0, 1.0, N_ROWS), (np.arange(N_ROWS) % 2).astype(float)],
             axis=1,
@@ -262,12 +261,29 @@ def test_run_eval_keeps_going_when_one_benchmark_fails(tmp_path: Path) -> None:
     assert "toy_mixed" in (tmp_path / "eval_out" / "failures.yaml").read_text()
 
 
-def test_discovery_ignores_the_prepare_runs_own_directories(tmp_path: Path) -> None:
-    """``output_root`` also holds ``status.yaml`` and the per-task summaries."""
+def test_discovery_ignores_the_build_runs_own_directories(tmp_path: Path) -> None:
+    """``zarr_root`` also holds ``status.yaml`` and the per-task summaries."""
     regression_zarr(tmp_path)
-    (tmp_path / "datasets" / "ingest_benchmark").mkdir(exist_ok=True)
+    (tmp_path / "datasets" / "build").mkdir(exist_ok=True)
+    (tmp_path / "datasets" / "verify").mkdir(exist_ok=True)
     (tmp_path / "datasets" / "status.yaml").write_text("n_tasks: 1\n")
 
     rows = run_eval(eval_config(tmp_path))
 
     assert {row.dataset_id for row in rows} == {"toy_reg"}
+
+
+def test_a_corpus_without_an_evaluation_block_is_not_scored(tmp_path: Path) -> None:
+    regression_zarr(tmp_path)
+    build_zarr(
+        tmp_path,
+        "toy_corpus",
+        labels=[LabelColumn(name="y", task_type=TaskType.regression)],
+        metrics=None,
+        targets=np.linspace(0.0, 1.0, N_ROWS),
+    )
+
+    rows = run_eval(eval_config(tmp_path))
+
+    assert {row.dataset_id for row in rows} == {"toy_reg"}
+    assert not (tmp_path / "eval_out" / "failures.yaml").exists()
