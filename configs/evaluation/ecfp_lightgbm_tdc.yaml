@@ -1,0 +1,17 @@
+# ECFP + LightGBM over every benchmark dataset under benchmark_data/datasets.
+# Run from the repository root:
+#
+#   uv run --no-sync python scripts/evaluation/run_eval.py \
+#       --config configs/evaluation/ecfp_lightgbm_tdc.yaml
+model:
+  descriptor_kind: ecfp
+  name: ecfp_2048
+  length: 2048
+output_root: eval_runs/ecfp_lightgbm
+resource_cache_dir: eval_runs/descriptor_cache
+tasks:
+  - kind: benchmark_panel
+    eval_root: benchmark_data/datasets
+    learners:
+      - learner_kind: lightgbm
+seed: 0

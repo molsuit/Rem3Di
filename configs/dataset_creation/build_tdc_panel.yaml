@@ -1,0 +1,17 @@
+# The 22 TDC ADMET datasets: bundles from `prepare-tdc` -> conformers -> zarrs.
+# Paths are relative to the repository root; run from there:
+#
+#   uv run --no-sync python scripts/dataset_creation/build_datasets.py \
+#       --config configs/dataset_creation/build_tdc_panel.yaml
+bundle_root: benchmark_data/bundles
+zarr_root: benchmark_data/datasets
+dataset_ids: null
+conformers:
+  n_conformers: 1
+  max_embed_attempts: 200
+  max_mmff_steps: 100
+  mmff_non_bonded_threshold: 100.0
+n_workers: null
+overwrite: false
+verify: true
+keep_going: true
