@@ -4,12 +4,12 @@ from pathlib import Path
 from ase import Atoms
 from rdkit import Chem
 
-from remedi.configuration.dataset_config import FilterMoleculeStageConfig
+from remedi.data_handling.chemistry.smiles_filter import (
+    SmilesFilterConfig,
+    standardized_smiles_for_structure,
+)
 from remedi.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
-)
-from remedi.data_handling.dataset_creation.generators.utils import (
-    standardize_for_conformer,
 )
 from remedi.data_handling.dataset_creation.loading_batch import (
     InputBatch,
@@ -28,8 +28,8 @@ class SDFMoleculeGenerator(MoleculeGenerator):
 
     When ``filter_config`` is provided the generator also routes every SMILES
     through the same standardize → filter → canonicalize path as the benchmark
-    loaders (``apply_smiles_filter``). The atom-count consistency check inside
-    ``standardize_for_conformer`` guarantees the published SMILES still
+    loaders (``filter_smiles``). The atom-count consistency check inside
+    ``standardized_smiles_for_structure`` guarantees the published SMILES still
     describes the molecule whose 3D coordinates we emit. Pass ``None`` (the
     legacy default) to preserve historical behaviour.
     """
@@ -38,7 +38,7 @@ class SDFMoleculeGenerator(MoleculeGenerator):
         self,
         sdf_file: Path | list[Path],
         loading_batch_size: int = 100,
-        filter_config: FilterMoleculeStageConfig | None = None,
+        filter_config: SmilesFilterConfig | None = None,
     ):
         self.sdf_file = sdf_file
         self.loading_batch_size = int(loading_batch_size)
@@ -69,7 +69,7 @@ class SDFMoleculeGenerator(MoleculeGenerator):
                 # isomeric SMILES / dedupe across batches). A None return means
                 # the molecule failed one of those gates -- drop it.
                 implicit_mol = Chem.RemoveAllHs(mol)
-                smiles = standardize_for_conformer(
+                smiles = standardized_smiles_for_structure(
                     implicit_mol, self.filter_config, seen=self._seen
                 )
                 if smiles is None:

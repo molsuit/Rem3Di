@@ -16,9 +16,9 @@ import torch
 from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
-    FilterAtomsStageConfig,
 )
-from remedi.data_handling.dataset.tasks import ElementSet
+from remedi.data_handling.chemistry.elements import ElementSet
+from remedi.data_handling.chemistry.geometry import GeometryLimits
 from remedi.data_handling.dataset_creation.generators.qm9_generator import (
     ALL_QM9_TASKS,
     QM9Generator,
@@ -45,9 +45,7 @@ def main() -> None:
     # QM9 is GDB-9: small neutral organics over the MACE-OFF element set. The
     # atoms-side filter is the only gate we need (the generator already drops
     # rows whose SMILES RDKit rejects).
-    filter_stage = FilterAtomsStage(
-        config=FilterAtomsStageConfig(element_set=ElementSet.mace_off)
-    )
+    filter_stage = FilterAtomsStage(config=GeometryLimits(elements=ElementSet.mace_off))
     copy_data = CopyDataStage(dtype=torch.float64)
 
     creation_config = DatasetCreationConfig(path=output_path, N_structures=None)

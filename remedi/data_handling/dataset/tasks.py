@@ -1,20 +1,8 @@
 from collections.abc import Sequence
-from enum import Enum, StrEnum
+from enum import Enum
 
 import numpy as np
 from pydantic import BaseModel
-
-
-class ElementSet(StrEnum):
-    """Named element-set preset for ``filter_mol(allowed_elements=...)``.
-
-    ``mace_off`` is the organic drug subset (H,C,N,O,F,P,S,Cl,Br,I).
-    ``mace_polar`` extends to atomic numbers 1..83 (the MACE-POLAR coverage).
-    Resolve via :func:`generators.utils.resolve_element_set`.
-    """
-
-    mace_off = "mace_off"
-    mace_polar = "mace_polar"
 
 
 class Split(int, Enum):

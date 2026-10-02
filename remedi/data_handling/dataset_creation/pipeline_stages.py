@@ -1,6 +1,6 @@
 import os
 from abc import ABC, abstractmethod
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 
 import numpy as np
@@ -10,20 +10,21 @@ from tqdm import tqdm
 
 from remedi.configuration.dataset_config import (
     DatasetCreationConfig,
-    FilterAtomsStageConfig,
-    FilterMoleculeStageConfig,
     PhysicochemicalDescriptorStageConfig,
 )
 from remedi.data_handling import physchem
-from remedi.data_handling.dataset_creation.build_stats import LoadStats
-from remedi.data_handling.dataset_creation.conformer_timing import (
+from remedi.data_handling.chemistry.conformers import (
     ConformerTimingRecord,
+    EmbedResult,
+    embed_many,
     write_timings_jsonl,
 )
-from remedi.data_handling.dataset_creation.generators.utils import (
-    apply_smiles_filter,
-    resolve_element_set,
+from remedi.data_handling.chemistry.geometry import GeometryLimits, geometry_violations
+from remedi.data_handling.chemistry.smiles_filter import (
+    SmilesFilterConfig,
+    filter_smiles,
 )
+from remedi.data_handling.dataset_creation.build_stats import LoadStats, StageStats
 from remedi.data_handling.dataset_creation.loading_batch import (
     DataBatch,
     InputBatch,
@@ -31,16 +32,6 @@ from remedi.data_handling.dataset_creation.loading_batch import (
     SmilesData,
 )
 from remedi.data_handling.dataset_creation.structure_ids import StructureID
-from remedi.data_handling.dataset_creation.utils import embed_one_smiles
-
-
-def _min_pairwise_distance(positions: np.ndarray) -> float:
-    """Smallest distance between any two atoms (Angstrom). Used to reject
-    degenerate geometries (overlapping atoms) that make MACE emit NaN."""
-    diff = positions[:, None, :] - positions[None, :, :]
-    d = np.linalg.norm(diff, axis=-1)
-    np.fill_diagonal(d, np.inf)
-    return float(d.min())
 
 
 def _slice_regression(rd: RegressionData, idx: np.ndarray) -> RegressionData:
@@ -268,180 +259,122 @@ class CopyDataStage(PipelineStage):
 
 
 class ConformerGenerationStage(PipelineStage):
-    def __init__(self, dataset_creation_config: DatasetCreationConfig):
-        self.config = dataset_creation_config
+    """ETKDG + MMFF embedding of every SMILES in the batch, via ``embed_many``.
 
-        self.num_workers = os.cpu_count()
+    Each molecule yields up to ``config.conformers.n_conformers`` structures;
+    per-system arrays (charge, multiplicity, regression data) are replicated
+    onto them. Molecules are emitted in input order.
+    """
+
+    def __init__(
+        self,
+        dataset_creation_config: DatasetCreationConfig,
+        n_workers: int | None = None,
+    ):
+        self.config = dataset_creation_config
+        self.n_workers = n_workers
         # Per-stage running totals across all batches; orchestrator reads this
         # at finalize for the build summary.
-        from remedi.data_handling.dataset_creation.build_stats import (
-            StageStats,
-        )
-
         self.stats = StageStats()
         # Per-molecule timing records, dumped to JSONL by ``flush_timings``.
         self._timing_records: list[ConformerTimingRecord] = []
 
-    def __call__(self, input_batch: InputBatch, data_batch: DataBatch):
+    def __call__(
+        self, input_batch: InputBatch, data_batch: DataBatch | None = None
+    ) -> tuple[InputBatch, DataBatch | None]:
+        if input_batch.smiles is None:
+            raise ValueError(
+                "ConformerGenerationStage requires input_batch.smiles; place it "
+                "after FilterMoleculeStage"
+            )
+        smiles = input_batch.smiles
+        self.stats.n_attempted += len(smiles)
+        results = dict(
+            embed_many(
+                {
+                    index: smiles_data.isomeric_smiles
+                    for index, smiles_data in enumerate(smiles)
+                },
+                self.config.conformers,
+                n_workers=self.n_workers,
+            )
+        )
+
         molecules: list[Atoms] = []
-        smiles_list: list[SmilesData] = []
+        smiles_per_structure: list[SmilesData] = []
         structure_ids: list[StructureID] = []
-        parent_idx_for_regression: list[int] = []
-        self.stats.n_attempted += len(input_batch.smiles)
-
-        # Submit independent molecules to the pool
-        futures = {}
-        with ProcessPoolExecutor(max_workers=self.num_workers, mp_context=None) as ex:
-            for mol_i, smi_data in enumerate(input_batch.smiles):
-                iso = smi_data.isomeric_smiles
-                fut = ex.submit(
-                    embed_one_smiles,
-                    iso,
-                    self.config.N_sampled_conformers,
-                    self.config.max_embed_attempts,
-                    self.config.max_MMFF_steps,
-                    self.config.mmff_non_bonded_thresh,
+        parent_indices: list[int] = []
+        for index, smiles_data in enumerate(smiles):
+            result = results[index]
+            self._timing_records.append(result.timing)
+            if not result.succeeded:
+                self._count_failure(smiles_data.isomeric_smiles, result)
+                continue
+            assert result.positions is not None and result.atomic_numbers is not None
+            parent = input_batch.structure_ids[index]
+            for positions in result.positions:
+                molecules.append(
+                    Atoms(
+                        positions=positions,
+                        numbers=result.atomic_numbers,
+                        pbc=[0, 0, 0],
+                    )
                 )
-                futures[fut] = mol_i
-
-            for fut in as_completed(futures):
-                mol_i = futures[fut]
-                self._collect_one(
-                    fut,
-                    mol_i=mol_i,
-                    input_batch=input_batch,
-                    molecules=molecules,
-                    smiles_list=smiles_list,
-                    structure_ids=structure_ids,
-                    parent_idx_for_regression=parent_idx_for_regression,
+                smiles_per_structure.append(smiles_data)
+                structure_ids.append(
+                    StructureID(
+                        structure_id=-1,
+                        molecule_id=parent.molecule_id,
+                        stereoisomer_id=parent.stereoisomer_id,
+                    )
                 )
+                parent_indices.append(index)
+            self.stats.n_emitted += 1
 
         input_batch.molecules = molecules
-        input_batch.smiles = smiles_list
+        input_batch.smiles = smiles_per_structure
         input_batch.structure_ids = structure_ids
-
-        if input_batch.total_charge is not None and parent_idx_for_regression:
+        if input_batch.total_charge is not None:
             input_batch.total_charge = [
-                input_batch.total_charge[i] for i in parent_idx_for_regression
+                input_batch.total_charge[i] for i in parent_indices
             ]
-        if input_batch.multiplicity is not None and parent_idx_for_regression:
+        if input_batch.multiplicity is not None:
             input_batch.multiplicity = [
-                input_batch.multiplicity[i] for i in parent_idx_for_regression
+                input_batch.multiplicity[i] for i in parent_indices
             ]
-
-        if (
-            input_batch.regression_data is not None
-            and len(parent_idx_for_regression) > 0
-        ):
-            idx = np.asarray(parent_idx_for_regression, dtype=np.int64)
-            rd = input_batch.regression_data
-            new_rd_kwargs: dict = {}
-            if rd.targets_system is not None:
-                new_rd_kwargs["targets_system"] = rd.targets_system[idx, :]
-                new_rd_kwargs["mask_system"] = rd.mask_system[idx, :]
-            if rd.targets_atom is not None:
-                raise NotImplementedError
-            if rd.split is not None:
-                new_rd_kwargs["split"] = rd.split[idx]
-
-            input_batch.regression_data = RegressionData(**new_rd_kwargs)
-
+        if input_batch.regression_data is not None:
+            input_batch.regression_data = _slice_regression(
+                input_batch.regression_data, np.asarray(parent_indices, dtype=np.int64)
+            )
         return input_batch, data_batch
 
-    def _collect_one(
-        self,
-        fut,
-        *,
-        mol_i: int,
-        input_batch: InputBatch,
-        molecules: list[Atoms],
-        smiles_list: list[SmilesData],
-        structure_ids: list[StructureID],
-        parent_idx_for_regression: list[int],
-    ) -> None:
-        """Drain one worker future, record its timing, and append its confs."""
-        isomeric_smiles = input_batch.smiles[mol_i].isomeric_smiles
-        nonisomeric_smiles = input_batch.smiles[mol_i].nonisomeric_smiles
-        molecule_data_id = input_batch.structure_ids[mol_i].molecule_id
-        stereoisomer_id = input_batch.structure_ids[mol_i].stereoisomer_id
-
-        try:
-            result = fut.result()
-        except Exception as e:
-            # Worker process died / pickling error / etc. — synthesize a
-            # record so the artifact still accounts for the molecule.
+    def _count_failure(self, isomeric_smiles: str, result: EmbedResult) -> None:
+        # Parse failures are "value_error"; embedding, relaxation and worker
+        # failures count as other errors.
+        if result.timing.status == "value_error":
+            self.stats.n_value_errors += 1
+            tqdm.write(f"[skip] {isomeric_smiles}: {result.timing.error_msg}")
+        else:
             self.stats.n_other_errors += 1
-            self._timing_records.append(
-                ConformerTimingRecord(
-                    isomeric_smiles=isomeric_smiles,
-                    n_atoms=-1,
-                    n_confs_requested=int(self.config.N_sampled_conformers),
-                    n_confs_emitted=0,
-                    t_embed_s=0.0,
-                    t_mmff_s=0.0,
-                    status="other_error",
-                    error_msg=repr(e),
-                )
+            tqdm.write(
+                f"[error] {isomeric_smiles}: "
+                f"{result.timing.status} ({result.timing.error_msg})"
             )
-            tqdm.write(f"[error] {isomeric_smiles}: {e!r}")
-            return
-
-        self._timing_records.append(result.timing)
-
-        if result.timing.status != "ok":
-            # Match the legacy ValueError-vs-other split: parse failures are
-            # "value_error"; embed/MMFF failures fall into n_other_errors.
-            if result.timing.status == "value_error":
-                self.stats.n_value_errors += 1
-                tqdm.write(f"[skip] {isomeric_smiles}: {result.timing.error_msg}")
-            else:
-                self.stats.n_other_errors += 1
-                tqdm.write(
-                    f"[error] {isomeric_smiles}: "
-                    f"{result.timing.status} ({result.timing.error_msg})"
-                )
-            return
-
-        positions = result.positions
-        atomic_numbers = result.atomic_numbers
-        assert positions is not None and atomic_numbers is not None
-        for k in range(positions.shape[0]):
-            molecules.append(
-                Atoms(
-                    positions=positions[k],
-                    numbers=atomic_numbers,
-                    pbc=[0, 0, 0],
-                )
-            )
-            smiles_list.append(
-                SmilesData(
-                    isomeric_smiles=isomeric_smiles,
-                    nonisomeric_smiles=nonisomeric_smiles,
-                )
-            )
-            structure_ids.append(
-                StructureID(
-                    structure_id=-1,
-                    molecule_id=molecule_data_id,
-                    stereoisomer_id=stereoisomer_id,
-                )
-            )
-            parent_idx_for_regression.append(mol_i)
-        self.stats.n_emitted += 1
 
     def flush_timings(self) -> None:
-        """Serialize the accumulated per-mol timing records next to the zarr.
+        """Serialize the accumulated per-molecule timing records next to the zarr.
 
         Idempotent: if no records have been collected (e.g. an entirely empty
         build) the file is still emitted as a zero-length JSONL so downstream
         tools can rely on the path existing.
         """
-        out_path = self.config.path / "conformer_timings.jsonl"
-        write_timings_jsonl(self._timing_records, out_path)
+        write_timings_jsonl(
+            self._timing_records, self.config.path / "conformer_timings.jsonl"
+        )
 
 
 class FilterMoleculeStage(PipelineStage):
-    """SMILES-side filter: parse → standardize → filter → canonicalize → dedupe.
+    """SMILES-side filter: ``chemistry.smiles_filter.filter_smiles`` per batch.
 
     Consumes ``input_batch.raw_smiles`` (raw SMILES strings the generator
     yielded without filtering) and produces ``input_batch.smiles``
@@ -455,9 +388,8 @@ class FilterMoleculeStage(PipelineStage):
     even across batch boundaries.
     """
 
-    def __init__(self, config: FilterMoleculeStageConfig):
+    def __init__(self, config: SmilesFilterConfig):
         self.config = config
-        self.allowed_elements = resolve_element_set(config.element_set)
         self._seen: set[str] = set()
         self.load_stats = LoadStats()
 
@@ -470,48 +402,35 @@ class FilterMoleculeStage(PipelineStage):
                 "got None. Generators feeding this stage must yield raw "
                 "SMILES strings rather than pre-built SmilesData."
             )
+        filtered = filter_smiles(input_batch.raw_smiles, self.config, seen=self._seen)
+        stats = self.load_stats
+        stats.n_raw_rows += len(input_batch.raw_smiles)
+        stats.n_invalid_smiles += filtered.invalid
+        stats.n_filtered_out += filtered.filtered
+        stats.n_duplicates += filtered.duplicates
+        stats.n_kept += len(filtered.kept_row_indices)
 
-        cfg = self.config
-        kept_smiles, kept_idx = apply_smiles_filter(
-            input_batch.raw_smiles,
-            max_atoms=cfg.max_atoms,
-            allowed_elements=self.allowed_elements,
-            allow_charged=cfg.allow_charged,
-            allow_radicals=cfg.allow_radicals,
-            allow_isotopes=cfg.allow_isotopes,
-            allow_multifragment=cfg.allow_multifragment,
-            strip_salts=cfg.strip_salts,
-            neutralize=cfg.neutralize,
-            dedupe=cfg.dedupe,
-            seen=self._seen,
-            stats=self.load_stats,
-        )
-
-        _reindex_in_place(input_batch, kept_idx)
-        input_batch.smiles = kept_smiles
+        _reindex_in_place(input_batch, filtered.kept_row_indices)
+        input_batch.smiles = [
+            SmilesData(nonisomeric_smiles=nonisomeric, isomeric_smiles=isomeric)
+            for isomeric, nonisomeric in zip(
+                filtered.isomeric_smiles, filtered.nonisomeric_smiles, strict=True
+            )
+        ]
         input_batch.raw_smiles = None
         return input_batch, data_batch
 
 
 class FilterAtomsStage(PipelineStage):
-    """Atoms-side filter: enforce size, hydrogen-coverage, element-set gates.
+    """Structure-side filter: drop every structure that violates ``GeometryLimits``.
 
-    Operates on ``input_batch.molecules`` (a list of ``ase.Atoms`` straight
-    out of an XYZ / SDF / tmQM generator) without re-parsing SMILES. Element
-    coverage is checked against atomic numbers; SDF-style ``require_3D`` is
-    implicit because Atoms only exist when coordinates do.
+    Operates on ``input_batch.molecules`` (a list of ``ase.Atoms`` straight out
+    of an XYZ / SDF / tmQM generator) without re-parsing SMILES.
     """
 
-    def __init__(self, config: FilterAtomsStageConfig):
+    def __init__(self, config: GeometryLimits):
         self.config = config
-        self._allowed_numbers: set[int] | None = None
-        if config.element_set is not None:
-            from rdkit import Chem as _Chem
-
-            pt = _Chem.GetPeriodicTable()
-            self._allowed_numbers = {
-                pt.GetAtomicNumber(s) for s in resolve_element_set(config.element_set)
-            }
+        self._allowed_symbols = config.allowed_element_symbols()
         self.load_stats = LoadStats()
 
     def __call__(
@@ -521,46 +440,14 @@ class FilterAtomsStage(PipelineStage):
             raise ValueError(
                 "FilterAtomsStage requires `molecules` on the InputBatch; got None."
             )
-
-        cfg = self.config
+        kept_indices = [
+            index
+            for index, atoms in enumerate(input_batch.molecules)
+            if not geometry_violations(atoms, self.config, self._allowed_symbols)
+        ]
         stats = self.load_stats
-        kept_idx: list[int] = []
-
-        for i, atoms in enumerate(input_batch.molecules):
-            stats.n_raw_rows += 1
-            n_total = len(atoms)
-            if cfg.max_atoms is not None and n_total > cfg.max_atoms:
-                stats.n_filtered_out += 1
-                continue
-            nums = atoms.get_atomic_numbers()
-            n_h = int((nums == 1).sum())
-            n_heavy = int((nums > 1).sum())
-            if n_heavy == 0:
-                stats.n_filtered_out += 1
-                continue
-            if cfg.reject_zero_h and n_h == 0:
-                stats.n_filtered_out += 1
-                continue
-            if cfg.min_h_heavy_ratio > 0.0 and (n_h / n_heavy) < cfg.min_h_heavy_ratio:
-                stats.n_filtered_out += 1
-                continue
-            if self._allowed_numbers is not None and not all(
-                int(z) in self._allowed_numbers for z in nums
-            ):
-                stats.n_filtered_out += 1
-                continue
-            if (
-                cfg.min_interatomic_distance is not None
-                and n_total >= 2
-                and _min_pairwise_distance(atoms.get_positions())
-                < cfg.min_interatomic_distance
-            ):
-                # Degenerate geometry (overlapping / origin-placed atoms) makes
-                # MACE divide by a ~zero distance and emit NaN embeddings.
-                stats.n_filtered_out += 1
-                continue
-            kept_idx.append(i)
-
-        stats.n_kept += len(kept_idx)
-        _reindex_in_place(input_batch, kept_idx)
+        stats.n_raw_rows += len(input_batch.molecules)
+        stats.n_filtered_out += len(input_batch.molecules) - len(kept_indices)
+        stats.n_kept += len(kept_indices)
+        _reindex_in_place(input_batch, kept_indices)
         return input_batch, data_batch

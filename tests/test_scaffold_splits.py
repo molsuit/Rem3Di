@@ -1,4 +1,4 @@
-"""The splitters in ``dataset_creation/splits.py`` + the Split-code helper.
+"""The splitters in ``chemistry/splits.py`` + the Split-code helper.
 
 `deepchem_scaffold_split` is the salvaged eval001 piece; it must stay
 deterministic (no seed) and partition every index exactly once so the codes
@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from remedi.data_handling.dataset.tasks import Split
-from remedi.data_handling.dataset_creation.splits import (
+from remedi.data_handling.chemistry.splits import (
     deepchem_scaffold_split,
     random_train_val_test_split,
     split_codes,
     stratified_group_split,
 )
+from remedi.data_handling.dataset.tasks import Split
 
 _SMILES = [
     "CCO",

@@ -2,12 +2,9 @@
 
 The batch dataclasses and the structure-id record are re-exported eagerly
 because they are torch-free. ``Pipeline`` / ``PipelineStage`` live in
-:mod:`pipeline_stages`, which imports torch and MACE, so they are resolved
-lazily through ``__getattr__``: a ``remedi-data`` preparer importing
-``dataset_creation.generators.utils`` or ``dataset_creation.splits`` must work
-in the core install, where torch need not be present
-(``BENCHMARK_DATA_FORMAT.md`` §1.2 — generation runs in Rem3Di, the preparers
-only build ``smiles``-stage bundles).
+:mod:`pipeline_stages`, which imports torch, so they are resolved lazily
+through ``__getattr__`` and importing the batch dataclasses does not pull in
+torch.
 """
 
 from typing import TYPE_CHECKING, Any

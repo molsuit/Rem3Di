@@ -8,11 +8,9 @@ why; §6b records that no ETKDG seed is pinned, so a re-run yields equivalent,
 not identical, coordinates. **The published coordinates are the artifact, not
 the recipe.**
 
-The embedding itself is
-:func:`remedi.data_handling.dataset_creation.utils.embed_one_smiles`, verbatim
-— the same function ``ConformerGenerationStage`` drives for the pretraining
-corpora, with the same ``max_embed_attempts`` / ``max_mmff_steps`` /
-``mmff_non_bonded_threshold`` defaults validated by the CYP timing experiment.
+The embedding itself is :func:`remedi.data_handling.chemistry.conformers.embed_many`
+with a :class:`ConformerEmbeddingConfig`, the same function and settings model
+``ConformerGenerationStage`` uses for the pretraining corpora.
 
 What this task adds on top of the embedding is the bookkeeping the stage
 boundary needs:
@@ -30,10 +28,8 @@ boundary needs:
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections.abc import Iterator
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -48,11 +44,9 @@ from remedi.data_handling.bundle import (
     Bundle,
     ConformerGenerationRecord,
     EtkdgParameters,
-    GeometryLimits,
     MmffParameters,
     content_hash_of_table,
     expand_to_conformers,
-    geometry_limit_violations,
     has_assigned_tetrahedral_centre,
     read_bundle,
     stereochemistry_from_frame,
@@ -60,12 +54,14 @@ from remedi.data_handling.bundle import (
     write_bundle,
 )
 from remedi.data_handling.bundle.bundle import SPEC_FILENAME
-from remedi.data_handling.dataset.tasks import ElementSet
-from remedi.data_handling.dataset_creation.conformer_timing import (
+from remedi.data_handling.chemistry.conformers import (
+    ConformerEmbeddingConfig,
     ConformerTimingRecord,
+    embed_many,
     write_timings_jsonl,
 )
-from remedi.data_handling.dataset_creation.utils import embed_one_smiles
+from remedi.data_handling.chemistry.elements import ElementSet
+from remedi.data_handling.chemistry.geometry import GeometryLimits, geometry_violations
 from remedi.data_handling.prepare.context import BundleRoots, PrepareContext
 from remedi.data_handling.prepare.tasks.per_dataset import PerDatasetPrepareTask
 from remedi.evaluation.results import EvalResult, PydanticResult
@@ -150,14 +146,14 @@ def _keep_frame(
     canonical_isomeric: str | None,
     check_stereochemistry: bool,
     limits: GeometryLimits,
-    allowed_symbols: set[str] | None,
+    allowed_symbols: frozenset[str] | None,
 ) -> str | None:
     """``None`` to keep the frame, else the ``counts.dropped`` key to drop it under."""
     if check_stereochemistry:
         perceived = stereochemistry_from_frame(isomeric_smiles, atoms)
         if perceived is None or perceived != canonical_isomeric:
             return STEREO_MISMATCH_AFTER_EMBEDDING
-    violations = geometry_limit_violations(atoms, limits, allowed_symbols)
+    violations = geometry_violations(atoms, limits, allowed_symbols)
     return violations[0] if violations else None
 
 
@@ -170,13 +166,9 @@ class GenerateConformersConfig(PerDatasetPrepareTask):
 
     kind: Literal["generate_conformers"] = "generate_conformers"
 
-    n_conformers: int = Field(default=1, ge=1)
-    # RDKit's ``params.maxIterations``. 200 covers essentially anything ETKDG
-    # can embed; raising it inflates wall time on pathological molecules
-    # without improving yield (§1.2, slurm-4686108).
-    max_embed_attempts: int = Field(default=200, ge=1)
-    max_mmff_steps: int = Field(default=100, ge=0)
-    mmff_non_bonded_threshold: float = Field(default=100.0, gt=0.0)
+    conformers: ConformerEmbeddingConfig = Field(
+        default_factory=ConformerEmbeddingConfig
+    )
 
     #: ``None`` means ``os.cpu_count()``. ``1`` runs in-process, no pool.
     n_workers: int | None = Field(default=None, ge=1)
@@ -219,7 +211,7 @@ class GenerateConformersConfig(PerDatasetPrepareTask):
                     dataset_id=dataset_id,
                     bundle_path=output_directory,
                     skipped=True,
-                    n_conformers_requested=self.n_conformers,
+                    n_conformers_requested=self.conformers.n_conformers,
                     elapsed_seconds=time.monotonic() - started,
                 ),
             )
@@ -265,7 +257,7 @@ class GenerateConformersConfig(PerDatasetPrepareTask):
                 rows_in=len(bundle_smiles.table),
                 rows_out=len(result_bundle.table),
                 frames_out=len(result_bundle.structures or []),
-                n_conformers_requested=self.n_conformers,
+                n_conformers_requested=self.conformers.n_conformers,
                 dropped=dict(result_bundle.provenance.counts.dropped),
                 parent_bundle_content_sha256=content_hash_of_table(bundle_smiles.table),
                 content_sha256=content_hash_of_table(result_bundle.table),
@@ -278,13 +270,13 @@ class GenerateConformersConfig(PerDatasetPrepareTask):
     def _conformer_record(self, bundle_smiles: Bundle) -> ConformerGenerationRecord:
         return ConformerGenerationRecord(
             rdkit_version=rdkit.__version__,
-            n_conformers_requested=self.n_conformers,
+            n_conformers_requested=self.conformers.n_conformers,
             etkdg=EtkdgParameters(
-                version="ETKDGv3", max_iterations=self.max_embed_attempts
+                version="ETKDGv3", max_iterations=self.conformers.max_embed_attempts
             ),
             mmff=MmffParameters(
-                max_iterations=self.max_mmff_steps,
-                non_bonded_threshold=self.mmff_non_bonded_threshold,
+                max_iterations=self.conformers.max_mmff_steps,
+                non_bonded_threshold=self.conformers.mmff_non_bonded_threshold,
             ),
             parent_bundle_content_sha256=content_hash_of_table(bundle_smiles.table),
         )
@@ -327,7 +319,9 @@ class GenerateConformersConfig(PerDatasetPrepareTask):
         }
         outcome = _EmbeddingOutcome()
         allowed_symbols = self.geometry_limits.allowed_element_symbols()
-        for stereoisomer_id, embedding in self._embed_all(smiles_by_stereoisomer):
+        for stereoisomer_id, embedding in embed_many(
+            smiles_by_stereoisomer, self.conformers, n_workers=self.n_workers
+        ):
             isomeric_smiles = smiles_by_stereoisomer[stereoisomer_id]
             outcome.timings.append(embedding.timing)
             if (
@@ -358,7 +352,7 @@ class GenerateConformersConfig(PerDatasetPrepareTask):
         frames: list[Atoms],
         *,
         outcome: _EmbeddingOutcome,
-        allowed_symbols: set[str] | None,
+        allowed_symbols: frozenset[str] | None,
     ) -> list[Atoms]:
         canonical_isomeric = tetrahedral_stereo_smiles(isomeric_smiles)
         check_stereochemistry = has_assigned_tetrahedral_centre(isomeric_smiles)
@@ -377,34 +371,6 @@ class GenerateConformersConfig(PerDatasetPrepareTask):
             else:
                 outcome.count_drop(reason)
         return kept
-
-    def _embed_all(self, smiles_by_stereoisomer: dict[int, str]):
-        """Yield ``(stereoisomer_id, EmbedResult)`` for every stereoisomer.
-
-        ``n_workers=1`` runs in-process — that keeps a single-dataset debug run
-        (and the tests, which monkeypatch the embedding function) out of the
-        pool, where a patched callable would not survive pickling.
-        """
-        arguments = (
-            self.n_conformers,
-            self.max_embed_attempts,
-            self.max_mmff_steps,
-            self.mmff_non_bonded_threshold,
-        )
-        n_workers = self.n_workers or os.cpu_count() or 1
-        if n_workers == 1:
-            for stereoisomer_id, isomeric_smiles in smiles_by_stereoisomer.items():
-                yield stereoisomer_id, embed_one_smiles(isomeric_smiles, *arguments)
-            return
-        with ProcessPoolExecutor(max_workers=n_workers) as executor:
-            futures = {
-                executor.submit(embed_one_smiles, isomeric_smiles, *arguments): (
-                    stereoisomer_id
-                )
-                for stereoisomer_id, isomeric_smiles in smiles_by_stereoisomer.items()
-            }
-            for future in as_completed(futures):
-                yield futures[future], future.result()
 
 
 def _assert_alignment(result_bundle: Bundle, bundle_smiles: Bundle) -> None:

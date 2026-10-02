@@ -15,7 +15,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.data_handling.dataset.tasks import ElementSet
+from remedi.data_handling.chemistry.geometry import GeometryLimits
+from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
 
 
 class FileHash(BaseModel):
@@ -84,63 +85,6 @@ class BundleOutputs(BaseModel):
     )
 
 
-class GeometryLimits(BaseModel):
-    """The guards invariant 10 enforces, mirroring ``FilterAtomsStage`` today.
-
-    ``elements`` is either a named :class:`ElementSet` preset or an explicit list
-    of element symbols; ``None`` disables the element gate (a curated source may
-    legitimately carry anything).
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    max_atoms: int | None = None
-    elements: ElementSet | list[str] | None = None
-    reject_zero_hydrogen: bool = False
-    min_hydrogen_heavy_ratio: float = 0.0
-    min_interatomic_distance: float | None = None
-
-    def allowed_element_symbols(self) -> set[str] | None:
-        """Resolve ``elements`` to a set of symbols, or ``None`` if ungated."""
-        if self.elements is None:
-            return None
-        if isinstance(self.elements, ElementSet):
-            # Imported lazily: the generators package pulls in torch through its
-            # ``__init__`` chain, and this package must stay torch-free.
-            from remedi.data_handling.dataset_creation.generators.utils import (
-                resolve_element_set,
-            )
-
-            return resolve_element_set(self.elements)
-        return set(self.elements)
-
-
-class SmilesFilterRecord(BaseModel):
-    """The SMILES-side cleaning a preparer applied before assigning identity.
-
-    Mirrors ``FilterMoleculeStageConfig`` field for field, so a bundle records
-    exactly which parse -> standardize -> filter -> canonicalize -> dedupe knobs
-    produced its row set. ``element_set`` is either a named :class:`ElementSet`
-    preset or an explicit list of element symbols; ``None`` means the element
-    gate was off.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    max_atoms: int | None = 100
-    element_set: ElementSet | list[str] | None = ElementSet.mace_off
-
-    allow_charged: bool = True
-    allow_radicals: bool = True
-    allow_isotopes: bool = False
-    allow_multifragment: bool = False
-
-    strip_salts: bool = True
-    neutralize: bool = True
-
-    dedupe: bool = True
-
-
 class EtkdgParameters(BaseModel):
     """ETKDG knobs, recorded descriptively — not a reproduction contract (§1.2)."""
 
@@ -201,7 +145,7 @@ class BundleProvenance(BaseModel):
     outputs: BundleOutputs | None = None
     geometry_limits: GeometryLimits = Field(default_factory=GeometryLimits)
     #: The SMILES filter the preparer ran; ``None`` when it filtered nothing.
-    smiles_filter: SmilesFilterRecord | None = None
+    smiles_filter: SmilesFilterConfig | None = None
     conformers: ConformerGenerationRecord | None = None
     counts: BundleCounts = Field(default_factory=BundleCounts)
     #: Retraction notices carried forward.

@@ -5,9 +5,9 @@ import torch
 from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
-    FilterAtomsStageConfig,
 )
-from remedi.data_handling.dataset.tasks import ElementSet
+from remedi.data_handling.chemistry.elements import ElementSet
+from remedi.data_handling.chemistry.geometry import GeometryLimits
 from remedi.data_handling.dataset_creation.generators.sdf_generator import (
     SDFMoleculeGenerator,
 )
@@ -23,9 +23,7 @@ sdf_file = Path("/path/to/raw_datasets/pcqm4m/pcqm4m-v2-train.sdf")
 
 mol_generator = SDFMoleculeGenerator(sdf_file=sdf_file, loading_batch_size=10000)
 
-filter_stage = FilterAtomsStage(
-    config=FilterAtomsStageConfig(element_set=ElementSet.mace_off)
-)
+filter_stage = FilterAtomsStage(config=GeometryLimits(elements=ElementSet.mace_off))
 copy_data = CopyDataStage(dtype=torch.float64)
 
 creation_config = DatasetCreationConfig(

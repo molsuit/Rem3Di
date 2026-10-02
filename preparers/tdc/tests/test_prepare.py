@@ -40,12 +40,11 @@ from remedi_prepare_tdc.prepare import (
     train_valid_labels,
 )
 
-from remedi.configuration.dataset_config import FilterMoleculeStageConfig
 from remedi.data_handling.bundle import (
     EvalMetric,
-    SmilesFilterRecord,
     read_bundle,
 )
+from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
 from remedi.data_handling.dataset.tasks import TaskType
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -127,15 +126,12 @@ def test_config_rejects_an_unknown_endpoint() -> None:
         TdcPreparerConfig(only=["Not_A_Benchmark"])
 
 
-def test_smiles_filter_record_mirrors_the_stage_config() -> None:
-    config = TdcPreparerConfig()
-    record = config.smiles_filter_record()
-    stage_fields = set(FilterMoleculeStageConfig.model_fields) - {"kind"}
-    assert set(SmilesFilterRecord.model_fields) == stage_fields
-    assert record.max_atoms == 100
-    assert record.strip_salts is True
-    assert record.neutralize is True
-    assert record.dedupe is True
+def test_default_smiles_filter_settings() -> None:
+    smiles_filter = TdcPreparerConfig().smiles_filter
+    assert smiles_filter.max_atoms == 100
+    assert smiles_filter.strip_salts is True
+    assert smiles_filter.neutralize is True
+    assert smiles_filter.dedupe is True
 
 
 # -------------------------------------------------------- the split columns
@@ -219,7 +215,7 @@ def test_filter_counts_every_drop_reason_and_keeps_every_occurrence() -> None:
         ETHANOL,  # a replicate, kept for aggregation
         PROPANOL,  # kept
     ]
-    outcome = filter_source_smiles(raw, FilterMoleculeStageConfig())
+    outcome = filter_source_smiles(raw, SmilesFilterConfig())
     assert outcome.dropped == {"invalid_smiles": 1, "smiles_filter": 1}
     assert outcome.kept_row_indices == [0, 3, 4]
     assert outcome.isomeric_smiles == [ETHANOL, ETHANOL, PROPANOL]
@@ -227,7 +223,7 @@ def test_filter_counts_every_drop_reason_and_keeps_every_occurrence() -> None:
 
 def test_filter_drops_a_multifragment_salt_free_of_its_counterion() -> None:
     """Salt stripping is on, so the counter-ion is removed instead of dropped."""
-    outcome = filter_source_smiles(["CCO.[Cl-]"], FilterMoleculeStageConfig())
+    outcome = filter_source_smiles(["CCO.[Cl-]"], SmilesFilterConfig())
     assert outcome.isomeric_smiles == ["CCO"]
 
 

@@ -26,11 +26,13 @@ from remedi.data_handling.bundle import (
     stereochemistry_from_frame,
     tetrahedral_stereo_smiles,
 )
-from remedi.data_handling.dataset_creation.conformer_timing import (
+from remedi.data_handling.chemistry import conformers as conformers_module
+from remedi.data_handling.chemistry.conformers import (
+    ConformerEmbeddingConfig,
     ConformerTimingRecord,
     EmbedResult,
+    embed_one_smiles,
 )
-from remedi.data_handling.dataset_creation.utils import embed_one_smiles
 from remedi.data_handling.prepare import (
     STEREO_MISMATCH_AFTER_EMBEDDING,
     TIMINGS_FILENAME,
@@ -69,7 +71,7 @@ def build_manifest(
         tasks=[
             GenerateConformersConfig(
                 dataset_ids=dataset_ids,
-                n_conformers=1,
+                conformers=ConformerEmbeddingConfig(n_conformers=1),
                 n_workers=1,
                 overwrite=overwrite,
             )
@@ -92,11 +94,7 @@ def patch_embedding_to_fail_for(
     target = _canonical(failing_smiles)
 
     def fake_embed_one_smiles(
-        isomeric_smiles: str,
-        n_confs: int,
-        max_embed_attempts: int,
-        max_opt_iters: int,
-        mmff_non_bonded_thresh: float = 100.0,
+        isomeric_smiles: str, config: ConformerEmbeddingConfig
     ) -> EmbedResult:
         if _canonical(isomeric_smiles) == target:
             return EmbedResult(
@@ -106,7 +104,7 @@ def patch_embedding_to_fail_for(
                 timing=ConformerTimingRecord(
                     isomeric_smiles=isomeric_smiles,
                     n_atoms=-1,
-                    n_confs_requested=n_confs,
+                    n_confs_requested=config.n_conformers,
                     n_confs_emitted=0,
                     t_embed_s=0.0,
                     t_mmff_s=0.0,
@@ -114,15 +112,9 @@ def patch_embedding_to_fail_for(
                     error_msg="injected failure",
                 ),
             )
-        return embed_one_smiles(
-            isomeric_smiles,
-            n_confs,
-            max_embed_attempts,
-            max_opt_iters,
-            mmff_non_bonded_thresh,
-        )
+        return embed_one_smiles(isomeric_smiles, config)
 
-    monkeypatch.setattr(task_module, "embed_one_smiles", fake_embed_one_smiles)
+    monkeypatch.setattr(conformers_module, "embed_one_smiles", fake_embed_one_smiles)
 
 
 # ------------------------------------------------------------------ happy path
@@ -212,7 +204,9 @@ def test_generate_conformers_writes_a_valid_conformers_bundle(tmp_path: Path) ->
 
 def test_multiple_conformers_multiply_the_rows(tmp_path: Path) -> None:
     manifest = build_manifest(tmp_path)
-    manifest.tasks[0] = manifest.tasks[0].model_copy(update={"n_conformers": 3})
+    manifest.tasks[0] = manifest.tasks[0].model_copy(
+        update={"conformers": ConformerEmbeddingConfig(n_conformers=3)}
+    )
 
     assert prepare(manifest).n_failed == 0
 
@@ -401,7 +395,7 @@ def test_a_raising_mmff_becomes_a_failure_record_not_an_exception(
 ) -> None:
     monkeypatch.setattr(AllChem, "MMFFOptimizeMoleculeConfs", raise_invariant_violation)
 
-    result = embed_one_smiles("CCO", 1, 200, 100)
+    result = embed_one_smiles("CCO", ConformerEmbeddingConfig())
 
     assert result.positions is None
     assert result.atomic_numbers is None
@@ -416,7 +410,7 @@ def test_a_raising_embedding_becomes_a_failure_record_not_an_exception(
 ) -> None:
     monkeypatch.setattr(AllChem, "EmbedMultipleConfs", raise_invariant_violation)
 
-    result = embed_one_smiles("CCO", 1, 200, 100)
+    result = embed_one_smiles("CCO", ConformerEmbeddingConfig())
 
     assert result.timing.status == "embed_failed"
     assert "bad direction in linearSearch" in (result.timing.error_msg or "")

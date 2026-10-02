@@ -5,8 +5,9 @@ import torch
 from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
-    FilterMoleculeStageConfig,
 )
+from remedi.data_handling.chemistry.conformers import ConformerEmbeddingConfig
+from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
 from remedi.data_handling.dataset_creation.generators.tsv_generator import (
     TSVMoleculeGenerator,
 )
@@ -24,14 +25,13 @@ tsv_path = "/path/to/3DMolecularDescriptors/data/raw_data/BindingDB_All.tsv"
 creation_config = DatasetCreationConfig(
     path=Path("/path/to/fast_data_preparation/data/binding_db"),
     N_structures=1000,
-    max_embed_attempts=100,
-    max_MMFF_steps=100,
+    conformers=ConformerEmbeddingConfig(max_embed_attempts=100, max_mmff_steps=100),
 )
 dataset_config = DatasetConfig()
 
 mol_generator = TSVMoleculeGenerator(tsv_file=tsv_path, batch_size=4)
 
-filter_stage = FilterMoleculeStage(config=FilterMoleculeStageConfig())
+filter_stage = FilterMoleculeStage(config=SmilesFilterConfig())
 conformal_stage = ConformerGenerationStage(dataset_creation_config=creation_config)
 copy_data = CopyDataStage(dtype=torch.float32)
 

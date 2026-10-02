@@ -10,9 +10,9 @@ import torch
 from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
-    FilterMoleculeStageConfig,
 )
-from remedi.data_handling.dataset.tasks import ElementSet
+from remedi.data_handling.chemistry.elements import ElementSet
+from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
 from remedi.data_handling.dataset_creation.generators.geom_generator import (
     GeomGenerator,
 )
@@ -25,7 +25,7 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
 
 geom_dir = Path("/path/to/raw_datasets/geom_drugs")
 
-smiles_filter = FilterMoleculeStageConfig(
+smiles_filter = SmilesFilterConfig(
     max_atoms=100,
     element_set=ElementSet.mace_off,
     strip_salts=True,

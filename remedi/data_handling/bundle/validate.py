@@ -15,12 +15,15 @@ import pandas as pd
 from ase import Atoms
 from rdkit import Chem
 
-from remedi.data_handling.bundle.provenance import GeometryLimits
 from remedi.data_handling.bundle.spec import (
     FIXED_COLUMNS,
     SPLIT_VALUES,
     BenchmarkSpec,
     BenchmarkTask,
+)
+from remedi.data_handling.chemistry.geometry import (
+    GeometryLimits,
+    geometry_violations,
 )
 from remedi.data_handling.dataset.tasks import TaskType
 
@@ -40,20 +43,6 @@ def _summarise_rows(row_indices: list[int]) -> str:
 
 def _is_string_column(series: pd.Series) -> bool:
     return pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series)
-
-
-def minimum_interatomic_distance(positions: np.ndarray) -> float:
-    """Smallest distance between any two atoms, in Angstrom.
-
-    Mirrors the guard ``FilterAtomsStage`` enforces today: MACE divides by a
-    near-zero distance on overlapping atoms and emits NaN embeddings.
-    """
-    if len(positions) < 2:
-        return float("inf")
-    difference = positions[:, None, :] - positions[None, :, :]
-    distance = np.linalg.norm(difference, axis=-1)
-    np.fill_diagonal(distance, np.inf)
-    return float(distance.min())
 
 
 def count_stereoisomer_straddling_constitutions(
@@ -368,46 +357,8 @@ def _check_geometry_matches_smiles(bundle: Bundle) -> list[str]:
     return []
 
 
-def geometry_limit_violations(
-    atoms: Atoms, limits: GeometryLimits, allowed_symbols: set[str] | None
-) -> list[str]:
-    """Which of the invariant-10 guards one frame violates.
-
-    Returns the guard names (``max_atoms``, ``element_gate``, ...), which double
-    as ``counts.dropped`` keys: the ``generate_conformers`` prepare task calls
-    this to drop a violating frame *before* ``write_bundle`` would refuse the
-    whole bundle for it.
-    """
-    violations: list[str] = []
-    if limits.max_atoms is not None and len(atoms) > limits.max_atoms:
-        violations.append("max_atoms")
-    atomic_numbers = atoms.get_atomic_numbers()
-    n_hydrogen = int((atomic_numbers == 1).sum())
-    n_heavy = int((atomic_numbers > 1).sum())
-    if n_heavy == 0:
-        violations.append("no_heavy_atom")
-    elif limits.reject_zero_hydrogen and n_hydrogen == 0:
-        violations.append("zero_hydrogen")
-    elif (
-        limits.min_hydrogen_heavy_ratio > 0.0
-        and (n_hydrogen / n_heavy) < limits.min_hydrogen_heavy_ratio
-    ):
-        violations.append("hydrogen_heavy_ratio")
-    if allowed_symbols is not None and not set(atoms.get_chemical_symbols()).issubset(
-        allowed_symbols
-    ):
-        violations.append("element_gate")
-    if (
-        limits.min_interatomic_distance is not None
-        and minimum_interatomic_distance(atoms.get_positions())
-        < limits.min_interatomic_distance
-    ):
-        violations.append("min_interatomic_distance")
-    return violations
-
-
 def _check_geometry_limits(bundle: Bundle, limits: GeometryLimits) -> list[str]:
-    """Invariant 10: the guards ``FilterAtomsStage`` enforces today."""
+    """Invariant 10: every frame within ``geometry_limits``."""
     if bundle.structures is None:
         return []
     allowed_symbols = limits.allowed_element_symbols()
@@ -426,7 +377,7 @@ def _check_geometry_limits(bundle: Bundle, limits: GeometryLimits) -> list[str]:
     }
     offenders: dict[str, list[int]] = {name: [] for name in reasons}
     for index, atoms in enumerate(bundle.structures):
-        for violation in geometry_limit_violations(atoms, limits, allowed_symbols):
+        for violation in geometry_violations(atoms, limits, allowed_symbols):
             offenders[violation].append(index)
     return [
         f"10: {reasons[name]} in {_summarise_rows(rows)}"

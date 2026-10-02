@@ -71,7 +71,9 @@ def test_manifest_is_readable_from_a_hand_written_yaml(tmp_path: Path) -> None:
                 "smiles_bundle_root": str(tmp_path / "bundles"),
                 "benchmark_root": str(tmp_path / "benchmark_bundles"),
                 "output_root": str(tmp_path / "prepare_out"),
-                "tasks": [{"kind": "generate_conformers", "n_conformers": 2}],
+                "tasks": [
+                    {"kind": "generate_conformers", "conformers": {"n_conformers": 2}}
+                ],
             }
         )
     )
@@ -80,7 +82,7 @@ def test_manifest_is_readable_from_a_hand_written_yaml(tmp_path: Path) -> None:
 
     (task,) = manifest.tasks
     assert isinstance(task, GenerateConformersConfig)
-    assert task.n_conformers == 2
+    assert task.conformers.n_conformers == 2
     assert task.dataset_ids is None
     assert manifest.keep_going is True
     assert manifest.seed == 0
@@ -99,9 +101,9 @@ def test_the_shipped_template_parses() -> None:
 
     generate, ingest, verify = manifest.tasks
     assert isinstance(generate, GenerateConformersConfig)
-    assert generate.max_embed_attempts == 200
-    assert generate.max_mmff_steps == 100
-    assert generate.mmff_non_bonded_threshold == 100.0
+    assert generate.conformers.max_embed_attempts == 200
+    assert generate.conformers.max_mmff_steps == 100
+    assert generate.conformers.mmff_non_bonded_threshold == 100.0
     assert isinstance(ingest, IngestBenchmarkConfig)
     assert ingest.overwrite is False
     assert isinstance(verify, VerifyBenchmarkConfig)

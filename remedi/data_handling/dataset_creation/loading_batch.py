@@ -2,9 +2,7 @@
 
 Deliberately torch-free at import time: ``torch`` appears only in
 :class:`DataBatch`'s annotations, which ``from __future__ import annotations``
-leaves as strings. ``remedi-data`` preparers import
-``generators.utils`` (which builds :class:`SmilesData`) in the core install,
-where torch is not necessarily present.
+leaves as strings, so importing this module does not pull in torch.
 """
 
 from __future__ import annotations

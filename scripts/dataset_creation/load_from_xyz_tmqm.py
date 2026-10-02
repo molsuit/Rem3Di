@@ -21,8 +21,8 @@ import torch
 from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
-    FilterAtomsStageConfig,
 )
+from remedi.data_handling.chemistry.geometry import GeometryLimits
 from remedi.data_handling.dataset_creation.generators.xyz_generator import (
     XYZMoleculeGenerator,
 )
@@ -45,10 +45,10 @@ generator = XYZMoleculeGenerator(
 )
 
 filter_stage = FilterAtomsStage(
-    config=FilterAtomsStageConfig(
+    config=GeometryLimits(
         max_atoms=200,
-        reject_zero_h=True,
-        min_h_heavy_ratio=0.1,
+        reject_zero_hydrogen=True,
+        min_hydrogen_heavy_ratio=0.1,
     )
 )
 pipeline = [filter_stage, CopyDataStage(dtype=torch.float64)]

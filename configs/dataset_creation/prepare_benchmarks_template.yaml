@@ -24,16 +24,17 @@ tasks:
   - kind: generate_conformers
     # null (or omitted) means every bundle under `smiles_bundle_root`.
     dataset_ids: null
-    # Settled decision §9.7: one conformer per stereoisomer, as today.
-    n_conformers: 1
-    # ETKDG retry budget per conformer (RDKit `params.maxIterations`). 200
-    # covers essentially anything ETKDG can embed; raising it inflates wall
-    # time on pathological molecules without improving yield.
-    max_embed_attempts: 200
-    max_mmff_steps: 100
-    # MMFF94 non-bonded cutoff in Angstrom; 100.0 is RDKit's default and
-    # already includes every atom pair for drug-sized molecules.
-    mmff_non_bonded_threshold: 100.0
+    conformers:
+      # Settled decision §9.7: one conformer per stereoisomer, as today.
+      n_conformers: 1
+      # ETKDG retry budget per conformer (RDKit `params.maxIterations`). 200
+      # covers essentially anything ETKDG can embed; raising it inflates wall
+      # time on pathological molecules without improving yield.
+      max_embed_attempts: 200
+      max_mmff_steps: 100
+      # MMFF94 non-bonded cutoff in Angstrom; 100.0 is RDKit's default and
+      # already includes every atom pair for drug-sized molecules.
+      mmff_non_bonded_threshold: 100.0
     # null means os.cpu_count(); 1 runs in-process without a worker pool.
     n_workers: null
     # False skips a dataset whose conformers-stage bundle already exists.

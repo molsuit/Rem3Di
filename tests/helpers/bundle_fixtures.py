@@ -32,13 +32,14 @@ from remedi.data_handling.bundle import (
     Bundle,
     BundleCounts,
     BundleProvenance,
-    GeometryLimits,
     PreparerRecord,
     SourceRecord,
     assign_identity,
     write_bundle,
 )
-from remedi.data_handling.dataset.tasks import ElementSet, TaskType
+from remedi.data_handling.chemistry.elements import ElementSet
+from remedi.data_handling.chemistry.geometry import GeometryLimits
+from remedi.data_handling.dataset.tasks import TaskType
 
 #: One enantiomer pair, an achiral ring, a meso compound, a lone chiral
 #: molecule and a small achiral molecule — six distinct stereoisomers.

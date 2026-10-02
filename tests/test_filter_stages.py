@@ -11,11 +11,10 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from remedi.configuration.dataset_config import (
-    FilterAtomsStageConfig,
-    FilterMoleculeStageConfig,
-)
-from remedi.data_handling.dataset.tasks import ElementSet, Split
+from remedi.data_handling.chemistry.elements import ElementSet
+from remedi.data_handling.chemistry.geometry import GeometryLimits
+from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
+from remedi.data_handling.dataset.tasks import Split
 from remedi.data_handling.dataset_creation.loading_batch import (
     InputBatch,
     RegressionData,
@@ -55,7 +54,7 @@ def _smiles_batch(
 
 
 def test_filter_mol_stage_drops_invalid_and_canonicalizes():
-    stage = FilterMoleculeStage(config=FilterMoleculeStageConfig(max_atoms=100))
+    stage = FilterMoleculeStage(config=SmilesFilterConfig(max_atoms=100))
     batch = _smiles_batch(
         ["CCO", "not_a_smiles", "c1ccccc1", "C"],  # methane has <3 atoms
         with_targets=True,
@@ -77,7 +76,7 @@ def test_filter_mol_stage_drops_invalid_and_canonicalizes():
 
 def test_filter_mol_stage_dedupe_across_batches_first_wins():
     """Stateful ``_seen`` set preserves TDC's first-split-wins priority."""
-    stage = FilterMoleculeStage(config=FilterMoleculeStageConfig(max_atoms=100))
+    stage = FilterMoleculeStage(config=SmilesFilterConfig(max_atoms=100))
 
     b1 = _smiles_batch(
         ["CCO", "c1ccccc1"],
@@ -101,7 +100,7 @@ def test_filter_mol_stage_dedupe_across_batches_first_wins():
 
 
 def test_filter_mol_stage_reindexes_charge_and_mult():
-    stage = FilterMoleculeStage(config=FilterMoleculeStageConfig(max_atoms=100))
+    stage = FilterMoleculeStage(config=SmilesFilterConfig(max_atoms=100))
     batch = InputBatch(
         smiles=None,
         molecules=None,
@@ -119,16 +118,14 @@ def test_filter_mol_stage_reindexes_charge_and_mult():
 
 
 def test_filter_mol_stage_dedupe_off_keeps_duplicates():
-    stage = FilterMoleculeStage(
-        config=FilterMoleculeStageConfig(max_atoms=100, dedupe=False)
-    )
+    stage = FilterMoleculeStage(config=SmilesFilterConfig(max_atoms=100, dedupe=False))
     batch = _smiles_batch(["CCO", "CCO"])
     out, _ = stage(batch, None)
     assert [s.isomeric_smiles for s in out.smiles] == ["CCO", "CCO"]
 
 
 def test_filter_mol_stage_requires_raw_smiles():
-    stage = FilterMoleculeStage(config=FilterMoleculeStageConfig())
+    stage = FilterMoleculeStage(config=SmilesFilterConfig())
     batch = InputBatch(
         smiles=None,
         molecules=None,
@@ -172,7 +169,7 @@ def _atoms_batch(
 
 
 def test_filter_atoms_stage_max_atoms_gate():
-    stage = FilterAtomsStage(config=FilterAtomsStageConfig(max_atoms=4))
+    stage = FilterAtomsStage(config=GeometryLimits(max_atoms=4))
     # Heavy-only check: keep <=4, drop the 6-atom carbon chain.
     batch = _atoms_batch([3, 4, 6], charges=[0.0, 1.0, -1.0], mults=[1.0, 2.0, 3.0])
     out, _ = stage(batch, None)
@@ -184,9 +181,7 @@ def test_filter_atoms_stage_max_atoms_gate():
 
 
 def test_filter_atoms_stage_element_gate_rejects_si_under_mace_off():
-    stage = FilterAtomsStage(
-        config=FilterAtomsStageConfig(element_set=ElementSet.mace_off)
-    )
+    stage = FilterAtomsStage(config=GeometryLimits(elements=ElementSet.mace_off))
     # One pure-carbon block (kept), one pure-silicon block (dropped under MACE-OFF).
     batch = _atoms_batch([3, 3], elements=["C", "Si"])
     out, _ = stage(batch, None)
@@ -196,7 +191,7 @@ def test_filter_atoms_stage_element_gate_rejects_si_under_mace_off():
 
 def test_filter_atoms_stage_h_ratio_and_zero_h():
     stage = FilterAtomsStage(
-        config=FilterAtomsStageConfig(reject_zero_h=True, min_h_heavy_ratio=0.5)
+        config=GeometryLimits(reject_zero_hydrogen=True, min_hydrogen_heavy_ratio=0.5)
     )
     # 4 carbons + 1 H -> ratio 0.25 (rejected); CH4 (1 C + 4 H) ratio 4.0 (kept);
     # pure 3 C (zero H) -> rejected.
@@ -217,7 +212,7 @@ def test_filter_atoms_stage_h_ratio_and_zero_h():
 
 
 def test_filter_atoms_stage_reindexes_regression_data():
-    stage = FilterAtomsStage(config=FilterAtomsStageConfig(max_atoms=5))
+    stage = FilterAtomsStage(config=GeometryLimits(max_atoms=5))
     mols = [Atoms("C" * n, positions=np.zeros((n, 3))) for n in (3, 6, 4)]
     targets = np.array([[10.0], [20.0], [30.0]])
     masks = np.ones_like(targets, dtype=np.uint8)

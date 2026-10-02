@@ -5,8 +5,8 @@ import torch
 from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
-    FilterMoleculeStageConfig,
 )
+from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
 from remedi.data_handling.dataset_creation.generators.smiles_list_generator import (
     SmilesMoleculeGenerator,
     open_smiles_file,
@@ -35,7 +35,7 @@ creation_config = DatasetCreationConfig(
 
 gen = SmilesMoleculeGenerator(smiles, batch_size=500)
 
-filter_stage = FilterMoleculeStage(config=FilterMoleculeStageConfig(max_atoms=100))
+filter_stage = FilterMoleculeStage(config=SmilesFilterConfig(max_atoms=100))
 conformal_stage = ConformerGenerationStage(dataset_creation_config=creation_config)
 copy_data = CopyDataStage(dtype=torch.float64)
 

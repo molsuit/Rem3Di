@@ -20,10 +20,10 @@ from ase.io import write as ase_write
 from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
-    FilterAtomsStageConfig,
 )
+from remedi.data_handling.chemistry.elements import ElementSet
+from remedi.data_handling.chemistry.geometry import GeometryLimits
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import ElementSet
 from remedi.data_handling.dataset_creation.generators.qm9_generator import (
     ALL_QM9_TASKS,
     QM9Generator,
@@ -122,9 +122,7 @@ def test_orchestrator_round_trip_persists_targets_and_smiles(tmp_path: Path) -> 
     gen = QM9Generator(xyz_file=xyz_path, loading_batch_size=10)
     DatasetConstructionOrchestrator(
         pipeline=[
-            FilterAtomsStage(
-                config=FilterAtomsStageConfig(element_set=ElementSet.mace_off)
-            ),
+            FilterAtomsStage(config=GeometryLimits(elements=ElementSet.mace_off)),
             CopyDataStage(dtype=torch.float64),
         ],
         batch_generator=gen,

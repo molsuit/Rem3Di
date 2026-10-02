@@ -12,21 +12,19 @@ import numpy as np
 from ase import Atoms
 from rdkit import Chem
 
-from remedi.configuration.dataset_config import FilterMoleculeStageConfig
+from remedi.data_handling.chemistry.smiles_filter import (
+    SmilesFilterConfig,
+    molecule_passes_filter,
+    standardized_smiles_for_structure,
+)
 from remedi.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
-)
-from remedi.data_handling.dataset_creation.generators.utils import (
-    filter_mol,
-    standardize_for_conformer,
 )
 from remedi.data_handling.dataset_creation.loading_batch import (
     InputBatch,
     SmilesData,
 )
 from remedi.data_handling.dataset_creation.structure_ids import StructureID
-
-MACE_OFF_ELEMENTS = {"H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"}
 
 
 class GeomGenerator(MoleculeGenerator):
@@ -38,7 +36,7 @@ class GeomGenerator(MoleculeGenerator):
         loading_batch_size: int = 100,
         max_workers: int = os.cpu_count(),
         shuffle_mols: bool = True,
-        filter_config: FilterMoleculeStageConfig | None = None,
+        filter_config: SmilesFilterConfig | None = None,
     ):
         self.geom_dir = geom_dir
 
@@ -48,7 +46,7 @@ class GeomGenerator(MoleculeGenerator):
         self.max_workers = max_workers
         self.shuffle_mols = shuffle_mols
         # When provided, the worker routes every SMILES through
-        # `standardize_for_conformer` so the canonical form matches the
+        # `standardized_smiles_for_structure` so the canonical form matches the
         # benchmark loaders. No inter-mol dedupe -- GEOM stores one pickle
         # per unique molecule so duplicates within a build are negligible.
         self.filter_config = filter_config
@@ -107,12 +105,14 @@ class GeomGenerator(MoleculeGenerator):
             # use. We can't dedupe inside the worker (workers don't share
             # state across processes); the main thread dedupes after results
             # come back.
-            can_smiles = standardize_for_conformer(implicit_mol, filter_cfg, seen=None)
+            can_smiles = standardized_smiles_for_structure(
+                implicit_mol, filter_cfg, seen=None
+            )
             if can_smiles is None:
                 return []
         else:
             mol = Chem.AddHs(implicit_mol)
-            if not filter_mol(mol, max_atoms=max_atoms):
+            if not molecule_passes_filter(mol, SmilesFilterConfig(max_atoms=max_atoms)):
                 return []
             can_smiles = Chem.CanonSmiles(dic["smiles"])
 

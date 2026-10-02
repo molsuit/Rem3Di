@@ -34,7 +34,6 @@ from remedi.data_handling.bundle import (
     ConformerGenerationRecord,
     EtkdgParameters,
     EvalMetric,
-    GeometryLimits,
     MmffParameters,
     PreparerRecord,
     SourceRecord,
@@ -51,6 +50,7 @@ from remedi.data_handling.bundle import (
     validate_bundle,
     write_bundle,
 )
+from remedi.data_handling.chemistry.geometry import GeometryLimits
 from remedi.data_handling.dataset.tasks import TaskScope, TaskType
 
 # Six rows: an enantiomer pair (0, 1), an achiral molecule (2), a meso compound (3),

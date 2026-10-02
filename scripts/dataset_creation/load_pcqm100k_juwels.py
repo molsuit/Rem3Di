@@ -20,11 +20,11 @@ import torch
 from remedi.configuration.dataset_config import (
     DatasetConfig,
     DatasetCreationConfig,
-    FilterAtomsStageConfig,
-    FilterMoleculeStageConfig,
     PhysicochemicalDescriptorStageConfig,
 )
-from remedi.data_handling.dataset.tasks import ElementSet
+from remedi.data_handling.chemistry.elements import ElementSet
+from remedi.data_handling.chemistry.geometry import GeometryLimits
+from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
 from remedi.data_handling.dataset_creation.generators.sdf_generator import (
     SDFMoleculeGenerator,
 )
@@ -73,7 +73,7 @@ def main() -> None:
 
     # Match the SMILES filter the remedi-data preparers apply to the benchmark
     # bundles so pretrain SMILES go through the same canonicalization.
-    smiles_filter = FilterMoleculeStageConfig(
+    smiles_filter = SmilesFilterConfig(
         max_atoms=100,
         element_set=ElementSet.mace_off,
         strip_salts=True,
@@ -87,9 +87,7 @@ def main() -> None:
         filter_config=smiles_filter,
     )
 
-    filter_stage = FilterAtomsStage(
-        config=FilterAtomsStageConfig(element_set=ElementSet.mace_off)
-    )
+    filter_stage = FilterAtomsStage(config=GeometryLimits(elements=ElementSet.mace_off))
     # Cheap RDKit physicochemical descriptors -> per-structure targets_system
     # columns, used as linear-probe labels during pretraining. Runs after the
     # atoms filter (so it sees the loaded 3D structures + SMILES) and before the

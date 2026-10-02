@@ -2,9 +2,9 @@
 
 ``BENCHMARK_DATA_FORMAT.md`` step 2. For each of the 22 ADMET group endpoints
 this reads the downloaded ``train_val.csv`` + ``test.csv``, cleans the SMILES
-with the same filter the Rem3Di ingest pipeline uses today
-(:func:`apply_smiles_filter` with the defaults of
-``FilterMoleculeStageConfig``), assigns bundle identity, freezes the five
+with the shared SMILES filter
+(:func:`remedi.data_handling.chemistry.smiles_filter.filter_smiles` with the
+defaults of ``SmilesFilterConfig``), assigns bundle identity, freezes the five
 seeded train/valid partitions as ``split__seed{1..5}`` alongside the fixed
 ``test`` fold, and writes ``benchmark_data/bundles/<dataset_id>/``.
 
@@ -38,7 +38,6 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rdkit import rdBase
 
-from remedi.configuration.dataset_config import FilterMoleculeStageConfig
 from remedi.data_handling.bundle import (
     PROVENANCE_FILENAME,
     SPEC_FILENAME,
@@ -52,7 +51,6 @@ from remedi.data_handling.bundle import (
     FileHash,
     IdentityTable,
     PreparerRecord,
-    SmilesFilterRecord,
     SourceRecord,
     assign_identity,
     canonical_smiles_pair,
@@ -60,12 +58,11 @@ from remedi.data_handling.bundle import (
     sha256_of_file,
     write_bundle,
 )
-from remedi.data_handling.dataset.tasks import TaskType
-from remedi.data_handling.dataset_creation.build_stats import LoadStats
-from remedi.data_handling.dataset_creation.generators.utils import (
-    apply_smiles_filter,
-    resolve_element_set,
+from remedi.data_handling.chemistry.smiles_filter import (
+    SmilesFilterConfig,
+    filter_smiles,
 )
+from remedi.data_handling.dataset.tasks import TaskType
 
 logger = logging.getLogger("preparers.tdc")
 
@@ -264,9 +261,7 @@ class TdcPreparerConfig(BaseModel):
     #: is what the bare ``split`` column aliases (§5c).
     seeds: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5], min_length=1)
     #: Today's ingest defaults; recorded verbatim in ``provenance.yaml``.
-    smiles_filter: FilterMoleculeStageConfig = Field(
-        default_factory=FilterMoleculeStageConfig
-    )
+    smiles_filter: SmilesFilterConfig = Field(default_factory=SmilesFilterConfig)
     #: Restrict the run to these dataset ids; empty means all 22.
     only: list[str] = Field(default_factory=list)
 
@@ -297,9 +292,6 @@ class TdcPreparerConfig(BaseModel):
     def split_columns(self) -> list[str]:
         """``[split, split__seed1, …]`` — the bare name first, then one per seed."""
         return ["split", *(f"split__seed{seed}" for seed in self.seeds)]
-
-    def smiles_filter_record(self) -> SmilesFilterRecord:
-        return SmilesFilterRecord(**self.smiles_filter.model_dump(exclude={"kind"}))
 
     def staging_root(self) -> Path:
         """Where a bundle is assembled before its files are renamed into place.
@@ -517,7 +509,7 @@ def split_column_values(
 
 @dataclass(frozen=True)
 class FilterOutcome:
-    """Every source row :func:`apply_smiles_filter` kept, and why it dropped the rest."""
+    """Every source row :func:`filter_smiles` kept, and why it dropped the rest."""
 
     kept_row_indices: list[int]
     isomeric_smiles: list[str]
@@ -525,40 +517,28 @@ class FilterOutcome:
 
 
 def filter_source_smiles(
-    raw_smiles: Sequence[str], smiles_filter: FilterMoleculeStageConfig
+    raw_smiles: Sequence[str], smiles_filter: SmilesFilterConfig
 ) -> FilterOutcome:
-    """Run today's ingest filter over the raw SMILES, keeping every occurrence.
+    """Run the shared SMILES filter over the raw SMILES, keeping every occurrence.
 
-    ``apply_smiles_filter`` is called with ``dedupe=False`` on purpose: the
-    preparer has to see *all* measurements of a compound to aggregate them
+    The filter runs with ``dedupe`` off on purpose: the preparer has to see
+    *all* measurements of a compound to aggregate them
     (:func:`aggregate_by_canonical_smiles`), so the collapse happens one step
     later rather than inside the filter. ``smiles_filter.dedupe`` stays ``True``
     in the recorded settings because duplicates are still collapsed.
 
     The filter reports a single ``filtered`` verdict, so the element gate, the
-    atom-count gate, the fragment gate and the isotope gate cannot be told apart
-    here without duplicating its logic; they are counted together.
+    atom-count gate, the fragment gate and the isotope gate are counted together.
     """
-    stats = LoadStats()
-    kept, kept_indices = apply_smiles_filter(
-        raw_smiles,
-        max_atoms=smiles_filter.max_atoms,
-        allowed_elements=resolve_element_set(smiles_filter.element_set),
-        allow_charged=smiles_filter.allow_charged,
-        allow_radicals=smiles_filter.allow_radicals,
-        allow_isotopes=smiles_filter.allow_isotopes,
-        allow_multifragment=smiles_filter.allow_multifragment,
-        strip_salts=smiles_filter.strip_salts,
-        neutralize=smiles_filter.neutralize,
-        dedupe=False,
-        stats=stats,
+    filtered = filter_smiles(
+        raw_smiles, smiles_filter.model_copy(update={"dedupe": False})
     )
     return FilterOutcome(
-        kept_row_indices=list(kept_indices),
-        isomeric_smiles=[entry.isomeric_smiles for entry in kept],
+        kept_row_indices=filtered.kept_row_indices,
+        isomeric_smiles=filtered.isomeric_smiles,
         dropped={
-            "invalid_smiles": stats.n_invalid_smiles,
-            "smiles_filter": stats.n_filtered_out,
+            "invalid_smiles": filtered.invalid,
+            "smiles_filter": filtered.filtered,
         },
     )
 
@@ -886,7 +866,7 @@ def prepare_endpoint(
             files=source_file_hashes(config.raw_root, tdc_directory_name),
             package_versions=package_versions(),
         ),
-        smiles_filter=config.smiles_filter_record(),
+        smiles_filter=config.smiles_filter,
         counts=BundleCounts(source_molecules=len(source), dropped=dropped),
         notices=[AGGREGATION_NOTICE],
     )
