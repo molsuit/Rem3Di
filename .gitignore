@@ -13,7 +13,7 @@ notebooks/
 backed_up_models/
 *.log
 raw_datasets/
-dataset
+/dataset/
 uv.lock
 .claude
 .env

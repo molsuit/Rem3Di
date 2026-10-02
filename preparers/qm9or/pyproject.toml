@@ -1,0 +1,30 @@
+[project]
+name = "remedi-prepare-qm9or"
+version = "0.1.0"
+description = "Zenodo QM9-OR (record 13380412) -> the frozen QM9-OR molecule table and DFT frames"
+requires-python = ">=3.12"
+dependencies = [
+    "ase",
+    "numpy",
+    "pandas",
+    "pydantic",
+    # The isomeric_smiles column is pinned by sha256; it was reproduced with
+    # RDKit 2026.03.5. Another canonicaliser version can change the strings
+    # (the preparer reports that case separately).
+    "rdkit",
+]
+
+[project.scripts]
+prepare-qm9or = "remedi_prepare_qm9or.prepare:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["remedi_prepare_qm9or"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Importable before the package is installed as a workspace member.
+pythonpath = ["."]

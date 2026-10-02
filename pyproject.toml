@@ -96,7 +96,7 @@ packages = ["remedi"]
 [tool.ruff]
 # The QM9-OR split generators are the original author scripts, kept verbatim as
 # a reference for how qm9or_splits.csv was produced; they import another package.
-extend-exclude = ["preparers/qm9or"]
+extend-exclude = ["preparers/qm9or/generators"]
 lint.select = ["I", "UP", "F", "E", "W", "C90", "B", "A", "RUF"]
 lint.ignore = ["E501", "B008"]
 
@@ -121,7 +121,7 @@ explicit = true
 # The benchmark preparers are workspace members with their own dependencies;
 # `uv sync --all-packages` installs them into the shared venv.
 [tool.uv.workspace]
-members = ["preparers/tdc", "preparers/chiralcat"]
+members = ["preparers/tdc", "preparers/chiralcat", "preparers/qm9or"]
 
 # Local-dev only (uv): these are stripped from the built package's metadata.
 [tool.uv.sources]
