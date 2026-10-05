@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from remedi.data_handling.chemistry.stereo_groups import unspecify_relative_stereo
+from remedi.data_handling.chemistry.stereo_groups import (
+    has_or_stereo_group,
+    unspecify_relative_stereo,
+)
 
 # From the ASAP antiviral sets: one OR group over two centres, one AND group
 # over two centres, one absolute centre.
@@ -43,3 +46,11 @@ def test_a_plain_smiles_passes_through_canonicalised() -> None:
 
 def test_an_unparseable_smiles_gives_none() -> None:
     assert unspecify_relative_stereo("not a molecule") is None
+
+
+def test_only_an_or_group_marks_an_unassigned_enantiomer() -> None:
+    assert has_or_stereo_group(OR_GROUP) is True
+    assert has_or_stereo_group(AND_GROUP) is False
+    assert has_or_stereo_group(ABSOLUTE) is False
+    assert has_or_stereo_group("C[C@@H](N)C(=O)O") is False
+    assert has_or_stereo_group("not a molecule") is False

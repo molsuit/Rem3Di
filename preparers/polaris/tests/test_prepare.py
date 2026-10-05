@@ -19,6 +19,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 from remedi_prepare_polaris.prepare import (
+    OR_STEREO_GROUP,
     POLARIS_DATASETS,
     DeepchemScaffoldTestFold,
     PolarisDataset,
@@ -77,6 +78,8 @@ SCAFFOLD_MOLECULES = [
 #: sample is one configuration, which one is unknown.
 OR_GROUP_R = "C[C@H](N)c1ccccc1 |o1:1|"
 OR_GROUP_S = "C[C@@H](N)c1ccccc1 |o1:1|"
+#: A racemate: the AND group makes the drawn centre arbitrary.
+AND_GROUP_RACEMATE = "C[C@H](N)c1ccccc1 |&1:1|"
 PHENYLETHYLAMINE = "CC(N)c1ccccc1"
 ADMET_COLUMNS = ["HLM", "KSOL", "LogD", "MDR1-MDCKII", "MLM"]
 KINASES = ["EGFR", "KIT", "RET", "LOK", "SLK"]
@@ -110,13 +113,15 @@ def _write_dump(
 
 
 def _admet_frame() -> pd.DataFrame:
-    """Twelve train/test rows, plus an OR-group enantiomer pair across the folds."""
+    """Twelve train/test rows, a racemate (train) and the same compound drawn
+    without stereo (test), and one OR-group enantiomer the preparer drops."""
     rows: list[tuple[object, ...]] = [
-        (smiles, TRAIN if position < 9 else TEST, position, 100.0, 1.5, 2.0, math.nan)
+        (smiles, TRAIN if position < 9 else TEST, position, 100.0, 1.5, 2.0, 4.0)
         for position, smiles in enumerate(SCAFFOLD_MOLECULES)
     ]
-    rows.append((OR_GROUP_R, TRAIN, 10.0, math.nan, 1.0, 3.0, 5.0))
-    rows.append((OR_GROUP_S, TEST, 30.0, math.nan, 2.0, math.nan, 7.0))
+    rows.append((AND_GROUP_RACEMATE, TRAIN, 10.0, math.nan, 1.0, 3.0, 5.0))
+    rows.append((PHENYLETHYLAMINE, TEST, 30.0, math.nan, 2.0, math.nan, 7.0))
+    rows.append((OR_GROUP_S, TRAIN, 99.0, 99.0, 9.0, 9.0, 9.0))
     return pd.DataFrame(rows, columns=["smiles", "split", *ADMET_COLUMNS])
 
 
@@ -224,7 +229,7 @@ def test_read_source_table_reads_the_four_field_record(tmp_path: Path) -> None:
     dataset = _dataset("polaris_antiviral_admet")
     _write_dump(tmp_path, dataset, _admet_frame())
     source = read_source_table(tmp_path, dataset)
-    assert len(source) == 14
+    assert len(source) == 15
     assert source.record.slug == dataset.slug
     assert source.record.checksum is None
     assert set(source.file_hashes) == {
@@ -335,7 +340,7 @@ def test_or_group_enantiomers_collapse_to_one_unspecified_smiles() -> None:
     # An unparseable SMILES passes on unchanged for the filter to count.
     assert outcome.smiles[3] == "not smiles"
     assert (outcome.rows_changed, outcome.centres_unspecified) == (2, 2)
-    assert "2 source rows had 2 centres" in outcome.notice()
+    assert "2 kept source rows had 2 centres" in outcome.notice()
 
 
 # ------------------------------------------- end to end on synthetic dumps
@@ -350,15 +355,18 @@ def test_prepare_dataset_writes_a_shipped_split_bundle(tmp_path: Path) -> None:
     bundle = read_bundle(report.directory)
     table = bundle.table
 
-    # Twelve molecules plus the OR pair merged into one row with mean labels.
-    assert (report.counts.source_molecules, report.counts.final_rows) == (14, 13)
-    assert report.extra == {"stereo_unspecified_rows": 2, "test_straddling_rows": 1}
+    # Twelve molecules plus the racemate merged with its stereo-free drawing;
+    # the OR-group enantiomer is dropped and counted.
+    assert (report.counts.source_molecules, report.counts.final_rows) == (15, 13)
+    assert report.counts.dropped[OR_STEREO_GROUP] == 1
+    assert report.extra == {"stereo_unspecified_rows": 1, "test_straddling_rows": 1}
     merged = table[table["isomeric_smiles"] == PHENYLETHYLAMINE]
     assert len(merged) == 1
     assert merged["HLM"].iloc[0] == pytest.approx(20.0)
     assert merged["LogD"].iloc[0] == pytest.approx(1.5)
     assert merged["MDR1-MDCKII"].iloc[0] == pytest.approx(3.0)
     assert math.isnan(merged["KSOL"].iloc[0])
+    assert merged["MLM"].iloc[0] == pytest.approx(6.0)
     assert merged[MEASUREMENT_COUNT_COLUMN].iloc[0] == 2.0
     # The merged row had a test member, so it is test in every split column.
     for column_name in config.split_columns():
@@ -378,7 +386,8 @@ def test_prepare_dataset_writes_a_shipped_split_bundle(tmp_path: Path) -> None:
     assert provenance.smiles_filter.dedupe is False
     aggregation, stereo, split = provenance.notices
     assert aggregation == AGGREGATION_NOTICE
-    assert "2 source rows had 2 centres" in stereo
+    assert "1 kept source rows had 1 centres" in stereo
+    assert f"counts.dropped.{OR_STEREO_GROUP}" in stereo
     assert "shipped Set column" in split and "1 bundle rows merge" in split
 
 

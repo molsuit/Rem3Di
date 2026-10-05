@@ -4,8 +4,9 @@
 (next to this package, in its own polaris-only env) has turned each hub dataset
 into ``<dataset_id>.parquet`` plus ``<dataset_id>.source.yaml`` under the raw
 root. For each bundle listed in ``datasets.yaml`` next to this module, this
-reads the parquet, makes every CXSMILES enhanced-stereo AND/OR centre
-unspecified (§11.3), merges the source rows into one row per stereoisomer
+reads the parquet, drops the rows whose CXSMILES carries an OR stereo group (a
+separated enantiomer of unknown absolute configuration), makes every AND-group
+centre unspecified (§11.3), merges the source rows into one row per stereoisomer
 (:func:`remedi.data_handling.bundle.merge_source_rows`), fixes the test fold
 (the shipped ``Set`` column or a DeepChem scaffold split), freezes five seeded
 train/valid partitions as ``split__seed{1..5}`` and writes
@@ -62,7 +63,10 @@ from remedi.data_handling.chemistry.splits import (
     fixed_test_seeded_split_columns,
     scaffold_test_mask,
 )
-from remedi.data_handling.chemistry.stereo_groups import unspecify_relative_stereo
+from remedi.data_handling.chemistry.stereo_groups import (
+    has_or_stereo_group,
+    unspecify_relative_stereo,
+)
 from remedi.data_handling.dataset.tasks import Split, TaskType
 
 logger = logging.getLogger("preparers.polaris")
@@ -74,6 +78,10 @@ DEFAULT_BUNDLE_ROOT = REPOSITORY_ROOT / "benchmark_data" / "bundles"
 DATASETS_FILE = Path(__file__).with_name("datasets.yaml")
 SOURCE_KIND = "polaris_hub"
 SOURCE_RECORD_SUFFIX = ".source.yaml"
+#: ``counts.dropped`` key for a row whose CXSMILES has an OR stereo group: one
+#: enantiomer of a chiral separation whose absolute configuration nobody
+#: assigned. Unspecifying it would merge the two enantiomers' labels (§11.3).
+OR_STEREO_GROUP = "or_stereo_group"
 
 #: The two fixed columns ``dump_polaris.py`` writes before the task columns;
 #: the split column holds :class:`Split` codes.
@@ -231,9 +239,6 @@ class SourceTable:
     def __len__(self) -> int:
         return len(self.frame)
 
-    def split_codes(self) -> np.ndarray:
-        return self.frame[SPLIT_CODE_COLUMN].to_numpy(dtype=np.int64)
-
 
 def read_source_table(raw_root: Path, dataset: PolarisDataset) -> SourceTable:
     """Read one dumped parquet and check it against the catalog.
@@ -294,7 +299,7 @@ def read_source_table(raw_root: Path, dataset: PolarisDataset) -> SourceTable:
 
 @dataclass(frozen=True)
 class UnspecifiedStereoRows:
-    """Every raw SMILES with its AND/OR-group stereo made unspecified."""
+    """Every raw SMILES with its AND-group (racemate) stereo made unspecified."""
 
     smiles: list[str]
     #: Source rows that lost at least one stereo assignment.
@@ -304,11 +309,14 @@ class UnspecifiedStereoRows:
 
     def notice(self) -> str:
         return (
-            "CXSMILES enhanced stereo: every stereocentre in an AND (&) or OR (o) "
-            "group is made unspecified before the SMILES filter, absolute (a) "
-            f"centres keep their configuration; {self.rows_changed} source rows had "
-            f"{self.centres_unspecified} centres unspecified in total, and rows that "
-            "then canonicalise identically are merged like any replicate."
+            "CXSMILES enhanced stereo: rows with an OR (o) group, single enantiomers "
+            "of unknown absolute configuration, are dropped "
+            f"(counts.dropped.{OR_STEREO_GROUP}); every stereocentre in an AND (&) "
+            "group, a racemate, is made unspecified before the SMILES filter, and "
+            f"absolute (a) centres keep their configuration. {self.rows_changed} "
+            f"kept source rows had {self.centres_unspecified} centres unspecified in "
+            "total; rows that then canonicalise identically are merged like any "
+            "replicate."
         )
 
 
@@ -426,7 +434,8 @@ def build_spec(dataset: PolarisDataset, split_columns: list[str]) -> DatasetSpec
         description=(
             f"{dataset.property_description}. From the Polaris hub dataset "
             f"{dataset.slug}. Rows are the source rows after the Rem3Di SMILES "
-            "filter (CXSMILES AND/OR stereo groups made unspecified first), one row "
+            "filter (CXSMILES OR-group rows dropped, AND-group centres made "
+            "unspecified first), one row "
             "per stereoisomer with replicate measurements aggregated and missing "
             f"labels left empty; {test_fold_text} plus five seeded scaffold "
             "train/valid partitions are frozen as the split columns."
@@ -441,7 +450,7 @@ def build_spec(dataset: PolarisDataset, split_columns: list[str]) -> DatasetSpec
 def prepare_dataset(
     dataset: PolarisDataset, config: PolarisPreparerConfig, preparer: PreparerRecord
 ) -> BundleReport:
-    """Read, unspecify, merge, split and write one bundle.
+    """Read, drop OR-group rows, unspecify, merge, split and write one bundle.
 
     Raises:
         PolarisPreparationError: on a source problem this preparer detects.
@@ -449,17 +458,21 @@ def prepare_dataset(
         BundleValidationError: if the table violates a format invariant.
     """
     source = read_source_table(config.raw_root, dataset)
-    stereo = unspecify_stereo_groups(source.frame[SMILES_COLUMN].astype(str).tolist())
+    is_or_row = source.frame[SMILES_COLUMN].astype(str).map(has_or_stereo_group)
+    frame = source.frame[~is_or_row].reset_index(drop=True)
+    stereo = unspecify_stereo_groups(frame[SMILES_COLUMN].astype(str).tolist())
     merged = merge_source_rows(
         stereo.smiles,
         {
-            label.name: source.frame[label.column].astype(float).tolist()
+            label.name: frame[label.column].astype(float).tolist()
             for label in dataset.labels
         },
         {label.name: dataset.task_type for label in dataset.labels},
         config.smiles_filter,
+    ).after_source_drops({OR_STEREO_GROUP: int(is_or_row.sum())})
+    test_fold = assign_test_fold(
+        dataset, merged, frame[SPLIT_CODE_COLUMN].to_numpy(dtype=np.int64)
     )
-    test_fold = assign_test_fold(dataset, merged, source.split_codes())
     return write_smiles_bundle(
         spec=build_spec(dataset, config.split_columns()),
         merged=merged,

@@ -11,6 +11,11 @@ A plain SMILES has no way to say "and" or "or", and ``Chem.MolToSmiles`` drops
 the groups silently, keeping the arbitrary drawn configuration as if it were
 known. :func:`unspecify_relative_stereo` instead makes every centre in an AND
 or OR group unspecified, so the SMILES claims only what the source knows.
+
+An OR row is one specific stereoisomer that cannot be named, so a preparer
+usually drops it instead (:func:`has_or_stereo_group`, ``BENCHMARK_DATA_FORMAT.md``
+§11.3): unspecifying it would merge the two separated enantiomers of a compound
+into one row whose label belongs to neither.
 """
 
 from __future__ import annotations
@@ -51,4 +56,16 @@ def unspecify_relative_stereo(smiles: str) -> UnspecifiedStereo | None:
             unspecified += 1
     return UnspecifiedStereo(
         smiles=Chem.MolToSmiles(molecule), unspecified_centres=unspecified
+    )
+
+
+def has_or_stereo_group(smiles: str) -> bool:
+    """Whether ``smiles`` carries an OR (``o``) enhanced-stereo group.
+
+    An unparseable SMILES has none; the SMILES filter counts it as invalid.
+    """
+    molecule = Chem.MolFromSmiles(smiles)
+    return molecule is not None and any(
+        group.GetGroupType() == Chem.StereoGroupType.STEREO_OR
+        for group in molecule.GetStereoGroups()
     )

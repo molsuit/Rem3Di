@@ -16,6 +16,7 @@ and counted.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import statistics
 from collections.abc import Mapping, Sequence
@@ -280,6 +281,22 @@ class MergedRows:
     @property
     def isomeric_smiles(self) -> list[str]:
         return list(self.aggregated.identity.isomeric_smiles)
+
+    def after_source_drops(self, dropped: Mapping[str, int]) -> MergedRows:
+        """Account for rows the preparer removed before the merge.
+
+        ``source_rows`` grows by their number and ``dropped`` lists their
+        reasons first; ``member_source_rows`` keeps indexing the rows that were
+        merged.
+        """
+        overlap = sorted(set(dropped) & set(self.dropped))
+        if overlap:
+            raise LabelAggregationError(f"drop reasons {overlap} are counted twice")
+        return dataclasses.replace(
+            self,
+            source_rows=self.source_rows + sum(dropped.values()),
+            dropped={**dropped, **self.dropped},
+        )
 
 
 def merge_source_rows(

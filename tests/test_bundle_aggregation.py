@@ -240,3 +240,17 @@ def test_merge_rejects_labels_that_do_not_cover_the_source_rows() -> None:
             {"y": TaskType.regression},
             PREPARER_FILTER,
         )
+
+
+def test_rows_dropped_before_the_merge_are_counted_first() -> None:
+    merged = merge_source_rows(
+        [ETHANOL, PROPANOL],
+        {"y": [1.0, 2.0]},
+        {"y": TaskType.regression},
+        PREPARER_FILTER,
+    ).after_source_drops({"or_stereo_group": 3})
+    assert merged.source_rows == 5
+    assert next(iter(merged.dropped)) == "or_stereo_group"
+    assert merged.member_source_rows == [[0], [1]]
+    with pytest.raises(LabelAggregationError, match="counted twice"):
+        merged.after_source_drops({DUPLICATE_SMILES: 1})
