@@ -2,6 +2,7 @@
 
 The SMILES filter (:mod:`smiles_filter`), the geometry limits
 (:mod:`geometry`), conformer embedding (:mod:`conformers`), the element sets
-(:mod:`elements`) and the literature splitters (:mod:`splits`). One settings
+(:mod:`elements`), the literature splitters (:mod:`splits`) and the CXSMILES
+enhanced-stereo reduction (:mod:`stereo_groups`). One settings
 model and one function per concept; torch-free.
 """

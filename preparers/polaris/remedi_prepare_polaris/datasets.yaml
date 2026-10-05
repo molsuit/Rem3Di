@@ -1,0 +1,107 @@
+# The Polaris hub bundles (BENCHMARK_DATA_FORMAT.md §5c).
+#
+# dataset_id: the bundle directory name.
+# source_file: the parquet under the raw root that dump_polaris.py wrote; its
+#   <stem>.source.yaml sits next to it. One parquet may feed several bundles.
+# slug: the Polaris hub dataset; cross-checked against the source yaml.
+# property_description: what is measured; goes into the bundle description.
+# task_type: regression or classification, shared by every label of the bundle.
+#   Regression bundles are scored per column with MAE as the headline; a
+#   multi-label classification bundle is scored with macro-AUROC only.
+# test_fold: where the fixed test fold comes from.
+#   shipped: the dataset's own Set column (every row must be train or test).
+#   deepchem_scaffold: the dataset ships no split; the test part of the
+#     deterministic DeepChem scaffold split over the final bundle rows.
+#   The kind is cross-checked against the parquet's split codes.
+# labels: one entry per label column. `name` is the bundle label column and,
+#   unless `source_column` says otherwise, the parquet column it is read from.
+#   `transform` (regression only) is how the raw label is mapped before fitting
+#   and scoring; the table always holds raw values. Default: identity.
+#
+# The ASAP antiviral-admet-2025 competition scored every endpoint except LogD
+# on log10(clip(y, 0) + 1) (asapdiscovery/asap-polaris-blind-challenge-examples,
+# evaluation/utils.py); LogD is already a logarithm.
+datasets:
+  - dataset_id: polaris_antiviral_admet
+    source_file: polaris_antiviral_admet.parquet
+    slug: asap-discovery/antiviral-admet-2025-unblinded
+    property_description: >-
+      ASAP Discovery antiviral ADMET panel (Polaris antiviral competition 2025,
+      unblinded): LogD, human and mouse liver microsomal stability, kinetic
+      solubility and MDR1-MDCKII permeability
+    task_type: regression
+    test_fold:
+      kind: shipped
+    labels:
+      - name: LogD
+      - name: HLM
+        transform: {kind: log10, clip_minimum: 0.0, offset: 1.0}
+      - name: MLM
+        transform: {kind: log10, clip_minimum: 0.0, offset: 1.0}
+      - name: KSOL
+        transform: {kind: log10, clip_minimum: 0.0, offset: 1.0}
+      - name: MDR1-MDCKII
+        transform: {kind: log10, clip_minimum: 0.0, offset: 1.0}
+
+  - dataset_id: polaris_antiviral_potency
+    source_file: polaris_antiviral_potency.parquet
+    slug: asap-discovery/antiviral-potency-2025-unblinded
+    property_description: >-
+      ASAP Discovery antiviral potency (Polaris antiviral competition 2025,
+      unblinded): pIC50 against the MERS-CoV and SARS-CoV-2 main proteases
+    task_type: regression
+    test_fold:
+      kind: shipped
+    labels:
+      - name: pIC50 (MERS-CoV Mpro)
+      - name: pIC50 (SARS-CoV-2 Mpro)
+
+  - dataset_id: polaris_adme_fang
+    source_file: polaris_adme_fang.parquet
+    slug: biogen/adme-fang-v1
+    property_description: >-
+      Biogen ADME panel (Fang et al. 2023): human and rat liver microsomal
+      clearance, MDR1-MDCK efflux ratio, solubility, and human and rat plasma
+      protein binding, all already on a log scale
+    task_type: regression
+    test_fold:
+      kind: deepchem_scaffold
+    labels:
+      - name: LOG_HLM_CLint
+      - name: LOG_RLM_CLint
+      - name: LOG_MDR1-MDCK_ER
+      - name: LOG_SOLUBILITY
+      - name: LOG_HPPB
+      - name: LOG_RPPB
+
+  - dataset_id: polaris_pkis2_subset
+    source_file: polaris_pkis2_subset.parquet
+    slug: polaris/drewry2017-pkis2-subset-v2
+    property_description: >-
+      PKIS2 kinase inhibitor set (Drewry et al. 2017), Polaris subset: percent
+      inhibition of the KIT, LOK, RET, SLK and EGFR kinases
+    task_type: regression
+    test_fold:
+      kind: deepchem_scaffold
+    labels:
+      - name: KIT
+      - name: LOK
+      - name: RET
+      - name: SLK
+      - name: EGFR
+
+  - dataset_id: polaris_pkis2_subset_cls
+    source_file: polaris_pkis2_subset.parquet
+    slug: polaris/drewry2017-pkis2-subset-v2
+    property_description: >-
+      PKIS2 kinase inhibitor set (Drewry et al. 2017), Polaris subset: binary
+      activity against the KIT, LOK, RET, SLK and EGFR kinases
+    task_type: classification
+    test_fold:
+      kind: deepchem_scaffold
+    labels:
+      - name: CLS_KIT
+      - name: CLS_LOK
+      - name: CLS_RET
+      - name: CLS_SLK
+      - name: CLS_EGFR

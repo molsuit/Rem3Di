@@ -1,0 +1,33 @@
+# The 10 MoleculeNet and 5 Polaris datasets: bundles from `prepare-moleculenet` and
+# `prepare-polaris` -> conformers -> zarrs.
+# Paths are relative to the repository root; run from there:
+#
+#   uv run --no-sync python scripts/dataset_creation/build_datasets.py \
+#       --config configs/dataset_creation/build_moleculenet_polaris_panel.yaml
+bundle_root: benchmark_data/bundles
+zarr_root: benchmark_data/datasets
+dataset_ids:
+  - esol
+  - freesolv
+  - lipophilicity
+  - bace_pic50
+  - bace
+  - bbbp
+  - hiv
+  - clintox
+  - sider
+  - tox21
+  - polaris_antiviral_admet
+  - polaris_antiviral_potency
+  - polaris_adme_fang
+  - polaris_pkis2_subset
+  - polaris_pkis2_subset_cls
+conformers:
+  n_conformers: 1
+  max_embed_attempts: 200
+  max_mmff_steps: 100
+  mmff_non_bonded_threshold: 100.0
+n_workers: null
+overwrite: false
+verify: true
+keep_going: true

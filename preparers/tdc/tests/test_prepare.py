@@ -14,29 +14,17 @@ import pandas as pd
 import pytest
 import yaml
 from remedi_prepare_tdc.prepare import (
-    AGGREGATION_NOTICE,
-    DUPLICATE_LABEL_TIE,
-    DUPLICATE_SMILES,
     ENDPOINTS_FILE,
-    MEASUREMENT_COUNT_COLUMN,
     TDC_ENDPOINTS,
-    AggregatedRows,
     SourceTable,
     TdcEndpoint,
     TdcEndpointCatalog,
     TdcPreparationError,
     TdcPreparerConfig,
-    aggregate_by_canonical_smiles,
-    aggregate_label,
     build_spec,
-    build_table,
-    check_row_accounting,
-    filter_source_smiles,
-    format_report,
     headline_metric,
     load_admet_group,
     main,
-    parse_arguments,
     prepare_endpoint,
     raw_split_columns,
     read_source_table,
@@ -48,12 +36,18 @@ from remedi_prepare_tdc.prepare import (
 )
 
 from remedi.data_handling.bundle import (
+    AGGREGATION_NOTICE,
+    DUPLICATE_LABEL_TIE,
+    DUPLICATE_SMILES,
+    MEASUREMENT_COUNT_COLUMN,
+    MISSING_LABEL,
     BundleValidationError,
     EvalMetric,
+    LabelAggregationError,
     PreparerRecord,
     read_bundle,
 )
-from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
+from remedi.data_handling.bundle.preparation import format_report
 from remedi.data_handling.dataset.tasks import TaskType
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -146,49 +140,15 @@ def test_task_type_rejects_a_metric_outside_every_family() -> None:
 # ------------------------------------------------------------- the config
 
 
-def test_split_columns_alias_the_first_seed() -> None:
-    config = TdcPreparerConfig(seeds=[1, 2, 3])
-    assert config.split_columns() == [
-        "split",
-        "split__seed1",
-        "split__seed2",
-        "split__seed3",
-    ]
-
-
 def test_config_rejects_an_unknown_endpoint() -> None:
     with pytest.raises(ValueError, match="unknown dataset ids"):
         TdcPreparerConfig(only=["Not_A_Benchmark"])
-
-
-def test_config_rejects_duplicate_seeds() -> None:
-    with pytest.raises(ValueError, match="duplicate seeds"):
-        TdcPreparerConfig(seeds=[1, 1])
-
-
-def test_config_rejects_turning_dedupe_off() -> None:
-    with pytest.raises(ValueError, match="dedupe must stay on"):
-        TdcPreparerConfig(smiles_filter=SmilesFilterConfig(dedupe=False))
 
 
 def test_config_selects_endpoints_in_catalog_order() -> None:
     assert len(TdcPreparerConfig().selected_endpoints()) == 22
     selected = TdcPreparerConfig(only=["DILI", "HIA_Hou"]).selected_endpoints()
     assert [endpoint.dataset_id for endpoint in selected] == ["HIA_Hou", "DILI"]
-
-
-def test_default_smiles_filter_settings() -> None:
-    smiles_filter = TdcPreparerConfig().smiles_filter
-    assert smiles_filter.max_atoms == 100
-    assert smiles_filter.strip_salts is True
-    assert smiles_filter.neutralize is True
-    assert smiles_filter.dedupe is True
-
-
-def test_parse_arguments_collects_the_selection() -> None:
-    arguments = parse_arguments(["--only", "HIA_Hou", "--only", "DILI", "--seeds", "7"])
-    assert arguments.only == ["HIA_Hou", "DILI"]
-    assert arguments.seeds == [7]
 
 
 # -------------------------------------------------------- the split columns
@@ -274,192 +234,7 @@ def test_raw_split_columns_alias_the_first_seed_and_differ_across_seeds() -> Non
     assert columns["split__seed1"] == ["train", "valid", "train", "test"]
 
 
-# -------------------------------------------------- filtering + aggregation
-
-
-def test_filter_counts_every_drop_reason_and_keeps_every_occurrence() -> None:
-    raw = [
-        ETHANOL,  # kept
-        "not a molecule",  # invalid
-        "[11CH3]CO",  # isotope -> filtered
-        ETHANOL,  # a replicate, kept for aggregation
-        PROPANOL,  # kept
-    ]
-    outcome = filter_source_smiles(raw, SmilesFilterConfig())
-    assert outcome.dropped == {"invalid_smiles": 1, "smiles_filter": 1}
-    assert outcome.kept_row_indices == [0, 3, 4]
-    assert outcome.isomeric_smiles == [ETHANOL, ETHANOL, PROPANOL]
-
-
-def test_filter_strips_the_counterion_of_a_salt() -> None:
-    """Salt stripping is on, so the counter-ion is removed instead of dropped."""
-    outcome = filter_source_smiles(["CCO.[Cl-]"], SmilesFilterConfig())
-    assert outcome.isomeric_smiles == ["CCO"]
-
-
-def test_aggregate_label_averages_a_regression_endpoint() -> None:
-    assert aggregate_label([1.0, 2.0, 3.0], TaskType.regression) == 2.0
-    assert aggregate_label([2.5], TaskType.regression) == 2.5
-
-
-def test_aggregate_label_takes_a_classification_majority() -> None:
-    assert aggregate_label([1.0, 1.0, 0.0], TaskType.classification) == 1.0
-    assert aggregate_label([0.0, 0.0, 1.0], TaskType.classification) == 0.0
-    assert aggregate_label([1.0], TaskType.classification) == 1.0
-
-
-def test_aggregate_label_returns_none_on_an_exact_tie() -> None:
-    assert aggregate_label([0.0, 1.0], TaskType.classification) is None
-    assert aggregate_label([1.0, 0.0, 1.0, 0.0], TaskType.classification) is None
-
-
-def test_aggregate_label_rejects_a_classification_value_outside_zero_one() -> None:
-    with pytest.raises(TdcPreparationError, match="neither 0 nor 1"):
-        aggregate_label([1.0, 2.0], TaskType.classification)
-
-
-def test_aggregate_label_rejects_no_measurements() -> None:
-    with pytest.raises(TdcPreparationError, match="empty list of measurements"):
-        aggregate_label([], TaskType.regression)
-
-
-def test_aggregation_means_the_replicates_of_a_regression_endpoint() -> None:
-    aggregated = aggregate_by_canonical_smiles(
-        [ETHANOL, PROPANOL, "OCC", ETHANOL],
-        [1.0, 7.0, 2.0, 6.0],
-        TaskType.regression,
-    )
-    assert isinstance(aggregated, AggregatedRows)
-    # ethanol is first seen at position 0, propanol at position 1.
-    assert aggregated.first_positions == [0, 1]
-    assert aggregated.labels == [3.0, 7.0]
-    assert aggregated.measurement_counts == [3, 1]
-    assert aggregated.merged_rows == 2
-    assert aggregated.label_ties == 0
-    assert aggregated.rows_with_replicates == 1
-
-
-def test_aggregation_majority_votes_a_classification_endpoint() -> None:
-    aggregated = aggregate_by_canonical_smiles(
-        [ETHANOL, ETHANOL, ETHANOL, PROPANOL],
-        [1.0, 0.0, 1.0, 0.0],
-        TaskType.classification,
-    )
-    assert aggregated.labels == [1.0, 0.0]
-    assert aggregated.measurement_counts == [3, 1]
-    assert aggregated.merged_rows == 2
-    assert aggregated.label_ties == 0
-
-
-def test_aggregation_drops_a_tied_compound_and_counts_it() -> None:
-    aggregated = aggregate_by_canonical_smiles(
-        [ETHANOL, ETHANOL, PROPANOL],
-        [1.0, 0.0, 1.0],
-        TaskType.classification,
-    )
-    assert aggregated.first_positions == [2]
-    assert aggregated.labels == [1.0]
-    assert aggregated.measurement_counts == [1]
-    assert aggregated.merged_rows == 1
-    assert aggregated.label_ties == 1
-
-
-def test_aggregation_keeps_the_first_occurrence_position_for_the_split() -> None:
-    """The kept row is the first occurrence, so it carries the earliest split."""
-    aggregated = aggregate_by_canonical_smiles(
-        [PROPANOL, ETHANOL, "OCCC"], [1.0, 2.0, 3.0], TaskType.regression
-    )
-    assert aggregated.first_positions == [0, 1]
-    assert aggregated.labels == [2.0, 2.0]
-    assert aggregated.measurement_counts == [2, 1]
-
-
-def test_aggregation_keeps_enantiomers_apart() -> None:
-    aggregated = aggregate_by_canonical_smiles(
-        [L_ALANINE, D_ALANINE], [0.0, 1.0], TaskType.classification
-    )
-    assert aggregated.first_positions == [0, 1]
-    assert aggregated.merged_rows == 0
-    assert list(aggregated.identity.stereoisomer_id) == [0, 1]
-    assert list(aggregated.identity.molecule_id) == [0, 0]
-    assert list(aggregated.identity.enantiomer_of) == [1, 0]
-
-
-def test_row_accounting_adds_up_or_raises() -> None:
-    check_row_accounting(10, 7, {"invalid_smiles": 1, DUPLICATE_SMILES: 2})
-    with pytest.raises(TdcPreparationError, match="does not account for"):
-        check_row_accounting(10, 7, {"invalid_smiles": 1})
-
-
 # ------------------------------------------------------------- table + spec
-
-
-def _aggregated(smiles: list[str], labels: list[float]) -> AggregatedRows:
-    return aggregate_by_canonical_smiles(smiles, labels, TaskType.regression)
-
-
-def test_build_table_has_the_declared_columns_in_order() -> None:
-    aggregated = _aggregated([ETHANOL, PROPANOL], [0.0, 1.0])
-    spec = build_spec(_endpoint("HIA_Hou"), "roc-auc", ["split", "split__seed1"])
-    label_name = spec.labels[0].name
-    table = build_table(
-        identity=aggregated.identity,
-        label_name=label_name,
-        labels=[0.0, 1.0],
-        split_values={"split": ["train", "test"], "split__seed1": ["train", "test"]},
-        measurement_counts=[3, 1],
-    )
-    assert list(table.columns) == spec.expected_columns()
-    assert list(table.columns) == [
-        "stereoisomer_id",
-        "molecule_id",
-        "enantiomer_of",
-        "isomeric_smiles",
-        "nonisomeric_smiles",
-        "HIA",
-        "split",
-        "split__seed1",
-        MEASUREMENT_COUNT_COLUMN,
-    ]
-    assert str(table[label_name].dtype) == "float64"
-    assert str(table[MEASUREMENT_COUNT_COLUMN].dtype) == "float64"
-    assert list(table[MEASUREMENT_COUNT_COLUMN]) == [3.0, 1.0]
-
-
-def test_build_table_rejects_a_missing_label() -> None:
-    aggregated = _aggregated([ETHANOL], [0.0])
-    with pytest.raises(TdcPreparationError, match="NaN labels"):
-        build_table(
-            identity=aggregated.identity,
-            label_name="HIA",
-            labels=[float("nan")],
-            split_values={"split": ["train"]},
-            measurement_counts=[1],
-        )
-
-
-def test_build_table_rejects_an_unassigned_split() -> None:
-    aggregated = _aggregated([ETHANOL], [0.0])
-    with pytest.raises(TdcPreparationError, match="unassigned rows"):
-        build_table(
-            identity=aggregated.identity,
-            label_name="HIA",
-            labels=[1.0],
-            split_values={"split": ["unassigned"]},
-            measurement_counts=[1],
-        )
-
-
-def test_build_table_rejects_a_zero_measurement_count() -> None:
-    aggregated = _aggregated([ETHANOL], [0.0])
-    with pytest.raises(TdcPreparationError, match="must be at least 1"):
-        build_table(
-            identity=aggregated.identity,
-            label_name="HIA",
-            labels=[1.0],
-            split_values={"split": ["train"]},
-            measurement_counts=[0],
-        )
 
 
 def test_build_spec_is_a_smiles_bundle_split_by_stereoisomer() -> None:
@@ -546,12 +321,14 @@ def test_prepare_endpoint_writes_a_valid_bundle(tmp_path: Path) -> None:
         "smiles_filter": 1,
         DUPLICATE_SMILES: 2,
         DUPLICATE_LABEL_TIE: 1,
+        MISSING_LABEL: 0,
     }
     assert report.counts.final_rows == 4
     assert report.counts.per_label_non_null == {"HIA": 4}
     assert report.rows_with_replicates == 1
-    assert report.headline_metric is EvalMetric.auroc
-    assert report.task_type is TaskType.classification
+    assert report.spec.evaluation is not None
+    assert report.spec.evaluation.metrics[0] is EvalMetric.auroc
+    assert report.spec.labels[0].task_type is TaskType.classification
 
     bundle = read_bundle(report.directory)
     assert bundle.provenance.outputs is not None
@@ -591,7 +368,7 @@ def test_prepare_endpoint_refuses_a_classification_label_outside_zero_one(
     config = TdcPreparerConfig(
         raw_root=raw_root, bundle_root=tmp_path / "bundles", seeds=[1]
     )
-    with pytest.raises(TdcPreparationError, match="neither 0 nor 1"):
+    with pytest.raises(LabelAggregationError, match="neither 0 nor 1"):
         prepare_endpoint(
             endpoint=_endpoint("HIA_Hou"),
             config=config,
@@ -606,12 +383,12 @@ def test_prepare_endpoint_surfaces_a_format_violation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Whatever slips past the preparer's own checks, ``write_bundle`` refuses."""
-    import remedi_prepare_tdc.prepare as prepare_module
+    import remedi.data_handling.bundle.aggregation as aggregation_module
 
     train_val = _frame([("a", ETHANOL, 1.0), ("b", PROPANOL, 0.0)])
     raw_root = tmp_path / "raw"
     _write_raw_endpoint(raw_root, "hia_hou", train_val, _frame([("c", BUTANOL, 1.0)]))
-    monkeypatch.setattr(prepare_module, "aggregate_label", lambda values, _: 3.0)
+    monkeypatch.setattr(aggregation_module, "aggregate_label", lambda values, _: 3.0)
     config = TdcPreparerConfig(
         raw_root=raw_root, bundle_root=tmp_path / "bundles", seeds=[1]
     )

@@ -9,6 +9,8 @@ workspace, each with its own `pyproject.toml`.
 | directory | package | entry point | writes |
 |---|---|---|---|
 | `tdc/` | `remedi-prepare-tdc` | `prepare-tdc` | 22 `smiles`-stage bundles in `benchmark_data/bundles/` |
+| `moleculenet/` | `remedi-prepare-moleculenet` | `prepare-moleculenet` | 10 bundles from the pinned DeepChem S3 files (`--download` fetches missing ones) |
+| `polaris/` | `remedi-prepare-polaris` | `prepare-polaris` | 5 bundles from the parquets `dump_polaris.py` writes to `benchmark_data/raw/polaris/` |
 | `chiralcat/` | `chiralcat-dataset` | `build-chiralcat-dataset` | the curated dataset in `benchmark_data/curated/chiralcat/` |
 | `qm9or/` | — | — | nothing yet: the frozen `qm9or_splits.csv` and the author's split generators |
 
@@ -36,8 +38,13 @@ From the repository root, with the venv synced once by
 
 ```
 uv run --no-sync prepare-tdc [--only HIA_Hou ...]
+uv run --no-sync prepare-moleculenet [--download] [--only esol ...]
+uv run preparers/polaris/dump_polaris.py      # own PEP 723 env (polaris-lib pins zarr<3)
+uv run --no-sync prepare-polaris [--only polaris_adme_fang ...]
 uv run --no-sync build-chiralcat-dataset
 uv run --no-sync pytest preparers/tdc
+uv run --no-sync pytest preparers/moleculenet
+uv run --no-sync pytest preparers/polaris
 uv run --no-sync pytest preparers/chiralcat
 ```
 

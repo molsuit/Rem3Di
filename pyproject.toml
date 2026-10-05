@@ -40,17 +40,16 @@ dependencies = [
     "datashader>=0.19.0",
     "chemiscope>=1.0.3",
     "PyTDC>=0.3.6",
-    # PolarisOfflineGenerator reads the standardized parquet produced by
-    # scripts/dataset_download/dump_polaris.py; pandas is already pulled
+    # Every bundle and dataset table is a parquet; pandas is already pulled
     # transitively, but the parquet engine is not.
     "pyarrow",
 ]
 
 # ``polaris-lib`` is intentionally NOT listed here: it pins ``zarr<3`` and so
 # cannot share a venv with this project (which requires ``zarr>=3.2`` for the
-# MoleculeDataset store). Polaris ingest runs out-of-venv via
-# ``scripts/dataset_download/dump_polaris.py`` (PEP 723 inline deps); the
-# build pipeline reads its parquet dumps via ``PolarisOfflineGenerator``.
+# MoleculeDataset store). Polaris datasets are dumped out-of-venv by
+# ``preparers/polaris/dump_polaris.py`` (PEP 723 inline deps) and turned into
+# bundles by the ``remedi-prepare-polaris`` workspace member.
 
 [project.urls]
 Homepage = "https://molsuit.github.io/Rem3Di/"
@@ -121,7 +120,13 @@ explicit = true
 # The benchmark preparers are workspace members with their own dependencies;
 # `uv sync --all-packages` installs them into the shared venv.
 [tool.uv.workspace]
-members = ["preparers/tdc", "preparers/chiralcat", "preparers/qm9or"]
+members = [
+    "preparers/tdc",
+    "preparers/moleculenet",
+    "preparers/polaris",
+    "preparers/chiralcat",
+    "preparers/qm9or",
+]
 
 # Local-dev only (uv): these are stripped from the built package's metadata.
 [tool.uv.sources]

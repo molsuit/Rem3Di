@@ -27,3 +27,4 @@ analysis_output/
 # Benchmark inputs and outputs (raw downloads, prepared bundles, curated data).
 # Published separately; see preparers/README.md.
 /benchmark_data/
+.coverage
