@@ -78,6 +78,27 @@ class BenchmarkPanelConfig(BaseModel):
     # benchmark's own ``default_split``; a name here must exist in every
     # benchmark under ``eval_root``.
     split_column: str | None = None
+    # Restrict the panel to these dataset ids; ``None`` scores every benchmark
+    # under ``eval_root``. An id with no zarr under ``eval_root`` is an error.
+    dataset_ids: list[str] | None = None
+
+    def selected_benchmarks(self) -> list[tuple[Path, DatasetSpec]]:
+        """The ``(zarr_path, spec)`` pairs this panel scores, in discovery order.
+
+        Raises:
+            ValueError: if a requested dataset id is not under ``eval_root``.
+        """
+        discovered = list(discover_benchmarks(self.eval_root))
+        if self.dataset_ids is None:
+            return discovered
+        available = {spec.dataset_id for _, spec in discovered}
+        missing = sorted(set(self.dataset_ids) - available)
+        if missing:
+            raise ValueError(
+                f"dataset ids {missing} have no benchmark under {self.eval_root}"
+            )
+        wanted = set(self.dataset_ids)
+        return [(path, spec) for path, spec in discovered if spec.dataset_id in wanted]
 
     def run(self, ctx: EvalContext) -> Iterator[EvalResult]:
         out = ctx.task_dir("benchmark")
@@ -85,7 +106,7 @@ class BenchmarkPanelConfig(BaseModel):
         rows: list[BenchmarkResultRow] = []
         failures: list[BenchmarkFailure] = []
 
-        for zarr_path, spec in discover_benchmarks(self.eval_root):
+        for zarr_path, spec in self.selected_benchmarks():
             logger.info("--- %s @ %s ---", spec.dataset_id, zarr_path)
             dataset_rows: list[BenchmarkResultRow] = []
             dataset_results: list[EvalResult] = []
@@ -125,7 +146,7 @@ class BenchmarkPanelConfig(BaseModel):
         kind = _task_kind(dataset)
         assert dataset.config.tasks is not None  # narrowed by _task_kind
         col_names = [c.name for c in dataset.config.tasks.system_cols]
-        Y = _build_targets_with_nan(dataset)
+        Y = _build_targets_with_nan(dataset, spec)
         n_classes, class_names = multiclass_labelling(spec)
         cell = BenchmarkCell(
             dataset_id=spec.dataset_id,

@@ -1,4 +1,4 @@
-# ECFP + LightGBM over every benchmark dataset under benchmark_data/datasets.
+# ECFP + LightGBM over the 22 TDC ADMET datasets under benchmark_data/datasets.
 # Run from the repository root:
 #
 #   uv run --no-sync python scripts/evaluation/run_eval.py \
@@ -12,6 +12,29 @@ resource_cache_dir: eval_runs/descriptor_cache
 tasks:
   - kind: benchmark_panel
     eval_root: benchmark_data/datasets
+    dataset_ids:
+      - Caco2_Wang
+      - HIA_Hou
+      - Pgp_Broccatelli
+      - Bioavailability_Ma
+      - Lipophilicity_AstraZeneca
+      - Solubility_AqSolDB
+      - BBB_Martins
+      - PPBR_AZ
+      - VDss_Lombardo
+      - CYP2C9_Veith
+      - CYP2D6_Veith
+      - CYP3A4_Veith
+      - CYP2C9_Substrate_CarbonMangels
+      - CYP2D6_Substrate_CarbonMangels
+      - CYP3A4_Substrate_CarbonMangels
+      - Half_Life_Obach
+      - Clearance_Hepatocyte_AZ
+      - Clearance_Microsome_AZ
+      - LD50_Zhu
+      - hERG
+      - AMES
+      - DILI
     learners:
       - learner_kind: lightgbm
 seed: 0

@@ -156,20 +156,54 @@ def _learner_kind(cfg: LearnerConfig) -> str:
     return cfg.learner_kind  # type: ignore[union-attr]
 
 
-def _build_targets_with_nan(dataset: MoleculeDataset) -> np.ndarray:
-    """``targets_system`` with NaN where ``mask_system == 0``.
+def apply_label_transforms(
+    targets: np.ndarray, column_names: list[str], spec: DatasetSpec
+) -> np.ndarray:
+    """Each target column mapped through its spec label's ``transform``.
+
+    ``targets`` is ``(n_structures, n_columns)`` with columns named by
+    ``column_names``; NaN (missing) stays NaN. Every column must be a label the
+    spec declares, so a transform can never be silently skipped.
+    """
+    if targets.ndim != 2 or targets.shape[1] != len(column_names):
+        raise ValueError(
+            f"targets of shape {targets.shape} do not match the "
+            f"{len(column_names)} target columns {column_names}"
+        )
+    labels_by_name = {label.name: label for label in spec.labels}
+    transformed = np.array(targets, dtype=float, copy=True)
+    for column_index, column_name in enumerate(column_names):
+        label = labels_by_name.get(column_name)
+        if label is None:
+            raise ValueError(
+                f"target column {column_name!r} is not a label of "
+                f"{spec.dataset_id} (labels: {spec.label_names()})"
+            )
+        transformed[:, column_index] = label.transform.apply(
+            transformed[:, column_index]
+        )
+    return transformed
+
+
+def _build_targets_with_nan(dataset: MoleculeDataset, spec: DatasetSpec) -> np.ndarray:
+    """``targets_system`` with NaN where ``mask_system == 0``, label transforms applied.
 
     Downstream learner code uses NaN to skip missing labels in sparse multi-
-    label benchmarks (SIDER / ClinTox / Tox21).
+    label benchmarks (SIDER / ClinTox / Tox21). The zarr holds raw labels; each
+    column goes through its spec label's ``transform`` here, the single place
+    targets enter fitting and scoring, so metrics are on the transformed scale.
     """
     if dataset.targets_system is None or dataset.mask_system is None:
         raise ValueError(
             "Dataset has no system task arrays; cannot evaluate. Build with "
             "the benchmark ingest runner so targets are materialized."
         )
+    if dataset.config.tasks is None:
+        raise ValueError("Dataset has no TaskSet; cannot name its target columns.")
     targets = np.asarray(dataset.targets_system[:], dtype=float)
     mask = np.asarray(dataset.mask_system[:], dtype=bool)
-    return np.where(mask, targets, np.nan)
+    column_names = [column.name for column in dataset.config.tasks.system_cols]
+    return apply_label_transforms(np.where(mask, targets, np.nan), column_names, spec)
 
 
 def _task_kind(
@@ -449,7 +483,7 @@ def evaluate_zarr(
     kind = _task_kind(dataset)
     assert dataset.config.tasks is not None  # narrowed by _task_kind
     col_names = [c.name for c in dataset.config.tasks.system_cols]
-    Y = _build_targets_with_nan(dataset)
+    Y = _build_targets_with_nan(dataset, spec)
     n_classes, class_names = multiclass_labelling(spec)
     cell = BenchmarkCell(
         dataset_id=spec.dataset_id,

@@ -5,7 +5,29 @@
 #       --config configs/dataset_creation/build_tdc_panel.yaml
 bundle_root: benchmark_data/bundles
 zarr_root: benchmark_data/datasets
-dataset_ids: null
+dataset_ids:
+  - Caco2_Wang
+  - HIA_Hou
+  - Pgp_Broccatelli
+  - Bioavailability_Ma
+  - Lipophilicity_AstraZeneca
+  - Solubility_AqSolDB
+  - BBB_Martins
+  - PPBR_AZ
+  - VDss_Lombardo
+  - CYP2C9_Veith
+  - CYP2D6_Veith
+  - CYP3A4_Veith
+  - CYP2C9_Substrate_CarbonMangels
+  - CYP2D6_Substrate_CarbonMangels
+  - CYP3A4_Substrate_CarbonMangels
+  - Half_Life_Obach
+  - Clearance_Hepatocyte_AZ
+  - Clearance_Microsome_AZ
+  - LD50_Zhu
+  - hERG
+  - AMES
+  - DILI
 conformers:
   n_conformers: 1
   max_embed_attempts: 200

@@ -11,9 +11,17 @@ needs lives in the optional ``evaluation`` block.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+import numpy as np
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from remedi.data_handling.dataset.tasks import (
     TaskConfig,
@@ -78,6 +86,51 @@ def metrics_with_headline(
     return ordered
 
 
+class IdentityLabelTransform(BaseModel):
+    """The default: the label is scored on the scale it is stored on."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["identity"] = "identity"
+
+    def apply(self, values: np.ndarray) -> np.ndarray:
+        return np.asarray(values, dtype=float)
+
+
+class Log10LabelTransform(BaseModel):
+    """``log10(max(y, clip_minimum) + offset)``; NaN (a missing label) stays NaN.
+
+    The defaults reproduce the ASAP / Polaris antiviral-admet-2025 scorer,
+    ``np.log10(np.clip(y, a_min=0, a_max=None) + 1)``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["log10"] = "log10"
+    clip_minimum: float = 0.0
+    offset: float = 1.0
+
+    @model_validator(mode="after")
+    def check_positive_argument(self) -> Log10LabelTransform:
+        if not self.clip_minimum + self.offset > 0:
+            raise ValueError(
+                f"log10 transform needs clip_minimum + offset > 0, got "
+                f"clip_minimum={self.clip_minimum} and offset={self.offset}"
+            )
+        return self
+
+    def apply(self, values: np.ndarray) -> np.ndarray:
+        # np.clip and np.log10 both propagate NaN, so missing labels stay missing.
+        clipped = np.clip(np.asarray(values, dtype=float), self.clip_minimum, None)
+        return np.log10(clipped + self.offset)
+
+
+#: How a stored (raw) label is mapped before fitting and scoring.
+LabelTransform = Annotated[
+    IdentityLabelTransform | Log10LabelTransform, Field(discriminator="kind")
+]
+
+
 class LabelColumn(BaseModel):
     """One label column of ``table.parquet``.
 
@@ -86,6 +139,10 @@ class LabelColumn(BaseModel):
     invariant 7 checks it lies in ``0 … n_classes - 1``. A ``classification``
     label holds only 0 and 1. ``class_names`` is the optional display labelling
     of the classes, in class-index order; presentation only.
+
+    ``transform`` maps the stored (raw) label to the scale it is fitted and
+    scored on; the table always holds raw values. The identity default is left
+    out of the serialised form, so a plain label dumps as it always has.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -94,6 +151,28 @@ class LabelColumn(BaseModel):
     task_type: TaskType
     n_classes: int | None = None
     class_names: list[str] | None = None
+    transform: LabelTransform = Field(default_factory=IdentityLabelTransform)
+
+    @model_serializer(mode="wrap")
+    def omit_identity_transform(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        dumped = handler(self)
+        if isinstance(self.transform, IdentityLabelTransform):
+            dumped.pop("transform", None)
+        return dumped
+
+    @model_validator(mode="after")
+    def check_transform_task_type(self) -> LabelColumn:
+        if (
+            not isinstance(self.transform, IdentityLabelTransform)
+            and self.task_type is not TaskType.regression
+        ):
+            raise ValueError(
+                f"label {self.name!r} is {self.task_type.value}; a "
+                f"{self.transform.kind} transform is only allowed on regression labels"
+            )
+        return self
 
     @model_validator(mode="after")
     def check_class_count(self) -> LabelColumn:
