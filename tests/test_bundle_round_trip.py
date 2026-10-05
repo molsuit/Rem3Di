@@ -70,8 +70,8 @@ def round_trip(tmp_path_factory: pytest.TempPathFactory) -> tuple[pd.DataFrame, 
     merged = merge_source_rows(
         [smiles for smiles, *_ in SOURCE_ROWS],
         {
-            name: [row[position + 1] for row in SOURCE_ROWS]
-            for position, name in enumerate(LABELS)
+            "y": [y_value for _, y_value, _ in SOURCE_ROWS],
+            "z": [z_value for _, _, z_value in SOURCE_ROWS],
         },
         dict.fromkeys(LABELS, TaskType.regression),
         settings.smiles_filter,
