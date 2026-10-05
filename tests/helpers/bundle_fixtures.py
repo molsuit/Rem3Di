@@ -183,22 +183,14 @@ def make_bundle(
 
 
 def write_smiles_bundle(
-    root: Path,
-    *,
-    dataset_id: str = "synthetic6",
-    require_enantiomer_pairs: bool = False,
-    smiles: bool = True,
-    evaluation: bool = True,
+    root: Path, *, dataset_id: str = "synthetic6", **variant: bool
 ) -> Path:
-    """Write :func:`make_bundle` to ``root/<dataset_id>``; returns that directory."""
-    bundle = make_bundle(
-        dataset_id=dataset_id,
-        require_enantiomer_pairs=require_enantiomer_pairs,
-        smiles=smiles,
-        evaluation=evaluation,
-    )
+    """Write :func:`make_bundle` to ``root/<dataset_id>``; returns that directory.
+
+    ``variant`` takes the keyword flags of :func:`make_bundle`.
+    """
     directory = Path(root) / dataset_id
-    write_bundle(bundle, directory)
+    write_bundle(make_bundle(dataset_id=dataset_id, **variant), directory)
     return directory
 
 
@@ -244,11 +236,6 @@ def embed_frame(isomeric_smiles: str, seed: int = 0xF00D) -> Atoms:
         positions=molecule.GetConformer().GetPositions(),
         pbc=[0, 0, 0],
     )
-
-
-def embed_frames(smiles_values: Sequence[str]) -> list[Atoms]:
-    """One :func:`embed_frame` per SMILES."""
-    return [embed_frame(smiles) for smiles in smiles_values]
 
 
 def make_dataset_spec(
@@ -344,7 +331,11 @@ def write_small_dataset(
     write_dataset(
         spec,
         table,
-        list(structures) if structures is not None else embed_frames(smiles_values),
+        (
+            list(structures)
+            if structures is not None
+            else [embed_frame(smiles) for smiles in smiles_values]
+        ),
         make_provenance(dataset_id, source_molecules=len(smiles_values)),
         directory,
         layout=SMALL_ZARR_LAYOUT,

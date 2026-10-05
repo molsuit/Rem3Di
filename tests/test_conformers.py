@@ -1,10 +1,12 @@
-"""Conformer embedding: ``embed_one_smiles``, its timing records, and ``embed_many``."""
+"""Conformer embedding: ``embed_one_smiles``, its timing records, and ``embed_many``.
+
+Writing the timing records is exercised by the build tests in
+``test_dataset_build.py``.
+"""
 
 from __future__ import annotations
 
-import json
 import os
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -12,11 +14,9 @@ import pytest
 from remedi.data_handling.chemistry import conformers as conformers_module
 from remedi.data_handling.chemistry.conformers import (
     ConformerEmbeddingConfig,
-    ConformerTimingRecord,
     EmbedResult,
     embed_many,
     embed_one_smiles,
-    write_timings_jsonl,
 )
 
 #: The SMILES the crashing fake below kills its worker on.
@@ -24,92 +24,28 @@ CRASHING_SMILES = "CCCCCCO"
 REAL_EMBED_ONE_SMILES = embed_one_smiles
 
 
-def test_embed_one_smiles_ok_returns_timing_record():
-    result = embed_one_smiles("CCO", ConformerEmbeddingConfig())
-
-    assert result.timing.status == "ok"
-    assert result.positions is not None
-    assert result.atomic_numbers is not None
-    assert result.positions.shape == (1, result.atomic_numbers.shape[0], 3)
-    assert result.positions.dtype == np.float64
-    assert result.timing.n_confs_emitted == 1
-    assert result.timing.n_confs_requested == 1
-    # Ethanol embedding + MMFF is fast but never instant on real hardware.
-    assert result.timing.t_embed_s >= 0.0
-    assert result.timing.t_mmff_s >= 0.0
-    assert result.timing.n_atoms > 0
-    assert result.timing.error_msg is None
-
-
-def test_embed_one_smiles_bad_smiles_records_value_error():
-    result = embed_one_smiles("not_a_real_smiles", ConformerEmbeddingConfig())
-
-    assert result.timing.status == "value_error"
-    assert result.positions is None
-    assert result.atomic_numbers is None
-    assert result.timing.n_confs_emitted == 0
-    assert result.timing.error_msg is not None
-    # Parse failure happens before any phase runs.
-    assert result.timing.t_embed_s == 0.0
-    assert result.timing.t_mmff_s == 0.0
-
-
-def test_write_timings_jsonl_roundtrip(tmp_path: Path):
-    records = [
-        ConformerTimingRecord(
-            isomeric_smiles="CCO",
-            n_atoms=9,
-            n_confs_requested=1,
-            n_confs_emitted=1,
-            t_embed_s=0.012,
-            t_mmff_s=0.034,
-            status="ok",
-        ),
-        ConformerTimingRecord(
-            isomeric_smiles="not_a_real_smiles",
-            n_atoms=-1,
-            n_confs_requested=1,
-            n_confs_emitted=0,
-            t_embed_s=0.0,
-            t_mmff_s=0.0,
-            status="value_error",
-            error_msg="Bad SMILES",
-        ),
-    ]
-    out = tmp_path / "conformer_timings.jsonl"
-    write_timings_jsonl(records, out)
-
-    lines = out.read_text().splitlines()
-    assert len(lines) == 2
-    reloaded = [
-        ConformerTimingRecord.model_validate(json.loads(line)) for line in lines
-    ]
-    assert reloaded[0].status == "ok"
-    assert reloaded[0].t_mmff_s == pytest.approx(0.034)
-    assert reloaded[1].status == "value_error"
-    assert reloaded[1].error_msg == "Bad SMILES"
-
-
-def test_embed_many_in_process_yields_every_key() -> None:
-    smiles_by_key = {"ethanol": "CCO", "bad": "not_a_real_smiles", "propane": "CCC"}
+def test_embed_many_in_process_records_a_timing_for_every_key() -> None:
+    smiles_by_key = {"ethanol": "CCO", "bad": "not_a_real_smiles"}
 
     results = dict(embed_many(smiles_by_key, ConformerEmbeddingConfig(), n_workers=1))
 
     assert set(results) == set(smiles_by_key)
-    assert results["ethanol"].succeeded
-    assert results["propane"].succeeded
-    assert results["bad"].timing.status == "value_error"
+    ethanol = results["ethanol"]
+    assert ethanol.succeeded and ethanol.timing.status == "ok"
+    assert ethanol.positions is not None and ethanol.atomic_numbers is not None
+    assert ethanol.positions.shape == (1, ethanol.atomic_numbers.shape[0], 3)
+    assert ethanol.positions.dtype == np.float64
+    assert ethanol.timing.n_confs_emitted == ethanol.timing.n_confs_requested == 1
+    assert ethanol.timing.n_atoms == 9
+    assert ethanol.timing.error_msg is None
 
-
-def test_embed_many_in_a_pool_matches_the_in_process_outcome() -> None:
-    smiles_by_key = {
-        index: smiles for index, smiles in enumerate(["CCO", "CCN", "CC=O"])
-    }
-
-    results = dict(embed_many(smiles_by_key, ConformerEmbeddingConfig(), n_workers=2))
-
-    assert set(results) == set(smiles_by_key)
-    assert all(result.succeeded for result in results.values())
+    bad = results["bad"]
+    assert bad.timing.status == "value_error"
+    assert bad.positions is None and bad.atomic_numbers is None
+    assert bad.timing.n_confs_emitted == 0
+    assert bad.timing.error_msg is not None
+    # parse failure happens before any phase runs
+    assert bad.timing.t_embed_s == bad.timing.t_mmff_s == 0.0
 
 
 def kill_the_worker_on_one_molecule(
@@ -126,7 +62,9 @@ def test_embed_many_survives_a_worker_that_dies(
 ) -> None:
     """One molecule killing its worker must not lose the others (open thread 5).
 
-    Relies on the fork start method, so the forked workers inherit the patch.
+    The pool bisects the unfinished molecules until the crashing one is alone;
+    every other molecule comes back embedded, as it would in-process. Relies on
+    the fork start method, so the forked workers inherit the patch.
     """
     monkeypatch.setattr(
         conformers_module, "embed_one_smiles", kill_the_worker_on_one_molecule

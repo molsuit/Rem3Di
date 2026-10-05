@@ -50,10 +50,10 @@ How it is built:
 1. **One row per 2D molecule.** Entries are grouped by the RDKit non-isomeric canonical SMILES of
    their InChI; the **first** entry of each group wins (its SMILES, labels and geometry).
    121,416 entries become 117,625 molecules; 3,791 entries in 3,259 molecules are dropped.
-2. **Random splits** (`generators/make_splits.py`): `numpy.random.default_rng(seed).permutation`
+2. **Random splits** (the author's `make_splits.py`): `numpy.random.default_rng(seed).permutation`
    over the molecule ids; the first `round(0.2 n)` are test, the next `round(0.1 n)` valid, the
    rest train. Counts per seed: **train 82,338 / valid 11,762 / test 23,525**.
-3. **Scaffold splits** (`generators/make_scaffold_splits.py --algo shuffle`): RDKit
+3. **Scaffold splits** (the author's `make_scaffold_splits.py --algo shuffle`): RDKit
    `MurckoScaffoldSmiles(includeChirality=True)` of `isomeric_smiles`, 19,074 scaffold groups in
    order of first appearance, visited in `default_rng(seed).permutation` order (seeds 0–2) and
    packed whole into train (≤ 0.8 n), then valid (≤ 0.9 n), then test. Counts per seed:
@@ -98,13 +98,14 @@ hydrogens:
 
 Mirror images are **not** materialised yet (see below).
 
-## Reference generators
+## The author's split generators
 
-`generators/` keeps the author's original scripts verbatim: `make_splits.py` (random) and
-`make_scaffold_splits.py` (scaffold). They import a module that no longer exists
-(`threedscriptors.data_handling.qm9or.transforms`, only used to fit an optical-rotation
-standardiser) and read a zarr store and source CSV that are gone. The preparer vendors only
-their random path and the `shuffle` scaffold path.
+The author's original scripts, `make_splits.py` (random) and `make_scaffold_splits.py`
+(scaffold), are no longer in the tree: they imported a module that no longer exists
+(`threedscriptors.data_handling.qm9or.transforms`) and read a zarr store and source CSV that are
+gone, so they could not run. The preparer re-implements their random path and their `shuffle`
+scaffold path, and the byte-identical rebuild against the pinned hashes proves it. The originals
+are kept in git history: `git show 9212c0b:preparers/qm9or/generators/make_splits.py` (and `make_scaffold_splits.py`).
 
 ## Open question: what the `rs` label means (raised 2026-10-02, unresolved)
 
@@ -135,5 +136,5 @@ Until this is resolved:
   R/S molecules (NaN elsewhere), flipped on their mirror rows; `or_sign_589` is defined for every
   molecule and unaffected. The paper's R/S numbers would then need re-running.
 
-Also noted: the frozen `scaffold_s*` columns come from `generators/make_scaffold_splits.py` with
+Also noted: the frozen `scaffold_s*` columns come from the author's `make_scaffold_splits.py` with
 `algo="shuffle"`, not its default `balanced` (which matches only 63–68 % of rows).

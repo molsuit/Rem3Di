@@ -12,8 +12,9 @@ against sha256 pins:
 * one row per non-isomeric canonical SMILES, the **first** npy entry winning,
   ``molecule_id`` numbered in order of first appearance (121,416 -> 117,625);
 * ``isomeric_smiles`` / ``n_chiral`` / ``rs`` / ``or_sign_589`` from that entry;
-* the four seeded random splits of ``generators/make_splits.py`` and the three
-  scaffold splits of ``generators/make_scaffold_splits.py --algo shuffle``.
+* the four seeded random splits of the author's ``make_splits.py`` and the three
+  scaffold splits of the author's ``make_scaffold_splits.py --algo shuffle`` (both
+  in git history at ``9212c0b:preparers/qm9or/generators/``).
 
 Alongside the table it decodes the same first entry's geometry into an
 ``ase.Atoms`` per row. Nothing is written except the raw download; the dataset
@@ -99,7 +100,7 @@ QM9OR_SOURCE = SourceFile(
 
 
 class RandomSplit(BaseModel):
-    """``generators/make_splits.py``: a seeded permutation of the molecule ids.
+    """The author's ``make_splits.py``: a seeded permutation of the molecule ids.
 
     The first ``round(test_fraction * n)`` permuted rows are test, the next
     ``round(valid_fraction * n)`` valid, the rest train.
@@ -124,7 +125,7 @@ class RandomSplit(BaseModel):
 
 
 class ScaffoldSplit(BaseModel):
-    """``generators/make_scaffold_splits.py --algo shuffle``.
+    """The author's ``make_scaffold_splits.py --algo shuffle``.
 
     Bemis-Murcko scaffold groups (in order of first appearance) are visited in a
     seeded random order and packed whole: into train while it stays within

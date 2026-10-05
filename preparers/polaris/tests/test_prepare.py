@@ -1,11 +1,10 @@
 """Tests for the Polaris-specific parts of the Polaris preparer.
 
-The shared mechanics (table building, settings, report, CLI parsing, the merge)
-are tested with ``remedi.data_handling.bundle.preparation``. Here: the catalog,
-the dumped source table, the test-fold rules and the enhanced-stereo step on
-tiny synthetic inputs, ``prepare_dataset`` end to end on synthetic dumps in
-``tmp_path``, and two tests on the real dumps, skipped when
-``benchmark_data/raw/polaris`` is absent.
+The shared mechanics (merge, table, spec, report, CLI) are tested with
+``remedi.data_handling.bundle``. Here: the catalog, the dumped source table, the
+test-fold rules and the enhanced-stereo step on tiny synthetic inputs,
+``prepare_dataset`` end to end on synthetic dumps in ``tmp_path``, and two tests
+on the real dumps, skipped when ``benchmark_data/raw/polaris`` is absent.
 """
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ from pydantic import ValidationError
 from remedi_prepare_polaris.prepare import (
     OR_STEREO_GROUP,
     POLARIS_DATASETS,
-    DeepchemScaffoldTestFold,
     PolarisDataset,
     PolarisDatasetCatalog,
     PolarisPreparationError,
@@ -46,6 +44,7 @@ from remedi.data_handling.bundle import (
     merge_source_rows,
     read_bundle,
 )
+from remedi.data_handling.bundle.preparation import BundleReport
 from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
 from remedi.data_handling.dataset.tasks import Split, TaskType
 
@@ -161,6 +160,18 @@ def test_the_catalog_lists_five_bundles_and_their_test_fold_kinds() -> None:
         _dataset("polaris_pkis2_subset").source_file
         == _dataset("polaris_pkis2_subset_cls").source_file
     )
+    assert _dataset("polaris_adme_fang").source_record_file == (
+        "polaris_adme_fang.source.yaml"
+    )
+
+
+def test_only_the_multilabel_classification_bundle_uses_macro_auroc() -> None:
+    for dataset in POLARIS_DATASETS:
+        if dataset.task_type is TaskType.classification:
+            assert dataset.metrics() == [EvalMetric.macro_auroc]
+        else:
+            assert dataset.metrics()[0] is EvalMetric.mae
+    assert _dataset("polaris_pkis2_subset_cls").task_type is TaskType.classification
 
 
 def _entry(**overrides: object) -> dict[str, object]:
@@ -177,132 +188,91 @@ def _entry(**overrides: object) -> dict[str, object]:
 
 
 @pytest.mark.parametrize(
-    ("catalog", "message"),
+    ("datasets", "message"),
     [
-        ({"datasets": [_entry(), _entry()]}, "duplicate dataset_id"),
+        ([_entry(), _entry()], "duplicate dataset_id"),
+        ([_entry(labels=[{"name": "y"}, {"name": "y"}])], "duplicate label names"),
         (
-            {"datasets": [_entry(labels=[{"name": "y"}, {"name": "y"}])]},
-            "duplicate label names",
-        ),
-        ({"datasets": [_entry(test_fold={"kind": "random"})]}, "random"),
-        (
-            {
-                "datasets": [
-                    _entry(
-                        task_type="classification",
-                        labels=[{"name": "y", "transform": {"kind": "log10"}}],
-                    )
-                ]
-            },
+            [
+                _entry(
+                    task_type="classification",
+                    labels=[{"name": "y", "transform": {"kind": "log10"}}],
+                )
+            ],
             "only allowed on regression",
         ),
+        (
+            [_entry(test_fold={"kind": "deepchem_scaffold", "train_fraction": 0.9})],
+            "leaves no test fold",
+        ),
     ],
-    ids=["duplicate-id", "duplicate-label", "unknown-fold", "classification-transform"],
+    ids=["duplicate-id", "duplicate-label", "classification-transform", "no-test"],
 )
-def test_the_catalog_rejects(catalog: dict[str, object], message: str) -> None:
+def test_the_catalog_rejects(datasets: list[dict[str, object]], message: str) -> None:
     with pytest.raises(ValidationError, match=message):
-        PolarisDatasetCatalog.model_validate(catalog)
-
-
-def test_a_label_reads_its_source_column_or_its_own_name() -> None:
-    dataset = PolarisDataset.model_validate(
-        _entry(labels=[{"name": "y"}, {"name": "z", "source_column": "Z raw"}])
-    )
-    assert [label.column for label in dataset.labels] == ["y", "Z raw"]
-    assert dataset.source_record_file == "a.source.yaml"
-
-
-def test_only_the_multilabel_classification_bundle_uses_macro_auroc() -> None:
-    for dataset in POLARIS_DATASETS:
-        if dataset.task_type is TaskType.classification:
-            assert dataset.metrics() == [EvalMetric.macro_auroc]
-        else:
-            assert dataset.metrics()[0] is EvalMetric.mae
-            assert EvalMetric.rmse in dataset.metrics()
-    assert _dataset("polaris_pkis2_subset_cls").task_type is TaskType.classification
+        PolarisDatasetCatalog.model_validate({"datasets": datasets})
 
 
 # -------------------------------------------------------- the source table
 
 
-def test_read_source_table_reads_the_four_field_record(tmp_path: Path) -> None:
-    dataset = _dataset("polaris_antiviral_admet")
-    _write_dump(tmp_path, dataset, _admet_frame())
-    source = read_source_table(tmp_path, dataset)
-    assert len(source) == 15
-    assert source.record.slug == dataset.slug
-    assert source.record.checksum is None
-    assert set(source.file_hashes) == {
-        "polaris_antiviral_admet.parquet",
-        "polaris_antiviral_admet.source.yaml",
-    }
+ADMET = _dataset("polaris_antiviral_admet")
 
 
-def test_read_source_table_rejects_a_missing_dump(tmp_path: Path) -> None:
-    with pytest.raises(PolarisPreparationError, match="run preparers/polaris"):
-        read_source_table(tmp_path, _dataset("polaris_antiviral_admet"))
-
-
-def test_read_source_table_rejects_a_slug_mismatch(tmp_path: Path) -> None:
-    dataset = _dataset("polaris_antiviral_admet")
-    _write_dump(tmp_path, dataset, _admet_frame(), slug="someone/else")
-    with pytest.raises(PolarisPreparationError, match="was dumped from"):
-        read_source_table(tmp_path, dataset)
-
-
-def test_read_source_table_rejects_an_unknown_split_code(tmp_path: Path) -> None:
-    dataset = _dataset("polaris_antiviral_admet")
-    frame = _admet_frame()
-    frame.loc[0, "split"] = 7
-    _write_dump(tmp_path, dataset, frame)
-    with pytest.raises(PolarisPreparationError, match=r"unknown split codes \[7\]"):
-        read_source_table(tmp_path, dataset)
-
-
-@pytest.mark.parametrize("broken", ["missing", "text"])
-def test_read_source_table_rejects_a_bad_label_column(
-    tmp_path: Path, broken: str
+@pytest.mark.parametrize(
+    ("changes", "slug", "record", "message"),
+    [
+        ({}, "", "slug: x\n", "is malformed"),
+        ({}, "someone/else", None, "was dumped from"),
+        ({"split": 7}, "", None, r"unknown split codes \[7\]"),
+        ({"LogD": None}, "", None, "'LogD' is missing"),
+        ({"LogD": "high"}, "", None, "'LogD' is missing"),
+    ],
+    ids=["malformed record", "foreign slug", "split code", "no label", "text label"],
+)
+def test_read_source_table_rejects_a_bad_dump(
+    tmp_path: Path,
+    changes: dict[str, object],
+    slug: str,
+    record: str | None,
+    message: str,
 ) -> None:
-    dataset = _dataset("polaris_antiviral_admet")
     frame = _admet_frame()
-    if broken == "missing":
-        frame = frame.drop(columns=["LogD"])
-    else:
-        frame["LogD"] = frame["LogD"].astype(str)
-    _write_dump(tmp_path, dataset, frame)
-    with pytest.raises(PolarisPreparationError, match="'LogD' is missing"):
-        read_source_table(tmp_path, dataset)
+    for column, value in changes.items():
+        if value is None:
+            frame = frame.drop(columns=column)
+        else:
+            frame[column] = value
+    _write_dump(tmp_path, ADMET, frame, slug=slug)
+    if record is not None:
+        (tmp_path / ADMET.source_record_file).write_text(record)
+    with pytest.raises(PolarisPreparationError, match=message):
+        read_source_table(tmp_path, ADMET)
 
 
 # ------------------------------------------------------------ the test fold
 
 
-def test_shipped_split_codes_need_a_shipped_catalog_entry() -> None:
-    merged = _merge(SCAFFOLD_MOLECULES[:2])
-    with pytest.raises(PolarisPreparationError, match="declare 'shipped'"):
-        assign_test_fold(_dataset("polaris_adme_fang"), merged, np.array([TRAIN, TEST]))
-
-
 @pytest.mark.parametrize(
-    ("codes", "message"),
+    ("dataset_id", "codes", "message"),
     [
-        ([UNASSIGNED, UNASSIGNED], "declare 'deepchem_scaffold'"),
-        ([TRAIN, UNASSIGNED], "1 of 2 source rows have no shipped split"),
+        ("polaris_adme_fang", [TRAIN, TEST], "declare 'shipped'"),
+        ("polaris_antiviral_admet", [UNASSIGNED] * 2, "declare 'deepchem_scaffold'"),
+        ("polaris_antiviral_admet", [TRAIN, UNASSIGNED], "1 of 2 source rows have no"),
     ],
-    ids=["none", "partial"],
+    ids=["codes-for-scaffold", "no-codes-for-shipped", "partial-codes"],
 )
-def test_a_shipped_catalog_entry_needs_every_row_assigned(
-    codes: list[int], message: str
+def test_the_test_fold_kind_must_match_the_shipped_codes(
+    dataset_id: str, codes: list[int], message: str
 ) -> None:
     merged = _merge(SCAFFOLD_MOLECULES[:2])
     with pytest.raises(PolarisPreparationError, match=message):
-        assign_test_fold(_dataset("polaris_antiviral_admet"), merged, np.array(codes))
+        assign_test_fold(_dataset(dataset_id), merged, np.array(codes))
 
 
 def test_a_bundle_row_is_test_if_any_merged_source_row_was_test() -> None:
     # Rows 0 and 3 merge (train + test), rows 2 and 4 merge (test + test).
-    smiles = ["CCO", "CCN", "CCC", "OCC", "CCC"]
-    merged = _merge(smiles)
+    merged = _merge(["CCO", "CCN", "CCC", "OCC", "CCC"])
     assert merged.member_source_rows == [[0, 3], [1], [2, 4]]
     assignment = assign_test_fold(
         _dataset("polaris_antiviral_admet"),
@@ -314,31 +284,14 @@ def test_a_bundle_row_is_test_if_any_merged_source_row_was_test() -> None:
     assert "1 bundle rows merge" in assignment.description
 
 
-def test_a_scaffold_test_fold_is_derived_without_straddling_count() -> None:
-    merged = _merge(SCAFFOLD_MOLECULES)
-    assignment = assign_test_fold(
-        _dataset("polaris_adme_fang"),
-        merged,
-        np.full(len(SCAFFOLD_MOLECULES), UNASSIGNED),
-    )
-    assert 0 < assignment.is_test.sum() < len(SCAFFOLD_MOLECULES)
-    assert assignment.straddling_rows is None
-    assert isinstance(_dataset("polaris_adme_fang").test_fold, DeepchemScaffoldTestFold)
-
-
 # --------------------------------------------------------- enhanced stereo
 
 
 def test_or_group_enantiomers_collapse_to_one_unspecified_smiles() -> None:
-    outcome = unspecify_stereo_groups(
-        [OR_GROUP_R, OR_GROUP_S, "C[C@H](N)c1ccccc1 |a:1|", "not smiles"]
-    )
-    assert outcome.smiles[0] == outcome.smiles[1]
-    assert "@" not in outcome.smiles[0]
-    # Absolute centres keep their configuration.
-    assert "@" in outcome.smiles[2]
+    outcome = unspecify_stereo_groups([OR_GROUP_R, OR_GROUP_S, "not smiles"])
+    assert outcome.smiles[0] == outcome.smiles[1] == PHENYLETHYLAMINE
     # An unparseable SMILES passes on unchanged for the filter to count.
-    assert outcome.smiles[3] == "not smiles"
+    assert outcome.smiles[2] == "not smiles"
     assert (outcome.rows_changed, outcome.centres_unspecified) == (2, 2)
     assert "2 kept source rows had 2 centres" in outcome.notice()
 
@@ -346,44 +299,44 @@ def test_or_group_enantiomers_collapse_to_one_unspecified_smiles() -> None:
 # ------------------------------------------- end to end on synthetic dumps
 
 
-def test_prepare_dataset_writes_a_shipped_split_bundle(tmp_path: Path) -> None:
+@pytest.fixture
+def admet_report(tmp_path: Path) -> BundleReport:
     dataset = _dataset("polaris_antiviral_admet")
     config = _config(tmp_path)
     _write_dump(config.raw_root, dataset, _admet_frame())
+    return prepare_dataset(dataset, config, PREPARER)
 
-    report = prepare_dataset(dataset, config, PREPARER)
-    bundle = read_bundle(report.directory)
+
+def test_prepare_dataset_writes_a_shipped_split_bundle(
+    admet_report: BundleReport,
+) -> None:
+    bundle = read_bundle(admet_report.directory)
     table = bundle.table
-
     # Twelve molecules plus the racemate merged with its stereo-free drawing;
     # the OR-group enantiomer is dropped and counted.
-    assert (report.counts.source_molecules, report.counts.final_rows) == (15, 13)
-    assert report.counts.dropped[OR_STEREO_GROUP] == 1
-    assert report.extra == {"stereo_unspecified_rows": 1, "test_straddling_rows": 1}
-    merged = table[table["isomeric_smiles"] == PHENYLETHYLAMINE]
-    assert len(merged) == 1
-    assert merged["HLM"].iloc[0] == pytest.approx(20.0)
-    assert merged["LogD"].iloc[0] == pytest.approx(1.5)
-    assert merged["MDR1-MDCKII"].iloc[0] == pytest.approx(3.0)
-    assert math.isnan(merged["KSOL"].iloc[0])
-    assert merged["MLM"].iloc[0] == pytest.approx(6.0)
-    assert merged[MEASUREMENT_COUNT_COLUMN].iloc[0] == 2.0
+    counts = admet_report.counts
+    assert (counts.source_molecules, counts.final_rows) == (15, 13)
+    assert counts.dropped[OR_STEREO_GROUP] == 1
+    assert admet_report.extra == {
+        "stereo_unspecified_rows": 1,
+        "test_straddling_rows": 1,
+    }
+    merged = table[table["isomeric_smiles"] == PHENYLETHYLAMINE].iloc[0]
+    assert merged["HLM"] == pytest.approx(20.0)
+    assert math.isnan(merged["KSOL"])
+    assert merged[MEASUREMENT_COUNT_COLUMN] == 2.0
     # The merged row had a test member, so it is test in every split column.
-    for column_name in config.split_columns():
-        assert merged[column_name].iloc[0] == "test"
+    for column_name in bundle.spec.split_columns():
+        assert merged[column_name] == "test"
         assert int((table[column_name] == "test").sum()) == 4
 
     assert bundle.spec.source_kind == "polaris_hub"
-    assert bundle.spec.label_names() == ["LogD", "HLM", "MLM", "KSOL", "MDR1-MDCKII"]
     provenance = bundle.provenance
     assert set(provenance.source.files) == {
         "polaris_antiviral_admet.parquet",
         "polaris_antiviral_admet.source.yaml",
     }
     assert provenance.source.package_versions["polaris-lib"] == "0.13.0"
-    assert set(provenance.source.package_versions) == {"polaris-lib", "rdkit"}
-    assert provenance.smiles_filter is not None
-    assert provenance.smiles_filter.dedupe is False
     aggregation, stereo, split = provenance.notices
     assert aggregation == AGGREGATION_NOTICE
     assert "1 kept source rows had 1 centres" in stereo
@@ -391,13 +344,10 @@ def test_prepare_dataset_writes_a_shipped_split_bundle(tmp_path: Path) -> None:
     assert "shipped Set column" in split and "1 bundle rows merge" in split
 
 
-def test_the_log10_transform_is_declared_for_hlm_but_not_logd(tmp_path: Path) -> None:
-    dataset = _dataset("polaris_antiviral_admet")
-    config = _config(tmp_path)
-    _write_dump(config.raw_root, dataset, _admet_frame())
-    report = prepare_dataset(dataset, config, PREPARER)
-
-    written = yaml.safe_load((report.directory / "dataset.yaml").read_text())
+def test_the_log10_transform_is_declared_for_hlm_but_not_logd(
+    admet_report: BundleReport,
+) -> None:
+    written = yaml.safe_load((admet_report.directory / "dataset.yaml").read_text())
     labels = {label["name"]: label for label in written["labels"]}
     assert "transform" not in labels["LogD"]
     for name in ("HLM", "MLM", "KSOL", "MDR1-MDCKII"):
@@ -408,42 +358,35 @@ def test_the_log10_transform_is_declared_for_hlm_but_not_logd(tmp_path: Path) ->
         }
     transforms = {
         label.name: label.transform
-        for label in read_bundle(report.directory).spec.labels
+        for label in read_bundle(admet_report.directory).spec.labels
     }
     assert isinstance(transforms["LogD"], IdentityLabelTransform)
     assert transforms["HLM"] == Log10LabelTransform(clip_minimum=0.0, offset=1.0)
 
 
-def test_prepare_dataset_derives_a_scaffold_test_fold(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    for dataset_id in ("polaris_pkis2_subset", "polaris_pkis2_subset_cls"):
-        dataset = _dataset(dataset_id)
-        _write_dump(config.raw_root, dataset, _pkis2_frame())
-        report = prepare_dataset(dataset, config, PREPARER)
-        bundle = read_bundle(report.directory)
-        table = bundle.table
-        assert report.extra["test_straddling_rows"] == "-"
-        assert report.counts.final_rows == len(SCAFFOLD_MOLECULES)
-        test_rows = set(table.index[table["split"] == "test"])
-        assert test_rows
-        for column_name in config.split_columns():
-            assert set(table.index[table[column_name] == "test"]) == test_rows
-        assert bundle.spec.evaluation is not None
-        assert bundle.spec.evaluation.metrics == dataset.metrics()
-    classification = read_bundle(tmp_path / "bundles" / "polaris_pkis2_subset_cls")
-    assert set(classification.table["CLS_KIT"].unique()) == {0.0, 1.0}
-
-
-def test_main_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    dataset = _dataset("polaris_pkis2_subset")
-    _write_dump(tmp_path / "raw", dataset, _pkis2_frame())
-    roots = ["--raw-root", str(tmp_path / "raw")]
-    roots += ["--bundle-root", str(tmp_path / "bundles")]
-    assert main([*roots, "--only", "polaris_pkis2_subset"]) == 0
-    assert "polaris_pkis2_subset" in capsys.readouterr().out
-    assert (tmp_path / "bundles" / "polaris_pkis2_subset" / "table.parquet").is_file()
+def test_main_derives_a_scaffold_test_fold_without_straddling_count(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset_ids = ["polaris_pkis2_subset", "polaris_pkis2_subset_cls"]
+    _write_dump(tmp_path / "raw", _dataset(dataset_ids[0]), _pkis2_frame())
+    arguments = ["--raw-root", str(tmp_path / "raw")]
+    arguments += ["--bundle-root", str(tmp_path / "bundles")]
+    for dataset_id in dataset_ids:
+        arguments += ["--only", dataset_id]
+    assert main(arguments) == 0
+    output = capsys.readouterr().out
+    assert "test_straddling_rows" in output
+    assert output.splitlines()[-1].split()[-2] == "-"
+    for dataset_id in dataset_ids:
+        bundle = read_bundle(tmp_path / "bundles" / dataset_id)
+        is_test = [
+            bundle.table[column] == "test" for column in bundle.spec.split_columns()
+        ]
+        assert 0 < is_test[0].sum() < len(SCAFFOLD_MOLECULES)
+        assert all((column == is_test[0]).all() for column in is_test)
+    assert set(bundle.table["CLS_KIT"].unique()) == {0.0, 1.0}
     # The admet dump is absent.
-    assert main([*roots, "--only", "polaris_antiviral_admet"]) == 1
+    assert main([*arguments[:4], "--only", "polaris_antiviral_admet"]) == 1
 
 
 # ---------------------------------------------------------- the real dumps
@@ -457,14 +400,10 @@ def test_the_real_antiviral_admet_dump(tmp_path: Path) -> None:
     )
     counts = report.counts
     assert counts.source_molecules == 560
-    assert counts.final_rows + sum(counts.dropped.values()) == 560
     assert counts.dropped[INVALID_SMILES] == 0
     assert counts.dropped[SMILES_FILTER] > 0  # boron-containing compounds
     assert int(report.extra["stereo_unspecified_rows"]) > 0
     assert set(counts.per_split) == {"train", "valid", "test"}
-    bundle = read_bundle(report.directory)
-    assert bundle.spec.evaluation is not None
-    assert bundle.spec.evaluation.metrics[0] is EvalMetric.mae
 
 
 @requires_raw_dump

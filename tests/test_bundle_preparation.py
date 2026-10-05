@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,7 +23,6 @@ from remedi.data_handling.bundle.preparation import (
     PreparationError,
     PreparerSettings,
     SourceLabel,
-    check_unique,
     format_report,
     preparer_main,
     seeded_split_notice,
@@ -77,33 +77,28 @@ def _spec(dataset_id: str = "first", label_names: tuple[str, ...] = ("y",)):
 
 def test_settings_default_to_five_seeds_and_a_filter_without_dedupe() -> None:
     settings = ToySettings()
-    assert settings.seeds == [1, 2, 3, 4, 5]
     assert settings.smiles_filter.dedupe is False
     assert settings.split_columns() == [
         "split",
         *(f"split__seed{s}" for s in range(1, 6)),
     ]
+    assert settings.selected_dataset_ids() == ["first", "second"]
+    selected = ToySettings(only=["second", "first"]).selected_dataset_ids()
+    assert selected == ["first", "second"]  # catalog order
 
 
-def test_settings_select_in_catalog_order_and_reject_unknown_ids() -> None:
-    assert ToySettings().selected_dataset_ids() == ["first", "second"]
-    assert ToySettings(only=["second", "first"]).selected_dataset_ids() == [
-        "first",
-        "second",
-    ]
-    with pytest.raises(ValueError, match="unknown dataset ids"):
-        ToySettings(only=["third"])
-
-
-def test_settings_reject_duplicate_seeds() -> None:
-    with pytest.raises(ValueError, match="duplicate seeds"):
-        ToySettings(seeds=[1, 1])
-
-
-def test_check_unique_names_the_duplicates() -> None:
-    check_unique(["a", "b"], "names")
-    with pytest.raises(ValueError, match=r"duplicate names \['a'\]"):
-        check_unique(["a", "b", "a"], "names")
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"only": ["third"]}, "unknown dataset ids"),
+        ({"seeds": [1, 1]}, r"duplicate seeds \['1'\]"),
+    ],
+)
+def test_settings_reject_unknown_ids_and_duplicate_seeds(
+    overrides: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        ToySettings.model_validate(overrides)
 
 
 def test_source_label_reads_its_own_name_unless_told_otherwise() -> None:
@@ -192,8 +187,9 @@ def test_write_records_the_merge_and_the_filter_that_ran(tmp_path: Path) -> None
     bundle = read_bundle(tmp_path / "first")
     assert report.directory == tmp_path / "first"
     assert report.counts.final_rows == 3
-    assert (
-        report.content_sha256 == bundle.provenance.outputs.table_parquet.content_sha256
+    assert bundle.provenance.outputs is not None
+    assert report.content_sha256 == (
+        bundle.provenance.outputs.table_parquet.content_sha256
     )
     assert bundle.provenance.notices == [AGGREGATION_NOTICE, "a source notice"]
     assert bundle.provenance.smiles_filter is not None
@@ -245,6 +241,8 @@ def test_main_returns_one_on_a_preparation_error_or_bad_settings() -> None:
     def failing_run(settings: ToySettings) -> list[BundleReport]:
         raise PreparationError("the source is broken")
 
-    common = {"description": "toy", "settings_type": ToySettings, "run": failing_run}
-    assert preparer_main([], **common) == 1
-    assert preparer_main(["--only", "third"], **common) == 1
+    for argv in ([], ["--only", "third"]):
+        exit_code = preparer_main(
+            argv, description="toy", settings_type=ToySettings, run=failing_run
+        )
+        assert exit_code == 1

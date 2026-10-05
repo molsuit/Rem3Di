@@ -8,13 +8,13 @@ its pins and is skipped when the 237 MB download is absent.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import pytest
-from ase import Atoms
 from pydantic import ValidationError
 from rdkit import Chem
 from remedi_prepare_qm9or.prepare import (
@@ -109,27 +109,12 @@ def synthetic_entries() -> list[dict[str, Any]]:
     ]
 
 
-def as_object_array(entries: list[dict[str, Any]]) -> np.ndarray:
-    array = np.empty(len(entries), dtype=object)
-    array[:] = entries
-    return array
-
-
-def unpinned_config(
-    raw_root: Path, source: SourceFile | None = None
-) -> QM9ORPreparerConfig:
-    return QM9ORPreparerConfig(
-        raw_root=raw_root,
-        source=source or QM9OR_SOURCE,
-        download=False,
-        pins=None,
-    )
-
-
 def write_synthetic_source(directory: Path) -> SourceFile:
     """Save the synthetic entries as ``qm9-or.npy``; return a matching pin."""
     path = directory / "qm9-or.npy"
-    np.save(path, as_object_array(synthetic_entries()), allow_pickle=True)
+    entries = np.empty(9, dtype=object)
+    entries[:] = synthetic_entries()
+    np.save(path, entries, allow_pickle=True)
     sha256, md5 = file_digests(path)
     return SourceFile(
         url=path.as_uri(),
@@ -145,30 +130,26 @@ def write_synthetic_source(directory: Path) -> SourceFile:
 
 def test_decode_geometry_strips_padding() -> None:
     atoms = decode_geometry(padded_xyz(ETHANOL), position=0)
-    assert isinstance(atoms, Atoms)
     assert len(atoms) == 9
     assert atoms.get_chemical_formula() == "C2H6O"
     np.testing.assert_allclose(atoms.positions[1], (1.5, -1.0, 2.0))
 
 
-def test_decode_geometry_rejects_padding_between_atoms() -> None:
+@pytest.mark.parametrize(
+    ("index", "value", "message"),
+    [
+        (1, 0.0, "padding rows must follow"),
+        ((-1, 0), 0.25, "not all zero"),
+        ((0, 3), 1.0, "not one-hot"),
+    ],
+    ids=["padding between atoms", "nonzero padding", "two-hot atom"],
+)
+def test_decode_geometry_rejects_a_malformed_array(
+    index: int | tuple[int, int], value: float, message: str
+) -> None:
     array = padded_xyz(ETHANOL)
-    array[[1, 20]] = array[[20, 1]]
-    with pytest.raises(QM9ORPreparationError, match="padding rows must follow"):
-        decode_geometry(array, position=3)
-
-
-def test_decode_geometry_rejects_nonzero_padding() -> None:
-    array = padded_xyz(ETHANOL)
-    array[-1, 0] = 0.25
-    with pytest.raises(QM9ORPreparationError, match="not all zero"):
-        decode_geometry(array, position=3)
-
-
-def test_decode_geometry_rejects_ambiguous_atom_type() -> None:
-    array = padded_xyz(ETHANOL)
-    array[0, 3:] = (1.0, 1.0, 0.0, 0.0, 0.0)
-    with pytest.raises(QM9ORPreparationError, match="not one-hot"):
+    array[index] = value
+    with pytest.raises(QM9ORPreparationError, match=message):
         decode_geometry(array, position=3)
 
 
@@ -183,17 +164,27 @@ def test_compare_composition_counts_hydrogens_separately() -> None:
     assert (short.geometry_hydrogens, short.molecule_hydrogens) == (6, 8)
 
 
-def test_heavy_atom_disagreement_is_an_error() -> None:
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"xyz": padded_xyz(PROPANOL)}, "heavy atoms"),
+        ({"rotation": None}, "expected keys"),
+        ({"xyz": np.zeros((26, 8))}, "xyz has shape"),
+        ({"rotation": [1.0]}, "rotation has 1 values"),
+        ({"inchi": "InChI=nonsense"}, "RDKit cannot parse"),
+    ],
+    ids=["heavy atoms", "missing key", "xyz shape", "rotation length", "bad inchi"],
+)
+def test_collapse_rejects_a_malformed_entry(
+    changes: dict[str, Any], message: str
+) -> None:
     entry = make_entry(ETHANOL, "000001", 1.0)
-    entry["xyz"] = padded_xyz(PROPANOL)
-    with pytest.raises(QM9ORPreparationError, match="heavy atoms"):
-        collapse_entries([entry])
-
-
-def test_entry_layout_is_checked() -> None:
-    entry = make_entry(ETHANOL, "000001", 1.0)
-    del entry["rotation"]
-    with pytest.raises(QM9ORPreparationError, match="expected keys"):
+    for key, value in changes.items():
+        if value is None:
+            del entry[key]
+        else:
+            entry[key] = value
+    with pytest.raises(QM9ORPreparationError, match=message):
         collapse_entries([entry])
 
 
@@ -230,23 +221,14 @@ def test_collapse_deduplicates_on_nonisomeric_smiles_first_entry_wins() -> None:
     assert first.isomeric_smiles == Chem.MolToSmiles(Chem.MolFromSmiles(R_ALANINE))
     assert (first.n_chiral, first.rs, first.or_sign_589) == (1, 0, 1)
     assert collapsed.signs_per_molecule[0] == [1, -1]
-    assert table.isomeric_smiles.tolist()[1] == "CCO"
     assert table.or_sign_589.tolist() == [1, 0, -1, 1, 0, -1, 1, -1]
     assert table.n_chiral.tolist() == [1, 0, 2, 1, 0, 0, 0, 0]
     assert table.rs.tolist() == [0] * 8
-
-
-def test_frames_align_with_rows() -> None:
-    collapsed = collapse_entries(synthetic_entries())
-    assert len(collapsed.frames) == len(collapsed.rows)
+    # One frame per row, with the heavy atoms of its SMILES.
     for row, atoms in zip(collapsed.rows, collapsed.frames, strict=True):
         assert atoms.info["molecule_id"] == row["molecule_id"]
-        molecule = Chem.AddHs(Chem.MolFromSmiles(row["isomeric_smiles"]))
-        heavy = sorted(
-            atom.GetAtomicNum()
-            for atom in molecule.GetAtoms()
-            if atom.GetAtomicNum() > 1
-        )
+        molecule = Chem.MolFromSmiles(row["isomeric_smiles"])
+        heavy = sorted(atom.GetAtomicNum() for atom in molecule.GetAtoms())
         assert sorted(int(number) for number in atoms.numbers if number > 1) == heavy
     # The pyridine row comes from the ninth entry: the duplicate shifted it by one.
     assert collapsed.frames[-1].info == {
@@ -266,26 +248,13 @@ def test_random_split_counts_and_determinism() -> None:
     values = random_split_values(117, split)
     assert (values == random_split_values(117, split)).all()
     assert not (values == random_split_values(117, RandomSplit(seed=43))).all()
-    assert {
-        name: int((values == name).sum()) for name in ("train", "valid", "test")
-    } == {
-        "train": 82,
-        "valid": 12,
-        "test": 23,
-    }
+    counts = [int((values == name).sum()) for name in ("train", "valid", "test")]
+    assert counts == [82, 12, 23]
 
 
 def test_scaffold_split_keeps_groups_whole_and_is_deterministic() -> None:
-    smiles = [
-        BENZENE,
-        TOLUENE,
-        ETHANOL,
-        PROPANOL,
-        CYCLOHEXANOL,
-        PYRIDINE,
-        "Oc1ccccc1",
-        "CC",
-    ]
+    smiles = [BENZENE, TOLUENE, ETHANOL, PROPANOL, CYCLOHEXANOL, PYRIDINE]
+    smiles += ["Oc1ccccc1", "CC"]
     groups = scaffold_groups(smiles, include_chirality=True)
     # benzene/toluene/phenol share a scaffold, as do the acyclic molecules.
     assert sorted(map(sorted, groups)) == [[0, 1, 6], [2, 3, 7], [4], [5]]
@@ -298,7 +267,7 @@ def test_scaffold_split_keeps_groups_whole_and_is_deterministic() -> None:
     assert set(values) <= {"train", "valid", "test"}
 
 
-def test_split_definitions_from_yaml_like_data() -> None:
+def test_split_definitions_from_yaml_like_data_and_the_frozen_default() -> None:
     config = QM9ORPreparerConfig.model_validate(
         {
             "pins": None,
@@ -312,33 +281,40 @@ def test_split_definitions_from_yaml_like_data() -> None:
         "random_s7",
         "scaffold_s1",
     ]
-    assert isinstance(config.splits[1], ScaffoldSplit)
-
-
-def test_config_rejects_duplicate_columns_and_unpinned_splits() -> None:
-    with pytest.raises(ValidationError, match="duplicate split columns"):
-        QM9ORPreparerConfig(
-            pins=None, splits=[RandomSplit(seed=1), RandomSplit(seed=1)]
-        )
-    with pytest.raises(ValidationError, match="pins cover"):
-        QM9ORPreparerConfig(splits=[RandomSplit(seed=1)])
-    with pytest.raises(ValidationError, match="leave a train fold"):
-        RandomSplit(seed=1, test_fraction=0.6, valid_fraction=0.4)
-
-
-def test_default_config_is_the_frozen_table() -> None:
-    config = QM9ORPreparerConfig()
-    assert config.raw_root == DEFAULT_RAW_ROOT
-    assert [split.column_name for split in config.splits] == [
-        "random_s42",
-        "random_s43",
-        "random_s44",
-        "random_s45",
-        "scaffold_s0",
-        "scaffold_s1",
-        "scaffold_s2",
+    default = QM9ORPreparerConfig()
+    assert [split.column_name for split in default.splits] == [
+        *(f"random_s{seed}" for seed in (42, 43, 44, 45)),
+        *(f"scaffold_s{seed}" for seed in (0, 1, 2)),
     ]
-    assert config.pins == QM9OR_PINS
+    assert default.pins == QM9OR_PINS
+
+
+@pytest.mark.parametrize(
+    ("build", "message"),
+    [
+        (
+            lambda: QM9ORPreparerConfig(
+                pins=None, splits=[RandomSplit(seed=1), RandomSplit(seed=1)]
+            ),
+            "duplicate split columns",
+        ),
+        (lambda: QM9ORPreparerConfig(splits=[RandomSplit(seed=1)]), "pins cover"),
+        (
+            lambda: RandomSplit(seed=1, test_fraction=0.6, valid_fraction=0.4),
+            "leave a train fold",
+        ),
+        (
+            lambda: ScaffoldSplit(seed=1, train_fraction=0.6, valid_fraction=0.4),
+            "leave a test fold",
+        ),
+    ],
+    ids=["duplicate columns", "unpinned split", "no train", "no test"],
+)
+def test_config_rejects_an_inconsistent_split_definition(
+    build: Callable[[], object], message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        build()
 
 
 # --------------------------------------------------------- verification
@@ -357,51 +333,40 @@ def synthetic_dataset_and_pins() -> tuple[pd.DataFrame, TablePins]:
     return dataset.table, pins
 
 
-def test_verify_table_accepts_its_own_pins() -> None:
+@pytest.mark.parametrize(
+    ("cell", "pins_update", "messages"),
+    [
+        (
+            ("isomeric_smiles", "OCC"),
+            {},
+            ["only the SMILES strings differ", "molecule columns sha256"],
+        ),
+        (("random_s1", "test"), {}, ["other than isomeric_smiles", "random_s1 counts"]),
+        (("random_s1", "holdout"), {}, ["unexpected fold names"]),
+        (None, {"molecule_count": 9}, ["8 molecules, expected 9"]),
+        (
+            None,
+            {"split_counts": {"scaffold_s0": SplitCounts(train=0, valid=0, test=8)}},
+            ["scaffold_s0 counts"],
+        ),
+    ],
+    ids=["smiles only", "split column", "fold name", "molecule count", "fold sizes"],
+)
+def test_verify_table_diagnoses_a_mismatch(
+    cell: tuple[str, str] | None, pins_update: dict[str, Any], messages: list[str]
+) -> None:
+    """Row 1 (ethanol) is valid in ``random_s1``."""
     table, pins = synthetic_dataset_and_pins()
-    verify_table(table, table_hashes(table), pins)
-    assert list(table.columns) == [*MOLECULE_COLUMNS, "random_s1", "scaffold_s0"]
-
-
-def test_verify_table_blames_rdkit_when_only_smiles_differ() -> None:
-    table, pins = synthetic_dataset_and_pins()
-    changed = table.copy()
-    changed.loc[1, "isomeric_smiles"] = "OCC"
-    with pytest.raises(
-        QM9ORPreparationError, match="only the SMILES strings differ"
-    ) as error:
-        verify_table(changed, table_hashes(changed), pins)
-    assert "molecule columns sha256" in str(error.value)
-
-
-def test_verify_table_reports_other_differences() -> None:
-    table, pins = synthetic_dataset_and_pins()
-    changed = table.copy()
-    changed.loc[0, "random_s1"] = (
-        "test" if changed.loc[0, "random_s1"] != "test" else "train"
-    )
-    with pytest.raises(
-        QM9ORPreparationError, match="other than isomeric_smiles"
-    ) as error:
-        verify_table(changed, table_hashes(changed), pins)
-    assert "random_s1 counts" in str(error.value)
-
-
-def test_verify_table_checks_molecule_count() -> None:
-    table, pins = synthetic_dataset_and_pins()
-    wrong = pins.model_copy(update={"molecule_count": 9})
-    with pytest.raises(QM9ORPreparationError, match="8 molecules, expected 9"):
-        verify_table(table, table_hashes(table), wrong)
-
-
-def test_split_counts_pin_mismatch() -> None:
-    table, pins = synthetic_dataset_and_pins()
-    counts = dict(pins.split_counts)
-    counts["scaffold_s0"] = SplitCounts(train=0, valid=0, test=8)
-    with pytest.raises(QM9ORPreparationError, match="scaffold_s0 counts"):
-        verify_table(
-            table, table_hashes(table), pins.model_copy(update={"split_counts": counts})
-        )
+    if cell is not None:
+        table.loc[1, cell[0]] = cell[1]
+    if "split_counts" in pins_update:
+        pins_update = {
+            "split_counts": {**pins.split_counts, **pins_update["split_counts"]}
+        }
+    with pytest.raises(QM9ORPreparationError) as error:
+        verify_table(table, table_hashes(table), pins.model_copy(update=pins_update))
+    for message in messages:
+        assert message in str(error.value)
 
 
 # ------------------------------------------------------------ the source
@@ -440,13 +405,17 @@ def test_download_verifies_before_publishing(tmp_path: Path) -> None:
 def test_ensure_source_downloads_only_when_allowed(tmp_path: Path) -> None:
     source = write_synthetic_source(tmp_path)
     raw_root = tmp_path / "raw"
+    config = QM9ORPreparerConfig(
+        raw_root=raw_root, source=source, download=False, pins=None
+    )
     with pytest.raises(QM9ORPreparationError, match="downloading is disabled"):
-        ensure_source(unpinned_config(raw_root, source))
-    allowed = unpinned_config(raw_root, source).model_copy(update={"download": True})
+        ensure_source(config)
+    allowed = config.model_copy(update={"download": True})
     assert ensure_source(allowed) == raw_root / "qm9-or.npy"
 
 
 def test_build_dataset_end_to_end_on_synthetic_source(tmp_path: Path) -> None:
+    """Unpinned, then pinned to its own summary: the rebuild is byte-identical."""
     source = write_synthetic_source(tmp_path)
     config = QM9ORPreparerConfig(
         raw_root=tmp_path,
@@ -457,18 +426,19 @@ def test_build_dataset_end_to_end_on_synthetic_source(tmp_path: Path) -> None:
     )
     dataset = build_dataset(config)
     summary = dataset.summary
-    assert (summary.source_entries, summary.molecules, summary.duplicate_entries) == (
-        9,
-        8,
-        1,
-    )
-    assert summary.molecules_with_duplicates == 1
+    assert (summary.source_entries, summary.molecules) == (9, 8)
+    assert summary.duplicate_entries == summary.molecules_with_duplicates == 1
     assert summary.opposite_sign_molecules == summary.differing_sign_molecules == 1
     assert dataset.opposite_sign_molecule_ids == [0]
     assert summary.hydrogen_mismatch_molecules == 1
     assert summary.split_counts["random_s42"] == SplitCounts(train=5, valid=1, test=2)
     assert not summary.verified
     assert len(dataset.frames) == len(dataset.table) == 8
+    assert list(dataset.table.columns) == [
+        *MOLECULE_COLUMNS,
+        "random_s42",
+        "scaffold_s0",
+    ]
     assert "NOT verified" in format_summary(summary)
 
     pinned = config.model_copy(

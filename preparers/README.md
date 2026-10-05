@@ -12,7 +12,7 @@ workspace, each with its own `pyproject.toml`.
 | `moleculenet/` | `remedi-prepare-moleculenet` | `prepare-moleculenet` | 10 bundles from the pinned DeepChem S3 files (`--download` fetches missing ones) |
 | `polaris/` | `remedi-prepare-polaris` | `prepare-polaris` | 5 bundles from the parquets `dump_polaris.py` writes to `benchmark_data/raw/polaris/` |
 | `chiralcat/` | `chiralcat-dataset` | `build-chiralcat-dataset` | the curated dataset in `benchmark_data/curated/chiralcat/` |
-| `qm9or/` | — | — | nothing yet: the frozen `qm9or_splits.csv` and the author's split generators |
+| `qm9or/` | `remedi-prepare-qm9or` | `prepare-qm9or` | nothing yet: rebuilds the QM9-OR table from the pinned Zenodo download and verifies it byte for byte |
 
 ## Data
 

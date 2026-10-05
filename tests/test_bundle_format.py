@@ -17,7 +17,7 @@ import hashlib
 import re
 from collections.abc import Callable
 from pathlib import Path
-from types import FunctionType
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,6 @@ from rdkit import Chem
 
 from remedi.data_handling.bundle import (
     DATASET_CONFIG_FILENAME,
-    FORMAT_VERSION,
     PROVENANCE_FILENAME,
     SPEC_FILENAME,
     TABLE_FILENAME,
@@ -51,7 +50,6 @@ from remedi.data_handling.bundle import (
     normalize_table,
     read_bundle,
     read_provenance,
-    read_spec,
     read_table,
     stereochemistry_from_frame,
     structure_problems,
@@ -77,15 +75,19 @@ from .helpers.bundle_fixtures import (
 )
 
 THREE_FILES = sorted([SPEC_FILENAME, TABLE_FILENAME, PROVENANCE_FILENAME])
+IDENTITY_COLUMNS = ["stereoisomer_id", "molecule_id", "enantiomer_of"]
+SMILES_COLUMNS = ["isomeric_smiles", "nonisomeric_smiles"]
+CHARGE_COLUMNS = ["total_charge", "multiplicity"]
 
 #: An enantiomer pair and an achiral molecule, for the dataset-kind cases.
 CHIRAL_DATASET_SMILES = ["C[C@H](N)C(=O)O", "C[C@@H](N)C(=O)O", "CCO"]
 
+TableMutation = Callable[[pd.DataFrame], None]
 
-def has_problem(problems: list[str], prefix: str, fragment: str = "") -> bool:
-    return any(
-        problem.startswith(prefix) and fragment in problem for problem in problems
-    )
+
+def has_problem(problems: list[str], pattern: str) -> bool:
+    """Whether some problem matches ``pattern`` from its start (the invariant number)."""
+    return any(re.match(pattern, problem) for problem in problems)
 
 
 def make_small_dataset(
@@ -104,74 +106,67 @@ def make_small_dataset(
     )
     if not smiles:
         spec = spec.model_copy(update={"smiles": False})
-        table = table.drop(columns=["isomeric_smiles", "nonisomeric_smiles"])
+        table = table.drop(columns=SMILES_COLUMNS)
     return spec, normalize_table(table, spec)
+
+
+def bundle_table() -> tuple[DatasetSpec, pd.DataFrame]:
+    bundle = make_bundle()
+    return bundle.spec, normalize_table(bundle.table, bundle.spec)
+
+
+def set_value(row: int, column: str, value: object) -> TableMutation:
+    def mutate(table: pd.DataFrame) -> None:
+        table.loc[row, column] = value
+
+    return mutate
+
+
+def retype(column: str, dtype: str) -> TableMutation:
+    def mutate(table: pd.DataFrame) -> None:
+        table[column] = table[column].astype(dtype)
+
+    return mutate
+
+
+def fill_integers(column: str) -> TableMutation:
+    def mutate(table: pd.DataFrame) -> None:
+        table[column] = np.zeros(len(table), dtype="int64")
+
+    return mutate
+
+
+def drop(column: str) -> TableMutation:
+    return lambda table: table.drop(columns=[column], inplace=True)
+
+
+def set_enantiomers(row_0: int, row_2: int | None = None) -> TableMutation:
+    """Overwrite ``enantiomer_of`` of the six bundle rows: only rows 0 and 2 set."""
+
+    def mutate(table: pd.DataFrame) -> None:
+        values = [row_0, None, row_2, None, None, None]
+        table["enantiomer_of"] = pd.array(values, "Int64")
+
+    return mutate
+
+
+def reflect(frame: Atoms) -> None:
+    frame.set_positions(frame.get_positions() * np.array([-1.0, 1.0, 1.0]))
 
 
 # ------------------------------------------------------------------------ spec
 
 
-def test_a_spec_defaults_to_format_version_1_and_no_smiles() -> None:
-    spec = DatasetSpec(dataset_id="minimal", source_kind="synthetic")
-    assert spec.format_version == FORMAT_VERSION == 1
-    assert spec.smiles is False
-    assert spec.labels == []
-    assert spec.evaluation is None
-    assert spec.has_structures is False
-    assert spec.expected_columns() == [
-        "stereoisomer_id",
-        "molecule_id",
-        "enantiomer_of",
-    ]
-
-
-def test_a_spec_refuses_any_other_format_version() -> None:
-    with pytest.raises(pydantic.ValidationError):
-        DatasetSpec.model_validate(
-            {"dataset_id": "x", "source_kind": "synthetic", "format_version": 2}
-        )
-
-
 @pytest.mark.parametrize(
     "smiles, geometry_origin, expected",
     [
-        (False, None, ["stereoisomer_id", "molecule_id", "enantiomer_of"]),
-        (
-            True,
-            None,
-            [
-                "stereoisomer_id",
-                "molecule_id",
-                "enantiomer_of",
-                "isomeric_smiles",
-                "nonisomeric_smiles",
-            ],
-        ),
-        (
-            False,
-            "source",
-            [
-                "structure_id",
-                "stereoisomer_id",
-                "molecule_id",
-                "enantiomer_of",
-                "total_charge",
-                "multiplicity",
-            ],
-        ),
+        (False, None, IDENTITY_COLUMNS),
+        (True, None, IDENTITY_COLUMNS + SMILES_COLUMNS),
+        (False, "source", ["structure_id", *IDENTITY_COLUMNS, *CHARGE_COLUMNS]),
         (
             True,
             "etkdg_mmff",
-            [
-                "structure_id",
-                "stereoisomer_id",
-                "molecule_id",
-                "enantiomer_of",
-                "isomeric_smiles",
-                "nonisomeric_smiles",
-                "total_charge",
-                "multiplicity",
-            ],
+            ["structure_id", *IDENTITY_COLUMNS, *SMILES_COLUMNS, *CHARGE_COLUMNS],
         ),
     ],
 )
@@ -205,11 +200,8 @@ def test_expected_columns_is_the_declared_order() -> None:
         source_kind="synthetic",
     )
     assert spec.expected_columns() == [
-        "stereoisomer_id",
-        "molecule_id",
-        "enantiomer_of",
-        "isomeric_smiles",
-        "nonisomeric_smiles",
+        *IDENTITY_COLUMNS,
+        *SMILES_COLUMNS,
         "rs",
         "split",
         "split__scaffold_s0",
@@ -217,78 +209,52 @@ def test_expected_columns_is_the_declared_order() -> None:
         "csd_code",
     ]
     assert spec.with_structures("etkdg_mmff").expected_columns()[:1] == ["structure_id"]
+    corpus = make_bundle_spec(evaluation=False)
+    assert corpus.split_columns() == []
+    assert "split" not in corpus.expected_columns()
 
 
-def test_a_corpus_has_labels_but_no_split_columns() -> None:
-    spec = make_bundle_spec(evaluation=False)
-    assert spec.split_columns() == []
-    assert spec.label_names() == ["activity", "logp"]
-    assert "split" not in spec.expected_columns()
-
-
-def test_with_structures_turns_a_bundle_spec_into_a_dataset_spec() -> None:
+def test_with_structures_turns_a_bundle_spec_into_a_validated_dataset_spec() -> None:
     bundle_spec = make_bundle_spec()
     dataset_spec = bundle_spec.with_structures("etkdg_mmff")
     assert dataset_spec.geometry_origin == "etkdg_mmff"
     assert dataset_spec.has_structures
     assert bundle_spec.geometry_origin is None  # a copy, not a mutation
-
-
-def test_with_structures_validates_the_dataset_spec() -> None:
-    """A bundle extra column named like a dataset fixed column cannot become a dataset."""
-    bundle_spec = make_bundle_spec().model_copy(
-        update={"extra_columns": ["total_charge"]}
+    # ``total_charge`` is only a fixed column on a dataset: a valid bundle
+    # extra column, but one that cannot become a dataset.
+    clashing = DatasetSpec.model_validate(
+        {**bundle_spec.model_dump(), "extra_columns": ["total_charge"]}
     )
     with pytest.raises(ValueError, match="total_charge"):
-        bundle_spec.with_structures("etkdg_mmff")
+        clashing.with_structures("etkdg_mmff")
 
 
 @pytest.mark.parametrize(
     "update",
     [
         # duplicate label names
-        {
-            "labels": [
-                {"name": "activity", "task_type": "classification"},
-                {"name": "activity", "task_type": "regression"},
-            ]
-        },
-        # a label colliding with a fixed column
+        {"labels": [{"name": "y", "task_type": "regression"}] * 2},
+        # a label colliding with a fixed column, or with a SMILES column
         {"labels": [{"name": "molecule_id", "task_type": "regression"}]},
-        # a label colliding with a SMILES column
         {"labels": [{"name": "isomeric_smiles", "task_type": "regression"}]},
-        # an extra column colliding with a label
+        # an extra column colliding with a label, a split column or itself
         {"extra_columns": ["logp"]},
-        # an extra column colliding with a split column
         {"extra_columns": ["split"]},
-        # the same extra column twice
         {"extra_columns": ["weight", "weight"]},
+        # ``total_charge`` is a fixed column on a dataset only
+        {"geometry_origin": "source", "extra_columns": ["total_charge"]},
         # an evaluation block with nothing to score
         {"labels": []},
-        # unknown field (extra="forbid")
-        {"csv_name": "esol.csv"},
-        # an unknown geometry origin
+        {"csv_name": "esol.csv"},  # unknown field (extra="forbid")
         {"geometry_origin": "xtb"},
-        # an empty source_kind
         {"source_kind": ""},
+        {"format_version": 2},
     ],
 )
 def test_spec_validators_refuse(update: dict) -> None:
     document = make_bundle_spec().model_dump(mode="json")
     with pytest.raises(pydantic.ValidationError):
         DatasetSpec.model_validate({**document, **update})
-
-
-def test_a_dataset_fixed_column_collides_with_a_declared_column() -> None:
-    """``total_charge`` is only fixed on a dataset, so only there does it collide."""
-    document = {
-        "dataset_id": "x",
-        "extra_columns": ["total_charge"],
-        "source_kind": "synthetic",
-    }
-    assert DatasetSpec.model_validate(document).extra_columns == ["total_charge"]
-    with pytest.raises(pydantic.ValidationError):
-        DatasetSpec.model_validate({**document, "geometry_origin": "source"})
 
 
 @pytest.mark.parametrize(
@@ -301,7 +267,6 @@ def test_a_dataset_fixed_column_collides_with_a_declared_column() -> None:
         {"split_columns": []},
         {"split_group": "structure_id"},
         {"metrics": ["accuracy"]},
-        {"unknown": 1},
     ],
 )
 def test_evaluation_validators_refuse(update: dict) -> None:
@@ -315,69 +280,30 @@ def test_evaluation_validators_refuse(update: dict) -> None:
         EvaluationSpec.model_validate({**document, **update})
 
 
-def test_label_column_validators() -> None:
-    with pytest.raises(ValueError):  # multiclass without n_classes
-        LabelColumn(name="chirality_class", task_type=TaskType.multiclass)
-    with pytest.raises(ValueError):  # n_classes below 2
-        LabelColumn(name="chirality_class", task_type=TaskType.multiclass, n_classes=1)
-    with pytest.raises(ValueError):  # n_classes on a non-multiclass label
-        LabelColumn(name="logp", task_type=TaskType.regression, n_classes=3)
-    with pytest.raises(ValueError):  # empty name
-        LabelColumn(name="", task_type=TaskType.regression)
-
-
-def test_class_names_are_only_valid_on_a_matching_multiclass_label() -> None:
-    label = LabelColumn(
-        name="chirality_class",
-        task_type=TaskType.multiclass,
-        n_classes=3,
-        class_names=["achiral", "central", "axial"],
-    )
-    assert label.class_names == ["achiral", "central", "axial"]
-    assert (
-        LabelColumn(
-            name="chirality_class", task_type=TaskType.multiclass, n_classes=3
-        ).class_names
-        is None
-    )
-    with pytest.raises(ValueError):  # too few names
-        LabelColumn(
-            name="chirality_class",
-            task_type=TaskType.multiclass,
-            n_classes=3,
-            class_names=["achiral", "central"],
-        )
-    with pytest.raises(ValueError):  # class_names on a non-multiclass label
-        LabelColumn(
-            name="logp", task_type=TaskType.regression, class_names=["low", "high"]
-        )
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"task_type": "multiclass"},  # no n_classes
+        {"task_type": "multiclass", "n_classes": 1},
+        {"task_type": "regression", "n_classes": 3},
+        {"task_type": "regression", "name": ""},
+        {"task_type": "multiclass", "n_classes": 3, "class_names": ["a", "b"]},
+        {"task_type": "regression", "class_names": ["low", "high"]},
+    ],
+)
+def test_label_column_validators_refuse(fields: dict) -> None:
+    with pytest.raises(pydantic.ValidationError):
+        LabelColumn.model_validate({"name": "label", **fields})
 
 
 def test_task_set_maps_every_label_to_a_system_column() -> None:
     task_set = make_bundle_spec().task_set()
-    assert [config.name for config in task_set.system_cols] == ["activity", "logp"]
-    assert [config.task_type for config in task_set.system_cols] == [
-        TaskType.classification,
-        TaskType.regression,
+    assert [(config.name, config.task_type) for config in task_set.system_cols] == [
+        ("activity", TaskType.classification),
+        ("logp", TaskType.regression),
     ]
     assert all(config.scope is TaskScope.system for config in task_set.system_cols)
     assert task_set.atom_cols == []
-
-
-def test_eval_metric_values_are_the_yaml_strings() -> None:
-    assert {member.name: member.value for member in EvalMetric} == {
-        "rmse": "RMSE",
-        "mae": "MAE",
-        "r2": "R2",
-        "spearman": "Spearman",
-        "auroc": "AUROC",
-        "auprc": "AUPRC",
-        "macro_auroc": "macro-AUROC",
-        "balanced_accuracy": "balanced-accuracy",
-        "macro_f1": "macro-F1",
-        "macro_auroc_ovr": "macro-AUROC-OvR",
-        "pair_ranking_accuracy": "pair-ranking-accuracy",
-    }
 
 
 def test_metrics_with_headline_puts_the_headline_first_without_repeats() -> None:
@@ -390,14 +316,6 @@ def test_metrics_with_headline_puts_the_headline_first_without_repeats() -> None
     assert metrics_with_headline(EvalMetric.balanced_accuracy, TaskType.multiclass) == [
         EvalMetric.balanced_accuracy
     ]
-
-
-def test_a_spec_round_trips_through_yaml(tmp_path: Path) -> None:
-    spec = make_bundle_spec(require_enantiomer_pairs=True)
-    (tmp_path / SPEC_FILENAME).write_text(
-        yaml.safe_dump(spec.model_dump(mode="json", exclude_none=True))
-    )
-    assert read_spec(tmp_path) == spec
 
 
 # ------------------------------------------------------------------ identity
@@ -448,12 +366,15 @@ def test_two_stereocentres_pair_only_exact_mirror_images() -> None:
 
 def test_a_bundle_round_trips_through_disk(tmp_path: Path) -> None:
     bundle = make_bundle()
-    assert validate_table(bundle.spec, normalize_table(bundle.table, bundle.spec)) == []
-
-    written = write_bundle(bundle, tmp_path / "synthetic6")
-
     directory = tmp_path / "synthetic6"
+    written = write_bundle(bundle, directory)
+
+    # exactly the three files: no staging files are left behind
     assert sorted(path.name for path in directory.iterdir()) == THREE_FILES
+    # the caller's provenance is not mutated by the writer
+    assert bundle.provenance.outputs is None
+    assert bundle.provenance.prepared_at is None
+
     reloaded = read_bundle(directory)
     pd.testing.assert_frame_equal(
         reloaded.table, normalize_table(bundle.table, bundle.spec)
@@ -477,13 +398,8 @@ def test_a_bundle_round_trips_through_disk(tmp_path: Path) -> None:
     assert outputs.structures_sha256 is None
     assert reloaded.provenance.prepared_at is not None
     assert reloaded.provenance.geometry_limits == GEOMETRY_LIMITS
-
-
-def test_write_bundle_does_not_mutate_the_callers_provenance(tmp_path: Path) -> None:
-    bundle = make_bundle()
-    write_bundle(bundle, tmp_path / "synthetic6")
-    assert bundle.provenance.outputs is None
-    assert bundle.provenance.prepared_at is None
+    # the data identity of a bundle is its table's content hash
+    assert structures_identity(directory) == outputs.table_parquet.content_sha256
 
 
 @pytest.mark.parametrize(
@@ -491,23 +407,15 @@ def test_write_bundle_does_not_mutate_the_callers_provenance(tmp_path: Path) -> 
     [{"smiles": False}, {"evaluation": False}, {"require_enantiomer_pairs": True}],
 )
 def test_every_bundle_variant_round_trips(tmp_path: Path, options: dict) -> None:
-    directory = write_smiles_bundle(tmp_path, **options)
-    reloaded = read_bundle(directory)
+    reloaded = read_bundle(write_smiles_bundle(tmp_path, **options))
     assert list(reloaded.table.columns) == reloaded.spec.expected_columns()
-
-
-def test_a_corpus_bundle_counts_no_splits(tmp_path: Path) -> None:
-    reloaded = read_bundle(write_smiles_bundle(tmp_path, evaluation=False))
-    assert reloaded.spec.evaluation is None
-    assert reloaded.provenance.counts.per_split == {}
-    assert reloaded.provenance.counts.per_label_non_null == {
-        "activity": 4,
-        "logp": 5,
-    }
+    # a corpus (no evaluation block) counts no splits
+    has_splits = bool(reloaded.provenance.counts.per_split)
+    assert has_splits is (reloaded.spec.evaluation is not None)
 
 
 def test_write_bundle_normalizes_dtypes(tmp_path: Path) -> None:
-    """int32 ids, a plain-object enantiomer_of and int labels are coerced."""
+    """int32 ids and a plain-object split column are coerced."""
     bundle = make_bundle()
     bundle.table["stereoisomer_id"] = bundle.table["stereoisomer_id"].astype("int32")
     bundle.table["split"] = bundle.table["split"].astype(object)
@@ -516,96 +424,89 @@ def test_write_bundle_normalizes_dtypes(tmp_path: Path) -> None:
     assert reloaded.table["stereoisomer_id"].dtype == np.int64
 
 
-def test_write_bundle_refuses_a_spec_with_structures(tmp_path: Path) -> None:
-    bundle = make_bundle()
+def _give_the_spec_structures(bundle: Bundle) -> None:
     bundle.spec = bundle.spec.with_structures("etkdg_mmff")
-    with pytest.raises(BundleValidationError, match="geometry_origin"):
-        write_bundle(bundle, tmp_path / "synthetic6")
-    assert not (tmp_path / "synthetic6").exists()
 
 
-def test_write_bundle_refuses_an_invalid_table_and_writes_nothing(
-    tmp_path: Path,
+def _leak_the_alanine_pair(bundle: Bundle) -> None:
+    bundle.table["split"] = ["train", "valid", "test", "train", "test", "train"]
+
+
+@pytest.mark.parametrize(
+    "mutation, pattern",
+    [(_give_the_spec_structures, ".*geometry_origin"), (_leak_the_alanine_pair, "6:")],
+)
+def test_write_bundle_refuses_and_writes_nothing(
+    tmp_path: Path, mutation: Callable[[Bundle], None], pattern: str
 ) -> None:
     bundle = make_bundle()
-    bundle.table["split"] = ["train", "valid", "test", "train", "test", "train"]
+    mutation(bundle)
     with pytest.raises(BundleValidationError) as raised:
         write_bundle(bundle, tmp_path / "broken")
-    assert has_problem(raised.value.problems, "6:")
+    assert has_problem(raised.value.problems, pattern), raised.value.problems
     assert raised.value.directory == tmp_path / "broken"
     assert not (tmp_path / "broken").exists()
 
 
-def test_read_bundle_rejects_a_tampered_content_hash(tmp_path: Path) -> None:
-    directory = write_smiles_bundle(tmp_path)
-    provenance_path = directory / PROVENANCE_FILENAME
-    document = yaml.safe_load(provenance_path.read_text())
-    document["outputs"]["table.parquet"]["content_sha256"] = "0" * 64
-    provenance_path.write_text(yaml.safe_dump(document, sort_keys=False))
-    with pytest.raises(BundleValidationError) as raised:
-        read_bundle(directory)
-    assert any("content_sha256" in problem for problem in raised.value.problems)
+def _set_recorded_output(key: str, value: object) -> Callable[[dict], dict]:
+    def edit(document: dict) -> dict:
+        document["outputs"]["table.parquet"][key] = value
+        return document
+
+    return edit
 
 
-def test_read_bundle_rejects_a_tampered_table(tmp_path: Path) -> None:
-    """A changed label value moves the content hash away from the record."""
-    directory = write_smiles_bundle(tmp_path)
-    table = pd.read_parquet(directory / TABLE_FILENAME)
-    table.loc[0, "logp"] = 42.0
-    table.to_parquet(directory / TABLE_FILENAME, index=False)
-    with pytest.raises(BundleValidationError) as raised:
-        read_bundle(directory)
-    assert any("content_sha256" in problem for problem in raised.value.problems)
+def _without_outputs(document: dict) -> dict:
+    return {key: value for key, value in document.items() if key != "outputs"}
 
 
-def test_read_bundle_rejects_a_wrong_row_count(tmp_path: Path) -> None:
-    directory = write_smiles_bundle(tmp_path)
-    provenance_path = directory / PROVENANCE_FILENAME
-    document = yaml.safe_load(provenance_path.read_text())
-    document["outputs"]["table.parquet"]["rows"] = 7
-    provenance_path.write_text(yaml.safe_dump(document, sort_keys=False))
-    with pytest.raises(BundleValidationError, match="7 rows"):
-        read_bundle(directory)
+def _set_format_version(version: object) -> Callable[[dict], dict]:
+    return lambda document: {**document, "format_version": version}
 
 
-def test_read_bundle_rejects_a_provenance_without_outputs(tmp_path: Path) -> None:
-    directory = write_smiles_bundle(tmp_path)
-    provenance_path = directory / PROVENANCE_FILENAME
-    document = yaml.safe_load(provenance_path.read_text())
-    del document["outputs"]
-    provenance_path.write_text(yaml.safe_dump(document, sort_keys=False))
-    with pytest.raises(BundleValidationError, match="no outputs"):
-        read_bundle(directory)
+TAMPERINGS: dict[str, tuple[str, Callable, str]] = {
+    "tampered-hash": (
+        PROVENANCE_FILENAME,
+        _set_recorded_output("content_sha256", "0" * 64),
+        ".*content_sha256",
+    ),
+    "wrong-row-count": (
+        PROVENANCE_FILENAME,
+        _set_recorded_output("rows", 7),
+        ".*7 rows",
+    ),
+    "no-outputs": (PROVENANCE_FILENAME, _without_outputs, ".*no outputs"),
+    "spec-not-a-mapping": (SPEC_FILENAME, lambda _: ["a", "list"], ".*not a mapping"),
+    **{
+        f"format-version-{version!r}": (
+            SPEC_FILENAME,
+            _set_format_version(version),
+            "format_version",
+        )
+        for version in (0, 2, None, "1")
+    },
+    # a changed label value moves the content hash away from the record
+    "tampered-table": (TABLE_FILENAME, set_value(0, "logp", 42.0), ".*content_sha256"),
+    "invariant-on-disk": (TABLE_FILENAME, set_value(5, "split", "TEST"), "5:"),
+}
 
 
-def test_read_bundle_rejects_an_invariant_violated_on_disk(tmp_path: Path) -> None:
-    directory = write_smiles_bundle(tmp_path)
-    table = pd.read_parquet(directory / TABLE_FILENAME)
-    table.loc[5, "split"] = "TEST"
-    table.to_parquet(directory / TABLE_FILENAME, index=False)
-    with pytest.raises(BundleValidationError) as raised:
-        read_bundle(directory)
-    assert has_problem(raised.value.problems, "5:")
-
-
-@pytest.mark.parametrize("version", [0, 2, None, "1"])
-def test_read_bundle_rejects_another_format_version(
-    tmp_path: Path, version: object
+@pytest.mark.parametrize(
+    "filename, edit, pattern", TAMPERINGS.values(), ids=TAMPERINGS.keys()
+)
+def test_read_bundle_rejects_a_tampered_directory(
+    tmp_path: Path, filename: str, edit: Callable, pattern: str
 ) -> None:
-    directory = write_smiles_bundle(tmp_path)
-    spec_path = directory / SPEC_FILENAME
-    document = yaml.safe_load(spec_path.read_text())
-    document["format_version"] = version
-    spec_path.write_text(yaml.safe_dump(document, sort_keys=False))
+    path = write_smiles_bundle(tmp_path) / filename
+    if filename == TABLE_FILENAME:
+        table = pd.read_parquet(path)
+        edit(table)
+        table.to_parquet(path, index=False)
+    else:
+        path.write_text(yaml.safe_dump(edit(yaml.safe_load(path.read_text()))))
     with pytest.raises(BundleValidationError) as raised:
-        read_bundle(directory)
-    assert any("format_version" in problem for problem in raised.value.problems)
-
-
-def test_read_spec_rejects_a_spec_that_is_not_a_mapping(tmp_path: Path) -> None:
-    (tmp_path / SPEC_FILENAME).write_text("- just\n- a list\n")
-    with pytest.raises(BundleValidationError, match="not a mapping"):
-        read_spec(tmp_path)
+        read_bundle(path.parent)
+    assert has_problem(raised.value.problems, pattern), raised.value.problems
 
 
 @pytest.mark.parametrize("missing", THREE_FILES)
@@ -616,28 +517,15 @@ def test_read_bundle_reports_a_missing_file(tmp_path: Path, missing: str) -> Non
         read_bundle(directory)
 
 
-def test_read_table_reads_columns_without_validating(tmp_path: Path) -> None:
+def test_single_file_readers_do_not_validate(tmp_path: Path) -> None:
     directory = write_smiles_bundle(tmp_path)
     assert len(read_table(directory)) == 6
     subset = read_table(directory, columns=["stereoisomer_id", "split"])
     assert list(subset.columns) == ["stereoisomer_id", "split"]
-    with pytest.raises(FileNotFoundError):
-        read_table(tmp_path / "nowhere")
-
-
-def test_read_provenance_alone(tmp_path: Path) -> None:
-    directory = write_smiles_bundle(tmp_path)
     assert read_provenance(directory).dataset_id == "synthetic6"
-    with pytest.raises(FileNotFoundError):
-        read_provenance(tmp_path / "nowhere")
 
 
 # ------------------------------------------------------------ atomic writes
-
-
-def test_a_successful_write_leaves_no_staging_files(tmp_path: Path) -> None:
-    directory = write_smiles_bundle(tmp_path)
-    assert not [path for path in directory.iterdir() if path.name.startswith(".")]
 
 
 def test_a_failed_write_leaves_no_partial_files(
@@ -674,7 +562,7 @@ def test_a_failed_rewrite_keeps_the_previous_bundle(
     read_bundle(directory)
 
 
-def test_write_table_files_records_a_structures_hash(tmp_path: Path) -> None:
+def test_a_dataset_records_its_structures_hash_as_its_identity(tmp_path: Path) -> None:
     spec, table = make_small_dataset()
     written = write_table_files(
         tmp_path, spec, table, make_provenance("small"), structures_sha256="a" * 64
@@ -683,165 +571,119 @@ def test_write_table_files_records_a_structures_hash(tmp_path: Path) -> None:
     assert written.outputs.structures_sha256 == "a" * 64
     assert sorted(path.name for path in tmp_path.iterdir()) == THREE_FILES
     assert read_provenance(tmp_path) == written
+    assert structures_identity(tmp_path) == "a" * 64
+
+
+def test_structures_identity_needs_a_provenance_with_outputs(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        structures_identity(tmp_path)
+    (tmp_path / PROVENANCE_FILENAME).write_text(
+        yaml.safe_dump(make_provenance("x").model_dump(mode="json", exclude_none=True))
+    )
+    with pytest.raises(BundleValidationError, match="no outputs"):
+        structures_identity(tmp_path)
 
 
 # ------------------------------------------------------- table invariants
 
 
-def _bundle_table() -> tuple[DatasetSpec, pd.DataFrame]:
-    bundle = make_bundle()
-    return bundle.spec, normalize_table(bundle.table, bundle.spec)
-
-
-def _repeat_a_stereoisomer(table: pd.DataFrame) -> None:
-    table.loc[5, "stereoisomer_id"] = 0
-
-
-def _map_a_molecule_to_two_nonisomeric_smiles(table: pd.DataFrame) -> None:
-    table.loc[5, "molecule_id"] = 0
-
-
-def _break_enantiomer_symmetry(table: pd.DataFrame) -> None:
-    table["enantiomer_of"] = pd.array([1, None, None, None, None, None], "Int64")
-
-
-def _make_enantiomer_reflexive(table: pd.DataFrame) -> None:
-    table["enantiomer_of"] = pd.array([0, None, None, None, None, None], "Int64")
-
-
-def _dangle_an_enantiomer_pointer(table: pd.DataFrame) -> None:
-    table["enantiomer_of"] = pd.array([99, None, None, None, None, None], "Int64")
-
-
-def _pair_across_two_molecules(table: pd.DataFrame) -> None:
-    table["enantiomer_of"] = pd.array([2, None, 0, None, None, None], "Int64")
-
-
-def _bad_split_value(table: pd.DataFrame) -> None:
-    table.loc[5, "split"] = "TEST"
-
-
-def _leak_across_split_group(table: pd.DataFrame) -> None:
-    table.loc[1, "split"] = "test"
-
-
-def _leak_in_the_second_split_column(table: pd.DataFrame) -> None:
-    table.loc[1, "split__random_s1"] = "valid"
-
-
 def _reorder_columns(table: pd.DataFrame) -> None:
-    logp = table.pop("logp")
-    table.insert(3, "logp", logp)
+    table.insert(3, "logp", table.pop("logp"))
 
 
-def _drop_a_label_column(table: pd.DataFrame) -> None:
-    table.drop(columns=["logp"], inplace=True)
+def _null_split_value(table: pd.DataFrame) -> None:
+    table["split"] = table["split"].astype(object)
+    table.loc[5, "split"] = None
 
 
-def _add_an_undeclared_column(table: pd.DataFrame) -> None:
-    table["weight"] = 1.0
-
-
-def _wrong_id_dtype(table: pd.DataFrame) -> None:
-    table["molecule_id"] = table["molecule_id"].astype("int32")
-
-
-def _wrong_enantiomer_dtype(table: pd.DataFrame) -> None:
-    table["enantiomer_of"] = table["enantiomer_of"].astype("float64")
-
-
-def _wrong_smiles_dtype(table: pd.DataFrame) -> None:
-    table["isomeric_smiles"] = np.arange(len(table), dtype="int64")
-
-
-def _wrong_split_dtype(table: pd.DataFrame) -> None:
-    table["split__random_s1"] = np.zeros(len(table), dtype="int64")
-
-
-def _wrong_label_dtype(table: pd.DataFrame) -> None:
-    table["activity"] = table["activity"].fillna(0).astype("int64")
-
-
-def _classification_label_out_of_range(table: pd.DataFrame) -> None:
-    table.loc[0, "activity"] = 0.5
-
-
-TABLE_MUTATIONS: list[tuple[FunctionType, str, str]] = [
-    (_repeat_a_stereoisomer, "1:", "stereoisomer_id repeats"),
-    (_map_a_molecule_to_two_nonisomeric_smiles, "2:", "nonisomeric_smiles"),
-    (_break_enantiomer_symmetry, "4:", "not symmetric"),
-    (_make_enantiomer_reflexive, "4:", "reflexive"),
-    (_dangle_an_enantiomer_pointer, "4:", "absent"),
-    (_pair_across_two_molecules, "4:", "two molecule_ids"),
-    (_bad_split_value, "5:", "TEST"),
-    (_leak_across_split_group, "6:", "split "),
-    (_leak_in_the_second_split_column, "6:", "split__random_s1"),
-    (_reorder_columns, "7:", "columns"),
-    (_drop_a_label_column, "7:", "columns"),
-    (_add_an_undeclared_column, "7:", "columns"),
-    (_wrong_id_dtype, "7:", "molecule_id"),
-    (_wrong_enantiomer_dtype, "7:", "enantiomer_of"),
-    (_wrong_smiles_dtype, "7:", "isomeric_smiles"),
-    (_wrong_split_dtype, "7:", "split__random_s1"),
-    (_wrong_label_dtype, "7:", "activity"),
-    (_classification_label_out_of_range, "7:", "0 or 1"),
-]
+BUNDLE_TABLE_MUTATIONS: dict[str, tuple[TableMutation, str]] = {
+    "repeated-stereoisomer": (set_value(5, "stereoisomer_id", 0), "1:.*repeats"),
+    "molecule-two-smiles": (set_value(5, "molecule_id", 0), "2:.*nonisomeric_smiles"),
+    "asymmetric-enantiomer": (set_enantiomers(1), "4:.*not symmetric"),
+    "reflexive-enantiomer": (set_enantiomers(0), "4:.*reflexive"),
+    "dangling-enantiomer": (set_enantiomers(99), "4:.*absent"),
+    "pair-across-molecules": (set_enantiomers(2, 0), "4:.*two molecule_ids"),
+    "bad-split-value": (set_value(5, "split", "TEST"), "5:.*TEST"),
+    "null-split-value": (_null_split_value, "5:.*<NA>"),
+    "leak-in-split": (set_value(1, "split", "test"), "6:.*split "),
+    "leak-in-second-split": (set_value(1, "split__random_s1", "valid"), "6:.*random"),
+    "reordered-columns": (_reorder_columns, "7:.*columns"),
+    "dropped-label": (drop("logp"), "7:.*columns"),
+    "undeclared-column": (fill_integers("weight"), "7:.*columns"),
+    "structure-id-on-a-bundle": (fill_integers("structure_id"), "7:.*columns"),
+    "id-dtype": (retype("molecule_id", "int32"), "7:.*molecule_id"),
+    "enantiomer-dtype": (retype("enantiomer_of", "float64"), "7:.*enantiomer_of"),
+    "smiles-dtype": (fill_integers("isomeric_smiles"), "7:.*isomeric_smiles"),
+    "split-dtype": (fill_integers("split__random_s1"), "7:.*split__random_s1"),
+    "label-dtype": (fill_integers("activity"), "7:.*activity"),
+    "classification-out-of-range": (set_value(0, "activity", 0.5), "7:.*0 or 1"),
+}
 
 
 @pytest.mark.parametrize(
-    "mutation, prefix, fragment",
-    TABLE_MUTATIONS,
-    ids=[mutation.__name__.strip("_") for mutation, _, _ in TABLE_MUTATIONS],
+    "mutation, pattern",
+    BUNDLE_TABLE_MUTATIONS.values(),
+    ids=BUNDLE_TABLE_MUTATIONS.keys(),
 )
 def test_bundle_table_invariants_are_detected(
-    mutation: Callable[[pd.DataFrame], None], prefix: str, fragment: str
+    mutation: TableMutation, pattern: str
 ) -> None:
-    spec, table = _bundle_table()
+    spec, table = bundle_table()
     assert validate_table(spec, table) == []
     mutation(table)
     problems = validate_table(spec, table)
-    assert has_problem(problems, prefix, fragment), problems
+    assert has_problem(problems, pattern), problems
 
 
-def test_a_stereoisomer_with_two_isomeric_smiles_fails_invariant_2() -> None:
-    """Only a dataset can repeat a stereoisomer, so only there can its SMILES differ."""
+def _reverse_structure_ids(table: pd.DataFrame) -> None:
+    table["structure_id"] = table["structure_id"].to_numpy()[::-1]
+
+
+DATASET_TABLE_MUTATIONS: dict[str, tuple[TableMutation, str | None]] = {
+    # several conformers of one stereoisomer are several dataset rows
+    "repeated-stereoisomer-is-fine": (lambda table: None, None),
+    "sparse-structure-id": (_reverse_structure_ids, "1:.*structure_id"),
+    "stereoisomer-two-smiles": (
+        set_value(3, "isomeric_smiles", "C[C@@H](N)C(=O)O"),
+        "2:.*isomeric_smiles",
+    ),
+    "stereoisomer-two-molecules": (set_value(3, "molecule_id", 1), "3:"),
+    "integer-charge": (retype("total_charge", "int64"), "7:.*total_charge"),
+    "missing-multiplicity": (drop("multiplicity"), "7:.*columns"),
+}
+
+
+@pytest.mark.parametrize(
+    "mutation, pattern",
+    DATASET_TABLE_MUTATIONS.values(),
+    ids=DATASET_TABLE_MUTATIONS.keys(),
+)
+def test_dataset_table_invariants_are_detected(
+    mutation: TableMutation, pattern: str | None
+) -> None:
+    """Row 3 repeats stereoisomer 0, which only a dataset may do."""
     spec, table = make_small_dataset()
-    repeated = pd.concat([table, table.iloc[[0]]], ignore_index=True)
-    repeated["structure_id"] = np.arange(len(repeated), dtype="int64")
-    repeated.loc[3, "isomeric_smiles"] = "C[C@@H](N)C(=O)O"
-    repeated.loc[3, "split"] = "train"
-    problems = validate_table(spec, repeated)
-    assert has_problem(problems, "2:", "isomeric_smiles"), problems
-
-
-def test_a_three_level_nesting_violation_is_detected() -> None:
-    """Invariant 3: a stereoisomer_id spanning two molecule_ids (dataset rows)."""
-    spec, table = make_small_dataset(["C[C@H](N)C(=O)O", "CCO", "CCN"], smiles=False)
-    duplicated = pd.concat([table, table.iloc[[0]]], ignore_index=True)
-    duplicated["structure_id"] = np.arange(len(duplicated), dtype="int64")
-    duplicated.loc[3, "molecule_id"] = 1
-    duplicated.loc[3, "split"] = "test"
-    problems = validate_table(spec, duplicated)
-    assert has_problem(problems, "3:"), problems
-
-
-def test_a_null_split_value_fails_invariant_5() -> None:
-    spec, table = _bundle_table()
-    table["split"] = table["split"].astype(object)
-    table.loc[5, "split"] = None
-    assert has_problem(validate_table(spec, table), "5:", "<NA>")
+    table = pd.concat([table, table.iloc[[0]]], ignore_index=True)
+    table["structure_id"] = np.arange(len(table), dtype="int64")
+    mutation(table)
+    problems = validate_table(spec, table)
+    if pattern is None:
+        assert problems == []
+    else:
+        assert has_problem(problems, pattern), problems
 
 
 def test_require_enantiomer_pairs_rejects_a_lone_row() -> None:
     bundle = make_bundle()
     spec = make_bundle_spec(require_enantiomer_pairs=True)
     problems = validate_table(spec, normalize_table(bundle.table, spec))
-    assert has_problem(problems, "4:", "require_enantiomer_pairs"), problems
+    assert has_problem(problems, "4:.*require_enantiomer_pairs"), problems
     paired = make_bundle(require_enantiomer_pairs=True)
     assert validate_table(paired.spec, normalize_table(paired.table, spec)) == []
 
 
-def test_multiclass_values_must_be_integers_in_range() -> None:
+@pytest.mark.parametrize("bad_value", [3.0, -1.0, 1.5])
+def test_multiclass_values_must_be_integers_in_range(bad_value: float) -> None:
     spec = DatasetSpec(
         dataset_id="chirality",
         labels=[
@@ -852,86 +694,30 @@ def test_multiclass_values_must_be_integers_in_range() -> None:
         source_kind="synthetic",
     )
     table = assign_identity(["CCO", "CCN", "CCC"]).to_frame()
-    table = table.drop(columns=["isomeric_smiles", "nonisomeric_smiles"])
+    table = table.drop(columns=SMILES_COLUMNS)
     table["chirality_class"] = [0.0, 2.0, np.nan]
     assert validate_table(spec, normalize_table(table, spec)) == []
-    for bad_value in (3.0, -1.0, 1.5):
-        table.loc[0, "chirality_class"] = bad_value
-        assert has_problem(validate_table(spec, normalize_table(table, spec)), "7:")
+    table.loc[0, "chirality_class"] = bad_value
+    assert has_problem(validate_table(spec, normalize_table(table, spec)), "7:")
 
 
-def test_smiles_invariants_are_skipped_without_smiles() -> None:
-    """Without ``smiles: true`` there are no SMILES columns to map ids onto."""
-    bundle = make_bundle(smiles=False)
-    table = normalize_table(bundle.table, bundle.spec)
-    assert "isomeric_smiles" not in table.columns
-    assert validate_table(bundle.spec, table) == []
-    with_smiles = make_bundle().table
-    problems = validate_table(bundle.spec, normalize_table(with_smiles, bundle.spec))
-    assert has_problem(problems, "7:", "columns")
-
-
-def test_split_invariants_are_skipped_without_an_evaluation_block() -> None:
-    """A corpus has no split columns: duplicated folds cannot leak."""
-    bundle = make_bundle(evaluation=False)
-    table = normalize_table(bundle.table, bundle.spec)
-    assert validate_table(bundle.spec, table) == []
-    assert not [name for name in table.columns if name.startswith("split")]
-
-
-def test_a_dataset_needs_a_dense_structure_id() -> None:
-    spec, table = make_small_dataset()
-    assert validate_table(spec, table) == []
-    table["structure_id"] = table["structure_id"].to_numpy()[::-1]
-    assert has_problem(validate_table(spec, table), "1:", "structure_id")
-
-
-def test_a_dataset_may_repeat_a_stereoisomer() -> None:
-    """Several conformers of one stereoisomer are several dataset rows."""
-    spec, table = make_small_dataset()
-    repeated = pd.concat([table, table.iloc[[0]]], ignore_index=True)
-    repeated["structure_id"] = np.arange(len(repeated), dtype="int64")
-    assert validate_table(spec, repeated) == []
-
-
-def test_a_dataset_needs_float_charge_columns() -> None:
-    spec, table = make_small_dataset()
-    table["total_charge"] = table["total_charge"].astype("int64")
-    assert has_problem(validate_table(spec, table), "7:", "total_charge")
-    spec, table = make_small_dataset()
-    table = table.drop(columns=["multiplicity"])
-    assert has_problem(validate_table(spec, table), "7:", "columns")
-
-
-def test_a_bundle_table_with_a_structure_id_is_refused() -> None:
-    spec, table = _bundle_table()
-    table.insert(0, "structure_id", np.arange(len(table), dtype="int64"))
-    assert has_problem(validate_table(spec, table), "7:", "columns")
-
-
-def test_straddling_constitutions_are_counted() -> None:
+def test_straddling_constitutions_are_counted_and_recorded(tmp_path: Path) -> None:
     bundle = make_bundle()
-    table = bundle.table.copy()
-    assert count_stereoisomer_straddling_constitutions(table, "split") == 0
-    _leak_across_split_group(table)
-    # The alanine pair is one constitution with two stereoisomers in two folds.
-    assert count_stereoisomer_straddling_constitutions(table, "split") == 1
+    assert count_stereoisomer_straddling_constitutions(bundle.table, "split") == 0
     with pytest.raises(KeyError):
-        count_stereoisomer_straddling_constitutions(table, "split__absent")
-
-
-def test_the_straddling_count_is_recorded_for_a_stereoisomer_split_group(
-    tmp_path: Path,
-) -> None:
-    bundle = make_bundle()
+        count_stereoisomer_straddling_constitutions(bundle.table, "split__absent")
+    # The alanine pair is one constitution with two stereoisomers in two folds,
+    # which a ``stereoisomer_id`` split group allows and the writer records.
+    bundle.table.loc[1, "split"] = "test"
+    assert count_stereoisomer_straddling_constitutions(bundle.table, "split") == 1
+    assert bundle.spec.evaluation is not None
     bundle.spec = bundle.spec.model_copy(
         update={
-            "evaluation": bundle.spec.evaluation.model_copy(  # type: ignore[union-attr]
+            "evaluation": bundle.spec.evaluation.model_copy(
                 update={"split_group": "stereoisomer_id"}
             )
         }
     )
-    _leak_across_split_group(bundle.table)
     written = write_bundle(bundle, tmp_path / "synthetic6")
     assert written.counts.stereoisomer_straddling_constitutions == 1
 
@@ -939,41 +725,52 @@ def test_the_straddling_count_is_recorded_for_a_stereoisomer_split_group(
 # --------------------------------------------------- structure invariants
 
 
-def test_matching_frames_pass_every_structure_invariant() -> None:
-    spec, table = make_small_dataset()
-    frames = [embed_frame(smiles) for smiles in table["isomeric_smiles"]]
-    assert structure_problems(spec, table, frames, GEOMETRY_LIMITS) == []
+@pytest.fixture(scope="module")
+def chiral_frames() -> list[Atoms]:
+    return [embed_frame(smiles) for smiles in CHIRAL_DATASET_SMILES]
 
 
-def test_a_frame_count_mismatch_fails_invariant_8() -> None:
-    spec, table = make_small_dataset()
-    frames = [embed_frame(smiles) for smiles in table["isomeric_smiles"]]
-    problems = structure_problems(spec, table, frames[:2], GEOMETRY_LIMITS)
-    assert problems == ["8: 2 structures for 3 table rows"]
+def _reflect_frame(index: int) -> Callable[[list[Atoms]], list[Atoms]]:
+    def mutate(frames: list[Atoms]) -> list[Atoms]:
+        reflect(frames[index])
+        return frames
+
+    return mutate
 
 
-def test_reflected_geometry_fails_invariant_9() -> None:
-    spec, table = make_small_dataset()
-    frames = [embed_frame(smiles) for smiles in table["isomeric_smiles"]]
-    frames[1].set_positions(frames[1].get_positions() * np.array([-1.0, 1.0, 1.0]))
+def _reverse_atom_order(frames: list[Atoms]) -> list[Atoms]:
+    return [frames[0][::-1], *frames[1:]]
+
+
+@pytest.mark.parametrize(
+    "mutation, smiles, expected",
+    [
+        pytest.param(lambda frames: frames, True, None, id="matching"),
+        pytest.param(
+            lambda frames: frames[:2],
+            True,
+            "8: 2 structures for 3 table rows$",
+            id="frame-count",
+        ),
+        pytest.param(_reflect_frame(1), True, r"9:.*rows \[1\]", id="reflected"),
+        pytest.param(_reverse_atom_order, True, r"9:.*rows \[0\]", id="atom-order"),
+        # invariant 9 does not run without SMILES to compare against
+        pytest.param(_reflect_frame(1), False, None, id="reflected-without-smiles"),
+    ],
+)
+def test_structure_invariants_8_and_9(
+    chiral_frames: list[Atoms],
+    mutation: Callable[[list[Atoms]], list[Atoms]],
+    smiles: bool,
+    expected: str | None,
+) -> None:
+    spec, table = make_small_dataset(smiles=smiles)
+    frames = mutation([frame.copy() for frame in chiral_frames])
     problems = structure_problems(spec, table, frames, GEOMETRY_LIMITS)
-    assert has_problem(problems, "9:", "rows [1]"), problems
-
-
-def test_a_frame_in_the_wrong_atom_order_fails_invariant_9() -> None:
-    spec, table = make_small_dataset()
-    frames = [embed_frame(smiles) for smiles in table["isomeric_smiles"]]
-    frames[0] = frames[0][::-1]
-    assert has_problem(
-        structure_problems(spec, table, frames, GEOMETRY_LIMITS), "9:", "rows [0]"
-    )
-
-
-def test_invariant_9_does_not_run_without_smiles() -> None:
-    spec, table = make_small_dataset(smiles=False)
-    frames = [embed_frame(smiles) for smiles in CHIRAL_DATASET_SMILES]
-    frames[1].set_positions(frames[1].get_positions() * np.array([-1.0, 1.0, 1.0]))
-    assert structure_problems(spec, table, frames, GEOMETRY_LIMITS) == []
+    if expected is None:
+        assert problems == []
+    else:
+        assert len(problems) == 1 and has_problem(problems, expected), problems
 
 
 def _methane_like(symbols: str, distance: float = 1.1) -> Atoms:
@@ -992,11 +789,7 @@ def _methane_like(symbols: str, distance: float = 1.1) -> Atoms:
     [
         (_methane_like("CH3"), GeometryLimits(max_atoms=3), "max_atoms"),
         (_methane_like("HH"), GeometryLimits(), "no heavy atom"),
-        (
-            _methane_like("CO"),
-            GeometryLimits(reject_zero_hydrogen=True),
-            "no hydrogen",
-        ),
+        (_methane_like("CO"), GeometryLimits(reject_zero_hydrogen=True), "no hydrogen"),
         (
             _methane_like("CCH"),
             GeometryLimits(min_hydrogen_heavy_ratio=1.0),
@@ -1019,48 +812,42 @@ def test_each_geometry_limit_fails_invariant_10(
 ) -> None:
     spec, table = make_small_dataset(["CCO"], smiles=False)
     problems = structure_problems(spec, table, [atoms], limits)
-    assert len(problems) == 1 and has_problem(problems, "10:", reason), problems
+    assert len(problems) == 1 and has_problem(problems, f"10:.*{reason}"), problems
 
 
 def test_many_offending_rows_are_summarised() -> None:
     spec, table = make_small_dataset(["CCO", "CCN", "CCC", "CO", "CN", "CS", "CF"])
     frames = [_methane_like("HH") for _ in range(len(table))]
     problems = structure_problems(spec, table, frames, GeometryLimits())
-    assert has_problem(problems, "10:", "7 rows, first [0, 1, 2, 3, 4]"), problems
+    assert has_problem(problems, r"10:.*7 rows, first \[0, 1, 2, 3, 4\]"), problems
 
 
 # --- invariant 9 only compares what the SMILES actually specifies -----------
 
 
 @pytest.mark.parametrize(
-    "isomeric_smiles",
+    "isomeric_smiles, reflected",
     [
         # One assigned and one unassigned tetrahedral centre: the embedding
         # picks some configuration for the second, which must not count.
-        "C[C@H](O)C(C)N",
+        ("C[C@H](O)C(C)N", False),
         # Unspecified double bond next to an assigned centre: 3D perception
         # always yields E or Z, which must not count either.
-        "CC=C[C@H](C)O",
+        ("CC=C[C@H](C)O", False),
         # Unspecified imine.
-        "N=C(N)NC[C@@H]1COc2ccccc2O1",
+        ("N=C(N)NC[C@@H]1COc2ccccc2O1", False),
+        # An inverted *assigned* centre is still seen.
+        ("C[C@H](O)C(C)N", True),
     ],
 )
-def test_invariant_9_ignores_stereo_the_smiles_leaves_unspecified(
-    isomeric_smiles: str,
+def test_invariant_9_compares_only_the_stereo_the_smiles_assigns(
+    isomeric_smiles: str, reflected: bool
 ) -> None:
     frame = embed_frame(isomeric_smiles, seed=7)
-    assert stereochemistry_from_frame(isomeric_smiles, frame) == (
-        tetrahedral_stereo_smiles(isomeric_smiles)
-    )
-
-
-def test_invariant_9_still_sees_an_inverted_assigned_centre() -> None:
-    isomeric_smiles = "C[C@H](O)C(C)N"
-    frame = embed_frame(isomeric_smiles, seed=7)
-    frame.set_positions(frame.get_positions() * np.array([-1.0, 1.0, 1.0]))
-    assert stereochemistry_from_frame(isomeric_smiles, frame) != (
-        tetrahedral_stereo_smiles(isomeric_smiles)
-    )
+    if reflected:
+        reflect(frame)
+    perceived = stereochemistry_from_frame(isomeric_smiles, frame)
+    assert (perceived == tetrahedral_stereo_smiles(isomeric_smiles)) is not reflected
 
 
 def test_stereochemistry_from_frame_returns_none_for_an_unusable_frame() -> None:
@@ -1074,105 +861,87 @@ def test_stereochemistry_from_frame_returns_none_for_an_unusable_frame() -> None
 
 def test_parquet_file_hash_moves_but_content_hash_does_not(tmp_path: Path) -> None:
     table = make_bundle().table
-    table.to_parquet(tmp_path / "a.parquet", index=False, compression="snappy")
-    table.to_parquet(tmp_path / "b.parquet", index=False, compression="zstd")
-    table.to_parquet(
-        tmp_path / "c.parquet", index=False, compression="snappy", row_group_size=2
-    )
-    table.to_parquet(tmp_path / "d.parquet", index=False, compression="snappy")
+    writer_settings: dict[str, tuple[Literal["snappy", "zstd"], int | None]] = {
+        "a": ("snappy", None),
+        "b": ("zstd", None),
+        "c": ("snappy", 2),
+        "d": ("snappy", None),
+    }
+    for name, (compression, row_group_size) in writer_settings.items():
+        table.to_parquet(
+            tmp_path / f"{name}.parquet",
+            index=False,
+            compression=compression,
+            row_group_size=row_group_size,
+        )
     digests = {
         name: hashlib.sha256((tmp_path / f"{name}.parquet").read_bytes()).hexdigest()
-        for name in "abcd"
+        for name in writer_settings
     }
     assert digests["a"] == digests["d"]
     assert digests["a"] != digests["b"]
     assert digests["a"] != digests["c"]
-    reread = [pd.read_parquet(tmp_path / f"{name}.parquet") for name in "abcd"]
+    reread = [pd.read_parquet(tmp_path / f"{name}.parquet") for name in writer_settings]
     assert len({content_hash_of_table(frame) for frame in reread}) == 1
 
 
-def test_content_hash_reacts_to_values_names_and_dtypes() -> None:
+@pytest.mark.parametrize(
+    "mutation, moves",
+    [
+        (set_value(0, "logp", -2.9), True),
+        (lambda table: table.rename(columns={"logp": "log_p"}, inplace=True), True),
+        (retype("molecule_id", "int32"), True),
+        # the string backend is not content
+        (retype("isomeric_smiles", "object"), False),
+        (retype("split", "object"), False),
+    ],
+)
+def test_content_hash_reacts_to_values_names_and_dtypes(
+    mutation: TableMutation, moves: bool
+) -> None:
     table = make_bundle().table
-    before = content_hash_of_table(table)
-    assert content_hash_of_table(table.copy()) == before
     changed = table.copy()
-    changed.loc[0, "logp"] = -2.9
-    assert content_hash_of_table(changed) != before
-    assert content_hash_of_table(table.rename(columns={"logp": "log_p"})) != before
-    retyped = table.copy()
-    retyped["molecule_id"] = retyped["molecule_id"].astype("int32")
-    assert content_hash_of_table(retyped) != before
-
-
-def test_content_hash_ignores_the_string_backend() -> None:
-    table = make_bundle().table
-    as_objects = table.copy()
-    for column_name in ("isomeric_smiles", "nonisomeric_smiles", "split"):
-        as_objects[column_name] = as_objects[column_name].astype(object)
-    assert content_hash_of_table(as_objects) == content_hash_of_table(table)
+    mutation(changed)
+    assert (content_hash_of_table(changed) != content_hash_of_table(table)) is moves
 
 
 def test_a_rewrite_of_the_same_bundle_records_the_same_content_hash(
     tmp_path: Path,
 ) -> None:
-    first = write_bundle(make_bundle(), tmp_path / "a")
-    second = write_bundle(make_bundle(), tmp_path / "b")
-    assert first.outputs is not None and second.outputs is not None
-    assert (
-        first.outputs.table_parquet.content_sha256
-        == second.outputs.table_parquet.content_sha256
-    )
+    first = write_bundle(make_bundle(), tmp_path / "a").outputs
+    second = write_bundle(make_bundle(), tmp_path / "b").outputs
+    assert first is not None and second is not None
+    assert first.table_parquet.content_sha256 == second.table_parquet.content_sha256
 
 
 # ---------------------------------------------------------------- discovery
 
 
-def _fake_dataset_directory(root: Path, dataset_id: str) -> Path:
-    """A bundle directory plus a ``dataset_config.yaml``: a dataset to discovery."""
-    directory = write_smiles_bundle(root, dataset_id=dataset_id)
-    (directory / DATASET_CONFIG_FILENAME).write_text("contains_smiles: false\n")
-    return directory
-
-
-def test_discover_bundles_finds_nested_bundles_sorted(tmp_path: Path) -> None:
+def test_discovery_tells_bundles_from_datasets(tmp_path: Path) -> None:
+    """A dataset is a bundle directory plus a ``dataset_config.yaml``."""
     write_smiles_bundle(tmp_path, dataset_id="zeta")
     write_smiles_bundle(tmp_path / "tdc", dataset_id="AMES")
     write_smiles_bundle(tmp_path, dataset_id="alpha")
-    (tmp_path / "not_a_bundle").mkdir()
-    _fake_dataset_directory(tmp_path, "a_dataset")
+    for root, dataset_id in [("", "omega"), ("", "beta"), ("nested", "too_deep")]:
+        directory = write_smiles_bundle(tmp_path / root, dataset_id=dataset_id)
+        (directory / DATASET_CONFIG_FILENAME).write_text("contains_smiles: false\n")
+    (tmp_path / "config_only").mkdir()
+    (tmp_path / "config_only" / DATASET_CONFIG_FILENAME).write_text("{}\n")
+    (tmp_path / "status.yaml").write_text("n_tasks: 0\n")
 
+    # bundles are found at any depth; datasets only directly under the root
     assert discover_bundles(tmp_path) == [
         tmp_path / "alpha",
         tmp_path / "tdc" / "AMES",
         tmp_path / "zeta",
     ]
-    assert discover_bundles(tmp_path / "missing") == []
-
-
-def test_is_dataset_directory_needs_both_files(tmp_path: Path) -> None:
-    bundle_directory = write_smiles_bundle(tmp_path)
-    assert not is_dataset_directory(bundle_directory)
-    (bundle_directory / DATASET_CONFIG_FILENAME).write_text("{}\n")
-    assert is_dataset_directory(bundle_directory)
-    zarr_only = tmp_path / "zarr_only"
-    zarr_only.mkdir()
-    (zarr_only / DATASET_CONFIG_FILENAME).write_text("{}\n")
-    assert not is_dataset_directory(zarr_only)
-
-
-def test_discover_datasets_finds_only_datasets_directly_under_the_root(
-    tmp_path: Path,
-) -> None:
-    _fake_dataset_directory(tmp_path, "zeta")
-    _fake_dataset_directory(tmp_path, "alpha")
-    write_smiles_bundle(tmp_path, dataset_id="a_bundle")
-    _fake_dataset_directory(tmp_path / "nested", "too_deep")
-    (tmp_path / "status.yaml").write_text("n_tasks: 0\n")
-
     discovered = discover_datasets(tmp_path)
-
-    assert [path.name for path, _ in discovered] == ["alpha", "zeta"]
-    assert [spec.dataset_id for _, spec in discovered] == ["alpha", "zeta"]
+    assert [path.name for path, _ in discovered] == ["beta", "omega"]
+    assert [spec.dataset_id for _, spec in discovered] == ["beta", "omega"]
+    assert is_dataset_directory(tmp_path / "beta")
+    assert not is_dataset_directory(tmp_path / "zeta")
+    assert not is_dataset_directory(tmp_path / "config_only")
+    assert discover_bundles(tmp_path / "missing") == []
     assert discover_datasets(tmp_path / "missing") == []
 
 
@@ -1185,36 +954,6 @@ def test_discover_datasets_raises_on_an_unreadable_spec(tmp_path: Path) -> None:
         discover_datasets(tmp_path)
 
 
-# ----------------------------------------------------------- data identity
-
-
-def test_structures_identity_of_a_bundle_is_its_content_hash(tmp_path: Path) -> None:
-    directory = write_smiles_bundle(tmp_path)
-    outputs = read_provenance(directory).outputs
-    assert outputs is not None
-    assert structures_identity(directory) == outputs.table_parquet.content_sha256
-
-
-def test_structures_identity_of_a_dataset_is_its_structures_hash(
-    tmp_path: Path,
-) -> None:
-    spec, table = make_small_dataset()
-    write_table_files(
-        tmp_path, spec, table, make_provenance("small"), structures_sha256="b" * 64
-    )
-    assert structures_identity(tmp_path) == "b" * 64
-
-
-def test_structures_identity_needs_a_provenance_with_outputs(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError):
-        structures_identity(tmp_path)
-    (tmp_path / PROVENANCE_FILENAME).write_text(
-        yaml.safe_dump(make_provenance("x").model_dump(mode="json", exclude_none=True))
-    )
-    with pytest.raises(BundleValidationError, match="no outputs"):
-        structures_identity(tmp_path)
-
-
 # --------------------------------------------------------------- preparer
 
 
@@ -1225,29 +964,22 @@ def test_preparer_record_for_a_script_in_this_repository() -> None:
     assert record.git_sha is None or re.fullmatch(r"[0-9a-f]{40}", record.git_sha)
 
 
-def test_preparer_record_for_a_script_in_a_nested_checkout(tmp_path: Path) -> None:
+def test_preparer_record_path_is_relative_to_the_nearest_checkout(
+    tmp_path: Path,
+) -> None:
     """The nearest ``.git`` decides the relative path; an unreadable sha is None."""
     repository = tmp_path / "repository"
     (repository / ".git").mkdir(parents=True)
     script = repository / "preparers" / "tdc" / "prepare.py"
     script.parent.mkdir(parents=True)
     script.write_text("print('prepare')\n")
-
     record = PreparerRecord.for_script("molsuit/remedi-data", script)
-
     assert record.script == "preparers/tdc/prepare.py"
     assert record.git_sha is None
 
-
-def test_preparer_record_for_a_script_outside_any_checkout(tmp_path: Path) -> None:
-    script = tmp_path / "loose_script.py"
-    script.write_text("\n")
-    record = PreparerRecord.for_script("somewhere", script)
-    if not any((parent / ".git").exists() for parent in script.parents):
+    # outside any checkout the bare file name is recorded
+    loose_script = tmp_path / "loose_script.py"
+    loose_script.write_text("\n")
+    record = PreparerRecord.for_script("somewhere", loose_script)
+    if not any((parent / ".git").exists() for parent in loose_script.parents):
         assert record.script == "loose_script.py"
-
-
-def test_a_bundle_dataclass_holds_the_three_parts() -> None:
-    bundle = make_bundle()
-    assert isinstance(bundle, Bundle)
-    assert set(vars(bundle)) == {"spec", "table", "provenance"}

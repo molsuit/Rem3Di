@@ -67,32 +67,34 @@ def test_filter_strips_the_counterion_of_a_salt() -> None:
 # ------------------------------------------------------------ one label
 
 
-def test_aggregate_label_averages_a_regression_label() -> None:
-    assert aggregate_label([1.0, 2.0, 3.0], TaskType.regression) == 2.0
-    assert aggregate_label([2.5], TaskType.regression) == 2.5
+REGRESSION, CLASSIFICATION = TaskType.regression, TaskType.classification
 
 
-def test_aggregate_label_takes_a_classification_majority() -> None:
-    assert aggregate_label([1.0, 1.0, 0.0], TaskType.classification) == 1.0
-    assert aggregate_label([0.0, 0.0, 1.0], TaskType.classification) == 0.0
-    assert aggregate_label([1.0], TaskType.classification) == 1.0
-
-
-def test_aggregate_label_returns_none_on_an_exact_tie() -> None:
-    assert aggregate_label([0.0, 1.0], TaskType.classification) is None
-    assert aggregate_label([1.0, 0.0, 1.0, 0.0], TaskType.classification) is None
-
-
-def test_aggregate_label_ignores_missing_measurements() -> None:
-    assert aggregate_label([NAN, 2.0, 4.0], TaskType.regression) == 3.0
-    assert aggregate_label([NAN, 1.0], TaskType.classification) == 1.0
-    assert aggregate_label([NAN, NAN], TaskType.regression) is None
-    assert aggregate_label([], TaskType.regression) is None
+@pytest.mark.parametrize(
+    ("values", "task_type", "expected"),
+    [
+        ([1.0, 2.0, 3.0], REGRESSION, 2.0),  # mean
+        ([2.5], REGRESSION, 2.5),
+        ([1.0, 1.0, 0.0], CLASSIFICATION, 1.0),  # majority vote
+        ([0.0, 0.0, 1.0], CLASSIFICATION, 0.0),
+        ([1.0], CLASSIFICATION, 1.0),
+        ([0.0, 1.0], CLASSIFICATION, None),  # exact tie
+        ([1.0, 0.0, 1.0, 0.0], CLASSIFICATION, None),
+        ([NAN, 2.0, 4.0], REGRESSION, 3.0),  # missing measurements are ignored
+        ([NAN, 1.0], CLASSIFICATION, 1.0),
+        ([NAN, NAN], REGRESSION, None),
+        ([], REGRESSION, None),
+    ],
+)
+def test_aggregate_label(
+    values: list[float], task_type: TaskType, expected: float | None
+) -> None:
+    assert aggregate_label(values, task_type) == expected
 
 
 def test_aggregate_label_rejects_a_classification_value_outside_zero_one() -> None:
     with pytest.raises(LabelAggregationError, match="neither 0 nor 1"):
-        aggregate_label([1.0, 2.0], TaskType.classification)
+        aggregate_label([1.0, 2.0], CLASSIFICATION)
 
 
 # ------------------------------------------------------ merging rows, one label
@@ -103,7 +105,6 @@ def test_aggregation_means_the_replicates_of_a_regression_label() -> None:
         [ETHANOL, PROPANOL, "OCC", ETHANOL], [1.0, 7.0, 2.0, 6.0], TaskType.regression
     )
     # ethanol is first seen at position 0, propanol at position 1.
-    assert aggregated.first_positions == [0, 1]
     assert aggregated.member_positions == [[0, 2, 3], [1]]
     assert aggregated.labels == {"y": [3.0, 7.0]}
     assert aggregated.measurement_counts == [3, 1]
@@ -116,39 +117,19 @@ def test_aggregation_means_the_replicates_of_a_regression_label() -> None:
     }
 
 
-def test_aggregation_majority_votes_a_classification_label() -> None:
-    aggregated = _single(
-        [ETHANOL, ETHANOL, ETHANOL, PROPANOL],
-        [1.0, 0.0, 1.0, 0.0],
-        TaskType.classification,
-    )
-    assert aggregated.labels == {"y": [1.0, 0.0]}
-    assert aggregated.measurement_counts == [3, 1]
-    assert aggregated.label_ties == 0
-
-
 def test_aggregation_drops_a_tied_compound_and_counts_it() -> None:
     aggregated = _single(
         [ETHANOL, ETHANOL, PROPANOL], [1.0, 0.0, 1.0], TaskType.classification
     )
-    assert aggregated.first_positions == [2]
+    assert aggregated.member_positions == [[2]]
     assert aggregated.labels == {"y": [1.0]}
     assert aggregated.merged_rows == 1
     assert aggregated.label_ties == 1
 
 
-def test_aggregation_keeps_the_first_occurrence_position() -> None:
-    """The kept row is the first occurrence, so it carries the earliest split."""
-    aggregated = _single(
-        [PROPANOL, ETHANOL, "OCCC"], [1.0, 2.0, 3.0], TaskType.regression
-    )
-    assert aggregated.first_positions == [0, 1]
-    assert aggregated.labels == {"y": [2.0, 2.0]}
-
-
 def test_aggregation_keeps_enantiomers_apart() -> None:
     aggregated = _single([L_ALANINE, D_ALANINE], [0.0, 1.0], TaskType.classification)
-    assert aggregated.first_positions == [0, 1]
+    assert aggregated.member_positions == [[0], [1]]
     assert aggregated.merged_rows == 0
     assert list(aggregated.identity.molecule_id) == [0, 0]
     assert list(aggregated.identity.enantiomer_of) == [1, 0]
@@ -185,7 +166,7 @@ def test_a_compound_without_any_label_is_dropped_as_missing() -> None:
         {"a": [1.0, NAN], "b": [NAN, NAN]},
         {"a": TaskType.classification, "b": TaskType.regression},
     )
-    assert aggregated.first_positions == [0]
+    assert aggregated.member_positions == [[0]]
     assert aggregated.missing_labels == 1
     assert aggregated.label_ties == 0
 
@@ -197,6 +178,10 @@ def test_aggregation_rejects_mismatched_inputs() -> None:
         )
     with pytest.raises(LabelAggregationError, match="task types"):
         aggregate_by_canonical_smiles([ETHANOL], {"a": [1.0]}, {})
+    with pytest.raises(LabelAggregationError, match="source rows"):
+        merge_source_rows(
+            [ETHANOL, PROPANOL], {"a": [1.0]}, {"a": REGRESSION}, PREPARER_FILTER
+        )
 
 
 def test_row_accounting_adds_up_or_raises() -> None:
@@ -230,16 +215,6 @@ def test_merge_maps_bundle_rows_back_to_source_rows_and_counts_every_drop() -> N
         DUPLICATE_LABEL_TIE: 0,
         MISSING_LABEL: 0,
     }
-
-
-def test_merge_rejects_labels_that_do_not_cover_the_source_rows() -> None:
-    with pytest.raises(LabelAggregationError, match="source rows"):
-        merge_source_rows(
-            [ETHANOL, PROPANOL],
-            {"y": [1.0]},
-            {"y": TaskType.regression},
-            PREPARER_FILTER,
-        )
 
 
 def test_rows_dropped_before_the_merge_are_counted_first() -> None:

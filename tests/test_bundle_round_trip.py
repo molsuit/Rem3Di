@@ -117,9 +117,7 @@ def test_the_bundle_merged_the_replicate_and_dropped_the_isotope(
     bundle_table, _ = round_trip
     assert len(bundle_table) == 8
     ethanol = bundle_table[bundle_table["isomeric_smiles"] == "CCO"]
-    assert ethanol["y"].tolist() == [2.0] and ethanol["n_measurements"].tolist() == [
-        2.0
-    ]
+    assert ethanol[["y", "n_measurements"]].to_numpy().tolist() == [[2.0, 2.0]]
     assert bundle_table["enantiomer_of"].notna().sum() == 2
 
 

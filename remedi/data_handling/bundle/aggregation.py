@@ -154,10 +154,6 @@ class AggregatedRows:
     missing_labels: int
 
     @property
-    def first_positions(self) -> list[int]:
-        return [positions[0] for positions in self.member_positions]
-
-    @property
     def measurement_counts(self) -> list[int]:
         return [len(positions) for positions in self.member_positions]
 

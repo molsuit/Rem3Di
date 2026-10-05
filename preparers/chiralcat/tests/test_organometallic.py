@@ -10,7 +10,7 @@ import math
 
 import numpy as np
 import pytest
-import yaml
+from conftest import write_config
 from rdkit import Chem
 
 from chiralcat_dataset.config import PipelineConfig
@@ -28,118 +28,63 @@ from chiralcat_dataset.sources import ChecksumMismatchError, sha256_of_file
 from chiralcat_dataset.writers import _comment_line
 
 FERROCENE = "[CH]1[CH][CH][C]([CH]1)C=O.[CH]1[CH][CH][CH][CH]1.[Fe]"
+PLAIN_FERROCENE = "[CH]1[CH][CH][CH][CH]1.[CH]1[CH][CH][CH][CH]1.[Fe]"
 CYMANTRENE = "[C-]#[O+].[C-]#[O+].[C-]#[O+].[CH]1[CH][CH][C]([CH]1)C.[Mn]"
 ARENE_CHROMIUM = "[C-]#[O+].[C-]#[O+].[C-]#[O+].[CH]1[CH][CH][CH][C]([CH]1)C.[Cr]"
 
 
-# --------------------------------------------------------------------------- #
-# Ligand translation
-# --------------------------------------------------------------------------- #
-
-
-def test_ring_to_sandwich_makes_cp_anion_from_five_ring():
-    ligand = ring_to_sandwich("[CH]1[CH][CH][CH][CH]1")
+@pytest.mark.parametrize(
+    ("fragment", "charge", "face_size"),
+    [
+        ("[CH]1[CH][CH][CH][CH]1", -1, 5),  # Cp anion
+        ("[CH]1[CH][CH][CH][CH][CH]1", 0, 6),  # neutral arene
+        ("[CH]1[CH][CH][C]([CH]1)C=O", -1, 5),  # substituent kept off the face
+    ],
+)
+def test_ring_to_sandwich_aromatizes_the_haptic_face(fragment, charge, face_size):
+    ligand = ring_to_sandwich(fragment)
     assert ligand is not None
     mol = Chem.MolFromSmiles(ligand.smiles)
-    assert mol is not None
-    assert sum(atom.GetFormalCharge() for atom in mol.GetAtoms()) == -1
-    assert len(ligand.coord_list) == 5
-
-
-def test_ring_to_sandwich_makes_neutral_arene_from_six_ring():
-    ligand = ring_to_sandwich("[CH]1[CH][CH][CH][CH][CH]1")
-    assert ligand is not None
-    mol = Chem.MolFromSmiles(ligand.smiles)
-    assert sum(atom.GetFormalCharge() for atom in mol.GetAtoms()) == 0
-    assert len(ligand.coord_list) == 6
-
-
-def test_ring_to_sandwich_face_indices_are_all_ring_carbons():
-    ligand = ring_to_sandwich("[CH]1[CH][CH][C]([CH]1)C=O")
-    assert ligand is not None
-    mol = Chem.MolFromSmiles(ligand.smiles)
+    assert sum(atom.GetFormalCharge() for atom in mol.GetAtoms()) == charge
+    assert len(ligand.coord_list) == face_size
     for index in ligand.coord_list:
-        assert mol.GetAtomWithIdx(index).GetSymbol() == "C"
-        assert mol.GetAtomWithIdx(index).IsInRing()
+        atom = mol.GetAtomWithIdx(index)
+        assert atom.GetSymbol() == "C" and atom.IsInRing()
+    assert mol.GetNumHeavyAtoms() == Chem.MolFromSmiles(fragment).GetNumHeavyAtoms()
 
 
-def test_ring_to_sandwich_preserves_substituents():
-    ligand = ring_to_sandwich("[CH]1[CH][CH][C]([CH]1)C=O")
-    assert ligand is not None
-    mol = Chem.MolFromSmiles(ligand.smiles)
-    assert any(atom.GetSymbol() == "O" for atom in mol.GetAtoms())
-
-
-def test_ring_to_sandwich_returns_none_without_a_carbocyclic_face():
-    assert ring_to_sandwich("CCO") is None
-
-
-# --------------------------------------------------------------------------- #
-# Complex parsing
-# --------------------------------------------------------------------------- #
-
-
-def test_parse_ferrocene():
-    spec = parse_complex(FERROCENE)
+@pytest.mark.parametrize(
+    ("smiles", "family", "n_ligands", "expected_counts"),
+    [
+        (FERROCENE, "ferrocene (bis-Cp)", 2, {"Fe": 1, "C": 11, "H": 10, "O": 1}),
+        # one C and one O per carbonyl
+        (CYMANTRENE, "Mn(CO)3 piano-stool", 1, {"Mn": 1, "C": 9, "H": 7, "O": 3}),
+        (ARENE_CHROMIUM, "Cr(CO)3 piano-stool", 1, {"Cr": 1, "C": 10, "H": 8, "O": 3}),
+    ],
+)
+def test_parse_complex_recognises_the_three_scaffold_families(
+    smiles, family, n_ligands, expected_counts
+):
+    spec = parse_complex(smiles)
     assert spec is not None
-    assert spec.metal == "Fe"
-    assert spec.n_carbon_monoxide == 0
-    assert len(spec.ligands) == 2
-    assert spec.family == "ferrocene (bis-Cp)"
+    assert spec.family == family
+    assert len(spec.ligands) == n_ligands
+    assert spec.expected_counts() == expected_counts
 
 
-def test_parse_cymantrene():
-    spec = parse_complex(CYMANTRENE)
-    assert spec is not None
-    assert spec.metal == "Mn"
-    assert spec.n_carbon_monoxide == 3
-    assert len(spec.ligands) == 1
-    assert spec.family == "Mn(CO)3 piano-stool"
+def test_parse_complex_refuses_what_it_cannot_build():
+    assert ring_to_sandwich("CCO") is None  # no carbocyclic face
+    assert parse_complex("[CH]1[CH][CH][CH][CH]1.[Ru]") is None  # unsupported metal
+    assert parse_complex("CCO.[Fe]") is None  # a fragment that is not a ring
+    assert parse_complex("CCO") is None  # no metal at all
 
 
-def test_parse_arene_chromium_tricarbonyl():
-    spec = parse_complex(ARENE_CHROMIUM)
-    assert spec is not None
-    assert spec.metal == "Cr"
-    assert spec.n_carbon_monoxide == 3
-    assert spec.family == "Cr(CO)3 piano-stool"
-
-
-def test_parse_returns_none_for_unsupported_metal():
-    assert parse_complex("[CH]1[CH][CH][CH][CH]1.[Ru]") is None
-
-
-def test_parse_returns_none_when_a_fragment_is_not_a_ring():
-    assert parse_complex("CCO.[Fe]") is None
-
-
-# --------------------------------------------------------------------------- #
-# Composition expectations used by the build validation gate
-# --------------------------------------------------------------------------- #
-
-
-def test_expected_counts_ferrocene_is_c10h10fe():
-    spec = parse_complex(FERROCENE.replace("[C]([CH]1)C=O", "[CH]1"))
-    if spec is None:  # the substituted variant; fall back to the plain rings
-        spec = parse_complex("[CH]1[CH][CH][CH][CH]1.[CH]1[CH][CH][CH][CH]1.[Fe]")
-    assert spec is not None
-    counts = spec.expected_counts()
-    assert counts["Fe"] == 1
-    assert counts["C"] == 10
-    assert counts["H"] == 10
-
-
-def test_expected_counts_cymantrene_includes_the_carbonyls():
-    spec = parse_complex(CYMANTRENE)
-    assert spec is not None
-    counts = spec.expected_counts()
-    assert counts["Mn"] == 1
-    assert counts["O"] == 3  # one per CO
-    # 5 ring C + 1 methyl C + 3 carbonyl C
-    assert counts["C"] == 9
+def test_complex_spec_family_falls_back_for_unusual_carbonyl_counts():
+    assert ComplexSpec(metal="Fe", n_carbon_monoxide=2, ligands=[]).family == "Fe other"
 
 
 def test_component_smiles_names_the_metal_and_every_carbonyl():
+    """Regression: an (arene)Cr(CO)3 and (arene)Mn(CO)3 once shared a SMILES."""
     chromium = parse_complex(ARENE_CHROMIUM)
     manganese = parse_complex(ARENE_CHROMIUM.replace("[Cr]", "[Mn]"))
     assert chromium is not None and manganese is not None
@@ -147,16 +92,9 @@ def test_component_smiles_names_the_metal_and_every_carbonyl():
     assert chromium.component_smiles != manganese.component_smiles
 
 
-def test_complex_spec_family_falls_back_for_unusual_carbonyl_counts():
-    spec = ComplexSpec(metal="Fe", n_carbon_monoxide=2, ligands=[])
-    assert spec.family == "Fe other"
-
-
 # --------------------------------------------------------------------------- #
 # Frozen rebuilds
 # --------------------------------------------------------------------------- #
-
-PLAIN_FERROCENE = "[CH]1[CH][CH][CH][CH]1.[CH]1[CH][CH][CH][CH]1.[Fe]"
 
 
 def _ferrocene_geometry() -> FrozenRebuild:
@@ -164,14 +102,13 @@ def _ferrocene_geometry() -> FrozenRebuild:
     symbols = ["Fe"]
     coords = [(0.0, 0.0, 0.0)]
     for height in (1.66, -1.66):
-        for position in range(5):
-            angle = 2 * math.pi * position / 5
-            symbols.append("C")
-            coords.append((1.21 * math.cos(angle), 1.21 * math.sin(angle), height))
-        for position in range(5):
-            angle = 2 * math.pi * position / 5
-            symbols.append("H")
-            coords.append((2.28 * math.cos(angle), 2.28 * math.sin(angle), height * 1.02))
+        for symbol, radius, lift in (("C", 1.21, 1.0), ("H", 2.28, 1.02)):
+            for position in range(5):
+                angle = 2 * math.pi * position / 5
+                symbols.append(symbol)
+                coords.append(
+                    (radius * math.cos(angle), radius * math.sin(angle), height * lift)
+                )
     return FrozenRebuild(PLAIN_FERROCENE, symbols, coords)
 
 
@@ -200,18 +137,16 @@ def _target(smiles: str, index: int) -> RejectedRecord:
 
 
 def _config(tmp_path, sha256=None) -> PipelineConfig:
-    payload = {
-        "extraction": {"data_dir": ".", "sources": []},
-        "organometallic": {
-            "rebuilt_structures": {"path": "frozen.extxyz", "sha256": sha256}
-        },
-    }
-    path = tmp_path / "pipeline.yaml"
-    path.write_text(yaml.safe_dump(payload))
+    rebuilt_structures = {"path": "frozen.extxyz", "sha256": sha256}
+    path = write_config(
+        tmp_path,
+        extraction={"data_dir": "."},
+        organometallic={"enabled": True, "rebuilt_structures": rebuilt_structures},
+    )
     return PipelineConfig.from_yaml(path)
 
 
-def test_frozen_rebuilds_round_trip_through_the_extxyz_file(tmp_path):
+def test_frozen_rebuilds_round_trip_and_refuse_a_duplicate_key(tmp_path):
     frozen = _ferrocene_geometry()
     _write_frozen(tmp_path / "frozen.extxyz", [frozen])
     read = read_frozen_rebuilds(tmp_path / "frozen.extxyz")
@@ -219,42 +154,49 @@ def test_frozen_rebuilds_round_trip_through_the_extxyz_file(tmp_path):
     assert read[PLAIN_FERROCENE].symbols == frozen.symbols
     assert np.allclose(read[PLAIN_FERROCENE].coords, frozen.coords, atol=1e-6)
 
-
-def test_duplicate_source_smiles_in_the_frozen_file_is_an_error(tmp_path):
-    frozen = _ferrocene_geometry()
     _write_frozen(tmp_path / "frozen.extxyz", [frozen, frozen])
     with pytest.raises(ValueError, match="duplicate source_smiles"):
         read_frozen_rebuilds(tmp_path / "frozen.extxyz")
 
 
-def test_a_valid_ferrocene_passes_every_gate():
-    spec = parse_complex(PLAIN_FERROCENE)
-    assert spec is not None
-    assert validate_rebuild(spec, _ferrocene_geometry()) is None
+def _drop_last_atom(frozen: FrozenRebuild) -> None:
+    frozen.symbols, frozen.coords = frozen.symbols[:-1], frozen.coords[:-1]
 
 
-def test_a_frozen_geometry_with_the_wrong_atoms_fails_composition():
-    spec = parse_complex(PLAIN_FERROCENE)
-    assert spec is not None
-    frozen = _ferrocene_geometry()
-    frozen.symbols = frozen.symbols[:-1]
-    frozen.coords = frozen.coords[:-1]
-    assert "composition" in (validate_rebuild(spec, frozen) or "")
-
-
-def test_a_ring_lifted_off_the_metal_fails_hapticity():
-    spec = parse_complex(PLAIN_FERROCENE)
-    assert spec is not None
-    frozen = _ferrocene_geometry()
+def _lift_the_rings(frozen: FrozenRebuild) -> None:
     frozen.coords = [(x, y, z * 2.0) for x, y, z in frozen.coords]
-    assert "haptically bound" in (validate_rebuild(spec, frozen) or "")
+
+
+def _stack_two_hydrogens(frozen: FrozenRebuild) -> None:
+    frozen.coords[-1] = frozen.coords[-2]
+
+
+@pytest.mark.parametrize(
+    ("distort", "failure"),
+    [
+        (None, None),
+        (_drop_last_atom, "composition"),
+        (_lift_the_rings, "haptically bound"),
+        (_stack_two_hydrogens, "residual clash"),
+    ],
+)
+def test_validate_rebuild_gates(distort, failure):
+    spec = parse_complex(PLAIN_FERROCENE)
+    assert spec is not None
+    frozen = _ferrocene_geometry()
+    if distort is not None:
+        distort(frozen)
+    result = validate_rebuild(spec, frozen)
+    if failure is None:
+        assert result is None
+    else:
+        assert failure in (result or "")
 
 
 def test_rebuild_restores_targets_and_rejects_the_ones_without_geometry(tmp_path):
     _write_frozen(tmp_path / "frozen.extxyz", [_ferrocene_geometry()])
-    config = _config(tmp_path)
     targets = [_target(PLAIN_FERROCENE, 0), _target(CYMANTRENE, 1)]
-    output = rebuild(config, targets)
+    output = rebuild(_config(tmp_path), targets)
     assert [structure.index for structure in output.structures] == [0]
     assert output.structures[0].geometry_quality == "rebuilt_architector"
     assert [record.index for record in output.rejected] == [1]
@@ -263,6 +205,8 @@ def test_rebuild_restores_targets_and_rejects_the_ones_without_geometry(tmp_path
 
 
 def test_rebuild_refuses_a_frozen_file_that_is_not_the_pinned_one(tmp_path):
+    with pytest.raises(FileNotFoundError, match="Frozen organometallic rebuilds"):
+        rebuild(_config(tmp_path), [_target(PLAIN_FERROCENE, 0)])
     _write_frozen(tmp_path / "frozen.extxyz", [_ferrocene_geometry()])
     with pytest.raises(ChecksumMismatchError):
         rebuild(_config(tmp_path, sha256="0" * 64), [_target(PLAIN_FERROCENE, 0)])
@@ -270,8 +214,3 @@ def test_rebuild_refuses_a_frozen_file_that_is_not_the_pinned_one(tmp_path):
     assert rebuild(
         _config(tmp_path, sha256=pinned), [_target(PLAIN_FERROCENE, 0)]
     ).structures
-
-
-def test_rebuild_fails_loudly_when_the_frozen_file_is_missing(tmp_path):
-    with pytest.raises(FileNotFoundError, match="Frozen organometallic rebuilds"):
-        rebuild(_config(tmp_path), [_target(PLAIN_FERROCENE, 0)])

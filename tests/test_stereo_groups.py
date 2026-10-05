@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from remedi.data_handling.chemistry.stereo_groups import (
     has_or_stereo_group,
     unspecify_relative_stereo,
@@ -14,37 +16,29 @@ AND_GROUP = "CC(=O)N1C[C@@]2(CC[C@H]1C)NC(=O)N(C1=CN=CC3=CC=CC=C13)C2=O |&1:5,8|
 ABSOLUTE = "COC1=CC=CC(Cl)=C1NC(=O)N1CCC[C@H](C(N)=O)C1 |a:16|"
 
 
-def test_or_and_and_groups_lose_their_drawn_configuration() -> None:
-    for smiles in (OR_GROUP, AND_GROUP):
-        result = unspecify_relative_stereo(smiles)
-        assert result is not None
+@pytest.mark.parametrize(
+    ("smiles", "expected", "unspecified_centres"),
+    [
+        (OR_GROUP, None, 2),
+        (AND_GROUP, None, 2),
+        (ABSOLUTE, "COc1cccc(Cl)c1NC(=O)N1CCC[C@H](C(N)=O)C1", 0),
+        # Only the grouped centre is unspecified; the other survives.
+        ("C[C@H](N)[C@@H](C)O |o1:1|", "CC(N)[C@@H](C)O", 1),
+        ("C[C@@H](N)C(=O)O", "C[C@@H](N)C(=O)O", 0),
+    ],
+    ids=["or group", "and group", "absolute", "partly grouped", "plain smiles"],
+)
+def test_grouped_centres_lose_their_drawn_configuration(
+    smiles: str, expected: str | None, unspecified_centres: int
+) -> None:
+    result = unspecify_relative_stereo(smiles)
+    assert result is not None
+    assert "|" not in result.smiles
+    if expected is None:  # every centre sat in the group
         assert "@" not in result.smiles
-        assert "|" not in result.smiles
-        assert result.unspecified_centres == 2
-
-
-def test_an_absolute_centre_keeps_its_configuration() -> None:
-    result = unspecify_relative_stereo(ABSOLUTE)
-    assert result is not None
-    assert result.smiles == "COc1cccc(Cl)c1NC(=O)N1CCC[C@H](C(N)=O)C1"
-    assert result.unspecified_centres == 0
-
-
-def test_only_the_grouped_centres_are_unspecified() -> None:
-    result = unspecify_relative_stereo("C[C@H](N)[C@@H](C)O |o1:1|")
-    assert result is not None
-    assert result.smiles == "CC(N)[C@@H](C)O"  # the ungrouped centre survives
-    assert result.unspecified_centres == 1
-
-
-def test_a_plain_smiles_passes_through_canonicalised() -> None:
-    result = unspecify_relative_stereo("C[C@@H](N)C(=O)O")
-    assert result is not None
-    assert result.smiles == "C[C@@H](N)C(=O)O"
-    assert result.unspecified_centres == 0
-
-
-def test_an_unparseable_smiles_gives_none() -> None:
+    else:
+        assert result.smiles == expected
+    assert result.unspecified_centres == unspecified_centres
     assert unspecify_relative_stereo("not a molecule") is None
 
 

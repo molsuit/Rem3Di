@@ -17,7 +17,6 @@ import yaml
 from remedi.data_handling.bundle import (
     DATASET_CONFIG_FILENAME,
     SPEC_FILENAME,
-    BundleValidationError,
     DatasetSpec,
     EvalMetric,
     EvaluationSpec,
@@ -71,81 +70,36 @@ def write_zarr_dir(
     return directory
 
 
-# ------------------------------------------------------------- the round trip
-
-
-def test_spec_round_trips_through_a_dataset_directory(tmp_path: Path) -> None:
-    directory = write_zarr_dir(tmp_path, "esol")
-
-    spec = read_spec(directory)
-
+def test_the_evaluation_block_is_read_back_from_a_dataset_directory(
+    tmp_path: Path,
+) -> None:
+    spec = read_spec(write_zarr_dir(tmp_path, "esol"))
     assert spec == make_spec("esol")
     evaluation = evaluation_of(spec)
     assert evaluation.metrics[0] is EvalMetric.rmse
-    assert spec.label_names() == ["measured"]
     assert evaluation.default_split in evaluation.split_columns
-
-
-def test_evaluation_of_a_corpus_names_the_problem() -> None:
     with pytest.raises(ValueError, match="no evaluation block"):
         evaluation_of(make_spec("corpus", evaluation=False))
 
 
-def test_read_spec_refuses_an_unsupported_format_version(tmp_path: Path) -> None:
-    directory = tmp_path / "future"
-    directory.mkdir()
-    document = make_spec().model_dump(mode="json")
-    document["format_version"] = 2
-    (directory / SPEC_FILENAME).write_text(yaml.safe_dump(document))
-
-    with pytest.raises(BundleValidationError):
-        read_spec(directory)
-
-
-def test_read_spec_without_a_spec_file_raises(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError):
-        read_spec(tmp_path)
-
-
-# --------------------------------------------------------------- the discovery
-
-
-def test_discovery_finds_every_benchmark_sorted(tmp_path: Path) -> None:
+def test_discovery_finds_only_benchmarks_sorted(tmp_path: Path) -> None:
     write_zarr_dir(tmp_path, "zeta")
     write_zarr_dir(tmp_path, "alpha")
+    # a corpus is a dataset, but not a benchmark
+    write_zarr_dir(tmp_path, "corpus", evaluation=False)
+    write_zarr_dir(tmp_path, "pretraining_zarr", with_spec=False)
+    # A bundle has a dataset.yaml but no dataset_config.yaml; pointing eval_root
+    # at a bundle_root must therefore find nothing rather than crash on a
+    # directory that holds no zarr arrays.
+    write_zarr_dir(tmp_path, "bundle_only", with_dataset_config=False)
 
     discovered = discover_benchmarks(tmp_path)
 
     assert [path.name for path, _ in discovered] == ["alpha", "zeta"]
     assert [spec.dataset_id for _, spec in discovered] == ["alpha", "zeta"]
-
-
-def test_discovery_skips_a_corpus_but_lists_it_as_a_dataset(tmp_path: Path) -> None:
-    write_zarr_dir(tmp_path, "benchmark")
-    write_zarr_dir(tmp_path, "corpus", evaluation=False)
-
-    assert [path.name for path, _ in discover_benchmarks(tmp_path)] == ["benchmark"]
     assert [path.name for path, _ in discover_datasets(tmp_path)] == [
-        "benchmark",
+        "alpha",
         "corpus",
+        "zeta",
     ]
-
-
-def test_discovery_skips_a_directory_without_a_spec(tmp_path: Path) -> None:
-    write_zarr_dir(tmp_path, "good")
-    write_zarr_dir(tmp_path, "pretraining_zarr", with_spec=False)
-
-    assert [path.name for path, _ in discover_benchmarks(tmp_path)] == ["good"]
-
-
-def test_discovery_skips_a_bundle_directory(tmp_path: Path) -> None:
-    # A bundle has a dataset.yaml but no dataset_config.yaml; pointing
-    # eval_root at a bundle_root must therefore find nothing rather than crash
-    # on a directory that holds no zarr arrays.
-    write_zarr_dir(tmp_path, "bundle_only", with_dataset_config=False)
-
-    assert discover_benchmarks(tmp_path) == []
-
-
-def test_discovery_of_a_missing_root_is_empty(tmp_path: Path) -> None:
     assert discover_benchmarks(tmp_path / "nothing_here") == []

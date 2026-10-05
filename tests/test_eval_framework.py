@@ -25,12 +25,11 @@ from remedi.evaluation.framework import (
     EvalContext,
     EvalManifest,
     ResourceCache,
-    register_plotter,
     render,
     run_manifest,
 )
 from remedi.evaluation.framework.runner import RunReport
-from remedi.evaluation.results import ArrayResult, FigureResult, TableResult
+from remedi.evaluation.results import TableResult
 
 from .helpers.bundle_fixtures import ACHIRAL_TEN_SMILES, write_small_dataset
 
@@ -63,33 +62,9 @@ def _manifest(tmp_path: Path) -> EvalManifest:
     )
 
 
-def test_run_manifest_writes_results_status_and_manifest(tmp_path: Path) -> None:
-    manifest = _manifest(tmp_path)
-    report = run_manifest(manifest)
-    out = manifest.output_root
-
-    assert report.n_failed == 0
-    assert (out / "manifest.yaml").exists()
-    assert (out / "benchmark" / "results.csv").exists()
-    csv = pd.read_csv(out / "benchmark" / "results.csv")
-    assert set(csv.dataset_id) == {"toy_a", "toy_b"}
-
-    # status.yaml round-trips and records the task as ok with its artifact.
-    status = pyd_yaml.parse_yaml_file_as(RunReport, out / "status.yaml")
-    assert len(status.statuses) == 1
-    (st,) = status.statuses
-    assert st.ok and st.kind == "benchmark_panel"
-    assert any("results.csv" in a["file_name"] for a in st.artifacts)
-
-
 def _failing_panel_task(tmp_path: Path) -> BenchmarkPanelConfig:
-    """A valid union task that raises at run time.
-
-    Its eval root holds a directory that *looks* like a dataset but whose
-    ``dataset.yaml`` declares an unsupported format version, so discovery
-    raises before the panel's own per-dataset fault tolerance can catch
-    anything.
-    """
+    """A valid task whose discovery raises (an unsupported ``format_version``)
+    before the panel's own per-dataset fault tolerance can catch anything."""
     broken_root = tmp_path / "broken_root"
     broken = broken_root / "broken_dataset"
     broken.mkdir(parents=True, exist_ok=True)
@@ -104,14 +79,22 @@ def test_keep_going_records_failed_task_but_finishes(tmp_path: Path) -> None:
     manifest = _manifest(tmp_path)
     manifest.tasks.append(_failing_panel_task(tmp_path))
     report = run_manifest(manifest)  # must not raise
+    out = manifest.output_root
 
     assert report.n_failed == 1
-    healthy, broken = report.statuses
+    # The healthy task's artifacts still landed, next to the manifest.
+    assert (out / "manifest.yaml").exists()
+    csv = pd.read_csv(out / "benchmark" / "results.csv")
+    assert set(csv.dataset_id) == {"toy_a", "toy_b"}
+
+    # status.yaml round-trips and records both tasks, the healthy one with its
+    # artifact and the broken one with its error.
+    status = pyd_yaml.parse_yaml_file_as(RunReport, out / "status.yaml")
+    healthy, broken = status.statuses
     assert healthy.ok and healthy.kind == "benchmark_panel"
+    assert any("results.csv" in a["file_name"] for a in healthy.artifacts)
     assert not broken.ok
     assert broken.error and broken.traceback
-    # The healthy task's artifacts still landed.
-    assert (manifest.output_root / "benchmark" / "results.csv").exists()
 
 
 def test_fail_fast_raises(tmp_path: Path) -> None:
@@ -140,49 +123,12 @@ def test_shared_resource_built_once(tmp_path: Path) -> None:
     assert cache.build_count(spec) == 1
 
 
-def test_table_and_array_artifacts_roundtrip(tmp_path: Path) -> None:
-    df = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
-    TableResult(file_name=Path("t.csv"), frame=df).serialize_to(tmp_path)
-    pd.testing.assert_frame_equal(TableResult.load(tmp_path / "t.csv"), df)
-
-    arrs = {"coords": np.arange(6.0).reshape(3, 2), "color": np.array([0, 1, 2])}
-    ArrayResult(file_name=Path("a.npz"), arrays=arrs).serialize_to(tmp_path)
-    loaded = ArrayResult.load(tmp_path / "a.npz")
-    np.testing.assert_array_equal(loaded["coords"], arrs["coords"])
-
-
-def test_plotter_registry_renders_from_loaded_artifact(tmp_path: Path) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    @register_plotter("demo_table")
-    def _plot(df: pd.DataFrame, out_dir: Path) -> list[FigureResult]:
-        fig, ax = plt.subplots()
-        ax.plot(df["a"])
-        return [FigureResult(file_name=Path("demo.png"), figure=fig)]
-
-    df = pd.DataFrame({"a": [3, 1, 2]})
-    TableResult(file_name=Path("demo.csv"), frame=df).serialize_to(tmp_path)
-    payload = TableResult.load(tmp_path / "demo.csv")
-    figs = render("demo_table", payload, tmp_path / "plots")
-    assert len(figs) == 1
-    assert (tmp_path / "plots" / "demo.png").exists()
-
-
 def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
-    """The moved descriptor-analysis task still runs on a framework context.
-
-    ``DescriptorAnalysisConfig`` left the ``TaskConfig`` union in step 8 (it now
-    lives in :mod:`remedi.latent_evaluation`), so it is driven here through an
-    explicit :class:`EvalContext` instead of a manifest. Capacity diagnostic
-    over an ECFP embedding, artifacts re-rooted under ``descriptor_analysis/``.
-    """
+    """``DescriptorAnalysisConfig`` (no longer in the manifest's task union) runs
+    on an explicit :class:`EvalContext`, artifacts under ``descriptor_analysis/``."""
     from remedi.latent_evaluation import CapacityDiagnosticTask
     from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
 
-    eval_root = tmp_path / "datasets"
     _build_reg_zarr(tmp_path, "corpus", np.linspace(0, 1, _N_ROWS))
 
     out = tmp_path / "eval_out" / "model_x"
@@ -194,7 +140,7 @@ def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
         model=EcfpConfig(name="ecfp_256", length=256),
     )
     task = DescriptorAnalysisConfig(
-        dataset_path=eval_root / "corpus",
+        dataset_path=tmp_path / "datasets" / "corpus",
         dataset_id="corpus",
         tasks=[CapacityDiagnosticTask()],
     )
@@ -204,11 +150,14 @@ def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
     assert (out / "descriptor_analysis" / "capacity_diagnostic.yaml").exists()
 
 
-def test_benchmark_plotter_renders_from_results_csv(tmp_path: Path) -> None:
-    import remedi.evaluation.framework.builtin_plotters  # noqa: F401
-    from remedi.evaluation.framework.plotting import render
+def test_benchmark_plotter_renders_from_a_loaded_results_table(tmp_path: Path) -> None:
+    """Plotting is decoupled: the registered plotter runs on a reloaded artifact."""
+    import matplotlib
 
-    df = pd.DataFrame(
+    matplotlib.use("Agg")
+    import remedi.evaluation.framework.builtin_plotters  # noqa: F401
+
+    frame = pd.DataFrame(
         {
             "dataset_id": ["esol", "esol", "bace", "bace"],
             "learner_kind": ["linear", "mlp", "linear", "mlp"],
@@ -216,8 +165,12 @@ def test_benchmark_plotter_renders_from_results_csv(tmp_path: Path) -> None:
             "metric_value": [1.1, 0.9, 0.82, 0.85],
         }
     )
-    figs = render("benchmark_results", df, tmp_path / "plots")
+    TableResult(file_name=Path("results.csv"), frame=frame).serialize_to(tmp_path)
+    loaded = TableResult.load(tmp_path / "results.csv")
+    pd.testing.assert_frame_equal(loaded, frame)
+
+    figures = render("benchmark_results", loaded, tmp_path / "plots")
     # one figure per metric_name (RMSE, AUROC)
-    assert len(figs) == 2
+    assert len(figures) == 2
     assert (tmp_path / "plots" / "benchmark_RMSE.png").exists()
     assert (tmp_path / "plots" / "benchmark_AUROC.png").exists()

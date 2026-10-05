@@ -21,7 +21,6 @@ from remedi.evaluation.framework.tasks.benchmark import BenchmarkPanelConfig
 def _spec(dataset_id: str) -> DatasetSpec:
     return DatasetSpec(
         dataset_id=dataset_id,
-        description="a test benchmark",
         source_kind="test",
         smiles=True,
         labels=[LabelColumn(name="y", task_type=TaskType.regression)],
@@ -49,14 +48,19 @@ def _panel(eval_root: Path, dataset_ids: list[str] | None) -> BenchmarkPanelConf
     )
 
 
-def test_no_selection_scores_every_benchmark(three_benchmarks: Path) -> None:
-    selected = _panel(three_benchmarks, None).selected_benchmarks()
-    assert [spec.dataset_id for _, spec in selected] == ["esol", "HIA_Hou", "hiv"]
-
-
-def test_a_selection_keeps_discovery_order(three_benchmarks: Path) -> None:
-    selected = _panel(three_benchmarks, ["hiv", "esol"]).selected_benchmarks()
-    assert [spec.dataset_id for _, spec in selected] == ["esol", "hiv"]
+@pytest.mark.parametrize(
+    ("dataset_ids", "expected"),
+    [
+        (None, ["esol", "HIA_Hou", "hiv"]),
+        # A selection keeps discovery order, not the order it was given in.
+        (["hiv", "esol"], ["esol", "hiv"]),
+    ],
+)
+def test_selected_benchmarks(
+    three_benchmarks: Path, dataset_ids: list[str] | None, expected: list[str]
+) -> None:
+    selected = _panel(three_benchmarks, dataset_ids).selected_benchmarks()
+    assert [spec.dataset_id for _, spec in selected] == expected
 
 
 def test_an_unknown_dataset_id_is_an_error(three_benchmarks: Path) -> None:

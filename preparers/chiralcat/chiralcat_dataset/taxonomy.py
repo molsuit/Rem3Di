@@ -8,7 +8,6 @@ from __future__ import annotations
 
 CLASS_ORDER: tuple[str, ...] = ("achiral", "central", "axial", "helical", "planar")
 CLASS_TO_LABEL: dict[str, int] = {name: i for i, name in enumerate(CLASS_ORDER)}
-LABEL_TO_CLASS: dict[int, str] = {i: name for name, i in CLASS_TO_LABEL.items()}
 
 # Normalise alternative spellings found in the raw data to the canonical names.
 SYNONYMS: dict[str, str] = {"center": "central"}

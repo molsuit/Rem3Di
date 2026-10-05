@@ -93,9 +93,6 @@ build-backend = "hatchling.build"
 packages = ["remedi"]
 
 [tool.ruff]
-# The QM9-OR split generators are the original author scripts, kept verbatim as
-# a reference for how qm9or_splits.csv was produced; they import another package.
-extend-exclude = ["preparers/qm9or/generators"]
 lint.select = ["I", "UP", "F", "E", "W", "C90", "B", "A", "RUF"]
 lint.ignore = ["E501", "B008"]
 
@@ -134,4 +131,4 @@ torch-sim-atomistic = { git = "https://github.com/TorchSim/torch-sim.git", branc
 torch = { index = "pytorch-cu126" }
 
 [tool.ty.environment]
-root = ["./remedi"]
+root = [".", "preparers/chiralcat/tests"]
