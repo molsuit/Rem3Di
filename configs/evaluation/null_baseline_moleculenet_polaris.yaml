@@ -1,0 +1,33 @@
+# Null baseline (train mean / base rate, features ignored) over the 10 MoleculeNet and 5 Polaris datasets under benchmark_data/datasets.
+# Run from the repository root:
+#
+#   uv run --no-sync python scripts/evaluation/run_eval.py \
+#       --config configs/evaluation/null_baseline_moleculenet_polaris.yaml
+model:
+  descriptor_kind: ecfp
+  name: ecfp_2048
+  length: 2048
+output_root: eval_runs/null_baseline_moleculenet_polaris
+resource_cache_dir: eval_runs/descriptor_cache
+tasks:
+  - kind: benchmark_panel
+    eval_root: benchmark_data/datasets
+    dataset_ids:
+      - esol
+      - freesolv
+      - lipophilicity
+      - bace_pic50
+      - bace
+      - bbbp
+      - hiv
+      - clintox
+      - sider
+      - tox21
+      - polaris_antiviral_admet
+      - polaris_antiviral_potency
+      - polaris_adme_fang
+      - polaris_pkis2_subset
+      - polaris_pkis2_subset_cls
+    learners:
+      - learner_kind: null_baseline
+seed: 0

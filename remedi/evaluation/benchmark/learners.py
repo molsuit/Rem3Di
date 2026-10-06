@@ -279,7 +279,12 @@ class LightGBMLearner(Learner):
     def _callbacks(self, allow_early_stop: bool = True):
         cb = [log_evaluation(0)]
         if allow_early_stop:
-            cb.insert(0, early_stopping(self.early_stopping_rounds))
+            # LightGBM also tracks the objective's default metric (binary_logloss,
+            # l2) beside ``eval_metric`` and would otherwise stop on whichever of
+            # them stalls first; ``eval_metric`` is listed first.
+            cb.insert(
+                0, early_stopping(self.early_stopping_rounds, first_metric_only=True)
+            )
         return cb
 
     def fit_predict_regression(

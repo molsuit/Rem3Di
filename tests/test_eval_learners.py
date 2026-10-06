@@ -130,6 +130,17 @@ def test_lightgbm_binary_smoke() -> None:
     assert roc_auc_score(yte, pred) > 0.8
 
 
+def test_lightgbm_early_stopping_watches_only_eval_metric() -> None:
+    # Without first_metric_only LightGBM also stops on the objective's default
+    # metric (binary_logloss / l2), which cut 27 of 71 ECFP panel fits short.
+    (stopping,) = [
+        callback
+        for callback in LightGBMLearner()._callbacks()
+        if hasattr(callback, "first_metric_only")
+    ]
+    assert stopping.first_metric_only
+
+
 def test_mlp_config_roundtrip_defaults() -> None:
     cfg = MlpLearnerConfig()
     assert cfg.hidden_dims == [256, 128]
