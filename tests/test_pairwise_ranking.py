@@ -7,9 +7,9 @@ import math
 import numpy as np
 
 from remedi.data_handling.bundle import EvalMetric
+from remedi.evaluation.benchmark.cells import BenchmarkCell, evaluate_pairwise_cell
 from remedi.evaluation.benchmark.learners import LinearLearnerConfig
 from remedi.evaluation.benchmark.pairwise import pair_ranking_accuracy
-from remedi.evaluation.benchmark.runner import BenchmarkCell, evaluate_pairwise_cell
 
 
 def test_perfect_ranking_pools_conformers() -> None:

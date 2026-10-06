@@ -1,4 +1,4 @@
-"""End-to-end ``run_eval`` over datasets written by the real ``write_dataset``.
+"""End-to-end ``benchmark_panel`` runs over datasets written by the real ``write_dataset``.
 
 Pins: one row per scored target, the cell identity (``split_column`` / ``seed``)
 reaches ``results.csv``, a non-default split column is read from the table, a
@@ -8,7 +8,6 @@ corpus is not scored, and one failing benchmark does not sink the panel.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -16,9 +15,13 @@ import pytest
 
 from remedi.data_handling.bundle import EvalMetric, LabelColumn
 from remedi.data_handling.dataset.tasks import TaskType
-from remedi.evaluation.benchmark.descriptors import EcfpConfig
-from remedi.evaluation.benchmark.learners import LinearLearnerConfig
-from remedi.evaluation.benchmark.runner import EvalConfig, run_eval
+from remedi.evaluation.benchmark.descriptors import DescriptorConfig, EcfpConfig
+from remedi.evaluation.benchmark.learners import LearnerConfig, LinearLearnerConfig
+from remedi.evaluation.framework import (
+    BenchmarkPanelConfig,
+    EvalManifest,
+    run_manifest,
+)
 
 from .helpers.bundle_fixtures import (
     ACHIRAL_TEN_SMILES,
@@ -59,16 +62,43 @@ def build_zarr(
     )
 
 
-def eval_config(tmp_path: Path, **overrides: Any) -> EvalConfig:
-    return EvalConfig.model_validate(
-        {
-            "eval_root": tmp_path / "datasets",
-            "output_dir": tmp_path / "eval_out",
-            "descriptors": [EcfpConfig(name="ecfp_128", length=128)],
-            "learners": [LinearLearnerConfig(ridge_alpha=1.0)],
-            **overrides,
-        }
+def run_panel(
+    tmp_path: Path,
+    *,
+    descriptors: list[DescriptorConfig] | None = None,
+    learners: list[LearnerConfig] | None = None,
+    split_column: str | None = None,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """Run one panel over ``tmp_path/datasets``; its ``results.csv`` as a frame.
+
+    The first descriptor is the run's model, the rest the panel's baselines.
+    """
+    model, *baselines = descriptors or [EcfpConfig(name="ecfp_128", length=128)]
+    run_manifest(
+        EvalManifest(
+            model=model,
+            output_root=tmp_path / "eval_out",
+            seed=seed,
+            tasks=[
+                BenchmarkPanelConfig(
+                    eval_root=tmp_path / "datasets",
+                    learners=learners or [LinearLearnerConfig(ridge_alpha=1.0)],
+                    baseline_descriptors=baselines,
+                    split_column=split_column,
+                )
+            ],
+        )
     )
+    try:
+        return pd.read_csv(tmp_path / "eval_out" / "benchmark" / "results.csv")
+    except pd.errors.EmptyDataError:  # every benchmark failed: a header-less file
+        return pd.DataFrame()
+
+
+def failures_text(tmp_path: Path) -> str:
+    failures = tmp_path / "eval_out" / "benchmark" / "failures.yaml"
+    return failures.read_text() if failures.exists() else ""
 
 
 def _with_nan_holes(targets: np.ndarray) -> np.ndarray:
@@ -81,38 +111,32 @@ def _with_nan_holes(targets: np.ndarray) -> np.ndarray:
 # ------------------------------------------------------------------ the cells
 
 
-def test_run_eval_cross_product_and_cell_identity(tmp_path: Path) -> None:
+def test_panel_cross_product_and_cell_identity(tmp_path: Path) -> None:
     build_zarr(tmp_path)
 
-    rows = run_eval(
-        eval_config(
-            tmp_path,
-            seed=7,
-            descriptors=[
-                EcfpConfig(name="ecfp_128", length=128),
-                EcfpConfig(name="ecfp_512", length=512),
-            ],
-            learners=[
-                LinearLearnerConfig(ridge_alpha=0.1),
-                LinearLearnerConfig(ridge_alpha=10.0),
-            ],
-        )
+    rows = run_panel(
+        tmp_path,
+        seed=7,
+        descriptors=[
+            EcfpConfig(name="ecfp_128", length=128),
+            EcfpConfig(name="ecfp_512", length=512),
+        ],
+        learners=[
+            LinearLearnerConfig(ridge_alpha=0.1),
+            LinearLearnerConfig(ridge_alpha=10.0),
+        ],
     )
 
     # 1 benchmark x 2 descriptors x 2 learners = 4 rows.
     assert len(rows) == 4
-    assert {row.descriptor_name for row in rows} == {"ecfp_128", "ecfp_512"}
-    for row in rows:
-        assert (row.dataset_id, row.learner_kind) == ("toy_reg", "linear")
-        assert (row.n_train, row.n_val, row.n_test) == (6, 2, 2)
-        # The spec's own default_split, and the config's seed.
-        assert (row.split_column, row.seed) == ("split", 7)
-
-    csv = pd.read_csv(tmp_path / "eval_out" / "results.csv")
-    assert len(csv) == 4
-    assert "source" not in csv.columns
-    assert set(csv["split_column"]) == {"split"}
-    assert (tmp_path / "eval_out" / "results.yaml").exists()
+    assert set(rows["descriptor_name"]) == {"ecfp_128", "ecfp_512"}
+    identity = ["dataset_id", "learner_kind", "split_column", "seed"]
+    counts = ["n_train", "n_val", "n_test"]
+    # The spec's own default_split, and the manifest's seed.
+    assert rows[identity].drop_duplicates().values.tolist() == [
+        ["toy_reg", "linear", "split", 7]
+    ]
+    assert rows[counts].drop_duplicates().values.tolist() == [[6, 2, 2]]
 
 
 @pytest.mark.parametrize(
@@ -135,7 +159,7 @@ def test_run_eval_cross_product_and_cell_identity(tmp_path: Path) -> None:
     ],
     ids=["binary", "multitarget_regression", "multilabel"],
 )
-def test_run_eval_scores_one_row_per_target(
+def test_panel_scores_one_row_per_target(
     tmp_path: Path,
     labels: list[LabelColumn],
     metric: EvalMetric,
@@ -144,13 +168,14 @@ def test_run_eval_scores_one_row_per_target(
 ) -> None:
     build_zarr(tmp_path, labels=labels, metrics=(metric,), targets=targets)
 
-    rows = run_eval(eval_config(tmp_path))
+    rows = run_panel(tmp_path)
 
     assert len(rows) == len(expected_target_columns)
-    assert {row.target_col for row in rows} == expected_target_columns
-    assert all(row.metric_name == metric.value for row in rows)
-    assert all(np.isfinite(row.metric_value) for row in rows)
-    assert not (tmp_path / "eval_out" / "failures.yaml").exists()
+    target_columns = {None if pd.isna(name) else name for name in rows["target_col"]}
+    assert target_columns == expected_target_columns
+    assert set(rows["metric_name"]) == {metric.value}
+    assert np.isfinite(rows["metric_value"]).all()
+    assert failures_text(tmp_path) == ""
 
 
 # ------------------------------------------------------------- split columns
@@ -164,18 +189,18 @@ def test_split_column_selection(tmp_path: Path) -> None:
         splits={"split": list(TEN_ROW_SPLIT), "split__seed1": ALTERNATIVE_SPLIT},
     )
 
-    (row,) = run_eval(eval_config(tmp_path, split_column="split__seed1"))
-    assert (row.n_train, row.n_val, row.n_test) == (2, 2, 6)
-    assert row.split_column == "split__seed1"
+    (row,) = run_panel(tmp_path, split_column="split__seed1").to_dict("records")
+    assert (row["n_train"], row["n_val"], row["n_test"]) == (2, 2, 6)
+    assert row["split_column"] == "split__seed1"
 
-    assert run_eval(eval_config(tmp_path, split_column="split__nope")) == []
-    assert "split__nope" in (tmp_path / "eval_out" / "failures.yaml").read_text()
+    assert run_panel(tmp_path, split_column="split__nope").empty
+    assert "split__nope" in failures_text(tmp_path)
 
 
 # ---------------------------------------------------------- fault tolerance
 
 
-def test_run_eval_keeps_going_when_one_benchmark_fails(tmp_path: Path) -> None:
+def test_panel_keeps_going_when_one_benchmark_fails(tmp_path: Path) -> None:
     """A mixed-task-type benchmark is recorded in failures.yaml and skipped."""
     build_zarr(tmp_path, "toy_ok")
     build_zarr(
@@ -188,12 +213,10 @@ def test_run_eval_keeps_going_when_one_benchmark_fails(tmp_path: Path) -> None:
         targets=np.stack([np.linspace(0.0, 1.0, N_ROWS), ALTERNATING], axis=1),
     )
 
-    rows = run_eval(eval_config(tmp_path))
+    rows = run_panel(tmp_path)
 
-    assert {row.dataset_id for row in rows} == {"toy_ok"}
-    csv = pd.read_csv(tmp_path / "eval_out" / "results.csv")
-    assert set(csv["dataset_id"]) == {"toy_ok"}
-    assert "toy_mixed" in (tmp_path / "eval_out" / "failures.yaml").read_text()
+    assert set(rows["dataset_id"]) == {"toy_ok"}
+    assert "toy_mixed" in failures_text(tmp_path)
 
 
 def test_discovery_scores_only_benchmarks(tmp_path: Path) -> None:
@@ -205,7 +228,7 @@ def test_discovery_scores_only_benchmarks(tmp_path: Path) -> None:
     (tmp_path / "datasets" / "verify").mkdir(exist_ok=True)
     (tmp_path / "datasets" / "status.yaml").write_text("n_tasks: 1\n")
 
-    rows = run_eval(eval_config(tmp_path))
+    rows = run_panel(tmp_path)
 
-    assert {row.dataset_id for row in rows} == {"toy_reg"}
-    assert not (tmp_path / "eval_out" / "failures.yaml").exists()
+    assert set(rows["dataset_id"]) == {"toy_reg"}
+    assert failures_text(tmp_path) == ""

@@ -1,8 +1,8 @@
 """Benchmark-panel task: descriptor x learner cross-product over benchmark zarrs.
 
-The framework port of ``benchmark.runner.run_eval``. It reuses that module's
-per-cell evaluation helpers verbatim (``_evaluate_cell``, ``_task_kind``,
-``_build_targets_with_nan``, ``_split_masks``) but sources descriptor matrices
+The one panel loop. It composes the per-cell helpers of
+:mod:`remedi.evaluation.benchmark.cells` (``evaluate_cell``, ``task_kind``,
+``build_targets_with_nan``, ``split_masks``) and sources descriptor matrices
 from the shared :class:`ResourceCache` (so a baseline fingerprint / the model
 embedding is computed once and reused) and keeps the fault-tolerant, incremental
 write behaviour: one failing benchmark is recorded in ``failures.yaml`` and the
@@ -31,24 +31,24 @@ from remedi.data_handling.bundle import (
     EvalMetric,
 )
 from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.evaluation.benchmark.descriptors import DescriptorConfig
-from remedi.evaluation.benchmark.learners import LearnerConfig
-from remedi.evaluation.benchmark.metrics import MulticlassReport
-from remedi.evaluation.benchmark.runner import (
+from remedi.evaluation.benchmark.cells import (
     BenchmarkCell,
     BenchmarkFailure,
     BenchmarkResultRow,
-    _build_targets_with_nan,
-    _evaluate_cell,
-    _learner_kind,
-    _split_masks,
-    _structure_group_ids,
-    _task_kind,
+    build_targets_with_nan,
     discover_benchmarks,
+    evaluate_cell,
     evaluate_pairwise_cell,
     evaluation_of,
+    learner_kind,
     multiclass_labelling,
+    split_masks,
+    structure_group_ids,
+    task_kind,
 )
+from remedi.evaluation.benchmark.descriptors import DescriptorConfig
+from remedi.evaluation.benchmark.learners import LearnerConfig
+from remedi.evaluation.benchmark.metrics import MulticlassReport
 from remedi.evaluation.framework.context import EvalContext
 from remedi.evaluation.framework.resources import EmbeddingSpec
 from remedi.evaluation.results import (
@@ -143,10 +143,10 @@ class BenchmarkPanelConfig(BaseModel):
     ) -> tuple[list[BenchmarkResultRow], list[EvalResult]]:
         """Every cell of one benchmark: its result rows and its cell artifacts."""
         dataset = MoleculeDataset.open_existing_dataset_from_dir(zarr_path)
-        kind = _task_kind(dataset)
-        assert dataset.config.tasks is not None  # narrowed by _task_kind
+        kind = task_kind(dataset)
+        assert dataset.config.tasks is not None  # narrowed by task_kind
         col_names = [c.name for c in dataset.config.tasks.system_cols]
-        Y = _build_targets_with_nan(dataset, spec)
+        Y = build_targets_with_nan(dataset, spec)
         n_classes, class_names = multiclass_labelling(spec)
         cell = BenchmarkCell(
             dataset_id=spec.dataset_id,
@@ -156,11 +156,9 @@ class BenchmarkPanelConfig(BaseModel):
             n_classes=n_classes,
             class_names=class_names,
         )
-        splits = _split_masks(zarr_path, dataset, cell.split_column)
+        splits = split_masks(zarr_path, dataset, cell.split_column)
         is_pairwise = cell.metric == EvalMetric.pair_ranking_accuracy
-        mol_ids, iso_ids = (
-            _structure_group_ids(dataset) if is_pairwise else (None, None)
-        )
+        mol_ids, iso_ids = structure_group_ids(dataset) if is_pairwise else (None, None)
         rows: list[BenchmarkResultRow] = []
         results: list[EvalResult] = []
         for desc in descriptors:
@@ -189,7 +187,7 @@ class BenchmarkPanelConfig(BaseModel):
                         )
                     )
                     continue
-                evaluation = _evaluate_cell(
+                evaluation = evaluate_cell(
                     learner_cfg,
                     kind,
                     splits,
@@ -206,7 +204,7 @@ class BenchmarkPanelConfig(BaseModel):
                             evaluation.report,
                             spec.dataset_id,
                             desc.name,
-                            _learner_kind(learner_cfg),
+                            learner_kind(learner_cfg),
                         )
                     )
         return rows, results

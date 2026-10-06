@@ -25,7 +25,7 @@ from remedi.data_handling.bundle import (
     read_spec,
 )
 from remedi.data_handling.dataset.tasks import TaskType
-from remedi.evaluation.benchmark.runner import discover_benchmarks, evaluation_of
+from remedi.evaluation.benchmark.cells import discover_benchmarks, evaluation_of
 
 
 def make_spec(dataset_id: str = "esol", *, evaluation: bool = True) -> DatasetSpec:

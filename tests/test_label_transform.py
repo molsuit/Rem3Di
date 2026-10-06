@@ -16,9 +16,9 @@ from remedi.data_handling.bundle.spec import (
     Log10LabelTransform,
 )
 from remedi.data_handling.dataset.tasks import TaskType
-from remedi.evaluation.benchmark.runner import (
-    _build_targets_with_nan,
+from remedi.evaluation.benchmark.cells import (
     apply_label_transforms,
+    build_targets_with_nan,
 )
 
 LOG10 = Log10LabelTransform()
@@ -133,5 +133,5 @@ def test_build_targets_masks_then_transforms() -> None:
             tasks=SimpleNamespace(system_cols=[SimpleNamespace(name="y")])
         ),
     )
-    targets = _build_targets_with_nan(fake_dataset, spec)  # ty: ignore[invalid-argument-type]
+    targets = build_targets_with_nan(fake_dataset, spec)  # ty: ignore[invalid-argument-type]
     np.testing.assert_allclose(targets, [[1.0], [0.0], [np.nan]], equal_nan=True)
