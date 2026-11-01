@@ -62,8 +62,7 @@ from remedi_data.bundle import (
 from remedi_data.bundle import bundle as bundle_module
 from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.dataset.tasks import TaskScope, TaskType
-
-from .helpers.bundle_fixtures import (
+from remedi_data.testing import (
     GEOMETRY_LIMITS,
     embed_frame,
     make_bundle,

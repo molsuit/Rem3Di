@@ -1,4 +1,4 @@
-from importlib import resources
+from pathlib import Path
 
 import pydantic_yaml as pyaml
 import pytest
@@ -19,6 +19,8 @@ from remedi.configuration.architecture_config import (
     RelativeDistancePositionalEncodingConfig,
 )
 from remedi.configuration.config_utils import from_yaml
+
+TESTS_DIR = Path(__file__).resolve().parent
 
 
 def _minimal_shared_parts(fill_derived: bool):
@@ -222,7 +224,7 @@ def test_cascade_preserves_explicit_overrides():
 
 
 def test_regression_yaml_parses_against_current_schema():
-    yaml_file = resources.files("tests") / "test_architecture_config.yaml"
+    yaml_file = TESTS_DIR / "test_architecture_config.yaml"
     cfg = from_yaml(yaml_file, RegressionArchitectureConfig)
     assert isinstance(cfg, RegressionArchitectureConfig)
     # Derived dims should be filled by the cascade even though the YAML omits them.
@@ -232,7 +234,7 @@ def test_regression_yaml_parses_against_current_schema():
 
 def test_encoder_decoder_yaml_parses_against_current_schema():
     yaml_file = (
-        resources.files("tests") / "test_architecture_config_encoder_decoder.yaml"
+        TESTS_DIR / "test_architecture_config_encoder_decoder.yaml"
     )
     cfg = from_yaml(yaml_file, EncoderDecoderArchitectureConfig)
     assert isinstance(cfg, EncoderDecoderArchitectureConfig)
@@ -241,7 +243,7 @@ def test_encoder_decoder_yaml_parses_against_current_schema():
 
 
 def test_encoder_only_from_encoder_yaml_strips_decoder(tmp_path):
-    src = resources.files("tests") / "test_architecture_config_encoder_decoder.yaml"
+    src = TESTS_DIR / "test_architecture_config_encoder_decoder.yaml"
     target = tmp_path / "post_training_architecture_config.yaml"
     target.write_bytes(src.read_bytes())
 
@@ -257,6 +259,6 @@ def test_model_reconstruction():
     # torch_sim. Skip when unavailable so the schema tests above remain green.
     pytest.importorskip("torch_sim")
 
-    yaml_file = resources.files("tests") / "test_architecture_config.yaml"
+    yaml_file = TESTS_DIR / "test_architecture_config.yaml"
     cfg = from_yaml(yaml_file, RegressionArchitectureConfig)
     _ = cfg.build()

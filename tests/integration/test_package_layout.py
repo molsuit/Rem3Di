@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
+WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = ["remedi-data", "remedi-eval", "remedi"]
 # The sdist refuses symlinks that leave the package directory, so each package
 # carries real copies of these root files; they must not drift.

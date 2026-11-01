@@ -1,4 +1,7 @@
-"""Synthetic bundles and datasets for the format, build and evaluation tests.
+"""Test support: synthetic bundles and datasets for the format, build and evaluation tests.
+
+Shipped with ``remedi_data`` (like ``numpy.testing``) so the test suites of all three
+packages and the preparers build fixtures through one module.
 
 Two families, both written through the real writers so every invariant of the
 format is enforced on the fixture itself:

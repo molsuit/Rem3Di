@@ -27,10 +27,19 @@ target-version = "py312"
 lint.select = ["I", "UP", "F", "E", "W", "C90", "B", "A", "RUF"]
 lint.ignore = ["E501", "B008"]
 
-# Each preparer runs its own suite from its own directory (their conftest
-# modules share a name): `uv run --no-sync pytest preparers/<name>`.
+# Tests live next to their package (packages/<name>/tests); tests/integration
+# holds the workspace-level ones (scripts/, configs/, package layout).
+# importlib mode lets the per-package directories share module and conftest
+# names. Each preparer runs its own suite from its own directory:
+# `cd preparers/<name> && uv run --no-sync pytest`.
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+    "packages/remedi-data/tests",
+    "packages/remedi-eval/tests",
+    "packages/remedi/tests",
+    "tests/integration",
+]
+addopts = ["--import-mode=importlib"]
 
 [dependency-groups]
 dev = [

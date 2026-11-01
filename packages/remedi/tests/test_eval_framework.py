@@ -18,6 +18,7 @@ from remedi_data.bundle import EvalMetric, LabelColumn
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import TaskType
 from remedi_data.runs.results import TableResult
+from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
 from remedi_eval.benchmark.learners import LinearLearnerConfig
 from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import (
@@ -30,8 +31,6 @@ from remedi_eval.framework import (
     run_manifest,
 )
 from remedi_eval.framework.runner import RunReport
-
-from .helpers.bundle_fixtures import ACHIRAL_TEN_SMILES, write_small_dataset
 
 _N_ROWS = len(ACHIRAL_TEN_SMILES)
 

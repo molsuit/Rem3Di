@@ -17,8 +17,7 @@ from remedi.data_handling.dataset.training_dataset import (
 from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
 from remedi_data.bundle import LabelColumn
 from remedi_data.dataset.tasks import TaskType
-
-from .helpers.bundle_fixtures import (
+from remedi_data.testing import (
     ACHIRAL_TEN_SMILES,
     embed_frame,
     write_small_dataset,

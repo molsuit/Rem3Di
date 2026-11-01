@@ -13,8 +13,7 @@ from ase import Atoms
 from remedi_data.bundle import LabelColumn
 from remedi_data.dataset.molecule_dataset import MoleculeDataset, StructureArrays
 from remedi_data.dataset.tasks import TaskType
-
-from .helpers.bundle_fixtures import (
+from remedi_data.testing import (
     ACHIRAL_TEN_SMILES,
     embed_frame,
     write_small_dataset,

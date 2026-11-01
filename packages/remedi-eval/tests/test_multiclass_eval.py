@@ -21,6 +21,11 @@ import pytest
 from remedi_data.bundle import EvalMetric, LabelColumn
 from remedi_data.dataset.tasks import TaskType
 from remedi_data.runs.results import ArrayResult
+from remedi_data.testing import (
+    ACHIRAL_TEN_SMILES,
+    TEN_ROW_SPLIT,
+    write_small_dataset,
+)
 from remedi_eval.benchmark.learners import (
     LightGBMLearner,
     LinearLearner,
@@ -36,12 +41,6 @@ from remedi_eval.benchmark.metrics import (
 )
 from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import BenchmarkPanelConfig, EvalManifest, run_manifest
-
-from .helpers.bundle_fixtures import (
-    ACHIRAL_TEN_SMILES,
-    TEN_ROW_SPLIT,
-    write_small_dataset,
-)
 
 N_CLASSES = 5
 

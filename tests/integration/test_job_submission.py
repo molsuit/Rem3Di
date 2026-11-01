@@ -24,7 +24,7 @@ from remedi.configuration.training_config import (
     TrainingConfig,
 )
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
+SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 
 
 def _load_script(name: str):

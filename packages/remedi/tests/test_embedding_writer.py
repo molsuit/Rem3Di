@@ -24,6 +24,7 @@ from remedi.embedding import (
 from remedi_data.bundle import EvalMetric, LabelColumn
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import TaskType
+from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
 from remedi_eval.benchmark.learners import LinearLearnerConfig
 from remedi_eval.descriptors import (
     DescriptorCalculator,
@@ -33,8 +34,6 @@ from remedi_eval.descriptors import (
     read_metadata,
 )
 from remedi_eval.framework import BenchmarkPanelConfig, EvalManifest
-
-from .helpers.bundle_fixtures import ACHIRAL_TEN_SMILES, write_small_dataset
 
 N_ROWS = len(ACHIRAL_TEN_SMILES)
 

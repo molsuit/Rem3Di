@@ -69,8 +69,7 @@ from remedi_data.chemistry.conformers import (
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import Split, TaskType
 from remedi_data.runs.results import PydanticResult
-
-from .helpers.bundle_fixtures import (
+from remedi_data.testing import (
     ACHIRAL_TEN_SMILES,
     SMALL_ZARR_LAYOUT,
     embed_frame,
