@@ -1,34 +1,24 @@
-"""Descriptor calculators for the descriptor-probe benchmark.
+"""The Rem3Di descriptor calculator: a trained encoder over a dataset's structures.
 
-A *descriptor calculator* turns a prepared :class:`MoleculeDataset` into an
-``(N, D)`` matrix aligned with the dataset's structure order. SMILES-based
-calculators read ``dataset.get_smiles_per_structure()``; structure-based
-calculators use a PyTorch :class:`~torch.utils.data.DataLoader` over
-:class:`TrainingMoleculeDataset` to batch through positions / atomic_numbers
-from the zarr — that's the "specific dataloader" path the user called out.
-
-Adding a new structure-based model = (a) subclass :class:`DescriptorCalculator`
-implementing ``calculate``, (b) add a pydantic config variant to the
-``DescriptorConfig`` union with a ``.build()`` factory. Both are local.
-
-The optional ``train_indices`` kwarg on ``calculate`` is for future fitted
-descriptors (e.g. learned PCA) that must only fit on the train split.
-:class:`EcfpCalculator` and :class:`RemediCalculator` ignore it because they
-are deterministic / pre-trained.
+:class:`RemediCalculator` streams a :class:`MoleculeDataset`'s positions and
+atomic numbers through :class:`TrainingMoleculeDataset` and a PyTorch
+:class:`DataLoader` into an ``(N, D)`` matrix aligned with the dataset's
+structure order. :class:`RemediConfig` is its yaml form and carries the
+checkpoint identity. ``remedi_eval`` never imports this module; Rem3Di enters
+the evaluation as precomputed embeddings (``BENCHMARK_DATA_FORMAT.md`` §7.5).
 """
 
 from __future__ import annotations
 
 import hashlib
-from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
 
 import numpy as np
 import torch
 from ase import Atoms
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from torch.utils.data import DataLoader, Subset
 
 from remedi.data_handling.dataset.training_dataset import (
@@ -36,55 +26,9 @@ from remedi.data_handling.dataset.training_dataset import (
     atoms_getitem,
 )
 from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
-from remedi_data.bundle import sha256_of_file, structures_identity
+from remedi_data.bundle import sha256_of_file
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-
-
-class DescriptorCalculator(ABC):
-    """One method, one matrix.
-
-    Concrete subclasses are responsible for *how* they read the dataset
-    (SMILES vs DataLoader over the zarr) but must produce a result aligned
-    with the dataset's structure order so the runner can slice it by the
-    materialized ``split`` column.
-    """
-
-    @abstractmethod
-    def calculate(
-        self,
-        dataset: MoleculeDataset,
-        *,
-        train_indices: np.ndarray | None = None,
-    ) -> np.ndarray:
-        """Return shape ``(dataset.N_structures, descriptor_dim)``."""
-
-
-# -- EcfpCalculator: SMILES-based via molfeat --------------------------------
-
-
-class EcfpCalculator(DescriptorCalculator):
-    def __init__(self, *, fingerprint: str = "ecfp", length: int = 2048) -> None:
-        self.fingerprint = fingerprint
-        self.length = length
-
-    def calculate(
-        self,
-        dataset: MoleculeDataset,
-        *,
-        train_indices: np.ndarray | None = None,
-    ) -> np.ndarray:
-        del train_indices  # ECFP is deterministic — no fit step
-        from molfeat.trans.fp import FPVecTransformer
-
-        featurizer = FPVecTransformer(kind=self.fingerprint, length=self.length)
-        X = featurizer(dataset.get_smiles_per_structure())
-        return np.asarray(X, dtype=np.float32)
-
-
-# -- RemediCalculator: 3D-structure via REM3DI encoder -----------------------
-# Uses TrainingMoleculeDataset + DataLoader over the zarr's positions /
-# atomic_numbers — this is the "specific dataloader" pattern that any future
-# structure-based model should mirror.
+from remedi_eval.descriptors.base import DescriptorCalculator
 
 
 class RemediCalculator(DescriptorCalculator):
@@ -253,30 +197,6 @@ class RemediCalculator(DescriptorCalculator):
         return descriptors.numpy()
 
 
-# -- Pydantic configs --------------------------------------------------------
-
-
-class EcfpConfig(BaseModel):
-    descriptor_kind: Literal["ecfp"] = "ecfp"
-    # Human-readable identifier used in the cache filename. Change this if you
-    # change `fingerprint` or `length` so different ECFP variants don't clash.
-    name: str = "ecfp"
-    fingerprint: str = "ecfp"
-    length: int = 2048
-
-    def build(self) -> EcfpCalculator:
-        return EcfpCalculator(fingerprint=self.fingerprint, length=self.length)
-
-    def identity(self) -> str:
-        """sha256 over the config: every knob that changes the matrix (§7c).
-
-        ``name`` is a label the user picks and is free to reuse, so it cannot
-        be the cache key on its own — ``fingerprint`` and ``length`` decide the
-        numbers and both ride in here.
-        """
-        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
-
-
 class RemediConfig(BaseModel):
     descriptor_kind: Literal["remedi"] = "remedi"
     # User-supplied identifier used in the cache filename — usually the model
@@ -327,65 +247,3 @@ class RemediConfig(BaseModel):
             device=self.device,
             mace_model_path=self.mace_model_path,
         )
-
-
-DescriptorConfig = Annotated[
-    EcfpConfig | RemediConfig, Field(discriminator="descriptor_kind")
-]
-
-
-# -- Cache helper ------------------------------------------------------------
-
-
-def descriptor_cache_path(
-    config: EcfpConfig | RemediConfig,
-    dataset: MoleculeDataset,
-    cache_dir: Path,
-    dataset_id: str,
-) -> Path:
-    """Where the descriptor matrix for one (dataset, descriptor) pair is cached.
-
-    ``{dataset_id}__{name}__{structures}__{model}.npz`` (§7c). The two hashes
-    are what make the key *correct* rather than merely conventional:
-
-    ``structures``
-        identifies the data — see
-        :func:`remedi_data.bundle.structures_identity`. Keying on
-        ``dataset_id`` alone served a matrix computed on an earlier ingest of
-        the same endpoint, and the row-count mismatch only surfaced as an
-        ``IndexError`` when the split mask was applied.
-    ``model``
-        identifies the descriptor — the checkpoint weights for a REM3DI model,
-        the config itself for a fingerprint — so a renamed or retrained model
-        cannot inherit another one's vectors.
-
-    Twelve hex characters of each is 48 bits per hash; these are collision
-    guards on a directory of at most a few hundred files, not signatures.
-    """
-    return Path(cache_dir) / (
-        f"{dataset_id}__{config.name}"
-        f"__{structures_identity(Path(dataset.path))[:12]}"
-        f"__{config.identity()[:12]}.npz"
-    )
-
-
-def compute_and_cache(
-    config: EcfpConfig | RemediConfig,
-    dataset: MoleculeDataset,
-    cache_dir: Path,
-    dataset_id: str,
-) -> np.ndarray:
-    """Compute the descriptor matrix, caching it under :func:`descriptor_cache_path`.
-
-    Raises:
-        FileNotFoundError: if the dataset directory carries no
-            ``provenance.yaml`` to identify its contents by.
-    """
-    cache_dir = Path(cache_dir)
-    cache_path = descriptor_cache_path(config, dataset, cache_dir, dataset_id)
-    if cache_path.exists():
-        return np.asarray(np.load(cache_path)["X"])
-    X = config.build().calculate(dataset)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(cache_path, X=X)
-    return X

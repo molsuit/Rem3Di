@@ -9,10 +9,6 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from remedi.evaluation.benchmark.cells import (
-    apply_label_transforms,
-    build_targets_with_nan,
-)
 from remedi_data.bundle.spec import (
     DatasetSpec,
     IdentityLabelTransform,
@@ -20,6 +16,10 @@ from remedi_data.bundle.spec import (
     Log10LabelTransform,
 )
 from remedi_data.dataset.tasks import TaskType
+from remedi_eval.benchmark.cells import (
+    apply_label_transforms,
+    build_targets_with_nan,
+)
 
 LOG10 = Log10LabelTransform()
 

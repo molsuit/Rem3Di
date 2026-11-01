@@ -14,7 +14,7 @@ import pydantic
 import pydantic_yaml as pyd_yaml
 import pytest
 
-from remedi.evaluation.benchmark.learners import (
+from remedi_eval.benchmark.learners import (
     LearnerConfig,
     LightGBMLearner,
     LightGBMLearnerConfig,
@@ -208,7 +208,7 @@ def test_multilabel_runs_per_column() -> None:
 
 
 def test_null_learner_predicts_train_constant_and_parses():
-    from remedi.evaluation.benchmark.learners import (
+    from remedi_eval.benchmark.learners import (
         NullLearner,
         NullLearnerConfig,
     )

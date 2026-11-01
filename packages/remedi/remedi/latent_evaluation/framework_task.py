@@ -17,8 +17,6 @@ from typing import Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.evaluation.framework.context import EvalContext
-from remedi.evaluation.framework.resources import EmbeddingSpec
 from remedi.latent_evaluation import (
     DescriptorAnalysisContext,
     DescriptorAnalysisTask,
@@ -27,6 +25,8 @@ from remedi.latent_evaluation import (
 )
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import EvalResult
+from remedi_eval.framework.context import EvalContext
+from remedi_eval.framework.resources import EmbeddingSpec
 
 logger = logging.getLogger(__name__)
 

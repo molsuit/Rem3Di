@@ -49,11 +49,6 @@ from remedi.data_handling.dataset.training_dataset import (
     make_supervised_getitem,
 )
 from remedi.data_handling.sample import yield_molecules_supervised_collate_fn
-from remedi.evaluation.benchmark.metrics import (
-    balanced_accuracy,
-    macro_auroc_ovr,
-    macro_f1,
-)
 from remedi.training.classification_training import (
     FocalLoss,
     inverse_frequency_alpha,
@@ -62,6 +57,11 @@ from remedi.training.data.samplers import lengths_from_ptr
 from remedi.training.telemetry import TrainingTelemetry
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import Split
+from remedi_eval.benchmark.metrics import (
+    balanced_accuracy,
+    macro_auroc_ovr,
+    macro_f1,
+)
 
 logger = logging.getLogger("remedi.chiral")
 device = "cuda" if torch.cuda.is_available() else "cpu"

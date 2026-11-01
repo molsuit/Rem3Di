@@ -18,24 +18,24 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from remedi.evaluation.benchmark.descriptors import EcfpConfig
-from remedi.evaluation.benchmark.learners import (
+from remedi_data.bundle import EvalMetric, LabelColumn
+from remedi_data.dataset.tasks import TaskType
+from remedi_data.runs.results import ArrayResult
+from remedi_eval.benchmark.learners import (
     LightGBMLearner,
     LinearLearner,
     LinearLearnerConfig,
     MlpLearner,
     NullLearner,
 )
-from remedi.evaluation.benchmark.metrics import (
+from remedi_eval.benchmark.metrics import (
     balanced_accuracy,
     macro_auroc_ovr,
     macro_f1,
     multiclass_report,
 )
-from remedi.evaluation.framework import BenchmarkPanelConfig, EvalManifest, run_manifest
-from remedi_data.bundle import EvalMetric, LabelColumn
-from remedi_data.dataset.tasks import TaskType
-from remedi_data.runs.results import ArrayResult
+from remedi_eval.descriptors import EcfpConfig
+from remedi_eval.framework import BenchmarkPanelConfig, EvalManifest, run_manifest
 
 from .helpers.bundle_fixtures import (
     ACHIRAL_TEN_SMILES,

@@ -1,6 +1,6 @@
 """The shared, fault-tolerant per-task loop (``BENCHMARK_DATA_FORMAT.md`` §3, §13).
 
-Both sides run through here: :func:`remedi.evaluation.framework.runner.run_manifest`
+Both sides run through here: :func:`remedi_eval.framework.runner.run_manifest`
 with an ``EvalContext`` and :func:`remedi_data.build.build_datasets` with its
 build tasks. The contexts share the runner, not a base class, so this module
 knows nothing about either: it takes whatever ``ctx`` the caller built and hands

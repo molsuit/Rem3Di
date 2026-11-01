@@ -14,9 +14,13 @@ import pandas as pd
 import pydantic_yaml as pyd_yaml
 import pytest
 
-from remedi.evaluation.benchmark.descriptors import EcfpConfig
-from remedi.evaluation.benchmark.learners import LinearLearnerConfig
-from remedi.evaluation.framework import (
+from remedi_data.bundle import EvalMetric, LabelColumn
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.tasks import TaskType
+from remedi_data.runs.results import TableResult
+from remedi_eval.benchmark.learners import LinearLearnerConfig
+from remedi_eval.descriptors import EcfpConfig
+from remedi_eval.framework import (
     BenchmarkPanelConfig,
     EmbeddingSpec,
     EvalContext,
@@ -25,11 +29,7 @@ from remedi.evaluation.framework import (
     render,
     run_manifest,
 )
-from remedi.evaluation.framework.runner import RunReport
-from remedi_data.bundle import EvalMetric, LabelColumn
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.tasks import TaskType
-from remedi_data.runs.results import TableResult
+from remedi_eval.framework.runner import RunReport
 
 from .helpers.bundle_fixtures import ACHIRAL_TEN_SMILES, write_small_dataset
 
@@ -155,7 +155,7 @@ def test_benchmark_plotter_renders_from_a_loaded_results_table(tmp_path: Path) -
     import matplotlib
 
     matplotlib.use("Agg")
-    import remedi.evaluation.framework.builtin_plotters  # noqa: F401
+    import remedi_eval.framework.builtin_plotters  # noqa: F401
 
     frame = pd.DataFrame(
         {

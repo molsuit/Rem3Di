@@ -5,6 +5,7 @@
 [tool.uv.workspace]
 members = [
     "packages/remedi-data",
+    "packages/remedi-eval",
     "packages/remedi",
     "preparers/tdc",
     "preparers/moleculenet",
@@ -42,4 +43,4 @@ dev = [
 
 [tool.ty.environment]
 python-version = "3.12"
-root = ["packages/remedi-data", "packages/remedi", ".", "preparers/chiralcat/tests"]
+root = ["packages/remedi-data", "packages/remedi-eval", "packages/remedi", ".", "preparers/chiralcat/tests"]

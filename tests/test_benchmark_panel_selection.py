@@ -6,9 +6,7 @@ from pathlib import Path
 
 import pytest
 
-import remedi.evaluation.framework.tasks.benchmark as benchmark_module
-from remedi.evaluation.benchmark.learners import LinearLearnerConfig
-from remedi.evaluation.framework.tasks.benchmark import BenchmarkPanelConfig
+import remedi_eval.framework.tasks.benchmark as benchmark_module
 from remedi_data.bundle import (
     DatasetSpec,
     EvalMetric,
@@ -16,6 +14,8 @@ from remedi_data.bundle import (
     LabelColumn,
 )
 from remedi_data.dataset.tasks import TaskType
+from remedi_eval.benchmark.learners import LinearLearnerConfig
+from remedi_eval.framework.tasks.benchmark import BenchmarkPanelConfig
 
 
 def _spec(dataset_id: str) -> DatasetSpec:

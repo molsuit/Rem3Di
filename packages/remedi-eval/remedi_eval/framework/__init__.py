@@ -7,18 +7,18 @@ expensive resources across tasks via a :class:`ResourceCache`, and always writes
 :mod:`framework.plotting`): tasks emit data artifacts, a registry renders them.
 """
 
-from remedi.evaluation.framework.config import EvalManifest, TaskConfig
-from remedi.evaluation.framework.context import EvalContext
-from remedi.evaluation.framework.plotting import register_plotter, render
-from remedi.evaluation.framework.resources import (
+from remedi_data.runs.task import RunnableTask, TaskStatus
+from remedi_data.runs.task_runner import RunReport, run_tasks
+from remedi_eval.framework.config import EvalManifest, TaskConfig
+from remedi_eval.framework.context import EvalContext
+from remedi_eval.framework.plotting import register_plotter, render
+from remedi_eval.framework.resources import (
     EmbeddingSpec,
     ResourceCache,
     ResourceSpec,
 )
-from remedi.evaluation.framework.runner import run_manifest
-from remedi.evaluation.framework.tasks import BenchmarkPanelConfig
-from remedi_data.runs.task import RunnableTask, TaskStatus
-from remedi_data.runs.task_runner import RunReport, run_tasks
+from remedi_eval.framework.runner import run_manifest
+from remedi_eval.framework.tasks import BenchmarkPanelConfig
 
 __all__ = [
     "BenchmarkPanelConfig",

@@ -26,12 +26,12 @@ from remedi.data_handling.dataset_analysis import (
     DistributionStats,
     resolve_bitbirch_threshold,
 )
-from remedi.evaluation.results import FigureResult
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import (
     EvalResult,
     PydanticResult,
 )
+from remedi_eval.results import FigureResult
 
 RDLogger.DisableLog("rdApp.*")
 

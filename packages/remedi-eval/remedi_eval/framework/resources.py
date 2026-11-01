@@ -22,12 +22,12 @@ from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
-from remedi.evaluation.benchmark.descriptors import (
+from remedi_data.bundle import structures_identity
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_eval.descriptors import (
     DescriptorConfig,
     compute_and_cache,
 )
-from remedi_data.bundle import structures_identity
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class EmbeddingSpec:
     ``dataset`` is the opened :class:`MoleculeDataset`. The in-memory key is
     the on-disk one: ``dataset_id``, the descriptor's ``name``, the hash of the
     *data* and the hash of the *model* (§7c, see
-    :func:`remedi.evaluation.benchmark.descriptors.descriptor_cache_path`). The
+    :func:`remedi_eval.descriptors.descriptor_cache_path`). The
     name alone is not an identity — two ingests of one endpoint, or two
     checkpoints under one label, would otherwise share a matrix.
     """

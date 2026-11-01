@@ -13,15 +13,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from remedi.evaluation.benchmark.descriptors import DescriptorConfig, EcfpConfig
-from remedi.evaluation.benchmark.learners import LearnerConfig, LinearLearnerConfig
-from remedi.evaluation.framework import (
+from remedi_data.bundle import EvalMetric, LabelColumn
+from remedi_data.dataset.tasks import TaskType
+from remedi_eval.benchmark.learners import LearnerConfig, LinearLearnerConfig
+from remedi_eval.descriptors import DescriptorConfig, EcfpConfig
+from remedi_eval.framework import (
     BenchmarkPanelConfig,
     EvalManifest,
     run_manifest,
 )
-from remedi_data.bundle import EvalMetric, LabelColumn
-from remedi_data.dataset.tasks import TaskType
 
 from .helpers.bundle_fixtures import (
     ACHIRAL_TEN_SMILES,

@@ -25,11 +25,12 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
-# The core install is intentionally torch-free and lightweight. The PyTorch /
-# MACE stack lives in the `cpu` and `cuda` extras so users install the build
-# matching their platform (see the docs). `import remedi` works without them.
+# torch comes in through remedi-eval. The MACE stack lives in the `cpu` and
+# `cuda` extras so users install the build matching their platform (see the
+# docs).
 dependencies = [
     "remedi-data",
+    "remedi-eval",
     "ase>=3.24.0",
     "rdkit>=2024.9.4",
     "pydantic",
@@ -40,6 +41,10 @@ dependencies = [
     "pymatgen>=2026.3.23",
     "datashader>=0.19.0",
     "chemiscope>=1.0.3",
+    # BitBIRCH clustering in data_handling/dataset_{analysis,comparison}.py.
+    "bblean>=0.10.3",
+    "matplotlib",
+    "scikit-learn",
     "PyTDC>=0.3.6",
     # Every bundle and dataset table is a parquet; pandas is already pulled
     # transitively, but the parquet engine is not.
@@ -76,15 +81,6 @@ cuda = [
     "nvidia-cusparselt-cu12",
     "nvmolkit>=0.5.0",
 ]
-eval = [
-    "lightgbm>=4.6.0",
-    "pandas",
-    "scipy",
-    "scikit-learn",
-    "pyyaml",
-    "bblean>=0.10.3",
-    "molfeat"
-]
 
 [build-system]
 requires = ["hatchling"]
@@ -96,5 +92,6 @@ packages = ["remedi"]
 # Local-dev only (uv): these are stripped from the built package's metadata.
 [tool.uv.sources]
 remedi-data = { workspace = true }
+remedi-eval = { workspace = true }
 torch-sim-atomistic = { git = "https://github.com/TorchSim/torch-sim.git", branch = "main"}
 torch = { index = "pytorch-cu126" }

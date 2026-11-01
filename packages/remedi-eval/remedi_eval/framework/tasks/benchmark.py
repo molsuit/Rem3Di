@@ -1,7 +1,7 @@
 """Benchmark-panel task: descriptor x learner cross-product over benchmark zarrs.
 
 The one panel loop. It composes the per-cell helpers of
-:mod:`remedi.evaluation.benchmark.cells` (``evaluate_cell``, ``task_kind``,
+:mod:`remedi_eval.benchmark.cells` (``evaluate_cell``, ``task_kind``,
 ``build_targets_with_nan``, ``split_masks``) and sources descriptor matrices
 from the shared :class:`ResourceCache` (so a baseline fingerprint / the model
 embedding is computed once and reused) and keeps the fault-tolerant, incremental
@@ -26,7 +26,18 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from remedi.evaluation.benchmark.cells import (
+from remedi_data.bundle import (
+    DatasetSpec,
+    EvalMetric,
+)
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.runs.results import (
+    ArrayResult,
+    EvalResult,
+    PydanticResult,
+    TableResult,
+)
+from remedi_eval.benchmark.cells import (
     BenchmarkCell,
     BenchmarkFailure,
     BenchmarkResultRow,
@@ -41,22 +52,11 @@ from remedi.evaluation.benchmark.cells import (
     structure_group_ids,
     task_kind,
 )
-from remedi.evaluation.benchmark.descriptors import DescriptorConfig
-from remedi.evaluation.benchmark.learners import LearnerConfig
-from remedi.evaluation.benchmark.metrics import MulticlassReport
-from remedi.evaluation.framework.context import EvalContext
-from remedi.evaluation.framework.resources import EmbeddingSpec
-from remedi_data.bundle import (
-    DatasetSpec,
-    EvalMetric,
-)
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.runs.results import (
-    ArrayResult,
-    EvalResult,
-    PydanticResult,
-    TableResult,
-)
+from remedi_eval.benchmark.learners import LearnerConfig
+from remedi_eval.benchmark.metrics import MulticlassReport
+from remedi_eval.descriptors import DescriptorConfig
+from remedi_eval.framework.context import EvalContext
+from remedi_eval.framework.resources import EmbeddingSpec
 
 logger = logging.getLogger(__name__)
 

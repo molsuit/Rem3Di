@@ -16,15 +16,15 @@ from pathlib import Path
 
 import pydantic_yaml as pyd_yaml
 
-from remedi.evaluation.framework.config import EvalManifest
-from remedi.evaluation.framework.context import EvalContext
-from remedi.evaluation.framework.resources import ResourceCache
 from remedi_data.runs.task import TaskStatus
 from remedi_data.runs.task_runner import (
     RunReport,
     make_run_report,
     run_tasks,
 )
+from remedi_eval.framework.config import EvalManifest
+from remedi_eval.framework.context import EvalContext
+from remedi_eval.framework.resources import ResourceCache
 
 logger = logging.getLogger(__name__)
 

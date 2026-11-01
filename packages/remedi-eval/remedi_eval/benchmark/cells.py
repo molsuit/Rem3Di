@@ -1,7 +1,7 @@
 """Scoring one benchmark cell: (dataset, descriptor, learner) on one split.
 
 The building blocks the framework's ``benchmark_panel`` task
-(:mod:`remedi.evaluation.framework.tasks.benchmark`) composes into a panel:
+(:mod:`remedi_eval.framework.tasks.benchmark`) composes into a panel:
 
 1. :func:`split_masks` reads the train / valid / test partition **by name from
    the bundle's ``table.parquet``**, which travels with the zarr, joined through
@@ -27,16 +27,6 @@ from typing import Literal
 import numpy as np
 from pydantic import BaseModel
 
-from remedi.evaluation.benchmark.learners import (
-    Learner,
-    LearnerConfig,
-)
-from remedi.evaluation.benchmark.metrics import (
-    MulticlassReport,
-    metric_for,
-    multiclass_report,
-)
-from remedi.evaluation.benchmark.pairwise import pair_ranking_accuracy
 from remedi_data.bundle import (
     TABLE_FILENAME,
     DatasetSpec,
@@ -47,6 +37,16 @@ from remedi_data.bundle import (
 )
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import Split, TaskType, split_codes_from_names
+from remedi_eval.benchmark.learners import (
+    Learner,
+    LearnerConfig,
+)
+from remedi_eval.benchmark.metrics import (
+    MulticlassReport,
+    metric_for,
+    multiclass_report,
+)
+from remedi_eval.benchmark.pairwise import pair_ranking_accuracy
 
 
 class BenchmarkResultRow(BaseModel):

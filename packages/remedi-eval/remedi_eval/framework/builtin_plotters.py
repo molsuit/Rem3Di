@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from remedi.evaluation.framework.plotting import register_plotter
-from remedi.evaluation.results import FigureResult
+from remedi_eval.framework.plotting import register_plotter
+from remedi_eval.results import FigureResult
 
 # Lower-is-better metrics, so bar charts can be oriented / read correctly.
 _LOWER_IS_BETTER = {"RMSE", "MAE", "MSE"}

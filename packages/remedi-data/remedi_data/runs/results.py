@@ -1,7 +1,7 @@
 """Run artifacts: what a task yields and the runner serialises.
 
 Torch- and matplotlib-free. The matplotlib figure artifact lives with the
-evaluation code (``remedi.evaluation.results.FigureResult``).
+evaluation code (``remedi_eval.results.FigureResult``).
 """
 
 from __future__ import annotations

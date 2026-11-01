@@ -13,7 +13,6 @@ from ase import Atoms
 from ase.visualize.plot import plot_atoms
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.evaluation.results import FigureResult
 from remedi.latent_evaluation.capacity_diagnostic import (
     LatentCapacityReportModel,
     get_descriptor_norm_distribution,
@@ -29,6 +28,7 @@ from remedi_data.runs.results import (
     EvalResult,
     PydanticResult,
 )
+from remedi_eval.results import FigureResult
 
 
 class _BaseAnalysisTask(BaseModel):

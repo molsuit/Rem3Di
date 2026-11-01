@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from remedi.evaluation.benchmark.metrics import (
+from remedi_data.bundle import EvalMetric
+from remedi_eval.benchmark.metrics import (
     auprc,
     auroc,
     macro_auroc,
@@ -14,7 +15,6 @@ from remedi.evaluation.benchmark.metrics import (
     rmse,
     spearman,
 )
-from remedi_data.bundle import EvalMetric
 
 
 def test_regression_metrics_on_known_inputs() -> None:

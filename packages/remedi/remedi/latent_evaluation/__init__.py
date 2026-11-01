@@ -3,7 +3,7 @@
 Capacity diagnostics, clustering, UMAP/PCA projections, chemiscope exports and
 the MACE invariant statistics. This is intrinsic analysis of a descriptor
 matrix, not prediction evaluation, so it lives outside the benchmark framework
-(``remedi.evaluation``) and is not part of the paper's probe panel.
+(``remedi_eval``) and is not part of the paper's probe panel.
 
 It keeps its ``EvalTask`` shape: :class:`DescriptorAnalysisConfig` (in
 :mod:`remedi.latent_evaluation.framework_task`) is still a runnable framework

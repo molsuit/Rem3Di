@@ -11,8 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from remedi.evaluation.benchmark.descriptors import DescriptorConfig
-from remedi.evaluation.framework.resources import ResourceCache
+from remedi_eval.descriptors import DescriptorConfig
+from remedi_eval.framework.resources import ResourceCache
 
 
 @dataclass

@@ -16,12 +16,7 @@ import numpy as np
 import pytest
 import yaml
 
-from remedi.evaluation.benchmark.descriptors import (
-    EcfpConfig,
-    RemediConfig,
-    compute_and_cache,
-    descriptor_cache_path,
-)
+from remedi.embedding import RemediConfig
 from remedi_data.bundle import (
     PROVENANCE_FILENAME,
     BundleOutputs,
@@ -31,6 +26,11 @@ from remedi_data.bundle import (
     structures_identity,
 )
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_eval.descriptors import (
+    EcfpConfig,
+    compute_and_cache,
+    descriptor_cache_path,
+)
 
 
 class _StubDataset:

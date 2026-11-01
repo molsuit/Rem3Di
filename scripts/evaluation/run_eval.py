@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pydantic_yaml as pyd_yaml
 
-from remedi.evaluation.framework import EvalManifest, run_manifest
+from remedi_eval.framework import EvalManifest, run_manifest
 
 logger = logging.getLogger(__name__)
 

@@ -24,7 +24,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from remedi.evaluation.results import FigureResult
+from remedi_eval.results import FigureResult
 
 logger = logging.getLogger(__name__)
 
