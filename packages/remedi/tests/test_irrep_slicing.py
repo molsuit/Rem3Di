@@ -47,7 +47,8 @@ def test_equivariant_dimension_scalar_only():
     """
     cfg = EmbeddingPreprocessConfig(
         input_irreps=Irreps("4x0e"),  # four even scalars
-        pseudoscalar_dimension=1,  # required field
+        pseudoscalar_dimension=1,  # required fields
+        chiral_embedding_dimension=1,
     )
 
     assert cfg.input_equivariant_dimension == 0
@@ -61,7 +62,9 @@ def test_equivariant_dimension_mixed_l():
     irreps = Irreps("3x0e + 2x1o + 1x2e")  # 3 scalars, 2 vectors, 1 quadrupole
     expected = Irreps("2x1o + 1x2e").dim  # 2x3  + 1x5 = 11
 
-    cfg = EmbeddingPreprocessConfig(input_irreps=irreps, pseudoscalar_dimension=1)
+    cfg = EmbeddingPreprocessConfig(
+        input_irreps=irreps, pseudoscalar_dimension=1, chiral_embedding_dimension=1
+    )
 
     assert cfg.input_equivariant_dimension == expected
 
@@ -69,12 +72,13 @@ def test_equivariant_dimension_mixed_l():
 def make_cfg(irreps: str | Irreps) -> EmbeddingPreprocessConfig:
     """
     Minimal config factory so we don't repeat boiler-plate.
-    Only the two mandatory arguments are set; everything
+    Only the mandatory arguments are set; everything
     else falls back to the Pydantic defaults.
     """
     return EmbeddingPreprocessConfig(
         input_irreps=Irreps(irreps),
-        pseudoscalar_dimension=1,  # <- required by the model
+        pseudoscalar_dimension=1,  # required by the model
+        chiral_embedding_dimension=1,
     )
 
 

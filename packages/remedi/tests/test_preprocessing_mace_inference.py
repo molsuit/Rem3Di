@@ -12,6 +12,7 @@ geometry must yield the same descriptors up to floating-point tolerance.
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -41,6 +42,24 @@ def _sample_from_atoms(atoms: Atoms, device: torch.device) -> Sample:
     )
 
 
+def _gcc_major_version() -> int:
+    """Major version of the ``gcc`` on PATH, 0 if there is none."""
+    try:
+        completed = subprocess.run(
+            ["gcc", "-dumpversion"], capture_output=True, text=True, check=True
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return 0
+    return int(completed.stdout.strip().split(".")[0])
+
+
+# torch-sim's neighbour list is compiled by torch inductor, which needs a recent
+# C++ compiler; the DAIS system gcc is 7.5.
+@pytest.mark.skipif(
+    _gcc_major_version() < 10,
+    reason="torch inductor needs gcc >= 10 to build torch-sim's neighbour list "
+    "(on DAIS: module load gcc/15)",
+)
 @pytest.mark.parametrize("mol_name", ["H2O", "CH4", "NH3"])
 def test_torchsim_matches_ase_descriptors(mol_name: str) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

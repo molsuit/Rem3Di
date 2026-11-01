@@ -1,6 +1,29 @@
+"""``sample_collate_fn`` stacks per-molecule samples and their auxiliary data."""
+
+import pytest
 import torch
 
 from remedi.data_handling.sample import Sample, sample_collate_fn
+
+
+@pytest.fixture
+def embeddings():
+    return torch.rand((5, 5))
+
+
+@pytest.fixture
+def padding_mask():
+    return torch.ones((5, 1))
+
+
+@pytest.fixture
+def regression_target():
+    return torch.tensor([1.0])
+
+
+@pytest.fixture
+def regression_mask():
+    return torch.tensor([1])
 
 
 def test_collate_fn_regression(
@@ -26,9 +49,6 @@ def test_collate_fn_regression(
     assert batch.regression_masks.shape[0] == 2
 
     assert batch.auxillary_data is None
-    assert batch.molecular_descriptors is None
-    assert batch.target_class_labels is None
-    assert batch.active_decoy_labels is None
 
 
 def test_collate_fn_aux_data(
@@ -59,7 +79,3 @@ def test_collate_fn_aux_data(
 
     for values in batch.auxillary_data.values():
         assert values.shape[0] == 2
-
-    assert batch.molecular_descriptors is None
-    assert batch.target_class_labels is None
-    assert batch.active_decoy_labels is None

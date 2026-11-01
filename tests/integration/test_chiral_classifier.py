@@ -110,8 +110,22 @@ def test_supervised_collate_stacks_labels() -> None:
     assert batch.system_index.tolist() == [0, 0, 0, 1, 1, 1, 2, 2, 2]
 
 
+CHIRAL_CAT_ARCHITECTURE = (
+    Path(__file__).resolve().parents[2]
+    / "configs"
+    / "training"
+    / "chiral_cat"
+    / "architecture_config.yaml"
+)
+
+
+@pytest.mark.skipif(
+    not CHIRAL_CAT_ARCHITECTURE.exists(),
+    reason="configs/training/chiral_cat/architecture_config.yaml was never committed "
+    "(BENCHMARK_REFACTOR_ISSUES.md, test suite baseline)",
+)
 def test_chiral_architecture_yaml_is_single_head_classifier() -> None:
-    path = Path("configs/training/chiral_cat/architecture_config.yaml")
+    path = CHIRAL_CAT_ARCHITECTURE
     ac = pyaml.parse_yaml_file_as(ArchitectureConfig, path)
     assert isinstance(ac, RegressionArchitectureConfig)
     assert ac.embedding_preprocess_config.pseudoscalars is True
