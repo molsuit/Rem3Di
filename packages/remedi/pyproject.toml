@@ -35,7 +35,6 @@ dependencies = [
     "rdkit>=2024.9.4",
     "pydantic",
     "pydantic_yaml",
-    "zarr>=3.2",
     "wandb",
     "umap-learn",
     "pymatgen>=2026.3.23",
@@ -45,10 +44,6 @@ dependencies = [
     "bblean>=0.10.3",
     "matplotlib",
     "scikit-learn",
-    "PyTDC>=0.3.6",
-    # Every bundle and dataset table is a parquet; pandas is already pulled
-    # transitively, but the parquet engine is not.
-    "pyarrow",
 ]
 
 # ``polaris-lib`` is intentionally NOT listed here: it pins ``zarr<3`` and so
@@ -69,7 +64,8 @@ Paper = "https://openreview.net/forum?id=jOmZsvXoK5"
 # PyTorch index yourself before/with the extra (PyPI ships the default build).
 cpu = [
     "torch>=2.5.1",
-    "mace-torch>=0.3.16",
+    # The polar extra (mace-torch >= 0.3.17) brings graph_longrange for the MACE-POLAR models.
+    "mace-torch[polar]>=0.3.17",
     "torch-sim-atomistic",
 ]
 cuda = [

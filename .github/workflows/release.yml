@@ -11,8 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - name: Build sdist + wheel
-        run: uv build --package remedi
+      - name: Build sdist + wheel of the three packages
+        # remedi depends on remedi-eval and remedi-data; all three are published
+        # together at the same version (each needs a PyPI Trusted Publisher).
+        run: |
+          uv build --package remedi-data
+          uv build --package remedi-eval
+          uv build --package remedi
       - uses: actions/upload-artifact@v4
         with:
           name: dist

@@ -6,6 +6,7 @@ Writing the timing records is exercised by the build tests in
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 
 import numpy as np
@@ -57,6 +58,11 @@ def kill_the_worker_on_one_molecule(
     return REAL_EMBED_ONE_SMILES(isomeric_smiles, config)
 
 
+@pytest.mark.skipif(
+    multiprocessing.get_start_method() != "fork",
+    reason="the forked workers must inherit the monkeypatch; the default start method "
+    "is not fork here (Python >= 3.14 defaults to forkserver; the workspace pins 3.12)",
+)
 def test_embed_many_survives_a_worker_that_dies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

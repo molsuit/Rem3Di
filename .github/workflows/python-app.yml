@@ -1,40 +1,40 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+# Lint, dead-code check and tests for the uv workspace (remedi-data, remedi-eval, remedi and the
+# benchmark preparers), installed from the committed uv.lock.
 
-name: Python application
+name: Tests
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
-
+  test:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v3
-      with:
-        python-version: "3.12"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install flake8 pytest
-        # torch/mace live in the `cpu` extra now; `eval` covers lightgbm/sklearn tests.
-        pip install "./packages/remedi[cpu]"
-    - name: Lint with flake8
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Test with pytest
-      run: |
-        pytest tests/
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install the workspace (CPU)
+        run: uv sync --locked --all-packages --extra cpu
+      - name: Lint
+        run: |
+          uv run --no-sync ruff check .
+          uv run --no-sync ruff format --check .
+      - name: Dead code
+        run: uv run --no-sync python tools/vulture/run_vulture.py
+      - name: Workspace tests
+        run: uv run --no-sync pytest -q
+      - name: Preparer tests
+        # Each preparer runs its own suite from its own directory (their
+        # conftest modules share a name).
+        run: |
+          for preparer in tdc moleculenet polaris chiralcat qm9or; do
+            (cd "preparers/$preparer" && uv run --no-sync pytest -q)
+          done
