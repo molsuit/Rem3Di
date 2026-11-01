@@ -80,7 +80,7 @@ class DatasetSplitting:
         mol_ids = self.dataset.get_all_mol_ids()
         n_mols = len(mol_ids)
 
-        # Pre‑compute slice objects that divide an array into `N_splits` chunks
+        # Pre-compute slice objects that divide an array into `N_splits` chunks
         fold_slices = compute_splits(n_mols, [1 / N_splits] * N_splits)
 
         # --- 2. Repeated CV ---------------------------------------------------
@@ -114,11 +114,11 @@ class DatasetSplitting:
                 val_structure_ids = self.dataset.get_structure_ids_for_mol(val_mol_ids)
 
                 print(
-                    f"lables per class Train set{self.dataset.regression_masks[train_structure_ids,:].sum(dim= 0)}"
+                    f"lables per class Train set{self.dataset.regression_masks[train_structure_ids, :].sum(dim=0)}"
                 )
 
                 print(
-                    f"lables per class Vals set{self.dataset.regression_masks[val_structure_ids,:].sum(dim= 0)}"
+                    f"lables per class Vals set{self.dataset.regression_masks[val_structure_ids, :].sum(dim=0)}"
                 )
 
                 yield (
@@ -136,7 +136,7 @@ class DatasetSplitting:
         self, split_config: SplitConfig
     ) -> Iterator[tuple[list[int], list[int], str]]:
         """
-        Unified entry‑point.  Yields (train_ids, val_ids) tuples according to
+        Unified entry-point.  Yields (train_ids, val_ids) tuples according to
         the strategy described by *split_config*.
         """
         if split_config.strategy is SplitStrategy.SINGLE:
@@ -156,7 +156,7 @@ class DatasetSplitting:
     def visualise_splitting(self, N_repeats=5, N_splits=5):
         splits = list(self._repeated_cv(N_repeats, N_splits, shuffle=True))
 
-        # ---------- build a 2‑D matrix: rows = splits×folds, cols = samples ------------
+        # ---------- build a 2-D matrix: rows = splitsxfolds, cols = samples ------------
         N_structures = len(self.dataset.structure_ids)
         matrix = np.zeros((N_repeats * N_splits, N_structures))
 
@@ -170,7 +170,7 @@ class DatasetSplitting:
             matrix, aspect="auto", cmap="Blues", vmin=0, vmax=1, interpolation="none"
         )  # default colormap
 
-        # y‑labels: "Split i  Fold j"
+        # y-labels: "Split i  Fold j"
         y_positions = []
         y_labels = []
         for rep in range(N_repeats):

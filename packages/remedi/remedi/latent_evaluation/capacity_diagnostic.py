@@ -37,7 +37,7 @@ class LatentCapacityReportModel(BaseModel):
         return v.tolist()
 
 
-def run_latent_space_capacity_diagnostic(
+def run_latent_space_capacity_diagnostic(  # noqa: C901 - one report, step by step
     Z: np.ndarray,
     bins: int | Iterable[int] = 128,
     dead_thr: float = 0.2,
@@ -88,8 +88,7 @@ def run_latent_space_capacity_diagnostic(
     if drop_outlier_quantile is not None:
         if not 0.0 < drop_outlier_quantile <= 1.0:
             raise ValueError(
-                "drop_outlier_quantile must be in (0, 1]; "
-                f"got {drop_outlier_quantile}"
+                f"drop_outlier_quantile must be in (0, 1]; got {drop_outlier_quantile}"
             )
         raw_norms = np.linalg.norm(Z, axis=1)
         norm_threshold = float(np.quantile(raw_norms, drop_outlier_quantile))
@@ -110,7 +109,7 @@ def run_latent_space_capacity_diagnostic(
         norms = np.linalg.norm(Z, axis=1, keepdims=True)
         Z = Z / (norms + eps)
 
-    N, d = Z.shape
+    _n_structures, d = Z.shape
 
     # normalize bins parameter -> per-dimension integer array
     if isinstance(bins, Iterable) and not isinstance(bins, str | bytes):
@@ -178,7 +177,7 @@ def get_descriptor_norm_distribution(Z):
 
 def get_descriptor_channel_distribution(Z):
     Z = np.asarray(Z, dtype=np.float64)
-    N, d = Z.shape
+    _n_structures, _dimension = Z.shape  # Z must be 2-D
 
     means = np.mean(Z, axis=0)
     stds = np.std(Z, axis=0)

@@ -334,9 +334,9 @@ class EmbeddingPreprocessConfig(BaseModel):
         """Concatenation of the per-layer irreps for the selected layers."""
         idxs = self.selected_layer_indices
         if idxs is None or self.mace_per_layer_irreps is None:
-            assert (
-                self.input_irreps is not None
-            ), "input_irreps must be resolved before reading selected_input_irreps"
+            assert self.input_irreps is not None, (
+                "input_irreps must be resolved before reading selected_input_irreps"
+            )
             return self.input_irreps
         out = Irreps()
         for i in idxs:
@@ -578,9 +578,9 @@ class GlobalAggregatorConfig(BaseModel):
         return self.descriptor_seq_len * self.output_dim
 
     def build(self) -> nn.Module:
-        assert (
-            self.input_dim is not None and self.output_dim is not None
-        ), "Dimensions must be resolved by ArchitectureConfig cascade before build."
+        assert self.input_dim is not None and self.output_dim is not None, (
+            "Dimensions must be resolved by ArchitectureConfig cascade before build."
+        )
 
         return self.aggregator_type_config.build(
             input_dim=self.input_dim,

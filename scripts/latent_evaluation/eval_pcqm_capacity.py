@@ -36,7 +36,7 @@ from remedi.model.remedi_model import REM3DIModel
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 DEFAULT_MODEL_DIR = Path(
-    "/path/to/training_runs/pcqm_ablation/" "24-2026_05_19_12_57_28-pcqm_baseline"
+    "/path/to/training_runs/pcqm_ablation/24-2026_05_19_12_57_28-pcqm_baseline"
 )
 DEFAULT_DATASET_DIR = Path("/path/to/datasets/pcqm4m/pcqm_only_structures_3_5_M")
 DEFAULT_N_SAMPLES = 200_000

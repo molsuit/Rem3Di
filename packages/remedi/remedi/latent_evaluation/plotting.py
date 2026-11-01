@@ -7,13 +7,13 @@ def plot_reduced_dimension_3d(principle_components, color="k", suptitle=None, **
     """
     Parameters
     ----------
-    principle_components : (N, 3) array‑like
+    principle_components : (N, 3) array-like
         Coordinates for the first three UMAP/PC components.
     color : str | sequence, optional
         • Single Matplotlib colour → whole cloud uses that colour
         • Sequence of scalars or colour specs → each point coloured individually.
     suptitle : str, optional
-        Figure‑level title.
+        Figure-level title.
     **kwargs
         Extra keyword arguments forwarded to `ax.scatter`
         (e.g. `s`, `cmap`, `alpha`, `marker`, …).
@@ -24,7 +24,7 @@ def plot_reduced_dimension_3d(principle_components, color="k", suptitle=None, **
         Handle to the created figure.
     """
     if principle_components.shape[1] < 3:
-        raise ValueError("Need at least three components for a 3‑D plot.")
+        raise ValueError("Need at least three components for a 3-D plot.")
 
     pc1, pc2, pc3 = (
         principle_components[:, 0],
@@ -35,7 +35,7 @@ def plot_reduced_dimension_3d(principle_components, color="k", suptitle=None, **
     fig = plt.figure(figsize=(8, 6))
     ax = fig.add_subplot(111, projection="3d")
 
-    # 3‑D scatter
+    # 3-D scatter
     ax.scatter(pc1, pc2, pc3, c=color, alpha=0.7, s=0.4, **kwargs)
 
     # Labelling

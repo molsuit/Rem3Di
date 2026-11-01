@@ -92,6 +92,7 @@ from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     pos_emb_getitem,
 )
+
 ds = TrainingMoleculeDataset(training_config.dataset_path, get_item=pos_emb_getitem)
 model = EncoderOnlyArchitectureConfig.from_directory(model_dir).build()
 model.encoder.load_state_dict(torch.load(f"{model_dir}/encoder.pth"))

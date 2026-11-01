@@ -452,9 +452,9 @@ def test_descriptor_structure_benchmark_scorecard(monkeypatch):
     # On a perfect partition every chemistry axis hits AMI ≈ 1.
     canonical = report.canonical
     for axis in ("metal_block", "ligand_motif", "geometry_class", "donor_set"):
-        assert (
-            canonical.ami_per_axis[axis] > 0.99
-        ), f"{axis}: {canonical.ami_per_axis[axis]}"
+        assert canonical.ami_per_axis[axis] > 0.99, (
+            f"{axis}: {canonical.ami_per_axis[axis]}"
+        )
     assert abs(report.aggregate_chemistry_ami - 1.0) < 1e-6
 
     # 2 clusters x 4 members at purity 1.0 -> 2 pure islands.

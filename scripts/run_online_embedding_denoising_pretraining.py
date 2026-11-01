@@ -39,7 +39,7 @@ from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-import torch._dynamo
+import torch._dynamo  # noqa: E402 - after the device and logging setup
 
 torch._logging.set_logs(recompiles=True)
 
@@ -48,7 +48,7 @@ torch._logging.set_logs(recompiles=True)
 # shapes (total atoms, num molecules) vary, triggering repeated recompiles. The
 # function does ~µs of cumsum/bincount work — not worth compiling. Override the
 # decorated symbol with a dynamo-disabled version before any model is built.
-import nvalchemiops.torch.neighbors.neighbor_utils as _nv_neighbor_utils
+import nvalchemiops.torch.neighbors.neighbor_utils as _nv_neighbor_utils  # noqa: E402 - patched before any model is built
 
 _nv_neighbor_utils.prepare_batch_idx_ptr = torch._dynamo.disable(
     _nv_neighbor_utils.prepare_batch_idx_ptr
@@ -184,7 +184,7 @@ def setup_logging(filename, level: int = logging.INFO) -> logging.Logger:
     return logger
 
 
-def main():
+def main():  # noqa: C901 - one training loop; splitting it is a separate refactor
     args = parse_args()
 
     torch.manual_seed(0)

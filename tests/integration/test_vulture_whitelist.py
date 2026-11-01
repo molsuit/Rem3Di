@@ -17,7 +17,9 @@ def _generator():
     return module
 
 
-def test_fields_of_models_enums_and_their_subclasses_are_whitelisted(tmp_path: Path) -> None:
+def test_fields_of_models_enums_and_their_subclasses_are_whitelisted(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "source.py"
     source.write_text(
         "from enum import Enum\n"

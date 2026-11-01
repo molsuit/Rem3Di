@@ -89,9 +89,9 @@ def test_with_partial_padding_mask(B, N, d_in, d_out, H, head_dim, k_seeds):
     loss = out.pow(2).mean()
     loss.backward()
     assert S.grad is not None and _finite_tensor(S.grad)
-    assert (
-        S.grad[:, :-3, :].abs().sum() > 0
-    ).item(), "Unmasked positions should affect the loss"
+    assert (S.grad[:, :-3, :].abs().sum() > 0).item(), (
+        "Unmasked positions should affect the loss"
+    )
 
 
 @pytest.mark.parametrize(
@@ -121,9 +121,9 @@ def test_all_keys_masked_row_is_safe(B, N, d_in, d_out, H, head_dim, k_seeds):
     assert S.grad is not None and _finite_tensor(S.grad)
 
     masked_grad_norm = S.grad[0].norm().item()
-    assert (
-        masked_grad_norm < 1e-6
-    ), f"Expected ~0 grad for fully masked row, got {masked_grad_norm}"
+    assert masked_grad_norm < 1e-6, (
+        f"Expected ~0 grad for fully masked row, got {masked_grad_norm}"
+    )
 
 
 def test_padding_invariance():
@@ -145,9 +145,9 @@ def test_padding_invariance():
         out_real = model(real, no_pad_mask)
         out_pad = model(padded, pad_mask)
 
-    assert torch.allclose(
-        out_real, out_pad, atol=1e-5
-    ), "PAD tokens leaked into the pooled output"
+    assert torch.allclose(out_real, out_pad, atol=1e-5), (
+        "PAD tokens leaked into the pooled output"
+    )
 
 
 def test_seeds_produce_different_outputs():

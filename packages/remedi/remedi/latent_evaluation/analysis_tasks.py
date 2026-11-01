@@ -1465,8 +1465,7 @@ def _plot_per_dim_entropy(report: LatentCapacityReportModel) -> Any:
     )
     if report.n_dropped:
         title += (
-            f"\ndropped {report.n_dropped} outliers "
-            f"(‖z‖ > {report.norm_threshold:.2f})"
+            f"\ndropped {report.n_dropped} outliers (‖z‖ > {report.norm_threshold:.2f})"
         )
     ax.set_title(title)
     ax.legend()

@@ -262,7 +262,7 @@ class AtomicDescriptorPreprocessor(nn.Module):
         )
         self.equivariant_irreps = get_equivariant_irreps(selected_input_irreps)
 
-        assert all([l == 1 for l in self.equivariant_irreps.ls])
+        assert all(degree == 1 for degree in self.equivariant_irreps.ls)
 
         if selected_channel_indices is not None:
             self.register_buffer(

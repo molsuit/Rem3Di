@@ -361,9 +361,7 @@ def _features_for_atoms(atoms: Atoms) -> MetalEnvironmentFeatures:
                 spin_multiplicity=None,
             )
             nn = MinimumDistanceNN(tol=0.20)
-            nn_info = nn.get_nn_info(
-                mol, metal_idx
-            )  # ty: ignore[invalid-argument-type]
+            nn_info = nn.get_nn_info(mol, metal_idx)  # ty: ignore[invalid-argument-type]
             donor_local = [int(nn["site_index"]) for nn in nn_info]
             donor_symbols = [symbols[i] for i in donor_local]
             cn = len(donor_local)

@@ -171,7 +171,7 @@ class TrainingTelemetry:
 
     def get_track_grad_norm_fn(self):
         def capture_grad(grad):  # grad has same shape as M
-            # L2 norm over all non‑batch dims, then mean over batch
+            # L2 norm over all non-batch dims, then mean over batch
             norm = grad.flatten(1).norm(dim=1).mean()
             self.grad_norm_data.append(norm.item())
 

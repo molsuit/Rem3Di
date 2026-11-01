@@ -91,7 +91,7 @@ def get_coordination_numbers(molecules: list[Atoms]):
     cns = []
 
     for m in molecules:
-        charge = int(round(float(m.info["total_charge"])))
+        charge = round(float(m.info["total_charge"]))
         mol = Molecule(
             species=[chemical_symbols[z] for z in m.get_atomic_numbers()],
             coords=m.get_positions(),
@@ -169,8 +169,7 @@ def get_metal_center_type(molecules: list[Atoms]) -> list[int]:
         metals = [num for num in nums if num in TM_numbers]
         if len(metals) != 1:
             raise ValueError(
-                f"Expected exactly one TM center in molecule {m}, "
-                f"but found: {metals}"
+                f"Expected exactly one TM center in molecule {m}, but found: {metals}"
             )
         centers.append(int(metals[0]))
     return centers

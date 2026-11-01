@@ -27,7 +27,9 @@ target-version = "py312"
 # Vulture whitelists are name lists, not importable code.
 extend-exclude = ["tools/vulture/*whitelist*.py"]
 lint.select = ["I", "UP", "F", "E", "W", "C90", "B", "A", "RUF"]
-lint.ignore = ["E501", "B008"]
+# UP042 (str + Enum -> StrEnum) changes str(member), and these enums are stored in
+# zarr configs and yaml; switch deliberately, not as a lint fix.
+lint.ignore = ["E501", "B008", "UP042"]
 
 # Tests live next to their package (packages/<name>/tests); tests/integration
 # holds the workspace-level ones (scripts/, configs/, package layout).
