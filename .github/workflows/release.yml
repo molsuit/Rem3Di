@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - name: Build sdist + wheel
-        run: uv build
+        run: uv build --package remedi
       - uses: actions/upload-artifact@v4
         with:
           name: dist
