@@ -33,6 +33,7 @@ def test_mean_cfg_roundtrip():
     cfg = MeanAggregatorConfig()
     assert cfg.aggregator_type == "mean"
     assert '"aggregator_type":"mean"' in cfg.model_dump_json()
+    assert MeanAggregatorConfig.model_validate_json(cfg.model_dump_json()) == cfg
 
 
 def test_mean_cfg_build_honors_output_dim():

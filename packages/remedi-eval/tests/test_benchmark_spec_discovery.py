@@ -21,7 +21,6 @@ from remedi_data.bundle import (
     EvalMetric,
     EvaluationSpec,
     LabelColumn,
-    discover_datasets,
     read_spec,
 )
 from remedi_data.dataset.tasks import TaskType
@@ -98,9 +97,4 @@ def test_discovery_finds_only_benchmarks_sorted(tmp_path: Path) -> None:
 
     assert [path.name for path, _ in discovered] == ["alpha", "zeta"]
     assert [spec.dataset_id for _, spec in discovered] == ["alpha", "zeta"]
-    assert [path.name for path, _ in discover_datasets(tmp_path)] == [
-        "alpha",
-        "corpus",
-        "zeta",
-    ]
     assert discover_benchmarks(tmp_path / "nothing_here") == []

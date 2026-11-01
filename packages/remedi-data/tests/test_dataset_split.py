@@ -26,6 +26,7 @@ from remedi_data.dataset.tasks import (
     TaskSet,
     TaskType,
 )
+from remedi_data.testing import append_carbon_structures
 
 
 def _task_config() -> DatasetConfig:
@@ -44,24 +45,6 @@ def _task_config() -> DatasetConfig:
                 )
             ]
         ),
-    )
-
-
-def _append(writer: ShardAlignedWriter, n_mols: int, atoms_per: int, split=None):
-    na = n_mols * atoms_per
-    writer.append_batch(
-        positions=np.zeros((na, 3), dtype="f4"),
-        atomic_numbers=np.full(na, 6, dtype="u1"),
-        batch_ptr_cumsum=np.arange(1, n_mols + 1) * atoms_per,
-        molecule_ids=np.arange(n_mols),
-        stereoisomer_ids=np.arange(n_mols),
-        total_charge=np.zeros(n_mols, dtype="f4"),
-        multiplicity=np.ones(n_mols, dtype="f4"),
-        system_targets=np.zeros((n_mols, 1), dtype="f4"),
-        system_masks=np.ones((n_mols, 1), dtype="u1"),
-        atom_targets=None,
-        atom_masks=None,
-        split=split,
     )
 
 
@@ -103,8 +86,8 @@ def test_split_round_trips_through_writer(tmp_path: Path) -> None:
     rng = np.random.default_rng(0)
     split_a = rng.integers(0, 3, size=20, dtype="u1")
     split_b = rng.integers(0, 3, size=17, dtype="u1")
-    _append(writer, 20, 3, split=split_a)
-    _append(writer, 17, 3, split=split_b)
+    append_carbon_structures(writer, 20, 3, split=split_a, with_system_target=True)
+    append_carbon_structures(writer, 17, 3, split=split_b, with_system_target=True)
     writer.finalize()
 
     reopened = MoleculeDataset.open_existing_dataset_from_dir(root)
@@ -120,7 +103,7 @@ def test_split_defaults_unassigned_when_not_supplied(tmp_path: Path) -> None:
     root = tmp_path / "ds"
     ds = MoleculeDataset.create_empty_dataset(root, cfg)
     writer = ShardAlignedWriter(ds)
-    _append(writer, 9, 4, split=None)
+    append_carbon_structures(writer, 9, 4, split=None, with_system_target=True)
     writer.finalize()
 
     reopened = MoleculeDataset.open_existing_dataset_from_dir(root)

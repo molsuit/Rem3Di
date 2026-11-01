@@ -49,6 +49,9 @@ from remedi_data.bundle import (
 from remedi_data.chemistry.conformers import charge_and_multiplicity
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.dataset.config import DatasetConfig
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.shard_aligned_writer import ShardAlignedWriter
 from remedi_data.dataset.tasks import TaskType
 
 #: One enantiomer pair, an achiral ring, a meso compound, a lone chiral
@@ -344,3 +347,94 @@ def write_small_dataset(
         layout=SMALL_ZARR_LAYOUT,
     )
     return directory
+
+
+def write_dataset_with_smiles_stores(
+    directory: Path, smiles: Sequence[str], structures_per_molecule: int = 1
+) -> MoleculeDataset:
+    """A zarr dataset with the zarr SMILES stores, through ``ShardAlignedWriter``.
+
+    The layout the old pretraining path writes (no table files): every
+    structure is the same five-atom frame, ``structures_per_molecule`` copies
+    per SMILES, one SMILES line per molecule. The dataset is returned open;
+    call :meth:`MoleculeDataset.close` before reopening the path.
+    """
+    config = DatasetConfig(atom_chunk=64, molecule_chunk=16, contains_smiles=True)
+    dataset = MoleculeDataset.create_empty_dataset(path=Path(directory), config=config)
+    writer = ShardAlignedWriter(dataset)
+
+    species = np.array([6, 8, 7, 1, 1], dtype=np.uint8)
+    frame = np.arange(15, dtype=np.float32).reshape(5, 3)
+    n_molecules = len(smiles)
+    n_structures = n_molecules * structures_per_molecule
+    writer.append_batch(
+        positions=np.tile(frame, (n_structures, 1)),
+        atomic_numbers=np.tile(species, n_structures),
+        batch_ptr_cumsum=np.arange(1, n_structures + 1, dtype=np.int64) * len(species),
+        molecule_ids=np.repeat(
+            np.arange(n_molecules, dtype=np.int64), structures_per_molecule
+        ),
+        stereoisomer_ids=np.zeros(n_structures, dtype=np.int64),
+        total_charge=np.zeros(n_structures, dtype=np.float32),
+        multiplicity=np.ones(n_structures, dtype=np.float32),
+        system_targets=None,
+        system_masks=None,
+        atom_targets=None,
+        atom_masks=None,
+    )
+    writer.finalize()
+    for store in (dataset.smiles, dataset.isomeric_smiles):
+        if store is not None:
+            store.append_lines(list(smiles))
+    return dataset
+
+
+def append_carbon_structures(
+    writer: ShardAlignedWriter,
+    n_molecules: int,
+    atoms_per_molecule: int,
+    *,
+    with_system_target: bool = False,
+    split: np.ndarray | None = None,
+) -> None:
+    """Append ``n_molecules`` all-carbon structures at the origin through ``writer``.
+
+    ``with_system_target`` writes one zero-valued, unmasked system target per
+    structure (the dataset must declare one task column); ``split`` is passed
+    through to ``append_batch``.
+    """
+    n_atoms = n_molecules * atoms_per_molecule
+    writer.append_batch(
+        positions=np.zeros((n_atoms, 3), dtype="f4"),
+        atomic_numbers=np.full(n_atoms, 6, dtype="u1"),
+        batch_ptr_cumsum=np.arange(1, n_molecules + 1) * atoms_per_molecule,
+        molecule_ids=np.arange(n_molecules),
+        stereoisomer_ids=np.arange(n_molecules),
+        total_charge=np.zeros(n_molecules, dtype="f4"),
+        multiplicity=np.ones(n_molecules, dtype="f4"),
+        system_targets=np.zeros((n_molecules, 1), dtype="f4")
+        if with_system_target
+        else None,
+        system_masks=np.ones((n_molecules, 1), dtype="u1")
+        if with_system_target
+        else None,
+        atom_targets=None,
+        atom_masks=None,
+        split=split,
+    )
+
+
+def write_ten_structure_dataset(directory: Path, frames: Sequence[Atoms]) -> Path:
+    """The ten :data:`ACHIRAL_TEN_SMILES` written with caller-supplied frames.
+
+    One regression label ``y`` (``linspace(0, 1, 10)``), no evaluation block.
+    The structure-reading tests compare what they read back against ``frames``.
+    """
+    return write_small_dataset(
+        directory,
+        dataset_id="ten",
+        labels=[LabelColumn(name="y", task_type=TaskType.regression)],
+        metrics=None,
+        targets=np.linspace(0.0, 1.0, len(ACHIRAL_TEN_SMILES)).reshape(-1, 1),
+        structures=frames,
+    )

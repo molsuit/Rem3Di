@@ -233,9 +233,7 @@ def test_regression_yaml_parses_against_current_schema():
 
 
 def test_encoder_decoder_yaml_parses_against_current_schema():
-    yaml_file = (
-        TESTS_DIR / "test_architecture_config_encoder_decoder.yaml"
-    )
+    yaml_file = TESTS_DIR / "test_architecture_config_encoder_decoder.yaml"
     cfg = from_yaml(yaml_file, EncoderDecoderArchitectureConfig)
     assert isinstance(cfg, EncoderDecoderArchitectureConfig)
     assert cfg.encoder_config.attention_layer_config.embedding_dim == 256
@@ -261,4 +259,6 @@ def test_model_reconstruction():
 
     yaml_file = TESTS_DIR / "test_architecture_config.yaml"
     cfg = from_yaml(yaml_file, RegressionArchitectureConfig)
-    _ = cfg.build()
+    model = cfg.build()
+    assert isinstance(model, torch.nn.Module)
+    assert sum(parameter.numel() for parameter in model.parameters()) > 0

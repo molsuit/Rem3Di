@@ -13,61 +13,7 @@ from remedi.data_handling.dataset_analysis import (
     MoleculeDatasetAnalysis,
     _compute_descriptors,
 )
-from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.shard_aligned_writer import (
-    ShardAlignedWriter,
-)
-
-
-def _build_small_dataset(
-    tmp_path: Path,
-    smiles_list: list[str],
-    structures_per_mol: int = 2,
-) -> MoleculeDataset:
-    """Build a minimal on-disk dataset with `structures_per_mol` copies per SMILES."""
-    cfg = DatasetConfig(atom_chunk=64, molecule_chunk=16, contains_smiles=True)
-    dataset = MoleculeDataset.create_empty_dataset(path=tmp_path, config=cfg)
-    writer = ShardAlignedWriter(dataset)
-
-    # Fake atomic data: each structure has 5 atoms (e.g., C, O, N, H, H)
-    species = np.array([6, 8, 7, 1, 1], dtype=np.uint8)
-    positions = np.tile(np.arange(15, dtype=np.float32).reshape(5, 3), (1, 1))
-
-    n_mols = len(smiles_list)
-    n_structures = n_mols * structures_per_mol
-    all_positions = np.tile(positions, (n_structures, 1))
-    all_species = np.tile(species, n_structures)
-
-    # cumulative ends per structure
-    ptr_cumsum = np.arange(1, n_structures + 1, dtype=np.int64) * 5
-    mol_ids = np.repeat(np.arange(n_mols, dtype=np.int64), structures_per_mol)
-    iso_ids = np.zeros(n_structures, dtype=np.int64)
-    charges = np.zeros(n_structures, dtype=np.float32)
-    mults = np.ones(n_structures, dtype=np.float32)
-
-    writer.append_batch(
-        positions=all_positions,
-        atomic_numbers=all_species,
-        batch_ptr_cumsum=ptr_cumsum,
-        molecule_ids=mol_ids,
-        stereoisomer_ids=iso_ids,
-        total_charge=charges,
-        multiplicity=mults,
-        system_targets=None,
-        system_masks=None,
-        atom_targets=None,
-        atom_masks=None,
-    )
-    writer.finalize()
-
-    # Append the SMILES separately (one per unique molecule).
-    if dataset.smiles is not None:
-        dataset.smiles.append_lines(smiles_list)
-    if dataset.isomeric_smiles is not None:
-        dataset.isomeric_smiles.append_lines(smiles_list)
-
-    return dataset
+from remedi_data.testing import write_dataset_with_smiles_stores
 
 
 def test_compute_descriptors_valid_and_invalid():
@@ -98,7 +44,9 @@ def test_molecule_dataset_analysis_runs(tmp_path: Path):
         "NC(=O)c1ccncc1",
         "C[C@H](N)C(=O)O",
     ]
-    dataset = _build_small_dataset(tmp_path / "ds", smiles, structures_per_mol=3)
+    dataset = write_dataset_with_smiles_stores(
+        tmp_path / "ds", smiles, structures_per_molecule=3
+    )
 
     config = MoleculeDatasetAnalysisConfig(
         rdkit_subsample=None,
@@ -130,7 +78,9 @@ def test_molecule_dataset_analysis_runs(tmp_path: Path):
 
 def test_heteroatom_chunking_matches_naive(tmp_path: Path):
     smiles = ["CCO", "c1ccncc1", "CCN"]
-    dataset = _build_small_dataset(tmp_path / "ds", smiles, structures_per_mol=2)
+    dataset = write_dataset_with_smiles_stores(
+        tmp_path / "ds", smiles, structures_per_molecule=2
+    )
 
     config = MoleculeDatasetAnalysisConfig(
         rdkit_subsample=0,
@@ -160,7 +110,9 @@ def test_bitbirch_runs_when_available(tmp_path: Path):
         "COc1ccc(CC(N)C(=O)O)cc1",
         "NC(=O)c1ccncc1",
     ]
-    dataset = _build_small_dataset(tmp_path / "ds", smiles, structures_per_mol=1)
+    dataset = write_dataset_with_smiles_stores(
+        tmp_path / "ds", smiles, structures_per_molecule=1
+    )
 
     config = MoleculeDatasetAnalysisConfig(
         rdkit_subsample=None,
@@ -216,7 +168,9 @@ def test_bitbirch_umap_projection_runs(tmp_path: Path):
     ]
     smiles = seed_smiles * 4  # 80 entries; UMAP handles this fine
     rng.shuffle(smiles)
-    dataset = _build_small_dataset(tmp_path / "ds", smiles, structures_per_mol=1)
+    dataset = write_dataset_with_smiles_stores(
+        tmp_path / "ds", smiles, structures_per_molecule=1
+    )
 
     config = MoleculeDatasetAnalysisConfig(
         rdkit_subsample=None,

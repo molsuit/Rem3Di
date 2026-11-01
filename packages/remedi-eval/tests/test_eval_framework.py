@@ -24,7 +24,6 @@ from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import (
     BenchmarkPanelConfig,
     EmbeddingSpec,
-    EvalContext,
     EvalManifest,
     ResourceCache,
     render,
@@ -120,33 +119,6 @@ def test_shared_resource_built_once(tmp_path: Path) -> None:
     X2 = cache.get(spec)  # same key -> served from memo, not rebuilt
     assert X1 is X2
     assert cache.build_count(spec) == 1
-
-
-def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
-    """``DescriptorAnalysisConfig`` (no longer in the manifest's task union) runs
-    on an explicit :class:`EvalContext`, artifacts under ``descriptor_analysis/``."""
-    from remedi.latent_evaluation import CapacityDiagnosticTask
-    from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
-
-    _build_reg_zarr(tmp_path, "corpus", np.linspace(0, 1, _N_ROWS))
-
-    out = tmp_path / "eval_out" / "model_x"
-    out.mkdir(parents=True)
-    ctx = EvalContext(
-        output_root=out,
-        resource_cache_dir=tmp_path / "cache",
-        resources=ResourceCache(),
-        model=EcfpConfig(name="ecfp_256", length=256),
-    )
-    task = DescriptorAnalysisConfig(
-        dataset_path=tmp_path / "datasets" / "corpus",
-        dataset_id="corpus",
-        tasks=[CapacityDiagnosticTask()],
-    )
-    for artifact in task.run(ctx):
-        artifact.serialize_to(out)
-
-    assert (out / "descriptor_analysis" / "capacity_diagnostic.yaml").exists()
 
 
 def test_benchmark_plotter_renders_from_a_loaded_results_table(tmp_path: Path) -> None:

@@ -15,12 +15,10 @@ from remedi.data_handling.dataset.training_dataset import (
     atoms_getitem,
 )
 from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
-from remedi_data.bundle import LabelColumn
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.testing import (
     ACHIRAL_TEN_SMILES,
     embed_frame,
-    write_small_dataset,
+    write_ten_structure_dataset,
 )
 
 
@@ -31,14 +29,7 @@ def frames() -> list[Atoms]:
 
 @pytest.fixture
 def ten_structure_dataset(tmp_path: Path, frames: list[Atoms]) -> Path:
-    return write_small_dataset(
-        tmp_path,
-        dataset_id="ten",
-        labels=[LabelColumn(name="y", task_type=TaskType.regression)],
-        metrics=None,
-        targets=np.linspace(0.0, 1.0, 10).reshape(-1, 1),
-        structures=frames,
-    )
+    return write_ten_structure_dataset(tmp_path, frames)
 
 
 def batches(dataset: TrainingMoleculeDataset, num_workers: int) -> list[Sample]:

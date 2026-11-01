@@ -15,14 +15,12 @@ import numpy as np
 import pytest
 import yaml
 
-from remedi.embedding import RemediConfig
 from remedi_data.bundle import (
     PROVENANCE_FILENAME,
     BundleOutputs,
     BundleProvenance,
     PreparerRecord,
     TableOutputRecord,
-    structures_identity,
 )
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_eval.descriptors import (
@@ -151,14 +149,6 @@ def test_dataset_ids_do_not_share_a_cache_entry(tmp_path: Path) -> None:
     assert sorted(path.name for path in cache_dir.iterdir()) == ["HIA_Hou", "lipo"]
 
 
-def test_the_structures_hash_falls_back_to_the_table_content_hash(
-    tmp_path: Path,
-) -> None:
-    ds = write_stub_dataset(tmp_path / "bundle", None)
-
-    assert structures_identity(ds.path) == "c" * 64
-
-
 def test_a_dataset_without_provenance_names_the_problem(tmp_path: Path) -> None:
     cfg = EcfpConfig(length=64, name="ecfp")
     ds = stub_dataset(tmp_path / "no_provenance")
@@ -166,33 +156,3 @@ def test_a_dataset_without_provenance_names_the_problem(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError, match=r"provenance\.yaml"):
         compute_and_cache(cfg, ds, tmp_path / "cache", "toy")
-
-
-def test_the_remedi_identity_is_the_checkpoint_hash_and_is_memoised(
-    tmp_path: Path,
-) -> None:
-    model_dir = tmp_path / "checkpoint"
-    model_dir.mkdir()
-    (model_dir / "encoder.pth").write_bytes(b"weights-v1")
-    cfg = RemediConfig(name="remedi", model_dir=model_dir)
-
-    identity = cfg.identity()
-
-    assert cfg.checkpoint_sha256 == identity
-    # Knobs that do not change the matrix do not change the identity.
-    assert (
-        RemediConfig(
-            name="remedi", model_dir=model_dir, batch_size=8, device="cpu"
-        ).identity()
-        == identity
-    )
-    # Different weights under the same name do.
-    other_dir = tmp_path / "other"
-    other_dir.mkdir()
-    (other_dir / "encoder.pth").write_bytes(b"weights-v2")
-    assert RemediConfig(name="remedi", model_dir=other_dir).identity() != identity
-    (other_dir / "empty").mkdir()
-
-    # A model directory without weights names the problem.
-    with pytest.raises(FileNotFoundError, match=r"no \.pth checkpoint"):
-        RemediConfig(name="remedi", model_dir=other_dir / "empty").identity()

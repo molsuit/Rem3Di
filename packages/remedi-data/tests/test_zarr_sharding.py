@@ -23,27 +23,11 @@ from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.shard_aligned_writer import (
     ShardAlignedWriter,
 )
+from remedi_data.testing import append_carbon_structures
 
 
 def _count_files(root: Path) -> int:
     return sum(len(files) for _, _, files in os.walk(root))
-
-
-def _append(writer: ShardAlignedWriter, n_mols: int, atoms_per: int) -> None:
-    na = n_mols * atoms_per
-    writer.append_batch(
-        positions=np.zeros((na, 3), dtype="f4"),
-        atomic_numbers=np.full(na, 6, dtype="u1"),
-        batch_ptr_cumsum=np.arange(1, n_mols + 1) * atoms_per,
-        molecule_ids=np.arange(n_mols),
-        stereoisomer_ids=np.arange(n_mols),
-        total_charge=np.zeros(n_mols, dtype="f4"),
-        multiplicity=np.ones(n_mols, dtype="f4"),
-        system_targets=None,
-        system_masks=None,
-        atom_targets=None,
-        atom_masks=None,
-    )
 
 
 def test_sharded_store_keeps_file_count_tiny(tmp_path: Path) -> None:
@@ -65,7 +49,7 @@ def test_sharded_store_keeps_file_count_tiny(tmp_path: Path) -> None:
     atoms_per = 5
     n_atoms = n_mols * atoms_per  # 2500 atoms -> ~312 atom-chunks of 8
 
-    _append(writer, n_mols, atoms_per)
+    append_carbon_structures(writer, n_mols, atoms_per)
     writer.finalize()
 
     n_files = _count_files(root)
@@ -123,7 +107,7 @@ def test_no_per_batch_read_modify_write(tmp_path: Path, monkeypatch) -> None:
 
     before = dict(store.counter)
     for _ in range(n_batches):
-        _append(writer, mols_per_batch, atoms_per)
+        append_carbon_structures(writer, mols_per_batch, atoms_per)
     after_loop = dict(store.counter)
     writer.finalize()
 
@@ -181,7 +165,7 @@ def test_all_buffered_until_shard_complete(tmp_path: Path, monkeypatch) -> None:
 
     before = dict(store.counter)
     for _ in range(40):  # 40 * 5 * 5 = 1000 atoms < 1024 (one shard)
-        _append(writer, 5, 5)
+        append_carbon_structures(writer, 5, 5)
     after_loop = dict(store.counter)
 
     # Nothing flushed yet: no data writes happened during the append loop.
@@ -221,8 +205,8 @@ def test_row_ids_default_to_the_shard_cursor(tmp_path: Path) -> None:
     dataset = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
     writer = ShardAlignedWriter(dataset)
     # Two batches, so the second must continue the cursor rather than restart.
-    _append(writer, n_mols=5, atoms_per=3)
-    _append(writer, n_mols=7, atoms_per=3)
+    append_carbon_structures(writer, n_molecules=5, atoms_per_molecule=3)
+    append_carbon_structures(writer, n_molecules=7, atoms_per_molecule=3)
     writer.finalize()
 
     expected = np.arange(12, dtype="i8")

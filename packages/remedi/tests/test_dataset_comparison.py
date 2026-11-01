@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from remedi.configuration.dataset_analysis_config import (
@@ -19,62 +18,13 @@ from remedi.data_handling.dataset_comparison import (
     DatasetComparison,
     DatasetComparisonSummary,
 )
-from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.shard_aligned_writer import (
-    ShardAlignedWriter,
-)
+from remedi_data.testing import write_dataset_with_smiles_stores
 
 
-def _build_small_dataset(
-    tmp_path: Path,
-    smiles_list: list[str],
-    structures_per_mol: int = 1,
-) -> Path:
-    """Build a minimal on-disk MoleculeDataset and return its root path."""
-    cfg = DatasetConfig(atom_chunk=64, molecule_chunk=16, contains_smiles=True)
-    dataset = MoleculeDataset.create_empty_dataset(path=tmp_path, config=cfg)
-    writer = ShardAlignedWriter(dataset)
-
-    species = np.array([6, 8, 7, 1, 1], dtype=np.uint8)
-    positions = np.tile(np.arange(15, dtype=np.float32).reshape(5, 3), (1, 1))
-
-    n_mols = len(smiles_list)
-    n_structures = n_mols * structures_per_mol
-    all_positions = np.tile(positions, (n_structures, 1))
-    all_species = np.tile(species, n_structures)
-    ptr_cumsum = np.arange(1, n_structures + 1, dtype=np.int64) * 5
-    mol_ids = np.repeat(np.arange(n_mols, dtype=np.int64), structures_per_mol)
-    iso_ids = np.zeros(n_structures, dtype=np.int64)
-    charges = np.zeros(n_structures, dtype=np.float32)
-    mults = np.ones(n_structures, dtype=np.float32)
-
-    writer.append_batch(
-        positions=all_positions,
-        atomic_numbers=all_species,
-        batch_ptr_cumsum=ptr_cumsum,
-        molecule_ids=mol_ids,
-        stereoisomer_ids=iso_ids,
-        total_charge=charges,
-        multiplicity=mults,
-        system_targets=None,
-        system_masks=None,
-        atom_targets=None,
-        atom_masks=None,
-    )
-    writer.finalize()
-
-    if dataset.smiles is not None:
-        dataset.smiles.append_lines(smiles_list)
-    if dataset.isomeric_smiles is not None:
-        dataset.isomeric_smiles.append_lines(smiles_list)
-
-    # Close mmaps before returning -- the comparison reopens the path.
-    if dataset.smiles is not None:
-        dataset.smiles.close()
-    if dataset.isomeric_smiles is not None:
-        dataset.isomeric_smiles.close()
-    return tmp_path
+def _written_and_closed(directory: Path, smiles: list[str]) -> Path:
+    """Write a dataset and close it; the comparison reopens the path itself."""
+    write_dataset_with_smiles_stores(directory, smiles).close()
+    return directory
 
 
 # Two clearly distinct chemotypes per dataset so BitBIRCH should find structure.
@@ -107,8 +57,8 @@ EVAL_SMILES = [
 
 @pytest.fixture
 def two_small_datasets(tmp_path: Path) -> tuple[Path, Path]:
-    a = _build_small_dataset(tmp_path / "ds_pretrain", PRETRAIN_SMILES)
-    b = _build_small_dataset(tmp_path / "ds_eval", EVAL_SMILES)
+    a = _written_and_closed(tmp_path / "ds_pretrain", PRETRAIN_SMILES)
+    b = _written_and_closed(tmp_path / "ds_eval", EVAL_SMILES)
     return a, b
 
 

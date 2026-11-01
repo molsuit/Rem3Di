@@ -191,3 +191,33 @@ def test_the_pipeline_embeds_only_the_selected_datasets(tmp_path: Path) -> None:
     assert isinstance(config.manifest.tasks[0], BenchmarkPanelConfig)
     assert isinstance(config.manifest, EvalManifest)
     assert config.manifest.tasks[0].learners == [LinearLearnerConfig(ridge_alpha=1.0)]
+
+
+def test_the_remedi_identity_is_the_checkpoint_hash_and_is_memoised(
+    tmp_path: Path,
+) -> None:
+    model_dir = tmp_path / "checkpoint"
+    model_dir.mkdir()
+    (model_dir / "encoder.pth").write_bytes(b"weights-v1")
+    cfg = RemediConfig(name="remedi", model_dir=model_dir)
+
+    identity = cfg.identity()
+
+    assert cfg.checkpoint_sha256 == identity
+    # Knobs that do not change the matrix do not change the identity.
+    assert (
+        RemediConfig(
+            name="remedi", model_dir=model_dir, batch_size=8, device="cpu"
+        ).identity()
+        == identity
+    )
+    # Different weights under the same name do.
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    (other_dir / "encoder.pth").write_bytes(b"weights-v2")
+    assert RemediConfig(name="remedi", model_dir=other_dir).identity() != identity
+    (other_dir / "empty").mkdir()
+
+    # A model directory without weights names the problem.
+    with pytest.raises(FileNotFoundError, match=r"no \.pth checkpoint"):
+        RemediConfig(name="remedi", model_dir=other_dir / "empty").identity()

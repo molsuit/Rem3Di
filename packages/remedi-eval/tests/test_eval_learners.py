@@ -145,8 +145,9 @@ def test_mlp_config_roundtrip_defaults() -> None:
     assert cfg.hidden_dims == [256, 128]
     assert cfg.device == "cuda"
     assert cfg.allow_cpu_mlp is False
-    # The build() with default CUDA may raise on CPU-only hosts — only the
-    # config shape matters here.
+    assert MlpLearnerConfig.model_validate_json(cfg.model_dump_json()) == cfg
+    # build() with the default CUDA device raises on CPU-only hosts, so only the
+    # config is checked here.
 
 
 def test_mlp_cpu_smoke_regression() -> None:
