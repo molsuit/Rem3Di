@@ -27,16 +27,6 @@ from typing import Literal
 import numpy as np
 from pydantic import BaseModel
 
-from remedi.data_handling.bundle import (
-    TABLE_FILENAME,
-    DatasetSpec,
-    EvalMetric,
-    EvaluationSpec,
-    discover_datasets,
-    read_table,
-)
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import Split, TaskType, split_codes_from_names
 from remedi.evaluation.benchmark.learners import (
     Learner,
     LearnerConfig,
@@ -47,6 +37,16 @@ from remedi.evaluation.benchmark.metrics import (
     multiclass_report,
 )
 from remedi.evaluation.benchmark.pairwise import pair_ranking_accuracy
+from remedi_data.bundle import (
+    TABLE_FILENAME,
+    DatasetSpec,
+    EvalMetric,
+    EvaluationSpec,
+    discover_datasets,
+    read_table,
+)
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.tasks import Split, TaskType, split_codes_from_names
 
 
 class BenchmarkResultRow(BaseModel):

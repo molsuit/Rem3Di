@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 import numpy as np
@@ -9,8 +10,28 @@ from zarr import Array
 from zarr.codecs import BloscCodec, BloscShuffle
 from zarr.storage import LocalStore
 
-from remedi.configuration.dataset_config import DatasetConfig
-from remedi.data_handling.dataset.smiles_storage import SmilesStorage
+from remedi_data.dataset.config import DatasetConfig
+from remedi_data.dataset.smiles_storage import SmilesStorage
+
+
+@dataclass(frozen=True)
+class StructureArrays:
+    """The five structure arrays a training loader reads, by their zarr names.
+
+    This is the contract between the zarr layout (owned here) and the training
+    code in ``remedi``: field names are the array names in the zarr group.
+    Structure ``i`` owns atoms ``molecule_ptr[i]:molecule_ptr[i + 1]`` of
+    ``positions`` (float32, ``(n_atoms, 3)``) and ``atomic_numbers`` (uint8);
+    ``total_charge`` and ``multiplicity`` (float32) are per structure. Each
+    field is a numpy array (``in_memory=True``) or a read-only zarr array whose
+    slices are numpy arrays.
+    """
+
+    molecule_ptr: np.ndarray | Array
+    positions: np.ndarray | Array
+    atomic_numbers: np.ndarray | Array
+    total_charge: np.ndarray | Array
+    multiplicity: np.ndarray | Array
 
 
 class MoleculeDataset:
@@ -65,6 +86,30 @@ class MoleculeDataset:
         self.split = split
 
         self.config = config
+
+    @staticmethod
+    def open_structure_arrays(path: Path, in_memory: bool = False) -> StructureArrays:
+        """Open a dataset's structure arrays read-only.
+
+        Takes a path rather than an open dataset so a data-loader worker can
+        reopen it after pickling. ``in_memory=True`` loads all five arrays into
+        numpy; otherwise they stay lazy zarr arrays (sharded reads pull byte
+        ranges; the OS page cache covers repeated access to hot shards).
+        """
+        group = zarr.open_group(store=LocalStore(Path(path), read_only=True), mode="r")
+        arrays: dict[str, np.ndarray | Array] = {}
+        for field in fields(StructureArrays):
+            if field.name not in group:
+                raise KeyError(
+                    f"{path} has no {field.name!r} array; not a structure dataset"
+                )
+            array = group[field.name]
+            if not isinstance(array, Array):
+                raise TypeError(
+                    f"{path}/{field.name} is a zarr group, expected an array"
+                )
+            arrays[field.name] = np.array(array) if in_memory else array
+        return StructureArrays(**arrays)
 
     @classmethod
     def open_existing_dataset_from_dir(cls, path: Path):

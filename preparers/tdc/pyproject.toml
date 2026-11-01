@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "PyTDC ADMET group -> one bundle per endpoint"
 requires-python = ">=3.12"
 dependencies = [
-    "remedi",
+    "remedi-data",
     "pandas",
     "pydantic",
     "pyyaml",
@@ -17,7 +17,7 @@ dependencies = [
 prepare-tdc = "remedi_prepare_tdc.prepare:main"
 
 [tool.uv.sources]
-remedi = { workspace = true }
+remedi-data = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

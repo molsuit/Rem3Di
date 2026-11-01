@@ -12,13 +12,13 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.data_handling.bundle import (
+from remedi_data.build.write import structures_sha256, zarr_problems
+from remedi_data.bundle import (
     BundleValidationError,
     read_bundle,
     structure_problems,
 )
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset_build.write import structures_sha256, zarr_problems
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 
 class VerifyReport(BaseModel):

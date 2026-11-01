@@ -3,7 +3,7 @@
 ``BENCHMARK_DATA_FORMAT.md`` §5a and §11. For each of the ten datasets listed in
 ``datasets.yaml`` next to this module this reads one pinned csv of the DeepChem
 S3 release, checks its sha256 and row count, merges the source rows into one
-row per stereoisomer (:func:`remedi.data_handling.bundle.merge_source_rows`),
+row per stereoisomer (:func:`remedi_data.bundle.merge_source_rows`),
 freezes the deterministic DeepChem scaffold test fold plus five seeded
 train/valid partitions as ``split__seed{1..5}``, and writes
 ``benchmark_data/bundles/<dataset_id>/``.
@@ -35,7 +35,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rdkit import rdBase
 
-from remedi.data_handling.bundle import (
+from remedi_data.bundle import (
     DatasetSpec,
     EvalMetric,
     FileHash,
@@ -44,7 +44,7 @@ from remedi.data_handling.bundle import (
     merge_source_rows,
     sha256_of_file,
 )
-from remedi.data_handling.bundle.preparation import (
+from remedi_data.bundle.preparation import (
     PREPARER_REPOSITORY,
     BundleReport,
     PreparationError,
@@ -57,11 +57,11 @@ from remedi.data_handling.bundle.preparation import (
     smiles_evaluation_metrics,
     write_smiles_bundle,
 )
-from remedi.data_handling.chemistry.splits import (
+from remedi_data.chemistry.splits import (
     fixed_test_seeded_split_columns,
     scaffold_test_mask,
 )
-from remedi.data_handling.dataset.tasks import TaskType
+from remedi_data.dataset.tasks import TaskType
 
 logger = logging.getLogger("preparers.moleculenet")
 

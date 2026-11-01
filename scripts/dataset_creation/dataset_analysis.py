@@ -16,8 +16,8 @@ import pydantic_yaml as pyd_yaml
 from remedi.configuration.dataset_analysis_config import (
     MoleculeDatasetAnalysisConfig,
 )
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset_analysis import MoleculeDatasetAnalysis
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 
 def parse_args() -> argparse.Namespace:

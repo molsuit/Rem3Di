@@ -6,10 +6,10 @@ manifest stays declarative yaml) that also implement ``run`` — the same
 config-is-the-task pattern as ``latent_evaluation.analysis_tasks``.
 
 The protocol is deliberately **context-agnostic**: an eval task is handed an
-``EvalContext`` and a prepare task a ``PrepareContext`` (``BENCHMARK_DATA_FORMAT.md``
-§3 — the two contexts share the runner, not a base class). Typing ``ctx`` as
-``Any`` is what lets :mod:`remedi.evaluation.framework.task_runner` stay a
-dependency-light leaf that both sides import.
+``EvalContext``, a dataset build task its own build context
+(``BENCHMARK_DATA_FORMAT.md`` §3; the contexts share the runner, not a base
+class). Typing ``ctx`` as ``Any`` is what lets :mod:`remedi_data.runs.task_runner`
+stay a dependency-light leaf that both sides import.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
-from remedi.evaluation.results import EvalResult
+from remedi_data.runs.results import EvalResult
 
 
 @runtime_checkable

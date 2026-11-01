@@ -29,6 +29,7 @@ classifiers = [
 # MACE stack lives in the `cpu` and `cuda` extras so users install the build
 # matching their platform (see the docs). `import remedi` works without them.
 dependencies = [
+    "remedi-data",
     "ase>=3.24.0",
     "rdkit>=2024.9.4",
     "pydantic",
@@ -94,5 +95,6 @@ packages = ["remedi"]
 
 # Local-dev only (uv): these are stripped from the built package's metadata.
 [tool.uv.sources]
+remedi-data = { workspace = true }
 torch-sim-atomistic = { git = "https://github.com/TorchSim/torch-sim.git", branch = "main"}
 torch = { index = "pytorch-cu126" }

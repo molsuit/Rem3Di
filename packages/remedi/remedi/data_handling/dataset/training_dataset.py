@@ -3,11 +3,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import zarr
 from torch.utils.data import Dataset
 
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.sample import Sample
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 GetItemFn = Callable[["TrainingMoleculeDataset", int], Sample]
 
@@ -55,7 +54,6 @@ class TrainingMoleculeDataset(Dataset):
         self._in_memory = in_memory
 
         # process-local handles / arrays
-        self._group = None
         self._ptr = None
         self._pos = None
         self._atom_num = None
@@ -65,7 +63,6 @@ class TrainingMoleculeDataset(Dataset):
     def __getstate__(self):
         d = dict(self.__dict__)
         d.update(
-            _group=None,
             _ptr=None,
             _pos=None,
             _atom_num=None,
@@ -82,26 +79,14 @@ class TrainingMoleculeDataset(Dataset):
         if self._ptr is not None:
             return
 
-        if self._in_memory:
-            g = zarr.open_group(self.root, mode="r")
-            self._ptr = np.array(g["molecule_ptr"])
-            self._pos = np.array(g["positions"])
-            self._atom_num = np.array(g["atomic_numbers"])
-            self._charge = np.array(g["total_charge"])
-            self._multiplicity = np.array(g["multiplicity"])
-            self._group = None
-        else:
-            # zarr v3 sharded reads pull a byte-range out of a shard file;
-            # the OS page cache covers repeated access to hot shards (zarr v3
-            # has no LRUStoreCache equivalent).
-            g = zarr.open_group(self.root, mode="r")
-            self._group = g
-
-            self._ptr = g["molecule_ptr"]
-            self._pos = g["positions"]
-            self._atom_num = g["atomic_numbers"]
-            self._charge = g["total_charge"]
-            self._multiplicity = g["multiplicity"]
+        arrays = MoleculeDataset.open_structure_arrays(
+            Path(self.root), in_memory=self._in_memory
+        )
+        self._ptr = arrays.molecule_ptr
+        self._pos = arrays.positions
+        self._atom_num = arrays.atomic_numbers
+        self._charge = arrays.total_charge
+        self._multiplicity = arrays.multiplicity
 
     def __len__(self):
         self._ensure_open()

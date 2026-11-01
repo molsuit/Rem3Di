@@ -5,7 +5,7 @@
 conformers, then verifies every dataset; :func:`verify_dataset` re-checks one.
 """
 
-from remedi.data_handling.dataset_build.build import (
+from remedi_data.build.build import (
     DEFAULT_GEOMETRY_LIMITS,
     STEREO_MISMATCH_AFTER_EMBEDDING,
     TIMINGS_FILENAME,
@@ -16,8 +16,8 @@ from remedi.data_handling.dataset_build.build import (
     build_datasets,
     embed_bundle,
 )
-from remedi.data_handling.dataset_build.verify import VerifyReport, verify_dataset
-from remedi.data_handling.dataset_build.write import (
+from remedi_data.build.verify import VerifyReport, verify_dataset
+from remedi_data.build.write import (
     ZarrLayout,
     structures_sha256,
     write_dataset,

@@ -27,7 +27,7 @@ import yaml
 from ase import Atoms
 from rdkit import Chem
 
-from remedi.data_handling.bundle import (
+from remedi_data.bundle import (
     DATASET_CONFIG_FILENAME,
     PROVENANCE_FILENAME,
     SPEC_FILENAME,
@@ -59,9 +59,9 @@ from remedi.data_handling.bundle import (
     write_bundle,
     write_table_files,
 )
-from remedi.data_handling.bundle import bundle as bundle_module
-from remedi.data_handling.chemistry.geometry import GeometryLimits
-from remedi.data_handling.dataset.tasks import TaskScope, TaskType
+from remedi_data.bundle import bundle as bundle_module
+from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.dataset.tasks import TaskScope, TaskType
 
 from .helpers.bundle_fixtures import (
     GEOMETRY_LIMITS,

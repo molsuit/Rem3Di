@@ -2,12 +2,6 @@ from pathlib import Path
 
 import torch
 
-from remedi.configuration.dataset_config import (
-    DatasetConfig,
-    DatasetCreationConfig,
-)
-from remedi.data_handling.chemistry.elements import ElementSet
-from remedi.data_handling.chemistry.geometry import GeometryLimits
 from remedi.data_handling.dataset_creation.generators.sdf_generator import (
     SDFMoleculeGenerator,
 )
@@ -17,6 +11,12 @@ from remedi.data_handling.dataset_creation.orchestrator import (
 from remedi.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
     FilterAtomsStage,
+)
+from remedi_data.chemistry.elements import ElementSet
+from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.dataset.config import (
+    DatasetConfig,
+    DatasetCreationConfig,
 )
 
 sdf_file = Path("/path/to/raw_datasets/pcqm4m/pcqm4m-v2-train.sdf")

@@ -1,7 +1,7 @@
 """Tests for the Polaris-specific parts of the Polaris preparer.
 
 The shared mechanics (merge, table, spec, report, CLI) are tested with
-``remedi.data_handling.bundle``. Here: the catalog, the dumped source table, the
+``remedi_data.bundle``. Here: the catalog, the dumped source table, the
 test-fold rules and the enhanced-stereo step on tiny synthetic inputs,
 ``prepare_dataset`` end to end on synthetic dumps in ``tmp_path``, and two tests
 on the real dumps, skipped when ``benchmark_data/raw/polaris`` is absent.
@@ -31,7 +31,7 @@ from remedi_prepare_polaris.prepare import (
     unspecify_stereo_groups,
 )
 
-from remedi.data_handling.bundle import (
+from remedi_data.bundle import (
     AGGREGATION_NOTICE,
     INVALID_SMILES,
     MEASUREMENT_COUNT_COLUMN,
@@ -44,9 +44,9 @@ from remedi.data_handling.bundle import (
     merge_source_rows,
     read_bundle,
 )
-from remedi.data_handling.bundle.preparation import BundleReport
-from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
-from remedi.data_handling.dataset.tasks import Split, TaskType
+from remedi_data.bundle.preparation import BundleReport
+from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
+from remedi_data.dataset.tasks import Split, TaskType
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RAW_ROOT = REPOSITORY_ROOT / "benchmark_data" / "raw" / "polaris"

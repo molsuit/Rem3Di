@@ -26,11 +26,6 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from remedi.data_handling.bundle import (
-    DatasetSpec,
-    EvalMetric,
-)
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.evaluation.benchmark.cells import (
     BenchmarkCell,
     BenchmarkFailure,
@@ -51,7 +46,12 @@ from remedi.evaluation.benchmark.learners import LearnerConfig
 from remedi.evaluation.benchmark.metrics import MulticlassReport
 from remedi.evaluation.framework.context import EvalContext
 from remedi.evaluation.framework.resources import EmbeddingSpec
-from remedi.evaluation.results import (
+from remedi_data.bundle import (
+    DatasetSpec,
+    EvalMetric,
+)
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.runs.results import (
     ArrayResult,
     EvalResult,
     PydanticResult,

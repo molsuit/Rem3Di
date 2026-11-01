@@ -6,7 +6,6 @@ import torch
 from remedi.configuration.architecture_config import (
     EncoderDecoderArchitectureConfig,
 )
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
@@ -27,6 +26,7 @@ from remedi.latent_evaluation.descriptor_embedding import (
     evaluate_molecular_descriptor_on_dataset,
 )
 from remedi.model.remedi_model import REM3DIModel
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 DEFAULT_MODEL_DIR = Path("/path/to/training_runs/10-2026_04_28_09_24_50-tmc_0")
 DATASET_DIR = Path("/path/to/datasets/tmqm")

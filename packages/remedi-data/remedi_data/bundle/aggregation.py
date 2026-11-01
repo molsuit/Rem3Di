@@ -22,16 +22,16 @@ import statistics
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from remedi.data_handling.bundle.identity import (
+from remedi_data.bundle.identity import (
     IdentityTable,
     assign_identity,
     canonical_smiles_pair,
 )
-from remedi.data_handling.chemistry.smiles_filter import (
+from remedi_data.chemistry.smiles_filter import (
     SmilesFilterConfig,
     filter_smiles,
 )
-from remedi.data_handling.dataset.tasks import TaskType
+from remedi_data.dataset.tasks import TaskType
 
 #: The ``extra_columns`` entry every aggregated bundle carries: how many source
 #: rows went into this row's labels (1 for a compound measured once).

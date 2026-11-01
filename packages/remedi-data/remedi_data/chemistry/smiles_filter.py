@@ -17,7 +17,7 @@ from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
 from rdkit.Chem.SaltRemover import SaltRemover
 
-from remedi.data_handling.chemistry.elements import (
+from remedi_data.chemistry.elements import (
     ElementSet,
     allowed_element_symbols,
 )

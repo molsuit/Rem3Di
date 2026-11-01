@@ -11,10 +11,6 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from remedi.data_handling.chemistry.elements import ElementSet
-from remedi.data_handling.chemistry.geometry import GeometryLimits
-from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
-from remedi.data_handling.dataset.tasks import Split
 from remedi.data_handling.dataset_creation.loading_batch import (
     InputBatch,
     RegressionData,
@@ -24,6 +20,10 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
     FilterMoleculeStage,
 )
 from remedi.data_handling.dataset_creation.structure_ids import StructureID
+from remedi_data.chemistry.elements import ElementSet
+from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
+from remedi_data.dataset.tasks import Split
 
 
 def _smiles_batch(

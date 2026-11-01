@@ -28,10 +28,10 @@ from ase.data import chemical_symbols
 from ase.data.colors import jmol_colors
 from datashader.utils import export_image
 
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.latent_evaluation.tmqm_clustering_utils import (
     get_metal_center_type,
 )
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 BLOCK_DEFINITIONS: dict[str, list[str]] = {
     "3d": ["Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn"],

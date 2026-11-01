@@ -8,22 +8,6 @@ import torch
 from ase import Atoms
 from tqdm import tqdm
 
-from remedi.configuration.dataset_config import (
-    DatasetCreationConfig,
-    PhysicochemicalDescriptorStageConfig,
-)
-from remedi.data_handling import physchem
-from remedi.data_handling.chemistry.conformers import (
-    ConformerTimingRecord,
-    EmbedResult,
-    embed_many,
-    write_timings_jsonl,
-)
-from remedi.data_handling.chemistry.geometry import GeometryLimits, geometry_violations
-from remedi.data_handling.chemistry.smiles_filter import (
-    SmilesFilterConfig,
-    filter_smiles,
-)
 from remedi.data_handling.dataset_creation.build_stats import LoadStats, StageStats
 from remedi.data_handling.dataset_creation.loading_batch import (
     DataBatch,
@@ -32,6 +16,22 @@ from remedi.data_handling.dataset_creation.loading_batch import (
     SmilesData,
 )
 from remedi.data_handling.dataset_creation.structure_ids import StructureID
+from remedi_data.chemistry import physchem
+from remedi_data.chemistry.conformers import (
+    ConformerTimingRecord,
+    EmbedResult,
+    embed_many,
+    write_timings_jsonl,
+)
+from remedi_data.chemistry.geometry import GeometryLimits, geometry_violations
+from remedi_data.chemistry.smiles_filter import (
+    SmilesFilterConfig,
+    filter_smiles,
+)
+from remedi_data.dataset.config import (
+    DatasetCreationConfig,
+    PhysicochemicalDescriptorStageConfig,
+)
 
 
 def _slice_regression(rd: RegressionData, idx: np.ndarray) -> RegressionData:

@@ -8,8 +8,6 @@ import numpy as np
 import torch
 from pydantic import BaseModel, ConfigDict
 
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.evaluation.results import EvalResult
 from remedi.latent_evaluation.analysis_tasks import (
     DescriptorAnalysisTask,
 )
@@ -18,6 +16,8 @@ from remedi.latent_evaluation.context import (
     DescriptorNormalizationConfig,
     ProjectionConfig,
 )
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.runs.results import EvalResult
 
 logger = logging.getLogger(__name__)
 

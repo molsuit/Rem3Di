@@ -16,7 +16,6 @@ from remedi.configuration.architecture_config import (
 from remedi.configuration.training_config import (
     TrainingConfig,
 )
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
@@ -36,6 +35,7 @@ from remedi.training.pretraining import (
     vicreg_descriptor_loss,
 )
 from remedi.training.telemetry import TrainingTelemetry
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 

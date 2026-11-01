@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset_creation.dataset_concatenation import (
+from remedi_data.dataset.dataset_concatenation import (
     DatasetConcatenation,
 )
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 path_0 = Path("/path/to/datasets/omol25_tmcs")
 path_1 = Path("/path/to/datasets/tmqm")

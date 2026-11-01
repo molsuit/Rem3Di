@@ -23,7 +23,7 @@ from pydantic import (
     model_validator,
 )
 
-from remedi.data_handling.dataset.tasks import (
+from remedi_data.dataset.tasks import (
     TaskConfig,
     TaskScope,
     TaskSet,

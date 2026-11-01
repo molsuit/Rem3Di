@@ -4,8 +4,8 @@ from remedi.configuration.dataset_analysis_config import (
     BitBirchConfig,
     MoleculeDatasetAnalysisConfig,
 )
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset_analysis import MoleculeDatasetAnalysis
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 dataset_dir = Path("/path/to/datasets/qm9")
 

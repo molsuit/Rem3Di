@@ -21,8 +21,7 @@ import pandas as pd
 from ase import Atoms
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.configuration.dataset_config import DatasetConfig
-from remedi.data_handling.bundle import (
+from remedi_data.bundle import (
     BundleProvenance,
     BundleValidationError,
     DatasetSpec,
@@ -31,11 +30,12 @@ from remedi.data_handling.bundle import (
     validate_table,
     write_table_files,
 )
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import Split, split_codes_from_names
-from remedi.data_handling.dataset_creation.shard_aligned_writer import (
+from remedi_data.dataset.config import DatasetConfig
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.shard_aligned_writer import (
     ShardAlignedWriter,
 )
+from remedi_data.dataset.tasks import Split, split_codes_from_names
 
 
 class ZarrLayout(BaseModel):

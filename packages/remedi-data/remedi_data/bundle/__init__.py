@@ -9,7 +9,7 @@ invariants (:mod:`validate`), the disk io of the three files (:mod:`bundle`)
 and the bundle -> dataset row expansion (:mod:`expansion`). It is torch-free.
 """
 
-from remedi.data_handling.bundle.aggregation import (
+from remedi_data.bundle.aggregation import (
     AGGREGATION_NOTICE,
     DUPLICATE_LABEL_TIE,
     DUPLICATE_SMILES,
@@ -27,7 +27,7 @@ from remedi.data_handling.bundle.aggregation import (
     filter_source_smiles,
     merge_source_rows,
 )
-from remedi.data_handling.bundle.bundle import (
+from remedi_data.bundle.bundle import (
     DATASET_CONFIG_FILENAME,
     FORMAT_VERSION,
     PROVENANCE_FILENAME,
@@ -49,13 +49,13 @@ from remedi.data_handling.bundle.bundle import (
     write_bundle,
     write_table_files,
 )
-from remedi.data_handling.bundle.expansion import (
+from remedi_data.bundle.expansion import (
     CONFORMER_EMBEDDING_FAILED,
     ENANTIOMER_PARTNER_FAILED,
     ExpandedDataset,
     expand_to_structures,
 )
-from remedi.data_handling.bundle.identity import (
+from remedi_data.bundle.identity import (
     CanonicalSmilesPair,
     IdentityTable,
     SmilesParseError,
@@ -63,7 +63,7 @@ from remedi.data_handling.bundle.identity import (
     canonical_smiles_pair,
     mirror_isomeric_smiles,
 )
-from remedi.data_handling.bundle.provenance import (
+from remedi_data.bundle.provenance import (
     BundleCounts,
     BundleOutputs,
     BundleProvenance,
@@ -74,7 +74,7 @@ from remedi.data_handling.bundle.provenance import (
     TableOutputRecord,
     git_head_sha,
 )
-from remedi.data_handling.bundle.spec import (
+from remedi_data.bundle.spec import (
     METRICS_BY_TASK_TYPE,
     SPLIT_VALUES,
     DatasetSpec,
@@ -88,7 +88,7 @@ from remedi.data_handling.bundle.spec import (
     SplitGroup,
     metrics_with_headline,
 )
-from remedi.data_handling.bundle.validate import (
+from remedi_data.bundle.validate import (
     count_stereoisomer_straddling_constitutions,
     has_assigned_tetrahedral_centre,
     stereochemistry_from_frame,

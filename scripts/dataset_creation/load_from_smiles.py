@@ -2,11 +2,6 @@ from pathlib import Path
 
 import torch
 
-from remedi.configuration.dataset_config import (
-    DatasetConfig,
-    DatasetCreationConfig,
-)
-from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
 from remedi.data_handling.dataset_creation.generators.smiles_list_generator import (
     SmilesMoleculeGenerator,
     open_smiles_file,
@@ -18,6 +13,11 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
     ConformerGenerationStage,
     CopyDataStage,
     FilterMoleculeStage,
+)
+from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
+from remedi_data.dataset.config import (
+    DatasetConfig,
+    DatasetCreationConfig,
 )
 
 smiles_file = Path(

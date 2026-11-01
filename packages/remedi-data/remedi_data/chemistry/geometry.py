@@ -6,7 +6,7 @@ import numpy as np
 from ase import Atoms
 from pydantic import BaseModel, ConfigDict
 
-from remedi.data_handling.chemistry.elements import (
+from remedi_data.chemistry.elements import (
     ElementSet,
     allowed_element_symbols,
 )

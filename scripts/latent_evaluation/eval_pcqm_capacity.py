@@ -18,7 +18,6 @@ from torch.utils.data import Subset
 from remedi.configuration.architecture_config import (
     EncoderDecoderArchitectureConfig,
 )
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
@@ -34,6 +33,7 @@ from remedi.latent_evaluation.descriptor_embedding import (
     evaluate_molecular_descriptor_on_dataset,
 )
 from remedi.model.remedi_model import REM3DIModel
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 DEFAULT_MODEL_DIR = Path(
     "/path/to/training_runs/pcqm_ablation/" "24-2026_05_19_12_57_28-pcqm_baseline"

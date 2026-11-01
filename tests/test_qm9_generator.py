@@ -17,13 +17,6 @@ import torch
 from ase import Atoms
 from ase.io import write as ase_write
 
-from remedi.configuration.dataset_config import (
-    DatasetConfig,
-    DatasetCreationConfig,
-)
-from remedi.data_handling.chemistry.elements import ElementSet
-from remedi.data_handling.chemistry.geometry import GeometryLimits
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset_creation.generators.qm9_generator import (
     ALL_QM9_TASKS,
     QM9Generator,
@@ -37,6 +30,13 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
     CopyDataStage,
     FilterAtomsStage,
 )
+from remedi_data.chemistry.elements import ElementSet
+from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.dataset.config import (
+    DatasetConfig,
+    DatasetCreationConfig,
+)
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 # Two QM9-style frames: methane and water, with all 15 property keys + SMILES.
 _PROP_KEYS = [p.value for p in ALL_QM9_TASKS]

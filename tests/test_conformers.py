@@ -11,8 +11,8 @@ import os
 import numpy as np
 import pytest
 
-from remedi.data_handling.chemistry import conformers as conformers_module
-from remedi.data_handling.chemistry.conformers import (
+from remedi_data.chemistry import conformers as conformers_module
+from remedi_data.chemistry.conformers import (
     ConformerEmbeddingConfig,
     EmbedResult,
     embed_many,

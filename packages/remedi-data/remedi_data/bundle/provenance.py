@@ -3,7 +3,7 @@
 See ``BENCHMARK_DATA_FORMAT.md`` §1.4 and §10.2. The preparer fills
 ``preparer``, ``source``, ``geometry_limits``, ``smiles_filter``, ``notices`` and
 the parts of ``counts`` only it knows (``source_molecules`` and ``dropped``);
-the writer (:func:`remedi.data_handling.bundle.bundle.write_bundle` or
+the writer (:func:`remedi_data.bundle.bundle.write_bundle` or
 ``dataset_build.write_dataset``) fills everything derivable from the data: the
 output hashes, ``final_rows``, ``per_split``, ``per_label_non_null``,
 ``stereoisomer_straddling_constitutions`` and ``prepared_at``.
@@ -18,9 +18,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.data_handling.chemistry.conformers import ConformerEmbeddingConfig
-from remedi.data_handling.chemistry.geometry import GeometryLimits
-from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
+from remedi_data.chemistry.conformers import ConformerEmbeddingConfig
+from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
 
 
 class FileHash(BaseModel):

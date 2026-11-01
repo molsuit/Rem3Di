@@ -8,11 +8,11 @@ import numpy as np
 import torch
 from pydantic import BaseModel, Field
 
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.latent_evaluation.clustering import (
     PCACalculator,
     UMAPCalculator,
 )
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 
 def _to_numpy(x: np.ndarray | torch.Tensor) -> np.ndarray:

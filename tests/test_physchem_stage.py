@@ -10,12 +10,6 @@ from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-from remedi.configuration.dataset_config import (
-    DatasetConfig,
-    DatasetCreationConfig,
-    PhysicochemicalDescriptorStageConfig,
-)
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset_creation.loading_batch import (
     InputBatch,
     SmilesData,
@@ -28,6 +22,12 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
     PhysicochemicalDescriptorStage,
 )
 from remedi.data_handling.dataset_creation.structure_ids import StructureID
+from remedi_data.dataset.config import (
+    DatasetConfig,
+    DatasetCreationConfig,
+    PhysicochemicalDescriptorStageConfig,
+)
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 
 def _atoms(smiles: str) -> Atoms:

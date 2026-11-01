@@ -24,13 +24,13 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from remedi.data_handling.bundle.provenance import (
+from remedi_data.bundle.provenance import (
     BundleOutputs,
     BundleProvenance,
     TableOutputRecord,
 )
-from remedi.data_handling.bundle.spec import DatasetSpec
-from remedi.data_handling.bundle.validate import (
+from remedi_data.bundle.spec import DatasetSpec
+from remedi_data.bundle.validate import (
     count_stereoisomer_straddling_constitutions,
     validate_table,
 )

@@ -14,9 +14,6 @@ import pandas as pd
 import pydantic_yaml as pyd_yaml
 import pytest
 
-from remedi.data_handling.bundle import EvalMetric, LabelColumn
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import TaskType
 from remedi.evaluation.benchmark.descriptors import EcfpConfig
 from remedi.evaluation.benchmark.learners import LinearLearnerConfig
 from remedi.evaluation.framework import (
@@ -29,7 +26,10 @@ from remedi.evaluation.framework import (
     run_manifest,
 )
 from remedi.evaluation.framework.runner import RunReport
-from remedi.evaluation.results import TableResult
+from remedi_data.bundle import EvalMetric, LabelColumn
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.tasks import TaskType
+from remedi_data.runs.results import TableResult
 
 from .helpers.bundle_fixtures import ACHIRAL_TEN_SMILES, write_small_dataset
 

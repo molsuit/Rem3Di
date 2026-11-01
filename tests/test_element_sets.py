@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from remedi.data_handling.chemistry.elements import (
+from remedi_data.chemistry.elements import (
     MACE_OFF_ELEMENTS,
     MACE_POLAR_ELEMENTS,
     ElementSet,

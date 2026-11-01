@@ -4,7 +4,6 @@ from e3nn.o3 import Irreps
 from mace.calculators import mace_mp
 
 from remedi.configuration.architecture_config import EmbeddingPreprocessConfig
-from remedi.data_handling.data_utils import get_ase_atoms
 from remedi.model.preprocessing.atomic_descriptor_preprocessor import (
     PseudoscalarGenerator,
 )
@@ -13,6 +12,7 @@ from remedi.utils.model_utils import (
     get_mace_calculator_irrep_signature,
     get_pseudoscalars_indices,
 )
+from remedi_data.chemistry.data_utils import get_ase_atoms
 
 
 def test_get_pseudoscalars():

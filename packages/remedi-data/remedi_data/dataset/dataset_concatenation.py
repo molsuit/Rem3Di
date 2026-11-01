@@ -4,12 +4,12 @@ from pathlib import Path
 
 import numpy as np
 
-from remedi.configuration.dataset_config import DatasetConfig
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import TaskConfig, TaskSet
-from remedi.data_handling.dataset_creation.shard_aligned_writer import (
+from remedi_data.dataset.config import DatasetConfig
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.shard_aligned_writer import (
     ShardAlignedWriter,
 )
+from remedi_data.dataset.tasks import TaskConfig, TaskSet
 
 
 class DatasetConcatenation:
@@ -304,7 +304,7 @@ class DatasetConcatenation:
 
     @staticmethod
     def _build_smiles_mapping(storage, target_storage, batch_size: int) -> np.ndarray:
-        from remedi.data_handling.dataset.smiles_storage import SmilesStorage
+        from remedi_data.dataset.smiles_storage import SmilesStorage
 
         if storage is None or target_storage is None:
             raise ValueError("Smiles storage missing; configuration mismatch.")

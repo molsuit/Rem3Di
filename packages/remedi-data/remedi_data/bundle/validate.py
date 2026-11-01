@@ -16,16 +16,16 @@ import pandas as pd
 from ase import Atoms
 from rdkit import Chem
 
-from remedi.data_handling.bundle.spec import (
+from remedi_data.bundle.spec import (
     SPLIT_VALUES,
     DatasetSpec,
     LabelColumn,
 )
-from remedi.data_handling.chemistry.geometry import (
+from remedi_data.chemistry.geometry import (
     GeometryLimits,
     geometry_violations,
 )
-from remedi.data_handling.dataset.tasks import TaskType
+from remedi_data.dataset.tasks import TaskType
 
 #: How many offending rows a single message names before it summarises.
 _MAX_REPORTED_ROWS = 5

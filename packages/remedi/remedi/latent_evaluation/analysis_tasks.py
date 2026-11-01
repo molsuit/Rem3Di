@@ -13,13 +13,7 @@ from ase import Atoms
 from ase.visualize.plot import plot_atoms
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.evaluation.results import (
-    ChemiscopeResult,
-    EvalResult,
-    FigureResult,
-    PydanticResult,
-)
+from remedi.evaluation.results import FigureResult
 from remedi.latent_evaluation.capacity_diagnostic import (
     LatentCapacityReportModel,
     get_descriptor_norm_distribution,
@@ -28,6 +22,12 @@ from remedi.latent_evaluation.capacity_diagnostic import (
 from remedi.latent_evaluation.coloring import ColorProvider
 from remedi.latent_evaluation.context import (
     DescriptorAnalysisContext,
+)
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.runs.results import (
+    ChemiscopeResult,
+    EvalResult,
+    PydanticResult,
 )
 
 

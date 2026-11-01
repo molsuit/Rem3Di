@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-from remedi.data_handling.data_utils import get_functional_group_label
+from remedi_data.chemistry.data_utils import get_functional_group_label
 
 
 def plot_reduced_dimension_3d(principle_components, color="k", suptitle=None, **kwargs):

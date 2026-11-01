@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 from ase import Atoms
 
-from remedi.evaluation.results import ChemiscopeResult
 from remedi.latent_evaluation import analysis_tasks
 from remedi.latent_evaluation.analysis_tasks import (
     ChemiscopeClusterTask,
@@ -29,6 +28,7 @@ from remedi.latent_evaluation.tmqm_chemical_features import (
     compute_metal_environment_features,
     metal_block,
 )
+from remedi_data.runs.results import ChemiscopeResult
 
 
 def _ring(z: float, radius: float = 1.21, n: int = 5) -> np.ndarray:

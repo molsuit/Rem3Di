@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from remedi.data_handling.chemistry.stereo_groups import (
+from remedi_data.chemistry.stereo_groups import (
     has_or_stereo_group,
     unspecify_relative_stereo,
 )

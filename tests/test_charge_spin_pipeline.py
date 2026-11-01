@@ -20,11 +20,6 @@ import torch
 from ase import Atoms
 from ase.io import write as ase_write
 
-from remedi.configuration.dataset_config import (
-    DatasetConfig,
-    DatasetCreationConfig,
-)
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
@@ -41,6 +36,11 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
 )
 from remedi.data_handling.dataset_creation.structure_ids import StructureID
 from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
+from remedi_data.dataset.config import (
+    DatasetConfig,
+    DatasetCreationConfig,
+)
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 
 def _make_xyz_file(path: Path, atoms_list: list[Atoms]) -> None:

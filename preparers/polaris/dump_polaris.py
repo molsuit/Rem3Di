@@ -66,7 +66,7 @@ logger = logging.getLogger("dump_polaris")
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUT_ROOT = REPOSITORY_ROOT / "benchmark_data" / "raw" / "polaris"
 
-# Split codes match remedi.data_handling.dataset.tasks.Split. Hardcoded (not
+# Split codes match remedi_data.dataset.tasks.Split. Hardcoded (not
 # imported) so this script stays free of the remedi package.
 SPLIT_TRAIN, SPLIT_VALID, SPLIT_TEST, SPLIT_UNASSIGNED = 0, 1, 2, 255
 

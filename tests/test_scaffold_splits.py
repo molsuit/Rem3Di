@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from remedi.data_handling.chemistry.splits import (
+from remedi_data.chemistry.splits import (
     deepchem_scaffold_split,
     fixed_test_seeded_split_columns,
     scaffold_groups,

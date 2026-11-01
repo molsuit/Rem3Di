@@ -16,9 +16,9 @@ from remedi.evaluation.framework.resources import (
     ResourceSpec,
 )
 from remedi.evaluation.framework.runner import run_manifest
-from remedi.evaluation.framework.task import RunnableTask, TaskStatus
-from remedi.evaluation.framework.task_runner import RunReport, run_tasks
 from remedi.evaluation.framework.tasks import BenchmarkPanelConfig
+from remedi_data.runs.task import RunnableTask, TaskStatus
+from remedi_data.runs.task_runner import RunReport, run_tasks
 
 __all__ = [
     "BenchmarkPanelConfig",

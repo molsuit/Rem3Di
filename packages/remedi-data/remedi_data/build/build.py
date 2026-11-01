@@ -2,10 +2,10 @@
 
 One YAML (:class:`DatasetBuildConfig`) drives one run. Each bundle under
 ``bundle_root`` is one task: conformers are generated with
-:func:`~remedi.data_handling.chemistry.conformers.embed_many`, every frame is
+:func:`~remedi_data.chemistry.conformers.embed_many`, every frame is
 gated on invariant 9 (stereochemistry survived MMFF) and invariant 10 (geometry
 limits), the bundle is expanded to one row per structure, and
-:func:`~remedi.data_handling.dataset_build.write.write_dataset` writes the
+:func:`~remedi_data.build.write.write_dataset` writes the
 zarr with the table beside it. Each dataset under ``zarr_root`` (built here or
 written directly by a preparer) is then verified. One failing dataset is one
 failed row in ``status.yaml``; the rest still finish.
@@ -25,7 +25,9 @@ import rdkit
 from ase import Atoms
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.data_handling.bundle import (
+from remedi_data.build.verify import verify_dataset
+from remedi_data.build.write import ZarrLayout, write_dataset
+from remedi_data.bundle import (
     Bundle,
     ConformerGenerationRecord,
     content_hash_of_table,
@@ -38,28 +40,26 @@ from remedi.data_handling.bundle import (
     stereochemistry_from_frame,
     tetrahedral_stereo_smiles,
 )
-from remedi.data_handling.bundle.expansion import (
+from remedi_data.bundle.expansion import (
     CONFORMER_EMBEDDING_FAILED,
     ENANTIOMER_PARTNER_FAILED,
 )
-from remedi.data_handling.chemistry.conformers import (
+from remedi_data.chemistry.conformers import (
     ConformerEmbeddingConfig,
     ConformerTimingRecord,
     charge_and_multiplicity,
     embed_many,
     write_timings_jsonl,
 )
-from remedi.data_handling.chemistry.elements import ElementSet
-from remedi.data_handling.chemistry.geometry import GeometryLimits, geometry_violations
-from remedi.data_handling.dataset_build.verify import verify_dataset
-from remedi.data_handling.dataset_build.write import ZarrLayout, write_dataset
-from remedi.evaluation.framework.task import TaskStatus
-from remedi.evaluation.framework.task_runner import (
+from remedi_data.chemistry.elements import ElementSet
+from remedi_data.chemistry.geometry import GeometryLimits, geometry_violations
+from remedi_data.runs.results import EvalResult, PydanticResult
+from remedi_data.runs.task import TaskStatus
+from remedi_data.runs.task_runner import (
     RunReport,
     make_run_report,
     run_tasks,
 )
-from remedi.evaluation.results import EvalResult, PydanticResult
 
 logger = logging.getLogger(__name__)
 

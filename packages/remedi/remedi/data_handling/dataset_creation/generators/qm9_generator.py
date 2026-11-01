@@ -22,12 +22,6 @@ from ase import Atoms
 from ase.io import iread
 from rdkit import Chem
 
-from remedi.data_handling.dataset.tasks import (
-    TaskConfig,
-    TaskScope,
-    TaskSet,
-    TaskType,
-)
 from remedi.data_handling.dataset_creation.build_stats import LoadStats
 from remedi.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
@@ -38,6 +32,12 @@ from remedi.data_handling.dataset_creation.loading_batch import (
     SmilesData,
 )
 from remedi.data_handling.dataset_creation.structure_ids import StructureID
+from remedi_data.dataset.tasks import (
+    TaskConfig,
+    TaskScope,
+    TaskSet,
+    TaskType,
+)
 
 
 class QM9Property(StrEnum):

@@ -12,7 +12,7 @@ from remedi.configuration.architecture_config import (  # noqa: E402
     GaussianBasisConfig,
     RelativeDistancePositionalEncodingConfig,
 )
-from remedi.data_handling.data_utils import get_ase_atoms  # noqa: E402
+from remedi_data.chemistry.data_utils import get_ase_atoms  # noqa: E402
 
 
 @pytest.fixture(scope="session")

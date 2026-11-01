@@ -1,7 +1,7 @@
 """Tests for the MoleculeNet-specific parts of the MoleculeNet preparer.
 
 The shared mechanics (merge, table, spec, report, CLI) are tested with
-``remedi.data_handling.bundle``. Here: the catalog, the pin check, the download
+``remedi_data.bundle``. Here: the catalog, the pin check, the download
 and the csv reader on tiny synthetic files, :func:`run` end to end on a
 synthetic catalog whose pins are computed in the test, and one test on the
 smallest real dataset (freesolv), skipped when the pinned raw file is absent.
@@ -29,14 +29,14 @@ from remedi_prepare_moleculenet.prepare import (
     verify_source_file,
 )
 
-from remedi.data_handling.bundle import (
+from remedi_data.bundle import (
     AGGREGATION_NOTICE,
     INVALID_SMILES,
     EvalMetric,
     read_bundle,
     sha256_of_file,
 )
-from remedi.data_handling.chemistry.splits import scaffold_test_mask
+from remedi_data.chemistry.splits import scaffold_test_mask
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RAW_ROOT = REPOSITORY_ROOT / "benchmark_data" / "raw" / "moleculenet"

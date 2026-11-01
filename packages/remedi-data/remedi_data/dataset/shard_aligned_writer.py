@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import Split
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.tasks import Split
 
 
 class ShardAlignedWriter:

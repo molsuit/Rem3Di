@@ -16,7 +16,13 @@ import numpy as np
 import pytest
 import yaml
 
-from remedi.data_handling.bundle import (
+from remedi.evaluation.benchmark.descriptors import (
+    EcfpConfig,
+    RemediConfig,
+    compute_and_cache,
+    descriptor_cache_path,
+)
+from remedi_data.bundle import (
     PROVENANCE_FILENAME,
     BundleOutputs,
     BundleProvenance,
@@ -24,13 +30,7 @@ from remedi.data_handling.bundle import (
     TableOutputRecord,
     structures_identity,
 )
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.evaluation.benchmark.descriptors import (
-    EcfpConfig,
-    RemediConfig,
-    compute_and_cache,
-    descriptor_cache_path,
-)
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 
 class _StubDataset:

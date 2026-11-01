@@ -3,7 +3,7 @@
 ``BENCHMARK_DATA_FORMAT.md`` §5c and §10. For each of the 22 ADMET group
 endpoints (listed in ``endpoints.yaml`` next to this module) this reads the
 downloaded ``train_val.csv`` + ``test.csv``, cleans the SMILES with the shared
-SMILES filter (:func:`remedi.data_handling.chemistry.smiles_filter.filter_smiles`),
+SMILES filter (:func:`remedi_data.chemistry.smiles_filter.filter_smiles`),
 merges replicate measurements, assigns identity, freezes the five seeded
 train/valid partitions as ``split__seed{1..5}`` alongside the fixed ``test``
 fold, and writes ``benchmark_data/bundles/<dataset_id>/``.
@@ -34,7 +34,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rdkit import rdBase
 
-from remedi.data_handling.bundle import (
+from remedi_data.bundle import (
     METRICS_BY_TASK_TYPE,
     DatasetSpec,
     EvalMetric,
@@ -46,7 +46,7 @@ from remedi.data_handling.bundle import (
     metrics_with_headline,
     sha256_of_file,
 )
-from remedi.data_handling.bundle.preparation import (
+from remedi_data.bundle.preparation import (
     PREPARER_REPOSITORY,
     BundleReport,
     PreparationError,
@@ -56,7 +56,7 @@ from remedi.data_handling.bundle.preparation import (
     smiles_bundle_spec,
     write_smiles_bundle,
 )
-from remedi.data_handling.dataset.tasks import TaskType
+from remedi_data.dataset.tasks import TaskType
 
 logger = logging.getLogger("preparers.tdc")
 

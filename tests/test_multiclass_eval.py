@@ -18,8 +18,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from remedi.data_handling.bundle import EvalMetric, LabelColumn
-from remedi.data_handling.dataset.tasks import TaskType
 from remedi.evaluation.benchmark.descriptors import EcfpConfig
 from remedi.evaluation.benchmark.learners import (
     LightGBMLearner,
@@ -35,7 +33,9 @@ from remedi.evaluation.benchmark.metrics import (
     multiclass_report,
 )
 from remedi.evaluation.framework import BenchmarkPanelConfig, EvalManifest, run_manifest
-from remedi.evaluation.results import ArrayResult
+from remedi_data.bundle import EvalMetric, LabelColumn
+from remedi_data.dataset.tasks import TaskType
+from remedi_data.runs.results import ArrayResult
 
 from .helpers.bundle_fixtures import (
     ACHIRAL_TEN_SMILES,

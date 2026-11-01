@@ -2,12 +2,6 @@ from pathlib import Path
 
 import torch
 
-from remedi.configuration.dataset_config import (
-    DatasetConfig,
-    DatasetCreationConfig,
-)
-from remedi.data_handling.chemistry.conformers import ConformerEmbeddingConfig
-from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
 from remedi.data_handling.dataset_creation.generators.tsv_generator import (
     TSVMoleculeGenerator,
 )
@@ -18,6 +12,12 @@ from remedi.data_handling.dataset_creation.pipeline_stages import (
     ConformerGenerationStage,
     CopyDataStage,
     FilterMoleculeStage,
+)
+from remedi_data.chemistry.conformers import ConformerEmbeddingConfig
+from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
+from remedi_data.dataset.config import (
+    DatasetConfig,
+    DatasetCreationConfig,
 )
 
 tsv_path = "/path/to/3DMolecularDescriptors/data/raw_data/BindingDB_All.tsv"

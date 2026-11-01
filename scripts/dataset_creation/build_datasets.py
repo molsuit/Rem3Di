@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pydantic_yaml
 
-from remedi.data_handling.dataset_build import DatasetBuildConfig, build_datasets
+from remedi_data.build import DatasetBuildConfig, build_datasets
 
 
 def main(argv: list[str] | None = None) -> int:

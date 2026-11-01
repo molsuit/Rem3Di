@@ -29,7 +29,8 @@ from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
 
-from remedi.data_handling.bundle import (
+from remedi_data.build import ZarrLayout, write_dataset
+from remedi_data.bundle import (
     Bundle,
     BundleCounts,
     BundleProvenance,
@@ -42,11 +43,10 @@ from remedi.data_handling.bundle import (
     assign_identity,
     write_bundle,
 )
-from remedi.data_handling.chemistry.conformers import charge_and_multiplicity
-from remedi.data_handling.chemistry.elements import ElementSet
-from remedi.data_handling.chemistry.geometry import GeometryLimits
-from remedi.data_handling.dataset.tasks import TaskType
-from remedi.data_handling.dataset_build import ZarrLayout, write_dataset
+from remedi_data.chemistry.conformers import charge_and_multiplicity
+from remedi_data.chemistry.elements import ElementSet
+from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.dataset.tasks import TaskType
 
 #: One enantiomer pair, an achiral ring, a meso compound, a lone chiral
 #: molecule and a small achiral molecule: six distinct stereoisomers.

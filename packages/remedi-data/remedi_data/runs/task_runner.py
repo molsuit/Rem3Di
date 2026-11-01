@@ -1,14 +1,13 @@
-"""The shared, fault-tolerant per-task loop (``BENCHMARK_DATA_FORMAT.md`` §3).
+"""The shared, fault-tolerant per-task loop (``BENCHMARK_DATA_FORMAT.md`` §3, §13).
 
-Both manifests run through here: :func:`remedi.evaluation.framework.runner.run_manifest`
-with an ``EvalContext`` and :func:`remedi.data_handling.prepare.runner.prepare`
-with a ``PrepareContext``. The two contexts share the runner, not a base class,
-so this module knows nothing about either — it takes whatever ``ctx`` the caller
-built and hands it to ``task.run``.
+Both sides run through here: :func:`remedi.evaluation.framework.runner.run_manifest`
+with an ``EvalContext`` and :func:`remedi_data.build.build_datasets` with its
+build tasks. The contexts share the runner, not a base class, so this module
+knows nothing about either: it takes whatever ``ctx`` the caller built and hands
+it to ``task.run``.
 
-This module is a dependency-light leaf on purpose: it imports stdlib, pydantic
-and :mod:`remedi.evaluation.framework.task` only, so importing it from
-``remedi.data_handling.prepare`` does not drag in descriptors, torch or MACE.
+It lives in ``remedi_data`` so the dataset build does not depend on the
+evaluation code; it imports stdlib, pydantic and :mod:`remedi_data` only.
 """
 
 from __future__ import annotations
@@ -22,8 +21,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from remedi.data_handling.bundle.provenance import git_head_sha
-from remedi.evaluation.framework.task import (
+from remedi_data.bundle.provenance import git_head_sha
+from remedi_data.runs.task import (
     RunnableTask,
     TaskStatus,
     task_status_name,

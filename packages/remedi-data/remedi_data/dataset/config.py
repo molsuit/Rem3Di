@@ -3,14 +3,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.data_handling.chemistry.conformers import ConformerEmbeddingConfig
-from remedi.data_handling.dataset.tasks import (
+from remedi_data.chemistry.conformers import ConformerEmbeddingConfig
+from remedi_data.chemistry.physchem import DEFAULT_DESCRIPTORS
+from remedi_data.dataset.tasks import (
     TaskConfig,
     TaskScope,
     TaskSet,
     TaskType,
 )
-from remedi.data_handling.physchem import DEFAULT_DESCRIPTORS
 
 
 class PhysicochemicalDescriptorStageConfig(BaseModel):
@@ -19,7 +19,7 @@ class PhysicochemicalDescriptorStageConfig(BaseModel):
     Each descriptor becomes one ``targets_system`` column (declared via
     :meth:`to_task_set`); they serve as linear-probe labels during pretraining.
     2D descriptors come from the SMILES, 3D ones (SASA) from the conformer — see
-    ``remedi.data_handling.physchem``.
+    ``remedi_data.chemistry.physchem``.
     """
 
     model_config = ConfigDict(extra="forbid")

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Polaris hub parquet dumps -> one bundle per dataset"
 requires-python = ">=3.12"
 dependencies = [
-    "remedi",
+    "remedi-data",
     "pandas",
     "pyarrow",
     "pydantic",
@@ -15,7 +15,7 @@ dependencies = [
 prepare-polaris = "remedi_prepare_polaris.prepare:main"
 
 [tool.uv.sources]
-remedi = { workspace = true }
+remedi-data = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

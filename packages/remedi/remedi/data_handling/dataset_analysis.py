@@ -23,11 +23,11 @@ from remedi.configuration.dataset_analysis_config import (
     BitBirchConfig,
     MoleculeDatasetAnalysisConfig,
 )
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.physchem import DESCRIPTORS_2D
-from remedi.evaluation.results import (
+from remedi.evaluation.results import FigureResult
+from remedi_data.chemistry.physchem import DESCRIPTORS_2D
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.runs.results import (
     EvalResult,
-    FigureResult,
     PydanticResult,
 )
 

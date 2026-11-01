@@ -22,12 +22,12 @@ from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
-from remedi.data_handling.bundle import structures_identity
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.evaluation.benchmark.descriptors import (
     DescriptorConfig,
     compute_and_cache,
 )
+from remedi_data.bundle import structures_identity
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 logger = logging.getLogger(__name__)
 

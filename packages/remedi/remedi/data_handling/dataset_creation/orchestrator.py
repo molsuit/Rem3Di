@@ -6,24 +6,24 @@ from time import perf_counter
 
 import numpy as np
 
-from remedi.configuration.dataset_config import (
-    DatasetConfig,
-    DatasetCreationConfig,
-)
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset_creation import (
     DataBatch,
     PipelineStage,
 )
 from remedi.data_handling.dataset_creation.generators import MoleculeGenerator
 from remedi.data_handling.dataset_creation.loading_batch import SmilesData
-from remedi.data_handling.dataset_creation.shard_aligned_writer import (
-    ShardAlignedWriter,
-)
 from remedi.data_handling.dataset_creation.structure_ids import StructureID
 from remedi.data_handling.dataset_creation.utils import (
     ensure_numpy_array,
     system_idx_to_ragged_ptr,
+)
+from remedi_data.dataset.config import (
+    DatasetConfig,
+    DatasetCreationConfig,
+)
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.shard_aligned_writer import (
+    ShardAlignedWriter,
 )
 
 logger = logging.getLogger(__name__)

@@ -14,7 +14,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from remedi.data_handling.bundle import (
+from remedi.evaluation.benchmark.cells import discover_benchmarks, evaluation_of
+from remedi_data.bundle import (
     DATASET_CONFIG_FILENAME,
     SPEC_FILENAME,
     DatasetSpec,
@@ -24,8 +25,7 @@ from remedi.data_handling.bundle import (
     discover_datasets,
     read_spec,
 )
-from remedi.data_handling.dataset.tasks import TaskType
-from remedi.evaluation.benchmark.cells import discover_benchmarks, evaluation_of
+from remedi_data.dataset.tasks import TaskType
 
 
 def make_spec(dataset_id: str = "esol", *, evaluation: bool = True) -> DatasetSpec:

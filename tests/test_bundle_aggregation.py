@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from remedi.data_handling.bundle import (
+from remedi_data.bundle import (
     DUPLICATE_LABEL_TIE,
     DUPLICATE_SMILES,
     MISSING_LABEL,
@@ -18,8 +18,8 @@ from remedi.data_handling.bundle import (
     filter_source_smiles,
     merge_source_rows,
 )
-from remedi.data_handling.chemistry.smiles_filter import SmilesFilterConfig
-from remedi.data_handling.dataset.tasks import TaskType
+from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
+from remedi_data.dataset.tasks import TaskType
 
 ETHANOL = "CCO"
 PROPANOL = "CCCO"

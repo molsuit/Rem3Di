@@ -32,14 +32,14 @@ from torch.utils.data import Subset
 
 from remedi.configuration.architecture_config import ArchitectureConfig
 from remedi.configuration.training_config import TrainingConfig
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import Split
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
 )
 from remedi.data_handling.sample import yield_molecules_supervised_collate_fn
 from remedi.training.data.samplers import lengths_from_ptr
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.tasks import Split
 
 logger = logging.getLogger("remedi.chiral.per_class")
 device = "cuda" if torch.cuda.is_available() else "cpu"

@@ -31,13 +31,13 @@ from ase import Atoms
 from pydantic import BaseModel, Field
 from torch.utils.data import DataLoader, Subset
 
-from remedi.data_handling.bundle import sha256_of_file, structures_identity
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
 from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
+from remedi_data.bundle import sha256_of_file, structures_identity
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 
 class DescriptorCalculator(ABC):
@@ -350,7 +350,7 @@ def descriptor_cache_path(
 
     ``structures``
         identifies the data — see
-        :func:`remedi.data_handling.bundle.structures_identity`. Keying on
+        :func:`remedi_data.bundle.structures_identity`. Keying on
         ``dataset_id`` alone served a matrix computed on an earlier ingest of
         the same endpoint, and the row-count mismatch only surfaced as an
         ``IndexError`` when the split mask was applied.

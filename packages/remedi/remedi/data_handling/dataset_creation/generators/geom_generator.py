@@ -12,11 +12,6 @@ import numpy as np
 from ase import Atoms
 from rdkit import Chem
 
-from remedi.data_handling.chemistry.smiles_filter import (
-    SmilesFilterConfig,
-    molecule_passes_filter,
-    standardized_smiles_for_structure,
-)
 from remedi.data_handling.dataset_creation.generators.molecule_generator import (
     MoleculeGenerator,
 )
@@ -25,6 +20,11 @@ from remedi.data_handling.dataset_creation.loading_batch import (
     SmilesData,
 )
 from remedi.data_handling.dataset_creation.structure_ids import StructureID
+from remedi_data.chemistry.smiles_filter import (
+    SmilesFilterConfig,
+    molecule_passes_filter,
+    standardized_smiles_for_structure,
+)
 
 
 class GeomGenerator(MoleculeGenerator):

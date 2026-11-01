@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from remedi.configuration.training_config import SplitConfig, SplitStrategy
-from remedi.data_handling.data_utils import compute_splits
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.chemistry.data_utils import compute_splits
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 
 class DatasetSplitting:

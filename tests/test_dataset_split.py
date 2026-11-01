@@ -14,17 +14,17 @@ from pathlib import Path
 
 import numpy as np
 
-from remedi.configuration.dataset_config import DatasetConfig
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import (
+from remedi_data.dataset.config import DatasetConfig
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.shard_aligned_writer import (
+    ShardAlignedWriter,
+)
+from remedi_data.dataset.tasks import (
     Split,
     TaskConfig,
     TaskScope,
     TaskSet,
     TaskType,
-)
-from remedi.data_handling.dataset_creation.shard_aligned_writer import (
-    ShardAlignedWriter,
 )
 
 

@@ -16,23 +16,23 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from remedi.data_handling.bundle import (
+from remedi_data.build import DatasetBuildConfig, build_datasets
+from remedi_data.bundle import (
     SourceRecord,
     merge_source_rows,
     read_bundle,
 )
-from remedi.data_handling.bundle.preparation import (
+from remedi_data.bundle.preparation import (
     PreparerSettings,
     SourceLabel,
     smiles_bundle_spec,
     write_smiles_bundle,
 )
-from remedi.data_handling.bundle.provenance import PreparerRecord
-from remedi.data_handling.bundle.spec import EvalMetric
-from remedi.data_handling.chemistry.splits import fixed_test_seeded_split_columns
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import Split, TaskType
-from remedi.data_handling.dataset_build import DatasetBuildConfig, build_datasets
+from remedi_data.bundle.provenance import PreparerRecord
+from remedi_data.bundle.spec import EvalMetric
+from remedi_data.chemistry.splits import fixed_test_seeded_split_columns
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.tasks import Split, TaskType
 
 DATASET_ID = "round_trip"
 LABELS = ("y", "z")

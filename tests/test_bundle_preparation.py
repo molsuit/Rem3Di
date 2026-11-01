@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from remedi.data_handling.bundle import (
+from remedi_data.bundle import (
     AGGREGATION_NOTICE,
     MEASUREMENT_COUNT_COLUMN,
     EvalMetric,
@@ -18,7 +18,7 @@ from remedi.data_handling.bundle import (
     merge_source_rows,
     read_bundle,
 )
-from remedi.data_handling.bundle.preparation import (
+from remedi_data.bundle.preparation import (
     BundleReport,
     PreparationError,
     PreparerSettings,
@@ -31,7 +31,7 @@ from remedi.data_handling.bundle.preparation import (
     smiles_evaluation_metrics,
     write_smiles_bundle,
 )
-from remedi.data_handling.dataset.tasks import TaskType
+from remedi_data.dataset.tasks import TaskType
 
 ETHANOL = "CCO"
 PROPANOL = "CCCO"

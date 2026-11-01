@@ -1,7 +1,7 @@
 """Fault-tolerant eval-manifest runner.
 
 Builds the run's :class:`EvalContext`, hands the manifest's tasks to the shared
-:func:`remedi.evaluation.framework.task_runner.run_tasks` loop, and always
+:func:`remedi_data.runs.task_runner.run_tasks` loop, and always
 writes ``manifest.yaml`` (resolved config) and ``status.yaml`` (the
 :class:`RunReport`) so the run is self-describing even on failure.
 
@@ -19,8 +19,8 @@ import pydantic_yaml as pyd_yaml
 from remedi.evaluation.framework.config import EvalManifest
 from remedi.evaluation.framework.context import EvalContext
 from remedi.evaluation.framework.resources import ResourceCache
-from remedi.evaluation.framework.task import TaskStatus
-from remedi.evaluation.framework.task_runner import (
+from remedi_data.runs.task import TaskStatus
+from remedi_data.runs.task_runner import (
     RunReport,
     make_run_report,
     run_tasks,

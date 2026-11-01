@@ -7,7 +7,7 @@ root. For each bundle listed in ``datasets.yaml`` next to this module, this
 reads the parquet, drops the rows whose CXSMILES carries an OR stereo group (a
 separated enantiomer of unknown absolute configuration), makes every AND-group
 centre unspecified (§11.3), merges the source rows into one row per stereoisomer
-(:func:`remedi.data_handling.bundle.merge_source_rows`), fixes the test fold
+(:func:`remedi_data.bundle.merge_source_rows`), fixes the test fold
 (the shipped ``Set`` column or a DeepChem scaffold split), freezes five seeded
 train/valid partitions as ``split__seed{1..5}`` and writes
 ``benchmark_data/bundles/<dataset_id>/``.
@@ -35,7 +35,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from rdkit import rdBase
 
-from remedi.data_handling.bundle import (
+from remedi_data.bundle import (
     DatasetSpec,
     EvalMetric,
     FileHash,
@@ -46,7 +46,7 @@ from remedi.data_handling.bundle import (
     merge_source_rows,
     sha256_of_file,
 )
-from remedi.data_handling.bundle.preparation import (
+from remedi_data.bundle.preparation import (
     PREPARER_REPOSITORY,
     BundleReport,
     PreparationError,
@@ -59,15 +59,15 @@ from remedi.data_handling.bundle.preparation import (
     smiles_evaluation_metrics,
     write_smiles_bundle,
 )
-from remedi.data_handling.chemistry.splits import (
+from remedi_data.chemistry.splits import (
     fixed_test_seeded_split_columns,
     scaffold_test_mask,
 )
-from remedi.data_handling.chemistry.stereo_groups import (
+from remedi_data.chemistry.stereo_groups import (
     has_or_stereo_group,
     unspecify_relative_stereo,
 )
-from remedi.data_handling.dataset.tasks import Split, TaskType
+from remedi_data.dataset.tasks import Split, TaskType
 
 logger = logging.getLogger("preparers.polaris")
 

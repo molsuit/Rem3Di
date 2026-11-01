@@ -15,9 +15,9 @@ import numpy as np
 import pandas as pd
 from ase import Atoms
 
-from remedi.data_handling.bundle.bundle import Bundle
-from remedi.data_handling.bundle.provenance import BundleProvenance
-from remedi.data_handling.bundle.spec import DatasetSpec, GeometryOrigin
+from remedi_data.bundle.bundle import Bundle
+from remedi_data.bundle.provenance import BundleProvenance
+from remedi_data.bundle.spec import DatasetSpec, GeometryOrigin
 
 #: ``counts.dropped`` key for a stereoisomer that produced no structure at all.
 CONFORMER_EMBEDDING_FAILED = "conformer_embedding_failed"

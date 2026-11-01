@@ -7,7 +7,7 @@ import pytest
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-from remedi.data_handling import physchem as P
+from remedi_data.chemistry import physchem as P
 
 
 def _embed(smiles: str):
