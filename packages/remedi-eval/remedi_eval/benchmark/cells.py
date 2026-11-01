@@ -1,19 +1,11 @@
-"""Scoring one benchmark cell: (dataset, descriptor, learner) on one split.
+"""Scoring one benchmark cell: (dataset, descriptor, learner) on one partition.
 
-The building blocks the framework's ``benchmark_panel`` task
-(:mod:`remedi_eval.framework.tasks.benchmark`) composes into a panel:
-
-1. :func:`split_masks` reads the train / valid / test partition **by name from
-   the bundle's ``table.parquet``**, which travels with the zarr, joined through
-   ``ids/bundle_row``. That is what lets a run pick a non-default split (a seed
-   variant) without re-ingesting anything; the zarr's own ``tasks/split`` array
-   only ever holds the bundle's ``default_split``.
-2. :func:`build_targets_with_nan` gives the label matrix with NaN for missing
-   labels and each spec label's transform applied.
-3. :func:`evaluate_cell` dispatches to the matching ``Learner.fit_predict_*``
-   from the benchmark's task kind (:func:`task_kind`), passing train + valid +
-   test (valid drives early stopping where applicable), and scores the test
-   fold with the spec's headline metric (``spec.evaluation.metrics[0]``).
+The framework's ``benchmark_panel`` task
+(:mod:`remedi_eval.framework.tasks.benchmark`) composes these into a panel. The
+partition, targets and task kind come from :mod:`remedi_eval.protocol`;
+:func:`evaluate_cell` dispatches to the matching ``Learner.fit_predict_*``
+from the task kind, passing train + valid + test (valid drives early stopping
+where applicable), and scores the test fold with the spec's headline metric.
 
 Results are pydantic :class:`BenchmarkResultRow` objects.
 """
@@ -22,21 +14,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 from pydantic import BaseModel
 
-from remedi_data.bundle import (
-    TABLE_FILENAME,
-    DatasetSpec,
-    EvalMetric,
-    EvaluationSpec,
-    discover_datasets,
-    read_table,
-)
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.tasks import Split, TaskType, split_codes_from_names
+from remedi_data.bundle import DatasetSpec, EvalMetric, discover_datasets
+from remedi_data.dataset.tasks import TaskType
 from remedi_eval.benchmark.learners import (
     Learner,
     LearnerConfig,
@@ -47,6 +30,7 @@ from remedi_eval.benchmark.metrics import (
     multiclass_report,
 )
 from remedi_eval.benchmark.pairwise import pair_ranking_accuracy
+from remedi_eval.protocol import Partition, TaskKind
 
 
 class BenchmarkResultRow(BaseModel):
@@ -115,84 +99,10 @@ def learner_kind(cfg: LearnerConfig) -> str:
     return cfg.learner_kind  # type: ignore[union-attr]
 
 
-def apply_label_transforms(
-    targets: np.ndarray, column_names: list[str], spec: DatasetSpec
-) -> np.ndarray:
-    """Each target column mapped through its spec label's ``transform``.
-
-    ``targets`` is ``(n_structures, n_columns)`` with columns named by
-    ``column_names``; NaN (missing) stays NaN. Every column must be a label the
-    spec declares, so a transform can never be silently skipped.
-    """
-    if targets.ndim != 2 or targets.shape[1] != len(column_names):
-        raise ValueError(
-            f"targets of shape {targets.shape} do not match the "
-            f"{len(column_names)} target columns {column_names}"
-        )
-    labels_by_name = {label.name: label for label in spec.labels}
-    transformed = np.array(targets, dtype=float, copy=True)
-    for column_index, column_name in enumerate(column_names):
-        label = labels_by_name.get(column_name)
-        if label is None:
-            raise ValueError(
-                f"target column {column_name!r} is not a label of "
-                f"{spec.dataset_id} (labels: {spec.label_names()})"
-            )
-        transformed[:, column_index] = label.transform.apply(
-            transformed[:, column_index]
-        )
-    return transformed
-
-
-def build_targets_with_nan(dataset: MoleculeDataset, spec: DatasetSpec) -> np.ndarray:
-    """``targets_system`` with NaN where ``mask_system == 0``, label transforms applied.
-
-    Downstream learner code uses NaN to skip missing labels in sparse multi-
-    label benchmarks (SIDER / ClinTox / Tox21). The zarr holds raw labels; each
-    column goes through its spec label's ``transform`` here, the single place
-    targets enter fitting and scoring, so metrics are on the transformed scale.
-    """
-    if dataset.targets_system is None or dataset.mask_system is None:
-        raise ValueError(
-            "Dataset has no system task arrays; cannot evaluate. Build with "
-            "the benchmark ingest runner so targets are materialized."
-        )
-    if dataset.config.tasks is None:
-        raise ValueError("Dataset has no TaskSet; cannot name its target columns.")
-    targets = np.asarray(dataset.targets_system[:], dtype=float)
-    mask = np.asarray(dataset.mask_system[:], dtype=bool)
-    column_names = [column.name for column in dataset.config.tasks.system_cols]
-    return apply_label_transforms(np.where(mask, targets, np.nan), column_names, spec)
-
-
-def task_kind(
-    dataset: MoleculeDataset,
-) -> Literal["regression", "binary", "multilabel", "multiclass"]:
-    if dataset.config.tasks is None:
-        raise ValueError("Dataset has no TaskSet; cannot infer task kind.")
-    cols = dataset.config.tasks.system_cols
-    types = {c.task_type for c in cols}
-    if types == {TaskType.regression}:
-        # Multi-target regression (e.g. polaris_adme_fang) is scored per column
-        # downstream — one independent single-target fit per target.
-        return "regression"
-    if types == {TaskType.classification}:
-        return "binary" if len(cols) == 1 else "multilabel"
-    if types == {TaskType.multiclass}:
-        # Single-label multi-class: exactly one column carrying integer class
-        # indices (e.g. chiral_cat's 5 chirality types).
-        if len(cols) != 1:
-            raise ValueError(
-                f"multiclass benchmark must have one column, got {len(cols)}"
-            )
-        return "multiclass"
-    raise ValueError(f"Mixed task types in one benchmark: {types}")
-
-
 def _fit_predict_single_column(
     learner: Learner,
     is_regression: bool,
-    splits: tuple[np.ndarray, np.ndarray, np.ndarray],
+    partition: Partition,
     X: np.ndarray,
     y: np.ndarray,
     seed: int,
@@ -205,7 +115,7 @@ def _fit_predict_single_column(
     predictions are still produced over the full test fold — ``_score`` masks
     the NaN test rows when scoring.
     """
-    tr, va, te = splits
+    tr, va, te = partition.train, partition.valid, partition.test
     ytr, yva = y[tr], y[va]
     tr_keep, va_keep = ~np.isnan(ytr), ~np.isnan(yva)
     Xtr, Xva, Xte = X[tr][tr_keep], X[va][va_keep], X[te]
@@ -225,61 +135,10 @@ def _score(y_test: np.ndarray, y_pred: np.ndarray, metric: EvalMetric) -> float:
     return fn(y_test, y_pred)
 
 
-def split_masks(
-    zarr_path: Path,
-    dataset: MoleculeDataset,
-    split_column: str,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Train / valid / test boolean masks over the zarr's structures.
-
-    The split is read by name from the ``table.parquet`` that ``ingest_benchmark``
-    copied beside the zarr and gathered onto the zarr's rows through
-    ``ids/bundle_row``, so any of the bundle's split columns can be scored, not
-    just the one materialised into ``tasks/split``.
-
-    Raises:
-        ValueError: if the zarr carries no table, if ``split_column`` is not one
-            of its columns, if its ``structure_id`` column is not the row index,
-            or if a split value is not a known split name.
-    """
-    n_structures = dataset.N_structures
-    try:
-        table = read_table(zarr_path, columns=["structure_id", split_column])
-    except FileNotFoundError as error:
-        raise ValueError(
-            f"{zarr_path} has no {TABLE_FILENAME}; re-ingest it with the "
-            "ingest_benchmark prepare task, which copies the bundle beside the zarr"
-        ) from error
-    except Exception as error:  # pyarrow raises its own type for a missing column
-        available = [
-            name for name in read_table(zarr_path).columns if name.startswith("split")
-        ]
-        raise ValueError(
-            f"split column {split_column!r} is not in {zarr_path / TABLE_FILENAME}; "
-            f"its split columns are {available}"
-        ) from error
-
-    structure_ids = table["structure_id"].to_numpy(dtype=np.int64)
-    if not np.array_equal(structure_ids, np.arange(len(table), dtype=np.int64)):
-        raise ValueError(
-            f"{zarr_path / TABLE_FILENAME} violates invariant 1: structure_id is not "
-            "the row index, so predictions cannot be joined back to it"
-        )
-    rows = np.asarray(
-        dataset.bundle_rows_or_structure_ids[:n_structures], dtype=np.int64
-    )
-    codes = split_codes_from_names(table[split_column].to_numpy(dtype=object)[rows])
-    return (
-        codes == Split.train.value,
-        codes == Split.valid.value,
-        codes == Split.test.value,
-    )
-
-
 def evaluate_cell(
     learner_cfg: LearnerConfig,
-    kind: Literal["regression", "binary", "multilabel", "multiclass"],
-    splits: tuple[np.ndarray, np.ndarray, np.ndarray],
+    kind: TaskKind,
+    partition: Partition,
     X: np.ndarray,
     Y: np.ndarray,
     col_names: list[str],
@@ -292,9 +151,9 @@ def evaluate_cell(
     binary, multilabel and multiclass each yield a single row. A multiclass cell
     additionally carries its :class:`MulticlassReport` over the test fold.
     """
-    tr, va, te = splits
+    tr, va, te = partition.train, partition.valid, partition.test
     seed = cell.seed
-    counts = dict(n_train=int(tr.sum()), n_val=int(va.sum()), n_test=int(te.sum()))
+    counts = dict(n_train=len(tr), n_val=len(va), n_test=len(te))
 
     def make_row(metric_value: float, target_col: str | None) -> BenchmarkResultRow:
         return BenchmarkResultRow(
@@ -337,7 +196,7 @@ def evaluate_cell(
     # regression / binary: score each target column independently.
     for col, name in enumerate(col_names):
         preds = _fit_predict_single_column(
-            learner_cfg.build(), kind == "regression", splits, X, Y[:, col], seed
+            learner_cfg.build(), kind == "regression", partition, X, Y[:, col], seed
         )
         rows.append(make_row(_score(Y[te, col], preds, cell.metric), name))
     return CellEvaluation(rows=rows)
@@ -345,7 +204,7 @@ def evaluate_cell(
 
 def evaluate_pairwise_cell(
     learner_cfg: LearnerConfig,
-    splits: tuple[np.ndarray, np.ndarray, np.ndarray],
+    partition: Partition,
     X: np.ndarray,
     Y: np.ndarray,
     molecule_ids: np.ndarray,
@@ -362,10 +221,10 @@ def evaluate_pairwise_cell(
     ranks each enantiomer pair. One result row, with ``n_test`` carrying the
     number of enantiomer pairs scored (not conformers).
     """
-    tr, va, te = splits
+    te = partition.test
     y = Y[:, 0]
     preds = _fit_predict_single_column(
-        learner_cfg.build(), True, splits, X, y, cell.seed
+        learner_cfg.build(), True, partition, X, y, cell.seed
     )
     acc, n_pairs = pair_ranking_accuracy(y[te], preds, molecule_ids[te], isomer_ids[te])
     return [
@@ -378,32 +237,11 @@ def evaluate_pairwise_cell(
             metric_value=float(acc),
             split_column=cell.split_column,
             seed=cell.seed,
-            n_train=int(tr.sum()),
-            n_val=int(va.sum()),
+            n_train=len(partition.train),
+            n_val=len(partition.valid),
             n_test=int(n_pairs),
         )
     ]
-
-
-def structure_group_ids(
-    dataset: MoleculeDataset,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Per-structure (constitution id, stereoisomer id) aligned to descriptor rows."""
-    return (
-        np.asarray(dataset.molecule_ids[:]),
-        np.asarray(dataset.isomer_ids[:]),
-    )
-
-
-def evaluation_of(spec: DatasetSpec) -> EvaluationSpec:
-    """The spec's evaluation block.
-
-    Raises:
-        ValueError: if the dataset declares none (a corpus, not a benchmark).
-    """
-    if spec.evaluation is None:
-        raise ValueError(f"{spec.dataset_id} declares no evaluation block")
-    return spec.evaluation
 
 
 def discover_benchmarks(root: Path) -> list[tuple[Path, DatasetSpec]]:

@@ -1,10 +1,9 @@
-"""The content-addressed descriptor cache key (§7c), over a stub dataset.
+"""The ECFP descriptor cache: embeddings pairs keyed by data and config identity.
 
-The cache key carries the hash of the *data* and the hash of the *model*, not
-just the dataset id and a user-chosen name. That is not cosmetic: keying on the
-name alone served a matrix computed on an earlier build of the same endpoint,
-and the row-count mismatch surfaced only as an ``IndexError`` when the split
-mask was applied, four datasets into a panel.
+A cached matrix is reused only when its ``structures_sha256`` and descriptor
+identity match the request. Keying on the name alone once served a matrix
+computed on an earlier build of the same endpoint; the row-count mismatch
+surfaced only as an ``IndexError`` four datasets into a panel.
 """
 
 from __future__ import annotations
@@ -29,7 +28,8 @@ from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_eval.descriptors import (
     EcfpConfig,
     compute_and_cache,
-    descriptor_cache_path,
+    embeddings_paths,
+    read_metadata,
 )
 
 
@@ -39,6 +39,7 @@ class _StubDataset:
     def __init__(self, smiles: list[str], path: Path) -> None:
         self._smiles = smiles
         self.path = path
+        self.structure_ids = np.arange(len(smiles), dtype=np.int64)
 
     def get_smiles_per_structure(self) -> list[str]:
         return self._smiles
@@ -77,59 +78,77 @@ def write_stub_dataset(
     return stub_dataset(directory)
 
 
-def test_compute_and_cache_writes_then_short_circuits(tmp_path: Path) -> None:
+def test_compute_and_cache_writes_then_short_circuits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     cfg = EcfpConfig(length=128, name="ecfp_128")
     ds = write_stub_dataset(tmp_path / "toy", "a" * 64)
     cache_dir = tmp_path / "cache"
 
     X = compute_and_cache(cfg, ds, cache_dir, "toy")
-    cache_file = descriptor_cache_path(cfg, ds, cache_dir, "toy")
-    assert cache_file.exists()
-    assert cache_file.name.startswith("toy__ecfp_128__")
+    npz_path, yaml_path = embeddings_paths(cache_dir, "toy", "ecfp_128")
+    assert npz_path.exists() and yaml_path.exists()
     assert X.shape == (len(_SMILES), 128)
     assert X.dtype == np.float32
+    metadata = read_metadata(cache_dir, "toy", "ecfp_128")
+    assert metadata is not None
+    assert metadata.descriptor_identity == cfg.identity()
+    assert metadata.structures_sha256 == "a" * 64
 
-    # Second call with the identical config hits the cache.
+    # Second call with the identical config hits the cache: nothing is computed.
+    monkeypatch.setattr(EcfpConfig, "build", lambda self: pytest.fail("recomputed"))
     X2 = compute_and_cache(cfg, ds, cache_dir, "toy")
     np.testing.assert_array_equal(X, X2)
-    assert list(cache_dir.iterdir()) == [cache_file]
+    assert sorted(path.name for path in (cache_dir / "toy").iterdir()) == [
+        "ecfp_128.npz",
+        "ecfp_128.yaml",
+    ]
 
 
 # ------------------------------------------------- the two halves of the key
 
 
 @pytest.mark.parametrize(
-    ("second_directory", "second_structures_sha256", "second_dataset_id", "length"),
+    ("second_structures_sha256", "length"),
     [
-        # Another dataset id is another namespace.
-        ("lipo", "a" * 64, "lipo", 64),
         # The defect this key exists to prevent: a rebuild under the same name.
-        ("second/HIA_Hou", "b" * 64, "HIA_Hou", 64),
+        ("b" * 64, 64),
         # A reused descriptor name with different settings is another matrix.
-        ("first/HIA_Hou", "a" * 64, "HIA_Hou", 128),
+        ("a" * 64, 128),
     ],
-    ids=["dataset_id", "structures", "descriptor_settings"],
+    ids=["structures", "descriptor_settings"],
 )
-def test_the_cache_key_separates(
-    tmp_path: Path,
-    second_directory: str,
-    second_structures_sha256: str,
-    second_dataset_id: str,
-    length: int,
+def test_a_mismatched_cache_entry_is_recomputed_and_overwritten(
+    tmp_path: Path, second_structures_sha256: str, length: int
 ) -> None:
     cache_dir = tmp_path / "cache"
-    first_cfg = EcfpConfig(length=64, name="ecfp")
-    second_cfg = EcfpConfig(length=length, name="ecfp")
     first = write_stub_dataset(tmp_path / "first" / "HIA_Hou", "a" * 64)
-    second = write_stub_dataset(tmp_path / second_directory, second_structures_sha256)
+    second = write_stub_dataset(
+        tmp_path / "second" / "HIA_Hou", second_structures_sha256
+    )
+    compute_and_cache(EcfpConfig(length=64, name="ecfp"), first, cache_dir, "HIA_Hou")
 
-    for cfg, ds, dataset_id in [
-        (first_cfg, first, "HIA_Hou"),
-        (second_cfg, second, second_dataset_id),
-    ]:
-        compute_and_cache(cfg, ds, cache_dir, dataset_id)
+    second_cfg = EcfpConfig(length=length, name="ecfp")
+    X = compute_and_cache(second_cfg, second, cache_dir, "HIA_Hou")
 
-    assert len(list(cache_dir.iterdir())) == 2
+    assert X.shape == (len(_SMILES), length)
+    metadata = read_metadata(cache_dir, "HIA_Hou", "ecfp")
+    assert metadata is not None
+    assert metadata.structures_sha256 == second_structures_sha256
+    assert metadata.descriptor_identity == second_cfg.identity()
+
+
+def test_dataset_ids_do_not_share_a_cache_entry(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    cfg = EcfpConfig(length=64, name="ecfp")
+    for dataset_id in ["lipo", "HIA_Hou"]:
+        compute_and_cache(
+            cfg,
+            write_stub_dataset(tmp_path / dataset_id, "a" * 64),
+            cache_dir,
+            dataset_id,
+        )
+    assert sorted(path.name for path in cache_dir.iterdir()) == ["HIA_Hou", "lipo"]
 
 
 def test_the_structures_hash_falls_back_to_the_table_content_hash(

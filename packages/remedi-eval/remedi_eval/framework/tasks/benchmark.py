@@ -1,8 +1,8 @@
 """Benchmark-panel task: descriptor x learner cross-product over benchmark zarrs.
 
-The one panel loop. It composes the per-cell helpers of
-:mod:`remedi_eval.benchmark.cells` (``evaluate_cell``, ``task_kind``,
-``build_targets_with_nan``, ``split_masks``) and sources descriptor matrices
+The one panel loop. It opens each benchmark through
+:mod:`remedi_eval.protocol` (partition, targets, task kind), scores it with the
+per-cell helpers of :mod:`remedi_eval.benchmark.cells`, and sources descriptor matrices
 from the shared :class:`ResourceCache` (so a baseline fingerprint / the model
 embedding is computed once and reused) and keeps the fault-tolerant, incremental
 write behaviour: one failing benchmark is recorded in ``failures.yaml`` and the
@@ -30,7 +30,6 @@ from remedi_data.bundle import (
     DatasetSpec,
     EvalMetric,
 )
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import (
     ArrayResult,
     EvalResult,
@@ -41,22 +40,18 @@ from remedi_eval.benchmark.cells import (
     BenchmarkCell,
     BenchmarkFailure,
     BenchmarkResultRow,
-    build_targets_with_nan,
     discover_benchmarks,
     evaluate_cell,
     evaluate_pairwise_cell,
-    evaluation_of,
     learner_kind,
     multiclass_labelling,
-    split_masks,
-    structure_group_ids,
-    task_kind,
 )
 from remedi_eval.benchmark.learners import LearnerConfig
 from remedi_eval.benchmark.metrics import MulticlassReport
 from remedi_eval.descriptors import DescriptorConfig
 from remedi_eval.framework.context import EvalContext
 from remedi_eval.framework.resources import EmbeddingSpec
+from remedi_eval.protocol import load_benchmark
 
 logger = logging.getLogger(__name__)
 
@@ -142,31 +137,30 @@ class BenchmarkPanelConfig(BaseModel):
         descriptors: list[DescriptorConfig],
     ) -> tuple[list[BenchmarkResultRow], list[EvalResult]]:
         """Every cell of one benchmark: its result rows and its cell artifacts."""
-        dataset = MoleculeDataset.open_existing_dataset_from_dir(zarr_path)
-        kind = task_kind(dataset)
-        assert dataset.config.tasks is not None  # narrowed by task_kind
-        col_names = [c.name for c in dataset.config.tasks.system_cols]
-        Y = build_targets_with_nan(dataset, spec)
+        benchmark = load_benchmark(zarr_path)
+        Y = benchmark.targets()
         n_classes, class_names = multiclass_labelling(spec)
+        partition = benchmark.partition(self.split_column)
         cell = BenchmarkCell(
-            dataset_id=spec.dataset_id,
-            metric=evaluation_of(spec).metrics[0],
-            split_column=self.split_column or evaluation_of(spec).default_split,
+            dataset_id=benchmark.dataset_id,
+            metric=benchmark.headline_metric,
+            split_column=partition.split_column,
             seed=ctx.seed,
             n_classes=n_classes,
             class_names=class_names,
         )
-        splits = split_masks(zarr_path, dataset, cell.split_column)
         is_pairwise = cell.metric == EvalMetric.pair_ranking_accuracy
-        mol_ids, iso_ids = structure_group_ids(dataset) if is_pairwise else (None, None)
+        mol_ids, iso_ids = (
+            benchmark.structure_group_ids() if is_pairwise else (None, None)
+        )
         rows: list[BenchmarkResultRow] = []
         results: list[EvalResult] = []
         for desc in descriptors:
             X = ctx.resources.get(
                 EmbeddingSpec(
-                    dataset_id=spec.dataset_id,
+                    dataset_id=benchmark.dataset_id,
                     descriptor=desc,
-                    dataset=dataset,
+                    dataset=benchmark.dataset,
                     cache_dir=ctx.resource_cache_dir,
                 )
             )
@@ -176,12 +170,12 @@ class BenchmarkPanelConfig(BaseModel):
                     rows.extend(
                         evaluate_pairwise_cell(
                             learner_cfg,
-                            splits,
+                            partition,
                             X,
                             Y,
                             mol_ids,
                             iso_ids,
-                            col_names[0],
+                            benchmark.target_columns[0],
                             cell,
                             desc.name,
                         )
@@ -189,11 +183,11 @@ class BenchmarkPanelConfig(BaseModel):
                     continue
                 evaluation = evaluate_cell(
                     learner_cfg,
-                    kind,
-                    splits,
+                    benchmark.task_kind,
+                    partition,
                     X,
                     Y,
-                    col_names,
+                    benchmark.target_columns,
                     cell,
                     desc.name,
                 )
@@ -202,7 +196,7 @@ class BenchmarkPanelConfig(BaseModel):
                     results.extend(
                         _multiclass_artifacts(
                             evaluation.report,
-                            spec.dataset_id,
+                            benchmark.dataset_id,
                             desc.name,
                             learner_kind(learner_cfg),
                         )

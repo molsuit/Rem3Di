@@ -1,65 +1,83 @@
-"""The on-disk descriptor cache, keyed by data and descriptor identity."""
+"""The descriptor cache for descriptors ``remedi_eval`` computes itself (ECFP).
+
+A cached matrix is an embeddings pair (:mod:`embeddings_file`) at
+``<cache_root>/<dataset_id>/<name>.npz``, with the descriptor config's hash as
+``descriptor_identity``. A pair whose ``structures_sha256`` or identity does
+not match the request is recomputed and overwritten, so one name holds one
+variant at a time and a stale matrix is never served.
+"""
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 
 from remedi_data.bundle import structures_identity
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_eval.descriptors.config import DescriptorConfig
+from remedi_eval.descriptors.base import DescriptorCalculator
+from remedi_eval.descriptors.embeddings_file import (
+    embeddings_aligned_to,
+    producer_record,
+    read_embeddings,
+    read_metadata,
+    write_embeddings,
+)
+
+logger = logging.getLogger(__name__)
 
 
-def descriptor_cache_path(
-    config: DescriptorConfig,
-    dataset: MoleculeDataset,
-    cache_dir: Path,
-    dataset_id: str,
-) -> Path:
-    """Where the descriptor matrix for one (dataset, descriptor) pair is cached.
+class CachedDescriptor(Protocol):
+    """A descriptor config the cache can compute and identify."""
 
-    ``{dataset_id}__{name}__{structures}__{model}.npz`` (§7c). The two hashes
-    are what make the key *correct* rather than merely conventional:
+    name: str
 
-    ``structures``
-        identifies the data — see
-        :func:`remedi_data.bundle.structures_identity`. Keying on
-        ``dataset_id`` alone served a matrix computed on an earlier ingest of
-        the same endpoint, and the row-count mismatch only surfaced as an
-        ``IndexError`` when the split mask was applied.
-    ``model``
-        identifies the descriptor — the checkpoint weights for a REM3DI model,
-        the config itself for a fingerprint — so a renamed or retrained model
-        cannot inherit another one's vectors.
+    def identity(self) -> str: ...
 
-    Twelve hex characters of each is 48 bits per hash; these are collision
-    guards on a directory of at most a few hundred files, not signatures.
-    """
-    return Path(cache_dir) / (
-        f"{dataset_id}__{config.name}"
-        f"__{structures_identity(Path(dataset.path))[:12]}"
-        f"__{config.identity()[:12]}.npz"
-    )
+    def build(self) -> DescriptorCalculator: ...
 
 
 def compute_and_cache(
-    config: DescriptorConfig,
+    config: CachedDescriptor,
     dataset: MoleculeDataset,
-    cache_dir: Path,
+    cache_root: Path,
     dataset_id: str,
 ) -> np.ndarray:
-    """Compute the descriptor matrix, caching it under :func:`descriptor_cache_path`.
+    """The descriptor matrix in zarr order, from the cache or freshly computed.
 
     Raises:
         FileNotFoundError: if the dataset directory carries no
             ``provenance.yaml`` to identify its contents by.
     """
-    cache_dir = Path(cache_dir)
-    cache_path = descriptor_cache_path(config, dataset, cache_dir, dataset_id)
-    if cache_path.exists():
-        return np.asarray(np.load(cache_path)["X"])
-    X = config.build().calculate(dataset)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(cache_path, X=X)
-    return X
+    dataset_dir = Path(dataset.path)
+    structures_sha256 = structures_identity(dataset_dir)
+    descriptor_identity = config.identity()
+    structure_ids = np.asarray(dataset.structure_ids[:], dtype=np.int64)
+    metadata = read_metadata(cache_root, dataset_id, config.name)
+    if (
+        metadata is not None
+        and metadata.structures_sha256 == structures_sha256
+        and metadata.descriptor_identity == descriptor_identity
+    ):
+        cached = read_embeddings(cache_root, dataset_id, config.name)
+        return embeddings_aligned_to(cached, dataset_dir, structure_ids)
+    if metadata is not None:
+        logger.info(
+            "recomputing %s/%s: the cached matrix is for other data or settings",
+            dataset_id,
+            config.name,
+        )
+    matrix = np.asarray(config.build().calculate(dataset), dtype=np.float32)
+    write_embeddings(
+        cache_root,
+        dataset_id=dataset_id,
+        descriptor_name=config.name,
+        descriptor_identity=descriptor_identity,
+        structures_sha256=structures_sha256,
+        structure_id=structure_ids,
+        embedding=matrix,
+        producer=producer_record("remedi-eval"),
+    )
+    return matrix

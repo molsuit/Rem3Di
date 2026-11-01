@@ -8,9 +8,8 @@ preceded it into a typed, memoised provider.
 A :class:`ResourceSpec` is a small value object with a stable ``key()`` and a
 ``build(cache)`` that may itself pull other resources from the cache, so
 composed specs dedupe. The :class:`ResourceCache` memoises by key for the
-lifetime of one run; on-disk persistence is delegated to the builders that
-already have it (:func:`compute_and_cache` for embeddings), so re-runs stay
-cheap.
+lifetime of one run; on-disk persistence is delegated to the descriptors
+(precomputed embeddings, the ECFP cache), so re-runs stay cheap.
 """
 
 from __future__ import annotations
@@ -24,10 +23,7 @@ import numpy as np
 
 from remedi_data.bundle import structures_identity
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_eval.descriptors import (
-    DescriptorConfig,
-    compute_and_cache,
-)
+from remedi_eval.descriptors import DescriptorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +66,14 @@ class ResourceCache:
 
 @dataclass
 class EmbeddingSpec:
-    """An ``(N, D)`` descriptor matrix over ``dataset``, disk-cached by content.
+    """An ``(N, D)`` descriptor matrix over ``dataset``, in zarr order.
 
-    ``dataset`` is the opened :class:`MoleculeDataset`. The in-memory key is
-    the on-disk one: ``dataset_id``, the descriptor's ``name``, the hash of the
-    *data* and the hash of the *model* (§7c, see
-    :func:`remedi_eval.descriptors.descriptor_cache_path`). The
-    name alone is not an identity — two ingests of one endpoint, or two
-    checkpoints under one label, would otherwise share a matrix.
+    ``dataset`` is the opened :class:`MoleculeDataset`. The key carries
+    ``dataset_id``, the descriptor's ``name``, the hash of the *data* and the
+    descriptor's identity: the name alone is not an identity, since two builds
+    of one endpoint or two configs under one label would otherwise share a
+    matrix. The descriptor's ``load_matrix`` reads it from disk (precomputed
+    embeddings, the ECFP cache) or computes it.
     """
 
     dataset_id: str
@@ -85,7 +81,7 @@ class EmbeddingSpec:
     dataset: MoleculeDataset
     cache_dir: Path
     # Memoised so that repeated ``cache.get(spec)`` calls do not re-read the
-    # provenance yaml (and, for a REM3DI model, re-hash the checkpoint).
+    # provenance yaml.
     _memoised_key: str | None = field(
         default=None, init=False, repr=False, compare=False
     )
@@ -101,6 +97,6 @@ class EmbeddingSpec:
 
     def build(self, cache: ResourceCache) -> np.ndarray:
         del cache  # no dependencies
-        return compute_and_cache(
-            self.descriptor, self.dataset, self.cache_dir, self.dataset_id
+        return self.descriptor.load_matrix(
+            self.dataset, self.dataset_id, self.cache_dir
         )

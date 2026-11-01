@@ -10,6 +10,7 @@ from remedi_data.bundle import EvalMetric
 from remedi_eval.benchmark.cells import BenchmarkCell, evaluate_pairwise_cell
 from remedi_eval.benchmark.learners import LinearLearnerConfig
 from remedi_eval.benchmark.pairwise import pair_ranking_accuracy
+from remedi_eval.protocol import Partition
 
 
 def test_perfect_ranking_pools_conformers() -> None:
@@ -95,10 +96,12 @@ def test_evaluate_pairwise_cell_end_to_end() -> None:
     X = np.array(X_col, dtype=float).reshape(-1, 1)
 
     # Constitutions 0,1 -> train; 2,3 -> test; no val rows needed by Ridge.
-    tr = np.isin(mol_ids, [0, 1])
-    te = np.isin(mol_ids, [2, 3])
-    va = np.zeros_like(tr)
-    splits = (tr, va, te)
+    partition = Partition(
+        split_column="split",
+        train=np.flatnonzero(np.isin(mol_ids, [0, 1])),
+        valid=np.array([], dtype=np.int64),
+        test=np.flatnonzero(np.isin(mol_ids, [2, 3])),
+    )
 
     cell = BenchmarkCell(
         dataset_id="chiral_docking",
@@ -108,7 +111,7 @@ def test_evaluate_pairwise_cell_end_to_end() -> None:
     )
     rows = evaluate_pairwise_cell(
         LinearLearnerConfig(ridge_alpha=0.01),
-        splits,
+        partition,
         X,
         Y,
         mol_ids,

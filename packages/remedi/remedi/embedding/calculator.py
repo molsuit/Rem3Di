@@ -198,9 +198,8 @@ class RemediCalculator(DescriptorCalculator):
 
 
 class RemediConfig(BaseModel):
-    descriptor_kind: Literal["remedi"] = "remedi"
-    # User-supplied identifier used in the cache filename — usually the model
-    # checkpoint name (e.g. "remedi-geom-350k").
+    # The descriptor name of the embeddings files, usually the checkpoint name
+    # (e.g. "remedi-geom-350k"); the manifest reads them back under this name.
     name: str
     model_dir: Path
     batch_size: int = 64
@@ -209,17 +208,18 @@ class RemediConfig(BaseModel):
     # checkpoint config (which is absolute and machine-specific). Set this when
     # running a checkpoint on a different machine than it was trained on.
     mace_model_path: Path | None = None
-    # Filled in on first use by :meth:`identity` and then serialised into the
-    # run's manifest.yaml, so a results table records *which* weights produced
-    # it. Set it by hand only to pin an identity deliberately.
+    # Filled in on first use by :meth:`identity` and recorded as the
+    # descriptor_identity of every embeddings file, so a results table traces
+    # back to the weights that produced it. Set it by hand only to pin an
+    # identity deliberately.
     checkpoint_sha256: str | None = None
 
     def identity(self) -> str:
-        """sha256 over the checkpoint weights, computed once and memoised (§7c).
+        """sha256 over the checkpoint weights, computed once and memoised.
 
         The weights are the descriptor: ``batch_size`` and ``device`` change
-        nothing about the matrix and must not split the cache, while two
-        checkpoints under one ``name`` must never share it.
+        nothing about the matrix and must not force a re-embedding, while two
+        checkpoints under one ``name`` must never share embeddings.
 
         Raises:
             FileNotFoundError: if ``model_dir`` holds no ``.pth`` file.

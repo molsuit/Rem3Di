@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_eval.descriptors.base import DescriptorCalculator
+from remedi_eval.descriptors.cache import compute_and_cache
 
 
 class EcfpCalculator(DescriptorCalculator):
@@ -43,10 +45,16 @@ class EcfpConfig(BaseModel):
         return EcfpCalculator(fingerprint=self.fingerprint, length=self.length)
 
     def identity(self) -> str:
-        """sha256 over the config: every knob that changes the matrix (§7c).
+        """sha256 over the config: every knob that changes the matrix .
 
         ``name`` is a label the user picks and is free to reuse, so it cannot
         be the cache key on its own — ``fingerprint`` and ``length`` decide the
         numbers and both ride in here.
         """
         return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
+
+    def load_matrix(
+        self, dataset: MoleculeDataset, dataset_id: str, cache_root: Path
+    ) -> np.ndarray:
+        """The fingerprint matrix in zarr order, cached under ``cache_root``."""
+        return compute_and_cache(self, dataset, cache_root, dataset_id)
