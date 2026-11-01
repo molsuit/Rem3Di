@@ -94,7 +94,6 @@ def test_binary_degenerate_single_class_returns_constant() -> None:
 
 def test_lightgbm_config_roundtrip_and_build(tmp_path) -> None:
     cfg = LightGBMLearnerConfig(n_estimators=300, early_stopping_rounds=10)
-    import pydantic_yaml as pyd_yaml
 
     path = tmp_path / "lgbm.yaml"
     pyd_yaml.to_yaml_file(path, cfg)
@@ -241,7 +240,6 @@ def test_null_learner_predicts_train_constant_and_parses():
     assert np.allclose(pm[:, 0], 2 / 3) and np.allclose(pm[:, 1], 1.0)
 
     # discriminated-union round-trip on the string value (not bare ``null``)
-    cfg = pyd_yaml.parse_yaml_file_as  # noqa: F841  (sanity: import path stable)
     parsed = pydantic.TypeAdapter(LearnerConfig).validate_python(
         {"learner_kind": "null_baseline"}
     )

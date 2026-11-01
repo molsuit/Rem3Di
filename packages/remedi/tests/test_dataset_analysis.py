@@ -148,7 +148,7 @@ def test_heteroatom_chunking_matches_naive(tmp_path: Path):
 
 
 def test_bitbirch_runs_when_available(tmp_path: Path):
-    bblean = pytest.importorskip("bblean")  # noqa: F841
+    pytest.importorskip("bblean")
 
     smiles = [
         "CCO",

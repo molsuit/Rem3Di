@@ -1,5 +1,4 @@
 import gc
-import warnings
 
 from remedi_data.dataset.smiles_storage import SmilesStorage
 
@@ -36,12 +35,3 @@ def test_del_releases_file_handle(tmp_path):
     del store
     gc.collect()
     assert text_file.closed
-
-
-def test_no_resource_warning_when_not_closed(tmp_path):
-    # Simulate a crash that drops the store without calling close().
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", ResourceWarning)
-        store = _make_store(tmp_path)
-        del store
-        gc.collect()

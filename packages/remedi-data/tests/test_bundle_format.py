@@ -6,9 +6,9 @@ table files, every invariant ``validate_table`` (1-7) and ``structure_problems``
 a descriptor cache keys on, and ``PreparerRecord.for_script``.
 
 The bundle package is torch-free, so this module also runs without the
-repository conftest::
+workspace conftest::
 
-    uv run --no-sync pytest --noconftest tests/test_bundle_format.py -q
+    uv run --no-sync pytest --noconftest packages/remedi-data/tests/test_bundle_format.py -q
 """
 
 from __future__ import annotations

@@ -6,7 +6,6 @@ Covers the parts that don't need MACE / a GPU:
   * FocalLoss reduces to cross-entropy at gamma=0 and down-weights easy
     examples at gamma>0; inverse-frequency alpha up-weights rare classes;
   * the supervised collate stacks per-molecule labels into ``(B,)``;
-  * make_supervised_getitem attaches the label to a Sample;
   * the chiral architecture yaml validates as a single-head classifier.
 """
 

@@ -1,9 +1,8 @@
 """Tests for the general 2-TP pseudoscalar path finder and engine.
 
 Expected path sets were enumerated by hand from the selection rules (l-triangle,
-parity, l>=1 intermediate, contraction to 0o) and independently cross-checked by a
-subagent — see claude/journals/general-pseudo-tp/. Each case asserts the EXACT set of
-paths, not just the count.
+parity, l>=1 intermediate, contraction to 0o) and independently cross-checked. Each
+case asserts the EXACT set of paths, not just the count.
 """
 
 import warnings

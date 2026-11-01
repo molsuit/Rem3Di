@@ -58,7 +58,8 @@ exclude = ["tools/vulture/*whitelist*.py"]
 
 [tool.ty.environment]
 python-version = "3.12"
-root = ["packages/remedi-data", "packages/remedi-eval", "packages/remedi", ".", "preparers/chiralcat/tests"]
+# preparers/chiralcat/tests before ".", so its `import conftest` does not resolve to the root conftest.
+root = ["packages/remedi-data", "packages/remedi-eval", "packages/remedi", "preparers/chiralcat/tests", "."]
 
 # Dead-code analysis, run by pre-commit through tools/vulture/run_vulture.py,
 # which first regenerates the pydantic-field / enum-member whitelist.

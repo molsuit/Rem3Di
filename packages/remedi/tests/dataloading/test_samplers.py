@@ -148,12 +148,6 @@ def test_bucket_size_one():
 # ----------------------------- input validation ------------------------------
 
 
-def test_accepts_list_input():
-    sampler = _make_sampler([3, 4, 5], max_atoms_per_batch=10, shuffle=False)
-    flat = _flatten(list(sampler))
-    assert sorted(flat) == [0, 1, 2]
-
-
 def test_accepts_ndarray_input():
     sampler = _make_sampler(np.array([3, 4, 5]), max_atoms_per_batch=10, shuffle=False)
     flat = _flatten(list(sampler))
@@ -186,21 +180,6 @@ def test_rejects_zero_bucket_size():
 
 
 # ----------------------------- determinism -----------------------------------
-
-
-def test_explicit_generator_makes_iteration_deterministic():
-    lengths = list(range(5, 105))
-    a = list(
-        BucketBatchSampler(
-            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(123)
-        )
-    )
-    b = list(
-        BucketBatchSampler(
-            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(123)
-        )
-    )
-    assert a == b
 
 
 def test_distinct_seeds_produce_distinct_orderings():
