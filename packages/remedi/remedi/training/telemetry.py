@@ -38,7 +38,7 @@ class TrainingTelemetry:
     def __enter__(self) -> "TrainingTelemetry":
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, *_exception_info):
         self.finish()
 
     def finish(self):

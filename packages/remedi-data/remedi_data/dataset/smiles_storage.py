@@ -161,7 +161,7 @@ class SmilesStorage:
 
         return _gen()
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(self, *_exception_info):
         self.close()
         return False
 
