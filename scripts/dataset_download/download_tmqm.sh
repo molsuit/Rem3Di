@@ -1,24 +1,12 @@
 #!/bin/bash
-
-cd $1
-
-mkdir tmqm
-cd tmqm
-
-wget https://github.com/uiocompcat/tmQM/raw/refs/heads/master/tmQM/tmQM_X1.xyz.gz
-gzip -d tmQM_X1.xyz.gz
-
-wget https://github.com/uiocompcat/tmQM/raw/refs/heads/master/tmQM/tmQM_X2.xyz.gz
-gzip -d tmQM_X2.xyz.gz
-
-
-wget https://github.com/uiocompcat/tmQM/raw/refs/heads/master/tmQM/tmQM_X3.xyz.gz
-gzip -d tmQM_X3.xyz.gz
-
-wget https://github.com/uiocompcat/tmQM/raw/refs/heads/master/tmQM/tmQM_y.csv
-
-# Strip blank lines between frames — ASE's xyz parser treats them as EOF
-# and only yields the first frame per file.
-for f in tmQM_X1.xyz tmQM_X2.xyz tmQM_X3.xyz; do
-    sed -i '/^[[:space:]]*$/d' "$f"
+# tmQM, pinned to the 2025-03-17 commit (108k TMCs, 2024 release, with SMILES in tmQM_y.csv).
+# Usage: download_tmqm.sh <target directory>
+set -euo pipefail
+commit=ece824419c9006fe66436daf233822b75533b82f
+mkdir -p "$1/tmqm"
+cd "$1/tmqm"
+for f in tmQM_X1.xyz.gz tmQM_X2.xyz.gz tmQM_X3.xyz.gz tmQM_y.csv; do
+    wget -c "https://raw.githubusercontent.com/uiocompcat/tmQM/$commit/tmQM/$f" -O "$f"
 done
+echo "$commit" > COMMIT
+sha256sum tmQM_* > SHA256SUMS
