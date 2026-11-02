@@ -34,6 +34,31 @@ SMILES_FILTER = "smiles_filter"
 SMILES_DOES_NOT_MATCH_STRUCTURE = "smiles_does_not_match_structure"
 CHARGE_CHANGED_BY_STANDARDIZATION = "charge_changed_by_standardization"
 STEREO_MISMATCH = "stereo_mismatch"
+UNSTABLE_CANONICAL_SMILES = "unstable_canonical_smiles"
+
+#: Round trips after which a canonical SMILES that still changes is dropped.
+_MAXIMUM_ROUND_TRIPS = 3
+
+
+def round_trip_canonical_smiles(smiles: str) -> tuple[str, Chem.Mol] | None:
+    """The canonical SMILES that re-parsing no longer changes, with its molecule.
+
+    A SMILES written from a molecule perceived from 3D is not always a fixed
+    point: for some achiral cages (2-substituted adamantanes in PCQM4Mv2)
+    parsing and writing it again gives another spelling of the stereo tags.
+    The table must hold the fixed point, or one molecule gets two
+    ``stereoisomer_id`` values depending on where its SMILES came from.
+    Returns ``None`` if it is unparsable or still changes after a few round trips.
+    """
+    for _ in range(_MAXIMUM_ROUND_TRIPS):
+        molecule = Chem.MolFromSmiles(smiles)
+        if molecule is None:
+            return None
+        rewritten = Chem.MolToSmiles(molecule)
+        if rewritten == smiles:
+            return smiles, molecule
+        smiles = rewritten
+    return None
 
 
 @dataclass
@@ -108,9 +133,10 @@ def _frame_from_molecule(
     )
     if isomeric_smiles is None:
         return SMILES_FILTER
-    parsed = Chem.MolFromSmiles(isomeric_smiles)
-    if parsed is None:
-        return SMILES_FILTER
+    stable = round_trip_canonical_smiles(isomeric_smiles)
+    if stable is None:
+        return UNSTABLE_CANONICAL_SMILES
+    isomeric_smiles, parsed = stable
     template = Chem.AddHs(parsed)
     # The match fails when standardisation moved a hydrogen or changed the
     # heavy-atom graph, i.e. whenever the SMILES no longer describes the frame.

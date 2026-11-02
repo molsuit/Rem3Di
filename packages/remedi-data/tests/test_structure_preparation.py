@@ -53,6 +53,7 @@ from remedi_data.structures.records import (
     SMILES_DOES_NOT_MATCH_STRUCTURE,
     SMILES_FILTER,
     UNREADABLE,
+    round_trip_canonical_smiles,
 )
 from remedi_data.structures.sources.pcqm4mv2 import sdf_record_offsets
 from remedi_data.structures.sources.tmqm import iterate_xyz_entries, parse_comment
@@ -143,6 +144,32 @@ def test_identity_from_canonical_matches_assign_identity() -> None:
     pd.testing.assert_frame_equal(actual, expected)
     assert actual["enantiomer_of"].tolist()[:2] == [1, 0]
     assert pd.isna(actual["enantiomer_of"].iloc[4])
+
+
+#: Found in PCQM4Mv2: RDKit keeps tags on the symmetric cage atoms of this
+#: achiral molecule; writing the first spelling and parsing it again gives the
+#: second, which is a fixed point and its own mirror image.
+CAGE_SPELLING = "O=CCC[C@H]1[C@@H]2CC[C@H]1CC2"
+CAGE_FIXED_POINT = "O=CCC[C@H]1[C@H]2CC[C@@H]1CC2"
+
+
+def test_a_one_sided_mirror_relation_is_not_a_pair() -> None:
+    assert mirror_isomeric_smiles(CAGE_SPELLING) == CAGE_FIXED_POINT
+    assert mirror_isomeric_smiles(CAGE_FIXED_POINT) == CAGE_FIXED_POINT
+    smiles = [CAGE_SPELLING, CAGE_FIXED_POINT, "C[C@H](N)C(=O)O", "C[C@@H](N)C(=O)O"]
+    canonical_alanines = [Chem.CanonSmiles(value) for value in smiles[2:]]
+    identity = identity_from_canonical(
+        [*smiles[:2], *canonical_alanines],
+        ["O=CCCC1C2CCC1CC2"] * 2 + ["CC(N)C(=O)O"] * 2,
+        [mirror_isomeric_smiles(value) for value in [*smiles[:2], *canonical_alanines]],
+    )
+    assert identity.enantiomer_of.tolist() == [pd.NA, pd.NA, 3, 2]
+
+
+def test_the_stored_smiles_is_a_round_trip_fixed_point() -> None:
+    assert round_trip_canonical_smiles(CAGE_SPELLING) is not None
+    assert round_trip_canonical_smiles(CAGE_SPELLING)[0] == CAGE_FIXED_POINT
+    assert round_trip_canonical_smiles("not a smiles") is None
 
 
 # -------------------------------------------------------------- prepare_record
@@ -445,6 +472,7 @@ def test_geom_source_keeps_the_top_conformers_by_weight(tmp_path: Path) -> None:
             pickle.dump({"conformers": conformers}, handle)
         summary[smiles] = {"pickle_path": pickle_path}
     summary["CCN"] = {"pickle_path": "drugs/missing.pickle"}
+    summary["CCC"] = {}  # an entry without a pickle path
     (folder / "summary_drugs.json").write_text(json.dumps(summary))
     source = GeomDrugsSource(directory=folder, conformers_per_molecule=2)
     output = tmp_path / "datasets" / "geom_drugs"
@@ -460,7 +488,7 @@ def test_geom_source_keeps_the_top_conformers_by_weight(tmp_path: Path) -> None:
     assert table["conformer_rank"].tolist() == [0, 1, 0, 1]
     assert table["molecule_id"].tolist() == [0, 0, 1, 1]
     # The acetate is charged (the GEOM filter keeps neutral molecules only).
-    assert result.dropped == {"missing_pickle": 1, SMILES_FILTER: 1}
+    assert result.dropped == {"missing_pickle": 2, SMILES_FILTER: 1}
     assert verify_dataset(output).problems == []
 
 

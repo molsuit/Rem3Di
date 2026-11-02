@@ -106,7 +106,9 @@ class GeomDrugsSource(StructureSourceBase):
         for geom_smiles, pickle_path in zip(
             index["geom_smiles"], index["pickle_path"], strict=True
         ):
-            path = None if pickle_path is None else self.directory / pickle_path
+            path = (
+                self.directory / pickle_path if isinstance(pickle_path, str) else None
+            )
             if path is None or not path.exists():
                 yield DroppedRecord(source_key=geom_smiles, reason=MISSING_PICKLE)
                 continue

@@ -143,6 +143,18 @@ def identity_from_canonical(
     mirror = pd.Series(list(mirror_smiles), dtype="str")
     partner = mirror.map(first_id_by_smiles).astype("Int64")
     partner[(mirror == isomeric).to_numpy()] = pd.NA
+    # Only mutual pairs count: RDKit keeps meaningless tetrahedral tags on the
+    # symmetric atoms of some achiral cages (2-substituted adamantanes), so
+    # mirroring A can give B while B is its own mirror image (issues file).
+    mirror_by_id = pd.Series(mirror.to_numpy(), index=stereoisomer_id)
+    mirror_by_id = mirror_by_id[~mirror_by_id.index.duplicated()]
+    has_partner = partner.notna().to_numpy()
+    partner_ids = partner[has_partner].astype("int64").to_numpy()
+    mutual = (
+        mirror_by_id.loc[partner_ids].to_numpy() == isomeric.to_numpy()[has_partner]
+    )
+    rows_with_partner = np.flatnonzero(has_partner)
+    partner[rows_with_partner[~mutual]] = pd.NA
     return IdentityTable(
         stereoisomer_id=stereoisomer_id,
         molecule_id=molecule_id,
