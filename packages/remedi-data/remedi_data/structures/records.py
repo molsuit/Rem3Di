@@ -8,11 +8,12 @@ turns each record into a :class:`PreparedFrame` or a drop reason with
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
 from rdkit import Chem
+from rdkit.Geometry import Point3D
 
 from remedi_data.bundle.identity import mirror_isomeric_smiles
 from remedi_data.bundle.validate import stereo_agrees_with_frame
@@ -35,6 +36,8 @@ SMILES_DOES_NOT_MATCH_STRUCTURE = "smiles_does_not_match_structure"
 CHARGE_CHANGED_BY_STANDARDIZATION = "charge_changed_by_standardization"
 STEREO_MISMATCH = "stereo_mismatch"
 UNSTABLE_CANONICAL_SMILES = "unstable_canonical_smiles"
+SOURCE_SMILES_UNPARSABLE = "source_smiles_unparsable"
+CONNECTIVITY_DIFFERS_FROM_SOURCE = "connectivity_differs_from_source"
 
 #: Round trips after which a canonical SMILES that still changes is dropped.
 _MAXIMUM_ROUND_TRIPS = 3
@@ -70,10 +73,17 @@ class StructureRecord:
     and radicals give the total charge and multiplicity. A source without
     SMILES sets ``atomic_numbers``, ``positions``, ``total_charge`` and
     ``multiplicity`` instead.
+
+    ``graph_smiles`` is a SMILES the source vouches for (GEOM's summary key).
+    When set, ``molecule`` contributes only its connectivity and coordinates:
+    bond orders and charges come from ``graph_smiles``, and a frame whose
+    connectivity (hydrogens included) differs from it is dropped. Stereo is
+    still perceived from the coordinates.
     """
 
     source_key: str
     molecule: Chem.Mol | None = None
+    graph_smiles: str | None = None
     atomic_numbers: np.ndarray | None = None
     positions: np.ndarray | None = None
     total_charge: float | None = None
@@ -112,6 +122,58 @@ class PreparedFrame:
     #: Canonical SMILES of the exact mirror image (equal to ``isomeric_smiles``
     #: for a molecule that is its own mirror image).
     mirror_smiles: str | None = None
+
+
+def _element_graph(molecule: Chem.Mol) -> Chem.Mol:
+    """``molecule`` reduced to elements and connectivity: single bonds, no charges."""
+    graph = Chem.RWMol(molecule)
+    for atom in graph.GetAtoms():
+        atom.SetFormalCharge(0)
+        atom.SetIsAromatic(False)
+        atom.SetNumRadicalElectrons(0)
+        atom.SetChiralTag(Chem.ChiralType.CHI_UNSPECIFIED)
+        atom.SetNoImplicit(True)
+        atom.SetNumExplicitHs(0)
+    for bond in graph.GetBonds():
+        bond.SetBondType(Chem.BondType.SINGLE)
+        bond.SetIsAromatic(False)
+        bond.SetStereo(Chem.BondStereo.STEREONONE)
+    reduced = graph.GetMol()
+    reduced.UpdatePropertyCache(strict=False)
+    Chem.FastFindRings(reduced)
+    return reduced
+
+
+def molecule_on_source_graph(molecule: Chem.Mol, graph_smiles: str) -> Chem.Mol | str:
+    """The molecule of ``graph_smiles`` (with hydrogens) carrying ``molecule``'s coordinates.
+
+    Atoms are matched on elements and connectivity only, so a frame whose bond
+    orders or charges were perceived differently still maps, while one whose
+    connectivity changed (a ring closed, a hydrogen moved) does not. Returns
+    the ``counts.dropped`` reason when it cannot be mapped.
+    """
+    parsed = Chem.MolFromSmiles(graph_smiles)
+    if parsed is None:
+        return SOURCE_SMILES_UNPARSABLE
+    template = Chem.AddHs(parsed)
+    if (
+        template.GetNumAtoms() != molecule.GetNumAtoms()
+        or template.GetNumBonds() != molecule.GetNumBonds()
+        or molecule.GetNumConformers() != 1
+    ):
+        return CONNECTIVITY_DIFFERS_FROM_SOURCE
+    match = _element_graph(molecule).GetSubstructMatch(_element_graph(template))
+    if len(match) != template.GetNumAtoms():
+        return CONNECTIVITY_DIFFERS_FROM_SOURCE
+    source_positions = molecule.GetConformer().GetPositions()
+    conformer = Chem.Conformer(template.GetNumAtoms())
+    for template_index, source_index in enumerate(match):
+        x, y, z = (float(value) for value in source_positions[source_index])
+        conformer.SetAtomPosition(template_index, Point3D(x, y, z))
+    conformer.Set3D(True)
+    template.RemoveAllConformers()
+    template.AddConformer(conformer, assignId=True)
+    return template
 
 
 def _frame_from_molecule(
@@ -219,6 +281,20 @@ def prepare_record(
     if smiles_filter is not None:
         if record.molecule is None:
             return UNREADABLE
+        if record.graph_smiles is not None:
+            # The filter first, on the trusted SMILES, so a molecule the filter
+            # rejects anyway (GEOM's charged ones) is counted under that reason.
+            if (
+                standardized_smiles_for_structure(
+                    Chem.MolFromSmiles(record.graph_smiles), smiles_filter
+                )
+                is None
+            ):
+                return SMILES_FILTER
+            on_graph = molecule_on_source_graph(record.molecule, record.graph_smiles)
+            if isinstance(on_graph, str):
+                return on_graph
+            record = replace(record, molecule=on_graph)
         try:
             prepared = _frame_from_molecule(record, smiles_filter)
         except (ValueError, RuntimeError):

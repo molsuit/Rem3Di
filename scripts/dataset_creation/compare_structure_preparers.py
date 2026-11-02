@@ -196,9 +196,9 @@ def old_geom(source: GeomDrugsSource, records: int) -> list[OldStructure]:
             (position, path, 0.05, 128, old_filter)
         )
         weights = _geom_weights(path)
-        ranked = sorted(
-            results, key=lambda result: -weights[_kept_conformer_index(path, result[1])]
-        )
+        # The old worker numbered only the conformers above 0.05.
+        kept = [index for index, weight in enumerate(weights) if weight > 0.05]
+        ranked = sorted(results, key=lambda result: -weights[kept[result[1]]])
         for rank, (_, _, smiles, numbers, positions) in enumerate(ranked):
             found.append(
                 OldStructure(
@@ -221,13 +221,6 @@ def _geom_weights(path: Path) -> list[float]:
             conformer["boltzmannweight"]
             for conformer in pickle.load(handle)["conformers"]
         ]
-
-
-def _kept_conformer_index(path: Path, kept_position: int) -> int:
-    """The old worker numbered only the conformers above 0.05; map back to the pickle."""
-    weights = _geom_weights(path)
-    kept = [index for index, weight in enumerate(weights) if weight > 0.05]
-    return kept[kept_position]
 
 
 def new_structures(
@@ -258,24 +251,14 @@ def new_structures(
 
 
 def new_drop_reasons(
-    source, keys: list[str], work_directory: Path
+    source, keys: list[str], records: int, work_directory: Path
 ) -> collections.Counter:
     """Why the new path dropped records the old path kept (re-run on those records)."""
     reasons: collections.Counter = collections.Counter()
     wanted = set(keys)
     limits = source.geometry_limits
     allowed = limits.allowed_atomic_numbers()
-    if isinstance(source, GeomDrugsSource):
-        stop = len(pd.read_parquet(work_directory / "geom_molecules.parquet"))
-    else:
-        stop = (
-            source.record_count(work_directory)
-            if not (work_directory / "plan.yaml").exists()
-            else yaml.safe_load((work_directory / "plan.yaml").read_text())[
-                "record_count"
-            ]
-        )
-    for record in source.read_records(0, stop, work_directory):
+    for record in source.read_records(0, records, work_directory):
         if record.source_key not in wanted:
             continue
         wanted.discard(record.source_key)
@@ -380,7 +363,9 @@ def compare(source, records: int, dataset_path: Path, work_directory: Path) -> d
         "only_old": len(only_old),
         "only_new": len(only_new),
         "only_old_new_drop_reasons": (
-            dict(new_drop_reasons(source, only_old, work_directory)) if only_old else {}
+            dict(new_drop_reasons(source, only_old, records, work_directory))
+            if only_old
+            else {}
         ),
         "only_old_examples": only_old[:5],
         "only_new_examples": only_new[:5],

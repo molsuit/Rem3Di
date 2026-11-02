@@ -50,6 +50,7 @@ from remedi_data.structures import (
 )
 from remedi_data.structures.pipeline import run_shards
 from remedi_data.structures.records import (
+    CONNECTIVITY_DIFFERS_FROM_SOURCE,
     SMILES_DOES_NOT_MATCH_STRUCTURE,
     SMILES_FILTER,
     UNREADABLE,
@@ -251,6 +252,42 @@ def test_array_records_pass_the_geometry_gate_only() -> None:
     incomplete = StructureRecord(source_key="y", atomic_numbers=np.array([6]))
     assert prepare(incomplete, smiles_filter=None) == UNREADABLE
     assert prepare(StructureRecord(source_key="m"), smiles_filter=FILTER) == UNREADABLE
+
+
+def test_a_trusted_graph_replaces_perceived_bond_orders_and_charges() -> None:
+    # GEOM's rd_mol sometimes carries a charge-separated form of the molecule.
+    record = StructureRecord(
+        source_key="dmso",
+        molecule=embedded_molecule("C[S+](C)[O-]"),
+        graph_smiles="CS(C)=O",
+    )
+    prepared = prepare(record)
+    assert isinstance(prepared, PreparedFrame)
+    assert prepared.isomeric_smiles == "CS(C)=O"
+    assert prepared.total_charge == 0.0
+
+
+def test_a_frame_whose_hydrogen_moved_is_dropped() -> None:
+    # 2-hydroxypyridine geometry, but the source says 2-pyridone.
+    record = StructureRecord(
+        source_key="tautomer",
+        molecule=embedded_molecule("Oc1ccccn1"),
+        graph_smiles="O=c1cccc[nH]1",
+    )
+    assert prepare(record) == CONNECTIVITY_DIFFERS_FROM_SOURCE
+    unparsable = StructureRecord(
+        source_key="bad", molecule=embedded_molecule("CCO"), graph_smiles="C1CC"
+    )
+    assert prepare(unparsable) == SMILES_FILTER
+
+
+def test_the_filter_runs_on_the_trusted_graph_first() -> None:
+    record = StructureRecord(
+        source_key="salt",
+        molecule=embedded_molecule("CC(=O)O"),
+        graph_smiles="C[Si](C)(C)C",
+    )
+    assert prepare(record) == SMILES_FILTER
 
 
 # ----------------------------------------------------------------- PCQM-style

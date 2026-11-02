@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 #: source reader changes which frames, SMILES or values a shard holds: the
 #: fingerprint includes it, so shards and datasets from older code are refused
 #: (shards) or rebuilt (datasets) instead of silently reused.
-PIPELINE_VERSION = 2
+PIPELINE_VERSION = 3
 
 PLAN_FILENAME = "plan.yaml"
 SHARD_DIRECTORY = "shards"

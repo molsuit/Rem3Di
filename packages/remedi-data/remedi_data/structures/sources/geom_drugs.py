@@ -5,7 +5,10 @@ release (``download_geomdrugs.sh``): ``summary_drugs.json`` maps each SMILES to
 its ``pickle_path``, and each pickle holds ``conformers``, a list of dicts with
 an ``rd_mol`` (explicit hydrogens, one conformer) and its ``boltzmannweight``.
 Record ``i`` is the ``i``-th molecule of the summary; each yields its
-``conformers_per_molecule`` most Boltzmann-weighted conformers.
+``conformers_per_molecule`` most Boltzmann-weighted conformers. The summary
+SMILES is the trusted graph: GEOM's ``rd_mol`` sometimes carries another
+resonance or charge-separated form, and a few conformers changed connectivity
+during the CREST search (dropped as ``connectivity_differs_from_source``).
 
 The pickles hold RDKit molecules, so reading them unpickles the downloaded
 files: only point this at the pinned GEOM release.
@@ -125,6 +128,7 @@ class GeomDrugsSource(StructureSourceBase):
                 yield StructureRecord(
                     source_key=f"{geom_smiles}#{rank}",
                     molecule=conformer["rd_mol"],
+                    graph_smiles=geom_smiles,
                     extras={
                         "geom_smiles": geom_smiles,
                         "conformer_rank": rank,
