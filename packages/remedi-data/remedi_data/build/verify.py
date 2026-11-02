@@ -12,7 +12,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi_data.build.write import structures_sha256, zarr_problems
+from remedi_data.build.write import (
+    read_packed_structures,
+    structures_sha256,
+    zarr_problems,
+)
 from remedi_data.bundle import (
     BundleValidationError,
     read_bundle,
@@ -34,7 +38,7 @@ class VerifyReport(BaseModel):
     elapsed_seconds: float = 0.0
 
 
-def verify_dataset(dataset_path: Path) -> VerifyReport:
+def verify_dataset(dataset_path: Path, *, workers: int = 1) -> VerifyReport:
     """Every invariant on one dataset, collected rather than raised."""
     started = time.monotonic()
     dataset_path = Path(dataset_path)
@@ -53,7 +57,7 @@ def verify_dataset(dataset_path: Path) -> VerifyReport:
     dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
     try:
         report.structures_sha256 = structures_sha256(dataset)
-        structures = dataset.get_all_molecules()
+        structures = read_packed_structures(dataset)
     finally:
         dataset.close()
     outputs = bundle.provenance.outputs
@@ -64,7 +68,11 @@ def verify_dataset(dataset_path: Path) -> VerifyReport:
             f"provenance.yaml records {recorded}"
         )
     report.problems += structure_problems(
-        bundle.spec, bundle.table, structures, bundle.provenance.geometry_limits
+        bundle.spec,
+        bundle.table,
+        structures,
+        bundle.provenance.geometry_limits,
+        workers=workers,
     )
     report.elapsed_seconds = time.monotonic() - started
     return report

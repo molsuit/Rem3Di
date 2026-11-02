@@ -51,6 +51,7 @@ from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.dataset.shard_aligned_writer import ShardAlignedWriter
 from remedi_data.dataset.tasks import TaskType
 
@@ -337,7 +338,7 @@ def write_small_dataset(
     write_dataset(
         spec,
         table,
-        (
+        PackedStructures.from_atoms(
             list(structures)
             if structures is not None
             else [embed_frame(smiles) for smiles in smiles_values]

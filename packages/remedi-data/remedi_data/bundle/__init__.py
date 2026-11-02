@@ -61,6 +61,7 @@ from remedi_data.bundle.identity import (
     SmilesParseError,
     assign_identity,
     canonical_smiles_pair,
+    identity_from_canonical,
     mirror_isomeric_smiles,
 )
 from remedi_data.bundle.provenance import (
@@ -91,7 +92,9 @@ from remedi_data.bundle.spec import (
 from remedi_data.bundle.validate import (
     count_stereoisomer_straddling_constitutions,
     has_assigned_tetrahedral_centre,
+    stereo_agrees_with_frame,
     stereochemistry_from_frame,
+    stereochemistry_from_positions,
     structure_problems,
     tetrahedral_stereo_smiles,
     validate_table,
@@ -154,6 +157,7 @@ __all__ = [
     "filter_source_smiles",
     "git_head_sha",
     "has_assigned_tetrahedral_centre",
+    "identity_from_canonical",
     "is_dataset_directory",
     "merge_source_rows",
     "metrics_with_headline",
@@ -164,7 +168,9 @@ __all__ = [
     "read_spec",
     "read_table",
     "sha256_of_file",
+    "stereo_agrees_with_frame",
     "stereochemistry_from_frame",
+    "stereochemistry_from_positions",
     "structure_problems",
     "structures_identity",
     "tetrahedral_stereo_smiles",

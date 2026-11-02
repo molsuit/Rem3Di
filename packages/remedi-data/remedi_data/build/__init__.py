@@ -19,6 +19,7 @@ from remedi_data.build.build import (
 from remedi_data.build.verify import VerifyReport, verify_dataset
 from remedi_data.build.write import (
     ZarrLayout,
+    read_packed_structures,
     structures_sha256,
     write_dataset,
     zarr_problems,
@@ -36,6 +37,7 @@ __all__ = [
     "ZarrLayout",
     "build_datasets",
     "embed_bundle",
+    "read_packed_structures",
     "structures_sha256",
     "verify_dataset",
     "write_dataset",

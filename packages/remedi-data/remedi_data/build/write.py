@@ -13,12 +13,10 @@ from __future__ import annotations
 
 import hashlib
 import shutil
-from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from ase import Atoms
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.bundle import (
@@ -32,6 +30,7 @@ from remedi_data.bundle import (
 )
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.dataset.shard_aligned_writer import (
     ShardAlignedWriter,
 )
@@ -49,6 +48,19 @@ class ZarrLayout(BaseModel):
     molecule_chunks_per_shard: int = Field(default=256, ge=1)
     #: Structures handed to the writer per append.
     batch_size: int = Field(default=4096, ge=1)
+
+
+def read_packed_structures(dataset: MoleculeDataset) -> PackedStructures:
+    """Every structure of an open dataset as one :class:`PackedStructures`."""
+    count = dataset.N_structures
+    ptr = np.asarray(dataset.ptr[: count + 1], dtype=np.int64)
+    if count == 0:
+        return PackedStructures.empty()
+    return PackedStructures.from_arrays(
+        np.asarray(dataset.positions[: ptr[-1]]),
+        np.asarray(dataset.atomic_numbers[: ptr[-1]]),
+        ptr - ptr[0],
+    )
 
 
 def structures_sha256(dataset: MoleculeDataset) -> str:
@@ -91,7 +103,7 @@ def _write_zarr(
     path: Path,
     spec: DatasetSpec,
     table: pd.DataFrame,
-    structures: Sequence[Atoms],
+    structures: PackedStructures,
     layout: ZarrLayout,
 ) -> None:
     dataset = MoleculeDataset.create_empty_dataset(
@@ -116,12 +128,14 @@ def _write_zarr(
     try:
         for start in range(0, len(table), layout.batch_size):
             stop = min(start + layout.batch_size, len(table))
-            batch = structures[start:stop]
-            atom_counts = np.array([len(atoms) for atoms in batch], dtype=np.int64)
+            atom_start, atom_stop = (
+                int(structures.ptr[start]),
+                int(structures.ptr[stop]),
+            )
             writer.append_batch(
-                np.concatenate([atoms.get_positions() for atoms in batch], axis=0),
-                np.concatenate([atoms.get_atomic_numbers() for atoms in batch]),
-                np.cumsum(atom_counts),
+                structures.positions[atom_start:atom_stop],
+                structures.atomic_numbers[atom_start:atom_stop],
+                structures.ptr[start + 1 : stop + 1] - atom_start,
                 molecule_ids[start:stop],
                 stereoisomer_ids[start:stop],
                 total_charge[start:stop],
@@ -188,15 +202,17 @@ def zarr_problems(path: Path, spec: DatasetSpec, table: pd.DataFrame) -> list[st
 def write_dataset(
     spec: DatasetSpec,
     table: pd.DataFrame,
-    structures: Sequence[Atoms],
+    structures: PackedStructures,
     provenance: BundleProvenance,
     directory: Path,
     *,
     layout: ZarrLayout | None = None,
+    workers: int = 1,
 ) -> BundleProvenance:
     """Validate and write one dataset; returns the provenance as written.
 
     The geometry limits checked (invariant 10) are ``provenance.geometry_limits``.
+    ``workers`` processes check invariants 9 and 10.
     An existing dataset at ``directory`` is replaced only after the new one has
     been written and checked in full.
 
@@ -212,7 +228,9 @@ def write_dataset(
         )
     table = normalize_table(table, spec)
     problems = validate_table(spec, table)
-    problems += structure_problems(spec, table, structures, provenance.geometry_limits)
+    problems += structure_problems(
+        spec, table, structures, provenance.geometry_limits, workers=workers
+    )
     if problems:
         raise BundleValidationError(directory, problems)
 

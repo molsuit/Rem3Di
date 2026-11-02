@@ -110,34 +110,43 @@ def assign_identity(isomeric_smiles: Sequence[str]) -> IdentityTable:
     """
     canonical = [canonical_smiles_pair(smiles) for smiles in isomeric_smiles]
     canonical_isomeric = [pair.isomeric for pair in canonical]
-    canonical_nonisomeric = [pair.nonisomeric for pair in canonical]
-
-    stereoisomer_id = pd.factorize(pd.Series(canonical_isomeric, dtype="str"))[
-        0
-    ].astype("int64")
-    molecule_id = pd.factorize(pd.Series(canonical_nonisomeric, dtype="str"))[0].astype(
-        "int64"
-    )
-
-    stereoisomer_id_by_smiles = {
-        smiles: int(identifier)
-        for smiles, identifier in zip(canonical_isomeric, stereoisomer_id, strict=True)
-    }
-    partner_ids: list[int | None] = []
     mirror_cache: dict[str, str] = {}
     for smiles in canonical_isomeric:
         if smiles not in mirror_cache:
             mirror_cache[smiles] = mirror_isomeric_smiles(smiles)
-        mirror = mirror_cache[smiles]
-        if mirror == smiles or mirror not in stereoisomer_id_by_smiles:
-            partner_ids.append(None)
-        else:
-            partner_ids.append(stereoisomer_id_by_smiles[mirror])
+    return identity_from_canonical(
+        canonical_isomeric,
+        [pair.nonisomeric for pair in canonical],
+        [mirror_cache[smiles] for smiles in canonical_isomeric],
+    )
 
+
+def identity_from_canonical(
+    isomeric_smiles: Sequence[str],
+    nonisomeric_smiles: Sequence[str],
+    mirror_smiles: Sequence[str],
+) -> IdentityTable:
+    """The ids of :func:`assign_identity` from SMILES that are already canonical.
+
+    No RDKit call: the structure preparers compute the canonical forms and the
+    mirror image per shard, in parallel, so the global step is factorising
+    only. ``mirror_smiles[i]`` is ``mirror_isomeric_smiles(isomeric_smiles[i])``
+    (equal to ``isomeric_smiles[i]`` for a molecule that is its own mirror image).
+    """
+    isomeric = pd.Series(list(isomeric_smiles), dtype="str")
+    stereoisomer_id = pd.factorize(isomeric)[0].astype("int64")
+    molecule_id = pd.factorize(pd.Series(list(nonisomeric_smiles), dtype="str"))[
+        0
+    ].astype("int64")
+    first_id_by_smiles = pd.Series(stereoisomer_id, index=isomeric)
+    first_id_by_smiles = first_id_by_smiles[~first_id_by_smiles.index.duplicated()]
+    mirror = pd.Series(list(mirror_smiles), dtype="str")
+    partner = mirror.map(first_id_by_smiles).astype("Int64")
+    partner[(mirror == isomeric).to_numpy()] = pd.NA
     return IdentityTable(
         stereoisomer_id=stereoisomer_id,
         molecule_id=molecule_id,
-        isomeric_smiles=canonical_isomeric,
-        nonisomeric_smiles=canonical_nonisomeric,
-        enantiomer_of=pd.array(partner_ids, dtype="Int64"),
+        isomeric_smiles=list(isomeric_smiles),
+        nonisomeric_smiles=list(nonisomeric_smiles),
+        enantiomer_of=partner.array,
     )

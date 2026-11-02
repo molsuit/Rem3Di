@@ -67,6 +67,7 @@ from remedi_data.chemistry.conformers import (
     charge_and_multiplicity,
 )
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.dataset.tasks import Split, TaskType
 from remedi_data.runs.results import PydanticResult
 from remedi_data.testing import (
@@ -172,7 +173,9 @@ def write(expanded: ExpandedDataset, directory: Path, **overrides: Any):
         directory=directory,
         layout=SMALL_ZARR_LAYOUT,
     )
-    return write_dataset(**{**arguments, **overrides})
+    arguments.update(overrides)
+    arguments["structures"] = PackedStructures.from_atoms(arguments["structures"])
+    return write_dataset(**arguments)
 
 
 def with_positions(
@@ -524,7 +527,7 @@ def test_a_source_dataset_without_smiles_is_written(tmp_path: Path) -> None:
     write_dataset(
         spec,
         table,
-        [embed_frame(smiles) for smiles in smiles_values],
+        PackedStructures.from_atoms([embed_frame(smiles) for smiles in smiles_values]),
         make_provenance("source_like"),
         directory,
         layout=SMALL_ZARR_LAYOUT,

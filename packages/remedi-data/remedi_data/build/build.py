@@ -53,6 +53,7 @@ from remedi_data.chemistry.conformers import (
 )
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits, geometry_violations
+from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.runs.results import EvalResult, PydanticResult
 from remedi_data.runs.task import TaskStatus
 from remedi_data.runs.task_runner import (
@@ -312,7 +313,7 @@ class BuildDatasetTask(BaseModel):
         written = write_dataset(
             expanded.spec,
             expanded.table,
-            expanded.structures,
+            PackedStructures.from_atoms(expanded.structures),
             provenance,
             dataset_path,
             layout=config.zarr,

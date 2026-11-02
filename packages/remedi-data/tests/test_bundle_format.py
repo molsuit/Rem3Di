@@ -61,6 +61,7 @@ from remedi_data.bundle import (
 )
 from remedi_data.bundle import bundle as bundle_module
 from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.dataset.tasks import TaskScope, TaskType
 from remedi_data.testing import (
     GEOMETRY_LIMITS,
@@ -765,7 +766,9 @@ def test_structure_invariants_8_and_9(
 ) -> None:
     spec, table = make_small_dataset(smiles=smiles)
     frames = mutation([frame.copy() for frame in chiral_frames])
-    problems = structure_problems(spec, table, frames, GEOMETRY_LIMITS)
+    problems = structure_problems(
+        spec, table, PackedStructures.from_atoms(frames), GEOMETRY_LIMITS
+    )
     if expected is None:
         assert problems == []
     else:
@@ -810,14 +813,18 @@ def test_each_geometry_limit_fails_invariant_10(
     atoms: Atoms, limits: GeometryLimits, reason: str
 ) -> None:
     spec, table = make_small_dataset(["CCO"], smiles=False)
-    problems = structure_problems(spec, table, [atoms], limits)
+    problems = structure_problems(
+        spec, table, PackedStructures.from_atoms([atoms]), limits
+    )
     assert len(problems) == 1 and has_problem(problems, f"10:.*{reason}"), problems
 
 
 def test_many_offending_rows_are_summarised() -> None:
     spec, table = make_small_dataset(["CCO", "CCN", "CCC", "CO", "CN", "CS", "CF"])
     frames = [_methane_like("HH") for _ in range(len(table))]
-    problems = structure_problems(spec, table, frames, GeometryLimits())
+    problems = structure_problems(
+        spec, table, PackedStructures.from_atoms(frames), GeometryLimits()
+    )
     assert has_problem(problems, r"10:.*7 rows, first \[0, 1, 2, 3, 4\]"), problems
 
 

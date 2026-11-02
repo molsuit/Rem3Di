@@ -9,12 +9,15 @@ message is prefixed with its invariant number; an empty list means valid.
 
 from __future__ import annotations
 
+import multiprocessing
 from collections.abc import Sequence
+from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import pandas as pd
 from ase import Atoms
 from rdkit import Chem
+from rdkit.Geometry import Point3D
 
 from remedi_data.bundle.spec import (
     SPLIT_VALUES,
@@ -23,8 +26,9 @@ from remedi_data.bundle.spec import (
 )
 from remedi_data.chemistry.geometry import (
     GeometryLimits,
-    geometry_violations,
+    frame_geometry_violations,
 )
+from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.dataset.tasks import TaskType
 
 #: How many offending rows a single message names before it summarises.
@@ -62,7 +66,16 @@ def count_stereoisomer_straddling_constitutions(
 
 
 def stereochemistry_from_frame(isomeric_smiles: str, atoms: Atoms) -> str | None:
-    """Tetrahedral stereo perceived from ``atoms`` for invariant 9.
+    """:func:`stereochemistry_from_positions` for an ``ase.Atoms`` frame."""
+    return stereochemistry_from_positions(
+        isomeric_smiles, atoms.get_atomic_numbers(), atoms.get_positions()
+    )
+
+
+def stereochemistry_from_positions(
+    isomeric_smiles: str, atomic_numbers: np.ndarray, positions: np.ndarray
+) -> str | None:
+    """Tetrahedral stereo perceived from one frame for invariant 9.
 
     The result is a canonical SMILES with tetrahedral centres only (see
     :func:`tetrahedral_stereo_smiles` for why double-bond stereo is dropped),
@@ -72,22 +85,23 @@ def stereochemistry_from_frame(isomeric_smiles: str, atoms: Atoms) -> str | None
     The molecular graph comes from ``isomeric_smiles`` (with explicit hydrogens
     added) and only the *stereochemistry* is re-perceived from the coordinates.
     This assumes the frame's atom order equals the RDKit ``AddHs`` atom order
-    of the isomeric SMILES, which is exactly what ETKDG produces. Returns
-    ``None`` when the molecule cannot be built that way; the caller then
-    reports the row as failing invariant 9 rather than silently skipping it.
+    of the isomeric SMILES: ETKDG produces that order, and the structure
+    preparers reorder source geometries into it. Returns ``None`` when the
+    molecule cannot be built that way; the caller then reports the row as
+    failing invariant 9 rather than silently skipping it.
     """
     template = Chem.MolFromSmiles(isomeric_smiles)
     if template is None:
         return None
     molecule = Chem.AddHs(template)
-    if molecule.GetNumAtoms() != len(atoms):
+    if molecule.GetNumAtoms() != len(atomic_numbers):
         return None
     expected_numbers = [atom.GetAtomicNum() for atom in molecule.GetAtoms()]
-    if list(atoms.get_atomic_numbers()) != expected_numbers:
+    if [int(number) for number in atomic_numbers] != expected_numbers:
         return None
     conformer = Chem.Conformer(molecule.GetNumAtoms())
-    for index, position in enumerate(atoms.get_positions()):
-        conformer.SetAtomPosition(index, [float(value) for value in position])
+    for index, (x, y, z) in enumerate(np.asarray(positions, dtype=np.float64).tolist()):
+        conformer.SetAtomPosition(index, Point3D(x, y, z))
     molecule.RemoveAllConformers()
     molecule.AddConformer(conformer, assignId=True)
     try:
@@ -104,6 +118,21 @@ def stereochemistry_from_frame(isomeric_smiles: str, atoms: Atoms) -> str | None
                 Chem.ChiralType.CHI_UNSPECIFIED
             )
     return _tetrahedral_only_canonical_smiles(molecule)
+
+
+def stereo_agrees_with_frame(
+    isomeric_smiles: str, atomic_numbers: np.ndarray, positions: np.ndarray
+) -> bool:
+    """Invariant 9 for one row: true when the SMILES assigns no tetrahedral centre,
+    or the frame's perceived centres equal the SMILES's."""
+    if not has_assigned_tetrahedral_centre(isomeric_smiles):
+        return True
+    perceived = stereochemistry_from_positions(
+        isomeric_smiles, atomic_numbers, positions
+    )
+    return perceived is not None and perceived == tetrahedral_stereo_smiles(
+        isomeric_smiles
+    )
 
 
 def tetrahedral_stereo_smiles(isomeric_smiles: str) -> str | None:
@@ -328,43 +357,74 @@ _GEOMETRY_REASONS = {
 }
 
 
+def _frame_problems(
+    isomeric_smiles: Sequence[str] | None,
+    structures: PackedStructures,
+    limits: GeometryLimits,
+    first_row: int,
+) -> tuple[list[int], dict[str, list[int]]]:
+    """Invariant 9 mismatches and invariant 10 offenders of one chunk of rows."""
+    allowed = limits.allowed_atomic_numbers()
+    mismatched: list[int] = []
+    offenders: dict[str, list[int]] = {name: [] for name in _GEOMETRY_REASONS}
+    for offset, (numbers, positions) in enumerate(structures.frames()):
+        row_index = first_row + offset
+        if isomeric_smiles is not None and not stereo_agrees_with_frame(
+            isomeric_smiles[offset], numbers, positions
+        ):
+            mismatched.append(row_index)
+        for violation in frame_geometry_violations(numbers, positions, limits, allowed):
+            offenders[violation].append(row_index)
+    return mismatched, offenders
+
+
 def structure_problems(
     spec: DatasetSpec,
     table: pd.DataFrame,
-    structures: Sequence[Atoms],
+    structures: PackedStructures,
     limits: GeometryLimits,
+    *,
+    workers: int = 1,
 ) -> list[str]:
     """The per-frame invariants of a dataset: 8 (one frame per row), 9 and 10.
 
     Invariant 9 applies to rows whose ``isomeric_smiles`` assigns a tetrahedral
-    centre, so only to a dataset that declares ``smiles: true``.
+    centre, so only to a dataset that declares ``smiles: true``. With
+    ``workers > 1`` the rows are checked in chunks in a process pool.
     """
     if len(structures) != len(table):
         return [f"8: {len(structures)} structures for {len(table)} table rows"]
-    problems: list[str] = []
-    if spec.smiles:
-        mismatched = [
-            row_index
-            for row_index, (isomeric_smiles, atoms) in enumerate(
-                zip(table["isomeric_smiles"], structures, strict=True)
-            )
-            if has_assigned_tetrahedral_centre(isomeric_smiles)
-            and stereochemistry_from_frame(isomeric_smiles, atoms)
-            != tetrahedral_stereo_smiles(isomeric_smiles)
-        ]
-        if mismatched:
-            problems.append(
-                "9: geometry disagrees with isomeric_smiles for "
-                f"{_summarise_rows(mismatched)}"
-            )
-    allowed_symbols = limits.allowed_element_symbols()
-    offenders: dict[str, list[int]] = {name: [] for name in _GEOMETRY_REASONS}
-    for row_index, atoms in enumerate(structures):
-        for violation in geometry_violations(atoms, limits, allowed_symbols):
-            offenders[violation].append(row_index)
-    problems += [
-        f"10: {_GEOMETRY_REASONS[name]} in {_summarise_rows(rows)}"
-        for name, rows in offenders.items()
-        if rows
+    smiles = [str(value) for value in table["isomeric_smiles"]] if spec.smiles else None
+    rows = len(table)
+    chunk_size = max(1, -(-rows // max(1, workers * 8)))
+    bounds = [
+        (start, min(start + chunk_size, rows)) for start in range(0, rows, chunk_size)
     ]
+    arguments = [
+        (
+            None if smiles is None else smiles[start:stop],
+            structures.slice(start, stop),
+            limits,
+            start,
+        )
+        for start, stop in bounds
+    ]
+    if workers > 1 and len(arguments) > 1:
+        with ProcessPoolExecutor(
+            max_workers=workers, mp_context=multiprocessing.get_context("forkserver")
+        ) as pool:
+            results = list(pool.map(_frame_problems, *zip(*arguments, strict=True)))
+    else:
+        results = [_frame_problems(*argument) for argument in arguments]
+    mismatched = [row for chunk_mismatched, _ in results for row in chunk_mismatched]
+    problems: list[str] = []
+    if mismatched:
+        problems.append(
+            "9: geometry disagrees with isomeric_smiles for "
+            f"{_summarise_rows(mismatched)}"
+        )
+    for name, reason in _GEOMETRY_REASONS.items():
+        offending_rows = [row for _, offenders in results for row in offenders[name]]
+        if offending_rows:
+            problems.append(f"10: {reason} in {_summarise_rows(offending_rows)}")
     return problems

@@ -1,0 +1,19 @@
+# The pretraining corpora that ship structures (BENCHMARK_DATA_FORMAT.md §5.2.2).
+#   uv run --no-sync python scripts/dataset_creation/prepare_structures.py \
+#       --config configs/dataset_creation/prepare_structures.yaml [--only tmqm]
+# Each source runs in restartable shards under work_root/<dataset_id>/shards;
+# rerunning after a timeout redoes only the unfinished shards. Every source's
+# SMILES filter and geometry limits default to the values in its source module.
+output_root: /dais/fs/scratch/wedigs/remedi/pretraining
+work_root: /dais/fs/scratch/wedigs/remedi/pretraining_work
+settings:
+  shard_size: 50000
+sources:
+  - kind: tmqm
+    directory: /dais/fs/scratch/wedigs/remedi/raw/tmqm
+  - kind: pcqm4mv2
+    sdf: /dais/fs/scratch/wedigs/remedi/raw/pcqm4mv2/pcqm4m-v2-train.sdf
+    labels_csv: /dais/fs/scratch/wedigs/remedi/raw/pcqm4mv2/pcqm4m-v2/raw/data.csv.gz
+  - kind: geom_drugs
+    directory: /dais/fs/scratch/wedigs/remedi/raw/geom_drugs/rdkit_folder
+    conformers_per_molecule: 5

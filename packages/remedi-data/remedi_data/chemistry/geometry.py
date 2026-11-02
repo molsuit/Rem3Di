@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 from ase import Atoms
+from ase.data import atomic_numbers
 from pydantic import BaseModel, ConfigDict
 
 from remedi_data.chemistry.elements import (
@@ -35,6 +36,11 @@ class GeometryLimits(BaseModel):
         """Resolve ``elements`` to a set of symbols, or ``None`` if ungated."""
         return allowed_element_symbols(self.elements)
 
+    def allowed_atomic_numbers(self) -> frozenset[int] | None:
+        """Resolve ``elements`` to a set of atomic numbers, or ``None`` if ungated."""
+        symbols = self.allowed_element_symbols()
+        return None if symbols is None else atomic_numbers_of(symbols)
+
 
 def minimum_interatomic_distance(positions: np.ndarray) -> float:
     """Smallest distance between any two atoms, in Angstrom."""
@@ -61,12 +67,35 @@ def geometry_violations(
     """
     if allowed_symbols is None:
         allowed_symbols = limits.allowed_element_symbols()
+    return frame_geometry_violations(
+        atoms.get_atomic_numbers(),
+        atoms.get_positions(),
+        limits,
+        None if allowed_symbols is None else atomic_numbers_of(allowed_symbols),
+    )
+
+
+def atomic_numbers_of(symbols: frozenset[str]) -> frozenset[int]:
+    """The atomic numbers of a set of element symbols."""
+    return frozenset(int(atomic_numbers[symbol]) for symbol in symbols)
+
+
+def frame_geometry_violations(
+    atomic_numbers_of_frame: np.ndarray,
+    positions: np.ndarray,
+    limits: GeometryLimits,
+    allowed_atomic_numbers: frozenset[int] | None,
+) -> list[str]:
+    """:func:`geometry_violations` on plain arrays; the element gate on atomic numbers.
+
+    ``allowed_atomic_numbers`` is ``None`` for an ungated element set; resolve it
+    once per run with :meth:`GeometryLimits.allowed_atomic_numbers`.
+    """
     violations: list[str] = []
-    if limits.max_atoms is not None and len(atoms) > limits.max_atoms:
+    if limits.max_atoms is not None and len(atomic_numbers_of_frame) > limits.max_atoms:
         violations.append("max_atoms")
-    atomic_numbers = atoms.get_atomic_numbers()
-    hydrogen_count = int((atomic_numbers == 1).sum())
-    heavy_count = int((atomic_numbers > 1).sum())
+    hydrogen_count = int((atomic_numbers_of_frame == 1).sum())
+    heavy_count = int((atomic_numbers_of_frame > 1).sum())
     if heavy_count == 0:
         violations.append("no_heavy_atom")
     elif limits.reject_zero_hydrogen and hydrogen_count == 0:
@@ -76,13 +105,13 @@ def geometry_violations(
         and (hydrogen_count / heavy_count) < limits.min_hydrogen_heavy_ratio
     ):
         violations.append("hydrogen_heavy_ratio")
-    if allowed_symbols is not None and not set(atoms.get_chemical_symbols()).issubset(
-        allowed_symbols
-    ):
+    if allowed_atomic_numbers is not None and not {
+        int(number) for number in np.unique(atomic_numbers_of_frame)
+    }.issubset(allowed_atomic_numbers):
         violations.append("element_gate")
     if (
         limits.min_interatomic_distance is not None
-        and minimum_interatomic_distance(atoms.get_positions())
+        and minimum_interatomic_distance(np.asarray(positions, dtype=np.float64))
         < limits.min_interatomic_distance
     ):
         violations.append("min_interatomic_distance")
