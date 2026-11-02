@@ -30,6 +30,20 @@ corpora:
         steps: [*exclude_benchmarks, {kind: random_molecules, count: 300000, seed: 0}]
       - name: without_benchmarks_random_1m
         steps: [*exclude_benchmarks, {kind: random_molecules, count: 1000000, seed: 0}]
+      # Diversity-first nested subsets over the two-level Butina clusters
+      # (configs/dataset_creation/cluster_molecules.yaml), square_root cluster weighting.
+      - name: diverse_100k
+        steps: [{kind: hierarchical_clusters, clusters: ecfp4_butina, count: 100000, seed: 0}]
+      - name: diverse_300k
+        steps: [{kind: hierarchical_clusters, clusters: ecfp4_butina, count: 300000, seed: 0}]
+      - name: diverse_1m
+        steps: [{kind: hierarchical_clusters, clusters: ecfp4_butina, count: 1000000, seed: 0}]
+      - name: without_benchmarks_diverse_100k
+        steps: [*exclude_benchmarks, {kind: hierarchical_clusters, clusters: ecfp4_butina, count: 100000, seed: 0}]
+      - name: without_benchmarks_diverse_300k
+        steps: [*exclude_benchmarks, {kind: hierarchical_clusters, clusters: ecfp4_butina, count: 300000, seed: 0}]
+      - name: without_benchmarks_diverse_1m
+        steps: [*exclude_benchmarks, {kind: hierarchical_clusters, clusters: ecfp4_butina, count: 1000000, seed: 0}]
 
   - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/geom_drugs
     selections:

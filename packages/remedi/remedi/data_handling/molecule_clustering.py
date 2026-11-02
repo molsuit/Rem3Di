@@ -244,3 +244,36 @@ def cluster_molecules(config: MoleculeClusteringConfig) -> ClusterRecord:
         record,
     )
     return record
+
+
+class MoleculeClusteringBatchConfig(BaseModel):
+    """The yaml of ``scripts/dataset_creation/cluster_molecules.py``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    clusterings: list[MoleculeClusteringConfig] = Field(min_length=1)
+    keep_going: bool = True
+
+
+def cluster_batch(config: MoleculeClusteringBatchConfig) -> list[ClusterRecord]:
+    """Run every clustering of a batch.
+
+    Raises:
+        RuntimeError: listing every clustering that failed, after trying all of
+            them (``keep_going``) or at the first failure.
+    """
+    records = []
+    failures = []
+    for clustering in config.clusterings:
+        try:
+            records.append(cluster_molecules(clustering))
+        except (SelectionError, RuntimeError, OSError, ValueError) as error:
+            if not config.keep_going:
+                raise
+            logger.error("%s/%s failed: %s", clustering.dataset, clustering.name, error)
+            failures.append(f"  {clustering.dataset}/{clustering.name}: {error}")
+    if failures:
+        raise RuntimeError(
+            f"{len(failures)} clusterings failed:\n" + "\n".join(failures)
+        )
+    return records

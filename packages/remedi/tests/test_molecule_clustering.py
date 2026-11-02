@@ -116,3 +116,16 @@ def test_cluster_molecules_writes_a_file_selections_can_draw_from(
         )
     )
     assert again.created_at == record.created_at
+
+
+def test_the_production_clustering_config_parses() -> None:
+    import pydantic_yaml
+
+    from remedi.data_handling.molecule_clustering import MoleculeClusteringBatchConfig
+
+    config = pydantic_yaml.parse_yaml_file_as(
+        MoleculeClusteringBatchConfig,
+        Path(__file__).resolve().parents[3]
+        / "configs/dataset_creation/cluster_molecules.yaml",
+    )
+    assert {clustering.name for clustering in config.clusterings} == {"ecfp4_butina"}

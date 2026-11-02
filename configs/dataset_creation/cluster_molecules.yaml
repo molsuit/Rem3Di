@@ -1,0 +1,16 @@
+# Two-level Butina clusterings of the drug-like corpora (BENCHMARK_DATA_FORMAT.md §5.2.3).
+# Run: sbatch scripts/dataset_creation/cluster_molecules.slurm
+# Cutoffs (Tanimoto distance on ECFP4) from the PCQM4Mv2 sweep of 2026-11-02: coarse 0.65 gives
+# 96,671 clusters over all 3.1M molecules (1.4% of molecules alone, largest 0.7%); fine 0.5 inside
+# them leaves 32% of a 1M sample in single-molecule fine clusters (0.4: 54%).
+clusterings:
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/pcqm4mv2
+    name: ecfp4_butina
+    coarse_cutoff: 0.65
+    fine_cutoff: 0.5
+    workers: 12
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/geom_drugs
+    name: ecfp4_butina
+    coarse_cutoff: 0.65
+    fine_cutoff: 0.5
+    workers: 12
