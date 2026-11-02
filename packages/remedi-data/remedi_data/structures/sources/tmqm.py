@@ -44,8 +44,14 @@ MALFORMED_XYZ_ENTRY = "malformed_xyz_entry"
 
 
 def _tmqm_geometry_limits() -> GeometryLimits:
-    # A curated CSD source: any element, metal complexes without hydrogen exist.
-    return GeometryLimits(min_interatomic_distance=0.5)
+    # The old tmQM build's limits (load_from_xyz_tmqm.py), plus the overlap
+    # guard; any element, since tmQM is a curated CSD source.
+    return GeometryLimits(
+        max_atoms=200,
+        reject_zero_hydrogen=True,
+        min_hydrogen_heavy_ratio=0.1,
+        min_interatomic_distance=0.5,
+    )
 
 
 def parse_comment(comment: str) -> dict[str, str]:

@@ -343,8 +343,9 @@ def test_a_failed_shard_is_retried_and_finished_shards_are_reused(
 TMQM_ENTRIES = [
     ("AAAAAA", 0, 0, [("Fe", 0.0), ("C", 1.9), ("O", 3.05), ("H", -1.6)]),
     ("BBBBBB", 1, 0, [("Cu", 0.0), ("N", 2.0), ("H", 3.0)]),
-    ("CCCCCC", 0, 0, [("Ni", 0.0), ("C", 0.2)]),  # overlapping atoms
-    ("DDDDDD", -1, 0, [("Zn", 0.0), ("Cl", 2.2), ("Cl", -2.2)]),
+    ("CCCCCC", 0, 0, [("Ni", 0.0), ("C", 0.2), ("H", 1.3)]),  # overlapping atoms
+    ("DDDDDD", -1, 0, [("Zn", 0.0), ("Cl", 2.2), ("H", -1.6)]),
+    ("EEEEEE", 0, 0, [("Zn", 0.0), ("Cl", 2.2), ("Cl", -2.2)]),  # no hydrogen
 ]
 
 
@@ -373,7 +374,7 @@ def write_tmqm_directory(directory: Path) -> None:
             + ["2020-2024", "" if code == "BBBBBB" else "[Fe]C=O"]
         )
         for index, (code, *_rest) in enumerate(TMQM_ENTRIES)
-        if code != "DDDDDD"  # one complex without labels
+        if code not in ("DDDDDD", "EEEEEE")  # complexes without labels
     ]
     header = (
         "CSD_code;Electronic_E;Dispersion_E;Dipole_M;Metal_q;HL_Gap;HOMO_Energy;"
@@ -417,7 +418,10 @@ sources:
     assert np.isnan(table["HL_Gap"].iloc[2])
     assert table["metal_neighbour_count"].tolist() == [4, 4, 4]
     assert pd.isna(table["tmqm_smiles"].iloc[1])
-    assert read_provenance(output).counts.dropped == {"min_interatomic_distance": 1}
+    assert read_provenance(output).counts.dropped == {
+        "min_interatomic_distance": 1,
+        "zero_hydrogen": 1,
+    }
     assert verify_dataset(output).problems == []
     with pytest.raises(ValueError, match="not in the config"):
         prepare_structure_datasets(config, only=["qm9"])

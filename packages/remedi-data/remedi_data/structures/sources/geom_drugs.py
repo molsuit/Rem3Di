@@ -36,8 +36,11 @@ UNREADABLE_PICKLE = "unreadable_pickle"
 
 
 def _geom_smiles_filter() -> SmilesFilterConfig:
+    # The old GEOM build's filter (load_geom_drugs.py): at most 100 heavy atoms
+    # here, at most 128 atoms with hydrogens in the geometry limits. Charged
+    # molecules are dropped (the old generator skipped charge != 0).
     return SmilesFilterConfig(
-        max_atoms=None,
+        max_atoms=100,
         element_set=ElementSet.mace_off,
         allow_charged=False,
         strip_salts=True,
