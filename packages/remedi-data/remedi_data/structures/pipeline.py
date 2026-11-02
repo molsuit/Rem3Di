@@ -52,6 +52,12 @@ from remedi_data.structures.source import StructureSourceBase
 
 logger = logging.getLogger(__name__)
 
+#: Bump whenever a change to the record processing (``records.py``) or a
+#: source reader changes which frames, SMILES or values a shard holds: the
+#: fingerprint includes it, so shards and datasets from older code are refused
+#: (shards) or rebuilt (datasets) instead of silently reused.
+PIPELINE_VERSION = 2
+
 PLAN_FILENAME = "plan.yaml"
 SHARD_DIRECTORY = "shards"
 RAW_HASHES_FILENAME = "raw_sha256.yaml"
@@ -120,8 +126,15 @@ class ShardFailures(RuntimeError):
 
 
 def source_fingerprint(source: StructureSourceBase) -> str:
-    """sha256 of the source config with its type; shards from another config are refused."""
-    document = {"type": type(source).__name__, **source.model_dump(mode="json")}
+    """sha256 of the source config, its type and :data:`PIPELINE_VERSION`.
+
+    Shards from another config or pipeline version are refused.
+    """
+    document = {
+        "pipeline_version": PIPELINE_VERSION,
+        "type": type(source).__name__,
+        **source.model_dump(mode="json"),
+    }
     document.pop("description", None)
     return hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
 
