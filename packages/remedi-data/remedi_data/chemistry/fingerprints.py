@@ -11,7 +11,7 @@ import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
-from rdkit import Chem, RDLogger
+from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
 
 _CHUNK = 20_000
@@ -22,7 +22,6 @@ class FingerprintError(ValueError):
 
 
 def _fingerprint_chunk(smiles: list[str], radius: int, size: int) -> np.ndarray:
-    RDLogger.DisableLog("rdApp.*")
     generator = rdFingerprintGenerator.GetMorganGenerator(radius=radius, fpSize=size)
     bits = np.zeros((len(smiles), size), dtype=np.uint8)
     for row, text in enumerate(smiles):

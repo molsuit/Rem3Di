@@ -92,6 +92,7 @@ def butina(fingerprints: torch.Tensor, cutoff: float) -> np.ndarray:
             "Butina clustering needs nvmolkit (uv sync --extra cuda) and a GPU"
         ) from error
     result = fused_butina(fingerprints, cutoff=cutoff, metric="tanimoto")
+    assert not isinstance(result, tuple), "centroids were not asked for"
     torch.cuda.synchronize()
     return result.torch().cpu().numpy().astype(np.int64)
 
