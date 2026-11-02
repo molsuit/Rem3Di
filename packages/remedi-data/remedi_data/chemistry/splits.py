@@ -21,6 +21,16 @@ from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 
+def murcko_scaffold(smiles: str, include_chirality: bool = True) -> str | None:
+    """The Bemis-Murcko scaffold SMILES; ``""`` for an acyclic molecule, ``None`` if unparseable."""
+    molecule = Chem.MolFromSmiles(smiles)
+    if molecule is None:
+        return None
+    return MurckoScaffold.MurckoScaffoldSmiles(
+        mol=molecule, includeChirality=include_chirality
+    )
+
+
 def scaffold_groups(
     smiles: list[str], include_chirality: bool = True
 ) -> dict[str, list[int]]:
@@ -30,15 +40,8 @@ def scaffold_groups(
     """
     scaffolds: dict[str, list[int]] = defaultdict(list)
     for i, smi in enumerate(smiles):
-        mol = Chem.MolFromSmiles(smi)
-        if mol is None:
-            scaffolds[f"INVALID:{smi}"].append(i)
-            continue
-        scaffolds[
-            MurckoScaffold.MurckoScaffoldSmiles(
-                mol=mol, includeChirality=include_chirality
-            )
-        ].append(i)
+        scaffold = murcko_scaffold(smi, include_chirality=include_chirality)
+        scaffolds[f"INVALID:{smi}" if scaffold is None else scaffold].append(i)
     return scaffolds
 
 

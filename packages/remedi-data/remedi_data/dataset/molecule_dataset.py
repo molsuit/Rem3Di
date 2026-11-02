@@ -7,7 +7,7 @@ import pydantic_yaml as pyd_yaml
 import zarr
 from ase import Atoms
 from zarr import Array
-from zarr.codecs import BloscCodec, BloscShuffle
+from zarr.codecs import BloscCodec
 from zarr.storage import LocalStore
 
 from remedi_data.dataset.config import DatasetConfig
@@ -23,8 +23,8 @@ class StructureArrays:
     Structure ``i`` owns atoms ``molecule_ptr[i]:molecule_ptr[i + 1]`` of
     ``positions`` (float32, ``(n_atoms, 3)``) and ``atomic_numbers`` (uint8);
     ``total_charge`` and ``multiplicity`` (float32) are per structure. Each
-    field is a numpy array (``in_memory=True``) or a read-only zarr array whose
-    slices are numpy arrays.
+    field is a numpy array (``in_memory=True`` or a ``structure_ids`` selection)
+    or a read-only zarr array whose slices are numpy arrays.
     """
 
     molecule_ptr: np.ndarray | Array
@@ -32,6 +32,52 @@ class StructureArrays:
     atomic_numbers: np.ndarray | Array
     total_charge: np.ndarray | Array
     multiplicity: np.ndarray | Array
+
+
+def _gather_atoms(array: Array, atom_index: np.ndarray) -> np.ndarray:
+    """``array[atom_index]`` for a sorted index, reading one shard at a time."""
+    gathered = np.empty((len(atom_index), *array.shape[1:]), dtype=array.dtype)
+    block = int((array.shards or array.chunks)[0])
+    for block_start in range(0, int(array.shape[0]), block):
+        first, last = np.searchsorted(
+            atom_index, [block_start, block_start + block], side="left"
+        )
+        if first == last:
+            continue
+        block_stop = int(atom_index[last - 1]) + 1
+        values = np.asarray(array[block_start:block_stop])
+        gathered[first:last] = values[atom_index[first:last] - block_start]
+    return gathered
+
+
+def _gather_structures(
+    arrays: dict[str, Array], structure_ids: np.ndarray, path: Path
+) -> StructureArrays:
+    pointer = np.asarray(arrays["molecule_ptr"][:], dtype=np.int64)
+    structure_count = len(pointer) - 1
+    structure_ids = structure_ids.astype(np.int64, copy=False)
+    if structure_ids.ndim != 1 or np.any(np.diff(structure_ids) <= 0):
+        raise ValueError("structure_ids must be a sorted 1-d array without repeats")
+    if len(structure_ids) and (
+        structure_ids[0] < 0 or structure_ids[-1] >= structure_count
+    ):
+        raise ValueError(
+            f"structure_ids reach outside the {structure_count} structures of {path}"
+        )
+    starts = pointer[structure_ids]
+    counts = pointer[structure_ids + 1] - starts
+    new_pointer = np.zeros(len(structure_ids) + 1, dtype=np.int64)
+    np.cumsum(counts, out=new_pointer[1:])
+    atom_index = np.repeat(starts - new_pointer[:-1], counts) + np.arange(
+        new_pointer[-1], dtype=np.int64
+    )
+    return StructureArrays(
+        molecule_ptr=new_pointer.astype(arrays["molecule_ptr"].dtype),
+        positions=_gather_atoms(arrays["positions"], atom_index),
+        atomic_numbers=_gather_atoms(arrays["atomic_numbers"], atom_index),
+        total_charge=np.asarray(arrays["total_charge"][:])[structure_ids],
+        multiplicity=np.asarray(arrays["multiplicity"][:])[structure_ids],
+    )
 
 
 class MoleculeDataset:
@@ -88,16 +134,30 @@ class MoleculeDataset:
         self.config = config
 
     @staticmethod
-    def open_structure_arrays(path: Path, in_memory: bool = False) -> StructureArrays:
+    def open_structure_arrays(
+        path: Path,
+        in_memory: bool = False,
+        structure_ids: np.ndarray | None = None,
+    ) -> StructureArrays:
         """Open a dataset's structure arrays read-only.
 
         Takes a path rather than an open dataset so a data-loader worker can
         reopen it after pickling. ``in_memory=True`` loads all five arrays into
         numpy; otherwise they stay lazy zarr arrays (sharded reads pull byte
         ranges; the OS page cache covers repeated access to hot shards).
+
+        ``structure_ids`` (sorted, unique, e.g. from ``read_selection``) gathers
+        only those structures into compact in-memory arrays, renumbered
+        ``0..len(structure_ids) - 1`` in that order; ``in_memory`` is then
+        ignored. The atom arrays are read one zarr shard at a time, so memory
+        stays near the size of the selection.
+
+        Raises:
+            KeyError: if an array is missing.
+            ValueError: if ``structure_ids`` is not sorted, unique and in range.
         """
         group = zarr.open_group(store=LocalStore(Path(path), read_only=True), mode="r")
-        arrays: dict[str, np.ndarray | Array] = {}
+        arrays: dict[str, Array] = {}
         for field in fields(StructureArrays):
             if field.name not in group:
                 raise KeyError(
@@ -108,7 +168,13 @@ class MoleculeDataset:
                 raise TypeError(
                     f"{path}/{field.name} is a zarr group, expected an array"
                 )
-            arrays[field.name] = np.array(array) if in_memory else array
+            arrays[field.name] = array
+        if structure_ids is not None:
+            return _gather_structures(arrays, np.asarray(structure_ids), path)
+        if in_memory:
+            return StructureArrays(
+                **{name: np.array(array) for name, array in arrays.items()}
+            )
         return StructureArrays(**arrays)
 
     @classmethod
@@ -227,7 +293,7 @@ class MoleculeDataset:
         path = Path(path)
         os.makedirs(path, exist_ok=True)
 
-        compressor = BloscCodec(cname="zstd", clevel=5, shuffle=BloscShuffle.shuffle)
+        compressor = BloscCodec(cname="zstd", clevel=5, shuffle="shuffle")
 
         store = LocalStore(path)
         g = zarr.create_group(store=store, overwrite=True)
