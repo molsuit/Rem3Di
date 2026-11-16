@@ -9,12 +9,13 @@ from typing import Annotated, Any, Literal, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
-from ase import Atoms
 from ase.visualize.plot import plot_atoms
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi.latent_evaluation.capacity_diagnostic import (
     LatentCapacityReportModel,
+    draw_cumulative_explained_variance,
+    draw_per_dimension_entropy,
     get_descriptor_norm_distribution,
     run_latent_space_capacity_diagnostic,
 )
@@ -22,7 +23,6 @@ from remedi.latent_evaluation.coloring import ColorProvider
 from remedi.latent_evaluation.context import (
     DescriptorAnalysisContext,
 )
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import (
     ChemiscopeResult,
     EvalResult,
@@ -93,6 +93,7 @@ def compute_hdbscan_labels(
             cluster_selection_epsilon=cluster_selection_epsilon,
             metric="euclidean",
             algorithm="ball_tree",
+            copy=True,
         ).fit_predict(np.ascontiguousarray(descriptors))
         ctx.cache[labels_key] = labels
         return labels
@@ -118,6 +119,7 @@ def compute_hdbscan_labels(
         min_cluster_size=min_cluster_size,
         min_samples=min_samples,
         cluster_selection_epsilon=cluster_selection_epsilon,
+        copy=True,
     ).fit_predict(cluster_embedding)
     ctx.cache[labels_key] = labels
     return labels
@@ -139,7 +141,9 @@ class _ClusterTaskBase(_BaseAnalysisTask):
 
     min_samples: int | None = None
     cluster_selection_epsilon: float = 0.0
-    random_state: int | None = None
+    random_state: int | None = 0
+    """UMAP seed. Part of the cached embedding's key: tasks with the same
+    parameters share one fit (and one partition) only with the same seed."""
 
     def _labels(
         self, ctx: DescriptorAnalysisContext, min_cluster_size: int
@@ -157,19 +161,6 @@ class _ClusterTaskBase(_BaseAnalysisTask):
             cluster_selection_epsilon=self.cluster_selection_epsilon,
             use_raw_descriptors=self.use_raw_descriptors,
         )
-
-
-def _metal_env_features(ctx: DescriptorAnalysisContext) -> list[Any]:
-    """Cached per-structure chemical descriptors (one pymatgen pass)."""
-    feats = ctx.cache.get("metal_env_features")
-    if feats is None:
-        from remedi.latent_evaluation.tmqm_chemical_features import (
-            compute_metal_environment_features,
-        )
-
-        feats = compute_metal_environment_features(ctx.dataset.get_all_molecules())
-        ctx.cache["metal_env_features"] = feats
-    return cast("list[Any]", feats)
 
 
 def _cluster_label_str(label: int) -> str:
@@ -313,9 +304,7 @@ class TopNormDescriptorsTask(_BaseAnalysisTask):
     def run(self, ctx: DescriptorAnalysisContext) -> list[EvalResult]:
         norms = np.linalg.norm(ctx.descriptors_raw, axis=1)
         n_top = min(self.n_top, norms.shape[0])
-        top_subset_idx = np.argsort(norms)[::-1][:n_top]
-        top_dataset_idx = ctx.to_dataset_indices(top_subset_idx)
-        top_atoms = _atoms_for_indices(ctx.dataset, top_dataset_idx.tolist())
+        top_indices = np.argsort(norms)[::-1][:n_top]
 
         n_cols = max(1, min(self.n_cols, n_top))
         n_rows = (n_top + n_cols - 1) // n_cols
@@ -326,31 +315,24 @@ class TopNormDescriptorsTask(_BaseAnalysisTask):
             squeeze=False,
         )
 
-        struct_ids = np.asarray(ctx.dataset.structure_ids[: ctx.dataset.N_structures])
+        structure_ids = np.asarray(ctx.dataset.structure_ids[: ctx.structure_count])
         entries: list[_TopNormEntry] = []
 
-        for panel, (subset_idx, dataset_idx, atoms) in enumerate(
-            zip(
-                top_subset_idx.tolist(),
-                top_dataset_idx.tolist(),
-                top_atoms,
-                strict=True,
-            )
-        ):
+        for panel, index in enumerate(top_indices.tolist()):
+            atoms = ctx.molecules[index]
             ax = axes[panel // n_cols][panel % n_cols]
             plot_atoms(atoms, ax=ax, rotation=self.rotation)
             ax.set_title(
-                f"#{panel + 1} idx={dataset_idx} N={len(atoms)}\n"
-                f"‖z‖={norms[subset_idx]:.2f}",
+                f"#{panel + 1} idx={index} N={len(atoms)}\n‖z‖={norms[index]:.2f}",
                 fontsize=9,
             )
             entries.append(
                 _TopNormEntry(
                     rank=panel + 1,
-                    dataset_index=int(dataset_idx),
-                    structure_id=int(struct_ids[dataset_idx]),
+                    dataset_index=int(index),
+                    structure_id=int(structure_ids[index]),
                     n_atoms=len(atoms),
-                    descriptor_norm=float(norms[subset_idx]),
+                    descriptor_norm=float(norms[index]),
                     total_charge=float(atoms.info.get("total_charge", 0.0)),
                     multiplicity=float(atoms.info.get("multiplicity", 0.0)),
                 )
@@ -420,7 +402,7 @@ class ProjectionPlotTask(_BaseAnalysisTask):
 
 
 class ChemiscopeProjectionTask(_BaseAnalysisTask):
-    """Bundles the projection + dataset frames into a chemiscope viewer file."""
+    """Bundles the projection + the structures into a chemiscope viewer file."""
 
     kind: Literal["chemiscope_projection"] = "chemiscope_projection"
     file_name: str = "chemiscope_projection.json.gz"
@@ -438,9 +420,8 @@ class ChemiscopeProjectionTask(_BaseAnalysisTask):
         settings = chemiscope.quick_settings(
             x=f"{self.component_label}[1]", y=f"{self.component_label}[2]"
         )
-        frames = ctx.dataset.get_all_molecules()
         data = chemiscope.create_input(
-            frames=frames, properties=properties, settings=settings
+            structures=ctx.molecules, properties=properties, settings=settings
         )
         return [ChemiscopeResult(file_name=ctx.file_name(self.file_name), data=data)]
 
@@ -586,9 +567,8 @@ class ChemiscopeClusterTask(_ClusterTaskBase):
 
         import chemiscope
 
-        molecules = ctx.dataset.get_all_molecules()
-        feats = _metal_env_features(ctx)
-        n = len(molecules)
+        molecules = ctx.molecules
+        feats = ctx.metal_environment_features
 
         def col(values: list[Any], description: str) -> dict[str, Any]:
             return {
@@ -599,7 +579,7 @@ class ChemiscopeClusterTask(_ClusterTaskBase):
 
         properties: dict[str, Any] = {
             self.component_label: col(
-                np.asarray(ctx.projection)[:n].tolist(),
+                np.asarray(ctx.projection).tolist(),
                 "Settled 2D UMAP of the molecular descriptors",
             )
         }
@@ -711,7 +691,7 @@ class ClusterChemicalFingerprintTask(_ClusterTaskBase):
 
     def run(self, ctx: DescriptorAnalysisContext) -> list[EvalResult]:
         labels = self._labels(ctx, self.min_cluster_size)
-        feats = _metal_env_features(ctx)
+        feats = ctx.metal_environment_features
 
         order = sorted(
             np.unique(labels).tolist(),
@@ -759,7 +739,7 @@ class ClusterGranularitySweepTask(_ClusterTaskBase):
     summary_file_name: str = "cluster_granularity_sweep.yaml"
 
     def run(self, ctx: DescriptorAnalysisContext) -> list[EvalResult]:
-        feats = _metal_env_features(ctx)
+        feats = ctx.metal_environment_features
 
         n_points = 0
         rows: list[_GranularityRow] = []
@@ -819,7 +799,7 @@ class ClusterAxisAnalysisTask(_ClusterTaskBase):
 
     def run(self, ctx: DescriptorAnalysisContext) -> list[EvalResult]:
         labels = self._labels(ctx, self.min_cluster_size)
-        feats = _metal_env_features(ctx)
+        feats = ctx.metal_environment_features
 
         cluster_ids = sorted(
             np.unique(labels[labels >= 0]).tolist(),
@@ -892,8 +872,9 @@ class DescriptorStructureBenchmarkTask(_ClusterTaskBase):
 
     Fixes the clustering protocol (canonical UMAP-15D cosine HDBSCAN at mcs=25,
     random_state=0) and reports, per chemical axis, the **Adjusted Mutual
-    Information** between the HDBSCAN partition and that axis. AMI is
-    chance-corrected, so axes with very different cardinalities (donor_set has
+    Information** between the HDBSCAN partition and that axis, over the
+    clustered (non-noise) points; the noise fraction is reported next to it.
+    AMI is chance-corrected, so axes with very different cardinalities (donor_set has
     thousands of categories, size_band has three) are directly comparable.
 
     The headline aggregate (``aggregate_chemistry_ami``) averages AMI across
@@ -922,15 +903,12 @@ class DescriptorStructureBenchmarkTask(_ClusterTaskBase):
     ]
     pure_island_min_size: int = 50
     pure_island_min_purity: float = 0.9
-    # Pinning the seed makes the score reproducible across re-runs of the same
-    # descriptors. Override the base default of None.
-    random_state: int | None = 0
     summary_file_name: str = "descriptor_structure_benchmark.yaml"
 
     def run(self, ctx: DescriptorAnalysisContext) -> list[EvalResult]:
         from sklearn.metrics import adjusted_mutual_info_score
 
-        feats = _metal_env_features(ctx)
+        feats = ctx.metal_environment_features
         # Per-axis category vector covering every structure (axis values are
         # constant in the descriptor, so we compute them once and reuse).
         axis_values = {
@@ -946,18 +924,24 @@ class DescriptorStructureBenchmarkTask(_ClusterTaskBase):
         for mcs in mcs_values:
             labels = self._labels(ctx, mcs)
             n_points = int(labels.shape[0])
+            # HDBSCAN noise is not a cluster: score the clustered points only
+            # and report how many points that leaves out.
+            clustered = np.flatnonzero(labels >= 0)
             ami_per_axis = {
-                name: float(adjusted_mutual_info_score(values, labels))
+                name: float(
+                    adjusted_mutual_info_score(
+                        [values[i] for i in clustered], labels[clustered]
+                    )
+                )
+                if clustered.size
+                else 0.0
                 for name, values in axis_values.items()
             }
-            cluster_ids = np.unique(labels[labels >= 0])
             sweep.append(
                 _BenchmarkSweepRow(
                     min_cluster_size=mcs,
-                    n_clusters=int(cluster_ids.size),
-                    noise_fraction=float(np.sum(labels == -1)) / n_points
-                    if n_points
-                    else 0.0,
+                    n_clusters=int(np.unique(labels[clustered]).size),
+                    noise_fraction=1.0 - clustered.size / n_points if n_points else 0.0,
                     ami_per_axis=ami_per_axis,
                 )
             )
@@ -1054,7 +1038,8 @@ DescriptorAnalysisTask = Annotated[
 
 # Bump this when the protocol (axes, mcs, normalization, …) changes so that
 # old scorecards aren't silently compared against new ones.
-_BENCHMARK_PROTOCOL_VERSION = "1.0"
+# 2.0: AMI over the non-noise points only (1.0 counted the noise as a cluster).
+_BENCHMARK_PROTOCOL_VERSION = "2.0"
 
 
 def _dominant_donor_element(feat: Any) -> str:
@@ -1425,39 +1410,9 @@ class _HDBSCANClusterSummary(BaseModel):
     cluster_selection_epsilon: float
 
 
-def _atoms_for_indices(dataset: MoleculeDataset, indices: list[int]) -> list[Atoms]:
-    """Materialize ASE Atoms only for the requested structure indices."""
-    if not indices:
-        return []
-    n_struct = dataset.N_structures
-    ptr = np.asarray(dataset.ptr[: n_struct + 1], dtype=np.int64)
-    total_charge = np.asarray(dataset.total_charge[:n_struct])
-    multiplicity = np.asarray(dataset.multiplicity[:n_struct])
-
-    out: list[Atoms] = []
-    for idx in indices:
-        a0, a1 = int(ptr[idx]), int(ptr[idx + 1])
-        numbers = np.asarray(dataset.atomic_numbers[a0:a1], dtype=np.int64)
-        positions = np.asarray(dataset.positions[a0:a1], dtype=np.float32)
-        out.append(
-            Atoms(
-                numbers=numbers,
-                positions=positions,
-                info={
-                    "total_charge": float(total_charge[idx]),
-                    "multiplicity": float(multiplicity[idx]),
-                },
-            )
-        )
-    return out
-
-
 def _plot_per_dim_entropy(report: LatentCapacityReportModel) -> Any:
     fig, ax = plt.subplots(figsize=(10, 4))
-    order = np.argsort(report.H_norm_per_dim)[::-1]
-    ax.bar(np.arange(len(order)), report.H_norm_per_dim[order], width=1.0)
-    ax.axhline(0.2, color="red", linestyle="--", linewidth=1, label="dead threshold")
-    ax.set_xlabel("Latent dimension (sorted)")
+    draw_per_dimension_entropy(ax, report.H_norm_per_dim, report.dead_threshold)
     ax.set_ylabel("H_i / log2(bins_i)")
     title = (
         f"Per-dim entropy utilisation "
@@ -1468,19 +1423,13 @@ def _plot_per_dim_entropy(report: LatentCapacityReportModel) -> Any:
             f"\ndropped {report.n_dropped} outliers (‖z‖ > {report.norm_threshold:.2f})"
         )
     ax.set_title(title)
-    ax.legend()
     fig.tight_layout()
     return fig
 
 
 def _plot_explained_variance(report: LatentCapacityReportModel) -> Any:
     fig, ax = plt.subplots(figsize=(8, 4))
-    cumulative = np.cumsum(report.explained_var_ratio)
-    ax.plot(np.arange(1, len(cumulative) + 1), cumulative, marker=".")
-    ax.set_xlabel("PCA component")
-    ax.set_ylabel("Cumulative explained variance")
-    ax.set_ylim(0, 1.02)
-    ax.grid(alpha=0.3)
+    draw_cumulative_explained_variance(ax, report.explained_var_ratio)
     ax.set_title("Cumulative explained variance of descriptor covariance")
     fig.tight_layout()
     return fig

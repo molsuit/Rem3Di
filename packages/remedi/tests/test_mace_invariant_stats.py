@@ -6,6 +6,10 @@ import pytest
 import torch
 from e3nn.o3 import Irreps
 
+from remedi.latent_evaluation.capacity_diagnostic import (
+    marginal_entropy_bits,
+    participation_ratio,
+)
 from remedi.latent_evaluation.mace_invariant_stats import (
     _CovarianceAccumulator,
     _ReservoirSampler,
@@ -13,8 +17,6 @@ from remedi.latent_evaluation.mace_invariant_stats import (
     coding_rate,
     get_layer_invariant_specs,
     mean_abs_correlation,
-    participation_ratio,
-    per_dim_entropy,
 )
 
 
@@ -115,28 +117,52 @@ def test_mean_abs_correlation_perfect_correlation_is_one():
     assert mean_abs_correlation(cov) == pytest.approx(1.0, abs=1e-6)
 
 
-def test_per_dim_entropy_uniform_close_to_max():
+def test_marginal_entropy_uniform_close_to_max():
     rng = np.random.default_rng(4)
     x = rng.uniform(size=(20000, 3)).astype(np.float64)
-    H, H_norm = per_dim_entropy(
-        x,
-        bins=64,
-        range_min=np.zeros(3),
-        range_max=np.ones(3),
-    )
+    H = marginal_entropy_bits(x, np.full(3, 64), value_ranges=(np.zeros(3), np.ones(3)))
     # Each dim should approach log2(64) = 6 bits; allow small slack.
     assert np.all(H > 5.7)
-    assert np.all(H_norm > 0.95)
+    assert np.all(H / 6.0 > 0.95)
 
 
-def test_per_dim_entropy_constant_dim_is_zero():
+def test_marginal_entropy_constant_dim_is_zero():
     x = np.zeros((1000, 2))
     x[:, 1] = np.linspace(0, 1, 1000)
-    H, _ = per_dim_entropy(
+    H = marginal_entropy_bits(
         x,
-        bins=32,
-        range_min=np.array([0.0, 0.0]),
-        range_max=np.array([0.0, 1.0]),
+        np.full(2, 32),
+        value_ranges=(np.array([0.0, 0.0]), np.array([0.0, 1.0])),
     )
     assert H[0] == 0.0
     assert H[1] > 4.5
+
+
+def test_reservoir_sampler_keeps_every_row_with_equal_probability():
+    """Algorithm R: after streaming N rows, each is in the reservoir with
+    probability capacity / N, whatever batch it arrived in."""
+    capacity, total, trials = 10, 50, 2000
+    rows = np.arange(total, dtype=np.float32).reshape(-1, 1)
+    inclusion = np.zeros(total)
+    for seed in range(trials):
+        sampler = _ReservoirSampler(capacity=capacity, dim=1, seed=seed)
+        for batch in np.array_split(rows, [7, 8, 30]):
+            sampler.update(batch)
+        kept = sampler.sample()[:, 0].astype(int)
+        assert len(set(kept.tolist())) == capacity
+        inclusion[kept] += 1
+    np.testing.assert_allclose(inclusion / trials, capacity / total, atol=0.04)
+
+
+def test_reservoir_sampler_later_replacement_wins():
+    """Replacements are applied in stream order: with a one-slot reservoir the
+    kept row is the last row whose draw hit the slot."""
+    sampler = _ReservoirSampler(capacity=1, dim=1, seed=3)
+    rows = np.arange(1, 200, dtype=np.float32).reshape(-1, 1)
+    sampler.update(np.zeros((1, 1), dtype=np.float32))
+    reference = np.random.default_rng(3)
+    draws = reference.integers(0, np.arange(2, 201))
+    hits = np.flatnonzero(draws == 0)
+    sampler.update(rows)
+    expected = rows[hits[-1], 0] if hits.size else 0.0
+    assert sampler.sample()[0, 0] == expected

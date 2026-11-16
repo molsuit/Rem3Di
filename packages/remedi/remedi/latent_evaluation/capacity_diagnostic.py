@@ -1,9 +1,110 @@
+"""Capacity statistics of a descriptor matrix and their plots.
+
+The per-dimension statistics (histogram entropy, covariance spectrum,
+participation ratio, explained variance, dead dimensions) are shared with the
+streaming MACE invariant analysis in :mod:`mace_invariant_stats`.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from scipy.stats import entropy
+
+
+def marginal_entropy_bits(
+    samples: np.ndarray,
+    bins: np.ndarray,
+    value_ranges: tuple[np.ndarray, np.ndarray] | None = None,
+) -> np.ndarray:
+    """Histogram entropy in bits of every column of ``samples`` (rows are samples).
+
+    ``bins`` holds the bin count per column. ``value_ranges`` (lower, upper per
+    column) fixes the histogram range; by default each column spans its own
+    minimum to maximum. A column with an empty range or no samples has entropy 0.
+    """
+    dimension = samples.shape[1]
+    entropies = np.zeros(dimension, dtype=np.float64)
+    for column in range(dimension):
+        histogram_range = None
+        if value_ranges is not None:
+            lower = float(value_ranges[0][column])
+            upper = float(value_ranges[1][column])
+            if upper <= lower:
+                continue
+            histogram_range = (lower, upper)
+        counts, _ = np.histogram(
+            samples[:, column], bins=int(bins[column]), range=histogram_range
+        )
+        if counts.sum() > 0:
+            entropies[column] = float(entropy(counts, base=2))
+    return entropies
+
+
+def covariance_spectrum(covariance: np.ndarray) -> np.ndarray:
+    """Eigenvalues of a covariance matrix, descending, negative round-off clipped to 0."""
+    eigenvalues = np.sort(np.linalg.eigvalsh(covariance))[::-1]
+    return np.clip(eigenvalues, 0.0, None)
+
+
+def participation_ratio(eigenvalues: np.ndarray, eps: float = 1e-12) -> float:
+    """Effective dimension ``(sum eigenvalues)^2 / sum eigenvalues^2``."""
+    total = eigenvalues.sum()
+    return float((total * total) / (np.square(eigenvalues).sum() + eps))
+
+
+def explained_variance_ratio(eigenvalues: np.ndarray, eps: float = 1e-12) -> np.ndarray:
+    return eigenvalues / (eigenvalues.sum() + eps)
+
+
+def count_dead_dimensions(
+    entropy_bits: np.ndarray, max_bits: np.ndarray | float, threshold: float
+) -> int:
+    """Dimensions whose entropy is below ``threshold`` of their maximum."""
+    return int(np.sum(entropy_bits < threshold * np.asarray(max_bits)))
+
+
+def draw_per_dimension_entropy(
+    axis: Any,
+    normalized_entropy: np.ndarray,
+    dead_threshold: float,
+    color: Any = None,
+) -> None:
+    """Bar chart of the normalised per-dimension entropy, sorted, with the dead line."""
+    order = np.argsort(normalized_entropy)[::-1]
+    axis.bar(np.arange(len(order)), normalized_entropy[order], color=color, width=1.0)
+    axis.axhline(
+        dead_threshold,
+        color="red",
+        linestyle="--",
+        linewidth=1,
+        label="dead threshold",
+    )
+    axis.set_xlabel("Dimension (sorted)")
+    axis.legend(fontsize="small")
+
+
+def draw_cumulative_explained_variance(
+    axis: Any,
+    explained_variance: np.ndarray,
+    label: str | None = None,
+    color: Any = None,
+) -> None:
+    cumulative = np.cumsum(explained_variance)
+    axis.plot(
+        np.arange(1, len(cumulative) + 1),
+        cumulative,
+        marker=".",
+        color=color,
+        label=label,
+    )
+    axis.set_xlabel("PCA component")
+    axis.set_ylabel("Cumulative explained variance")
+    axis.set_ylim(0, 1.02)
+    axis.grid(alpha=0.3)
 
 
 class LatentCapacityReportModel(BaseModel):
@@ -12,6 +113,7 @@ class LatentCapacityReportModel(BaseModel):
     H_tot: float
     utilisation: float
     dead_dims: int
+    dead_threshold: float
     d_eff: float
 
     n_samples_used: int
@@ -37,7 +139,7 @@ class LatentCapacityReportModel(BaseModel):
         return v.tolist()
 
 
-def run_latent_space_capacity_diagnostic(  # noqa: C901 - one report, step by step
+def run_latent_space_capacity_diagnostic(
     Z: np.ndarray,
     bins: int | Iterable[int] = 128,
     dead_thr: float = 0.2,
@@ -122,40 +224,22 @@ def run_latent_space_capacity_diagnostic(  # noqa: C901 - one report, step by st
     bins_per_dim = np.clip(bins_per_dim, 2, None)
     max_bits = np.log2(bins_per_dim)
 
-    # per-dimension marginal entropies
-    H_i = np.empty(d, dtype=np.float64)
-    for j in range(d):
-        counts, _ = np.histogram(Z[:, j], bins=bins_per_dim[j])
-        total = counts.sum()
-        if total == 0:
-            H_i[j] = 0.0
-            continue
-        p = counts / (total + eps)
-        H_i[j] = -np.sum(np.where(p > 0, p * np.log2(p), 0.0))
-
+    H_i = marginal_entropy_bits(Z, bins_per_dim)
     H_tot = float(H_i.sum())
 
     # covariance spectrum and effective dimension (participation ratio)
-    cov = np.cov(Z, rowvar=False)
-    eigvals = np.linalg.eigvalsh(cov)
-    eigvals = np.sort(eigvals)[::-1]
-    num = (eigvals.sum()) ** 2
-    den = np.square(eigvals).sum() + eps
-    d_eff = float(num / den)
+    eigvals = covariance_spectrum(np.cov(Z, rowvar=False))
+    d_eff = participation_ratio(eigvals, eps)
 
     # capacity proxy and utilisation
     C_eff = float(d_eff * np.mean(max_bits))
     utilisation = float(H_tot / (C_eff + eps))
 
-    # dead dimensions
-    dead_dims = int(np.sum(H_i < dead_thr * max_bits))
-
-    explained_var_ratio = eigvals / (eigvals.sum() + eps)
-
     return LatentCapacityReportModel(
         H_tot=H_tot,
         utilisation=utilisation,
-        dead_dims=dead_dims,
+        dead_dims=count_dead_dimensions(H_i, max_bits, dead_thr),
+        dead_threshold=dead_thr,
         n_samples_used=int(Z.shape[0]),
         n_dropped=int(n_input - Z.shape[0]),
         norm_threshold=norm_threshold,
@@ -164,23 +248,16 @@ def run_latent_space_capacity_diagnostic(  # noqa: C901 - one report, step by st
         eigvals=eigvals,
         d_eff=d_eff,
         max_bits_per_dim=max_bits,
-        explained_var_ratio=explained_var_ratio,
+        explained_var_ratio=explained_variance_ratio(eigvals, eps),
     )
 
 
 def get_descriptor_norm_distribution(Z):
     Z = np.asarray(Z, dtype=np.float64)
-    norms = np.linalg.norm(Z, axis=-1)
-    print(norms.shape)
-    return norms
+    return np.linalg.norm(Z, axis=-1)
 
 
 def get_descriptor_channel_distribution(Z):
     Z = np.asarray(Z, dtype=np.float64)
     _n_structures, _dimension = Z.shape  # Z must be 2-D
-
-    means = np.mean(Z, axis=0)
-    stds = np.std(Z, axis=0)
-    print(means.shape)
-
-    return means, stds
+    return np.mean(Z, axis=0), np.std(Z, axis=0)

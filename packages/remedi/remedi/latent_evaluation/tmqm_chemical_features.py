@@ -6,9 +6,10 @@ phosphine, sandwich / arene, diimine octahedral, carborane, ...). They are
 derived purely from geometry + composition, so they work on the same data the
 descriptors see (no SMILES / bond orders required, none are stored for tmQM).
 
-The metal first-coordination sphere is inferred with the same
-``MinimumDistanceNN`` heuristic already used for the coordination-number color
-provider, so values stay consistent across the analysis suite.
+The metal first-coordination sphere is inferred with pymatgen's
+``MinimumDistanceNN`` around the single transition metal, wherever it sits in
+the structure; the coordination-number colour provider reads it from here, so
+values stay consistent across the analysis suite.
 """
 
 from __future__ import annotations

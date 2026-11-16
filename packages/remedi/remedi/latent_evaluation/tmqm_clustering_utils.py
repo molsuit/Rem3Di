@@ -4,8 +4,6 @@ import numpy as np
 from ase import Atoms
 from ase.data import atomic_numbers, chemical_symbols
 from ase.data.colors import jmol_colors
-from pymatgen.analysis.local_env import MinimumDistanceNN
-from pymatgen.core import Molecule
 
 TM = {
     # transition metals (d-block)
@@ -82,26 +80,6 @@ TM = {
 }
 
 TM_numbers = set([atomic_numbers[sym] for sym in TM])
-
-
-def get_coordination_numbers(molecules: list[Atoms]):
-    # tmQM records every entry with S = 0 (DFT singlet) regardless of physical
-    # ground state, which pymatgen rejects for odd-electron complexes. Coordination
-    # number is purely geometric, so let pymatgen infer the multiplicity.
-    cns = []
-
-    for m in molecules:
-        charge = round(float(m.info["total_charge"]))
-        mol = Molecule(
-            species=[chemical_symbols[z] for z in m.get_atomic_numbers()],
-            coords=m.get_positions(),
-            charge=charge,
-            spin_multiplicity=None,
-        )
-        cn = MinimumDistanceNN(tol=0.20).get_cn(mol, 0)
-        cns.append(cn)
-
-    return cns
 
 
 def get_tm_colormap():

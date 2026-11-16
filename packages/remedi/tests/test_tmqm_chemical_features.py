@@ -5,6 +5,8 @@ the chemiscope/fingerprint assembly with the (expensive) UMAP→HDBSCAN step
 monkeypatched out.
 """
 
+from typing import Any, cast
+
 import numpy as np
 import pytest
 from ase import Atoms
@@ -28,7 +30,7 @@ from remedi.latent_evaluation.tmqm_chemical_features import (
     compute_metal_environment_features,
     metal_block,
 )
-from remedi_data.runs.results import ChemiscopeResult
+from remedi_data.runs.results import ChemiscopeResult, PydanticResult
 
 
 def _ring(z: float, radius: float = 1.21, n: int = 5) -> np.ndarray:
@@ -206,8 +208,8 @@ def test_mixed_cluster_is_not_mislabeled():
 
 def _make_ctx(molecules: list[Atoms]) -> DescriptorAnalysisContext:
     class _FakeDataset:
-        def get_all_molecules(self):
-            return molecules
+        def get_all_molecules(self, count=None):
+            return molecules[:count]
 
     n = len(molecules)
     return DescriptorAnalysisContext(
@@ -260,7 +262,7 @@ def test_chemiscope_cluster_task_bundles_clusterings_and_chemistry(monkeypatch):
     assert all(not isinstance(v, str) for v in cluster_values)
     assert data["settings"]["map"]["color"]["property"] == "cluster_mcs200"
     # Features computed once and cached for downstream tasks.
-    assert "metal_env_features" in ctx.cache
+    assert "metal_environment_features" in vars(ctx)
 
 
 def test_chemiscope_heavy_properties_opt_in(monkeypatch):
@@ -528,3 +530,108 @@ def test_axis_analysis_identifies_best_explaining_axis(monkeypatch):
     by_id = {c.cluster_id: c for c in report.clusters}
     assert by_id[0].best_purity == 1.0
     assert by_id[1].best_purity == 1.0
+
+
+def test_coordination_number_color_finds_the_metal_anywhere():
+    """tmQM does not always store the metal first: the colour must use the metal."""
+    from remedi.latent_evaluation.coloring import CoordinationNumberColor
+
+    metal_first = _octahedral(26, 8)
+    metal_last = Atoms(
+        numbers=[*metal_first.numbers[1:], 26],
+        positions=np.vstack([metal_first.positions[1:], metal_first.positions[:1]]),
+        info={"total_charge": 0.0},
+    )
+    spec = CoordinationNumberColor().compute(_make_ctx([metal_first, metal_last]))
+    assert np.asarray(spec.values).tolist() == [6, 6]
+
+
+def test_every_cluster_task_uses_the_benchmark_seed():
+    """One seed for all cluster tasks, so they share one cached UMAP partition."""
+    from remedi.latent_evaluation.analysis_tasks import HDBSCANClusterTask
+
+    benchmark_seed = DescriptorStructureBenchmarkTask().random_state
+    assert benchmark_seed == 0
+    for task in (
+        ChemiscopeClusterTask(),
+        ClusterAxisAnalysisTask(),
+        ClusterChemicalFingerprintTask(),
+        ClusterGranularitySweepTask(),
+        HDBSCANClusterTask(),
+    ):
+        assert task.random_state == benchmark_seed
+
+
+def test_benchmark_scores_non_noise_points_and_reports_the_noise(monkeypatch):
+    """HDBSCAN noise is not a cluster: a perfect partition of the clustered points
+    scores AMI 1 whatever the noise holds; the noise fraction is reported."""
+    mols = [_ferrocene() for _ in range(4)] + [_phosphine() for _ in range(4)]
+    labels = np.array([0, 0, 0, -1, 1, 1, 1, -1])
+    monkeypatch.setattr(
+        analysis_tasks, "compute_hdbscan_labels", lambda *a, **k: labels
+    )
+    (result,) = DescriptorStructureBenchmarkTask(
+        canonical_min_cluster_size=2,
+        sweep_min_cluster_sizes=[2],
+        pure_island_min_size=2,
+    ).run(_make_ctx(mols))
+    assert isinstance(result, PydanticResult)
+    canonical = cast("Any", result.obj).canonical
+    assert canonical.noise_fraction == 0.25
+    for axis in ("metal_block", "ligand_motif", "donor_set"):
+        assert canonical.ami_per_axis[axis] > 0.99
+
+
+def test_benchmark_with_only_noise_scores_zero(monkeypatch):
+    mols = [_ferrocene(), _phosphine(), _ferrocene(), _phosphine()]
+    monkeypatch.setattr(
+        analysis_tasks, "compute_hdbscan_labels", lambda *a, **k: np.full(4, -1)
+    )
+    (result,) = DescriptorStructureBenchmarkTask(
+        canonical_min_cluster_size=2,
+        sweep_min_cluster_sizes=[2],
+        pure_island_min_size=2,
+    ).run(_make_ctx(mols))
+    assert isinstance(result, PydanticResult)
+    canonical = cast("Any", result.obj).canonical
+    assert canonical.noise_fraction == 1.0
+    assert all(value == 0.0 for value in canonical.ami_per_axis.values())
+
+
+@pytest.mark.filterwarnings("error::FutureWarning")
+def test_hdbscan_labels_raise_no_future_warning():
+    rng = np.random.default_rng(0)
+    descriptors = np.vstack(
+        [rng.normal(0.0, 0.05, size=(20, 4)), rng.normal(5.0, 0.05, size=(20, 4))]
+    )
+    before = descriptors.copy()
+    ctx = DescriptorAnalysisContext(
+        dataset=cast("Any", None),
+        descriptors=descriptors,
+        descriptors_raw=descriptors,
+        projection=None,
+        cache={},
+    )
+    compute_hdbscan_labels(
+        ctx,
+        reducer="none",
+        cluster_n_components=2,
+        cluster_n_neighbors=5,
+        cluster_min_dist=0.0,
+        cluster_metric="euclidean",
+        random_state=0,
+        min_cluster_size=5,
+        min_samples=None,
+        cluster_selection_epsilon=0.0,
+    )
+    np.testing.assert_array_equal(descriptors, before)
+
+
+@pytest.mark.filterwarnings("error")
+def test_chemiscope_projection_uses_the_structures_argument():
+    from remedi.latent_evaluation.analysis_tasks import ChemiscopeProjectionTask
+
+    mols = [_octahedral(26, 8), _phosphine()]
+    (result,) = ChemiscopeProjectionTask().run(_make_ctx(mols))
+    assert isinstance(result, ChemiscopeResult)
+    assert len(result.data["structures"]) == 2

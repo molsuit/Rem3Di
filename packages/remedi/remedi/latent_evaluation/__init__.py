@@ -25,11 +25,6 @@ from .analysis_tasks import (
     ProjectionPlotTask,
     TopNormDescriptorsTask,
 )
-from .clustering import (
-    ClusteringCalculator,
-    PCACalculator,
-    UMAPCalculator,
-)
 from .coloring import (
     ColorProvider,
     CoordinationNumberColor,
@@ -52,7 +47,6 @@ __all__ = [
     "ClusterAxisAnalysisTask",
     "ClusterChemicalFingerprintTask",
     "ClusterGranularitySweepTask",
-    "ClusteringCalculator",
     "ColorProvider",
     "CoordinationNumberColor",
     "DBlockColor",
@@ -65,10 +59,8 @@ __all__ = [
     "MetalCenterAtomicNumberColor",
     "MetalCenterElementColor",
     "NumAtomsColor",
-    "PCACalculator",
     "ProjectionConfig",
     "ProjectionPlotTask",
     "RegressionTargetColor",
     "TopNormDescriptorsTask",
-    "UMAPCalculator",
 ]

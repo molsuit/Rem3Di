@@ -16,6 +16,16 @@ import torch
 from e3nn.o3 import Irreps
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
+from remedi.latent_evaluation.capacity_diagnostic import (
+    count_dead_dimensions,
+    covariance_spectrum,
+    draw_cumulative_explained_variance,
+    draw_per_dimension_entropy,
+    explained_variance_ratio,
+    marginal_entropy_bits,
+    participation_ratio,
+)
+
 
 class LayerSpec(BaseModel):
     """Mapping from MACE layer index to invariant index range."""
@@ -151,12 +161,16 @@ class _ReservoirSampler:
             x = x[take:]
             if x.shape[0] == 0:
                 return
-        # Replacement phase
-        for row in x:
-            self.seen += 1
-            j = int(self.rng.integers(0, self.seen))
-            if j < self.capacity:
-                self.buffer[j] = row
+        # Replacement phase: row k of x is the (seen + k + 1)-th row of the
+        # stream and replaces slot j ~ U[0, seen + k + 1) when j < capacity.
+        n = x.shape[0]
+        slots = self.rng.integers(0, self.seen + 1 + np.arange(n))
+        self.seen += n
+        replacing = np.flatnonzero(slots < self.capacity)
+        # Rows replace in stream order, so a slot keeps its last replacement.
+        reversed_slots = slots[replacing][::-1]
+        unique_slots, first_in_reversed = np.unique(reversed_slots, return_index=True)
+        self.buffer[unique_slots] = x[replacing[::-1][first_in_reversed]]
 
     def sample(self) -> np.ndarray:
         n = min(self.seen, self.capacity)
@@ -272,11 +286,6 @@ class AnalysisReport(BaseModel):
 # ----------------------------------------------------------------------------
 
 
-def participation_ratio(eigvals: np.ndarray, eps: float = 1e-12) -> float:
-    s = eigvals.sum()
-    return float((s * s) / (np.square(eigvals).sum() + eps))
-
-
 def coding_rate(cov: np.ndarray, eps_sq: float, n_samples: int) -> float:
     """Lossy coding rate R(eps) = 0.5 log2 det(I + d/eps^2 * Cov).
 
@@ -312,35 +321,6 @@ def mean_abs_correlation(cov: np.ndarray, eps: float = 1e-12) -> float:
     return float(np.abs(corr[off_mask]).mean())
 
 
-def per_dim_entropy(
-    sample: np.ndarray,
-    bins: int,
-    range_min: np.ndarray,
-    range_max: np.ndarray,
-    eps: float = 1e-12,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Histogram-based marginal entropy per dimension. Returns (H_per_dim,
-    H_norm_per_dim) where the normalised version divides by log2(bins)."""
-    _, d = sample.shape
-    H = np.empty(d, dtype=np.float64)
-    max_bits = float(np.log2(max(bins, 2)))
-    for j in range(d):
-        lo = float(range_min[j])
-        hi = float(range_max[j])
-        if hi - lo < eps:
-            H[j] = 0.0
-            continue
-        counts, _ = np.histogram(sample[:, j], bins=bins, range=(lo, hi))
-        total = counts.sum()
-        if total == 0:
-            H[j] = 0.0
-            continue
-        p = counts / (total + eps)
-        H[j] = -np.sum(np.where(p > 0, p * np.log2(p), 0.0))
-    H_norm = H / (max_bits + eps)
-    return H, H_norm
-
-
 # ----------------------------------------------------------------------------
 # Top-level summarisation
 # ----------------------------------------------------------------------------
@@ -361,19 +341,15 @@ def summarise_layer(
 
     norms = np.concatenate(stats.l2_norms) if stats.l2_norms else np.zeros(0)
     cov = stats.cov.covariance().detach().cpu().numpy().astype(np.float64)
-    eigvals = np.linalg.eigvalsh(cov)
-    eigvals = np.sort(eigvals)[::-1]
-    eigvals_clip = np.clip(eigvals, 0.0, None)
-    pr = participation_ratio(eigvals_clip)
-    expl = eigvals_clip / (eigvals_clip.sum() + 1e-12)
+    eigvals = covariance_spectrum(cov)
 
-    sample = stats.reservoir.sample()
-    H_per_dim, H_norm = per_dim_entropy(
-        sample, bins=histogram_bins, range_min=mn, range_max=mx
+    bins = max(histogram_bins, 2)
+    H_per_dim = marginal_entropy_bits(
+        stats.reservoir.sample(),
+        np.full(stats.spec.width, bins),
+        value_ranges=(mn, mx),
     )
-    H_tot = float(H_per_dim.sum())
-    max_bits = float(np.log2(max(histogram_bins, 2)))
-    dead = int(np.sum(H_per_dim < dead_threshold * max_bits))
+    max_bits = float(np.log2(bins))
 
     return LayerSummary(
         layer_index=stats.spec.layer_index,
@@ -388,15 +364,15 @@ def summarise_layer(
         l2_norm_min=float(norms.min()) if norms.size else 0.0,
         l2_norm_max=float(norms.max()) if norms.size else 0.0,
         eigvals=eigvals,
-        explained_var_ratio=expl,
-        participation_ratio=pr,
+        explained_var_ratio=explained_variance_ratio(eigvals),
+        participation_ratio=participation_ratio(eigvals),
         coding_rate=coding_rate(cov, coding_rate_eps**2, n),
         coding_rate_eps=coding_rate_eps,
         mean_abs_correlation=mean_abs_correlation(cov),
         H_per_dim=H_per_dim,
-        H_norm_per_dim=H_norm,
-        H_total=H_tot,
-        dead_dims=dead,
+        H_norm_per_dim=H_per_dim / max_bits,
+        H_total=float(H_per_dim.sum()),
+        dead_dims=count_dead_dimensions(H_per_dim, max_bits, dead_threshold),
     )
 
 
@@ -410,7 +386,7 @@ def summarise_total(
         np.concatenate(total_stats.l2_norms) if total_stats.l2_norms else np.zeros(0)
     )
     cov = total_stats.cov.covariance().detach().cpu().numpy().astype(np.float64)
-    eigvals = np.clip(np.linalg.eigvalsh(cov), 0.0, None)
+    eigvals = covariance_spectrum(cov)
     return TotalSummary(
         n_atoms=n,
         invariant_dim=total_stats.spec.width,
@@ -541,25 +517,13 @@ def plot_per_dim_entropy(report: AnalysisReport, dead_threshold: float):
     )
     colors = _layer_color_cycle(len(report.layers))
     for ax, layer, color in zip(axes[0], report.layers, colors, strict=True):
-        order = np.argsort(layer.H_norm_per_dim)[::-1]
-        ax.bar(
-            np.arange(layer.width), layer.H_norm_per_dim[order], color=color, width=1.0
-        )
-        ax.axhline(
-            dead_threshold,
-            color="red",
-            linestyle="--",
-            linewidth=1,
-            label="dead threshold",
-        )
-        ax.set_xlabel("Invariant dim (sorted)")
+        draw_per_dimension_entropy(ax, layer.H_norm_per_dim, dead_threshold, color)
         ax.set_title(
             f"Layer {layer.layer_index}: H/log2(bins)\n"
             f"dead={layer.dead_dims}, "
             f"PR={layer.participation_ratio:.1f}, "
             f"R={layer.coding_rate:.1f} bits"
         )
-        ax.legend(fontsize="small")
     axes[0][0].set_ylabel("Normalised marginal entropy")
     fig.tight_layout()
     return fig
@@ -571,18 +535,13 @@ def plot_explained_variance(report: AnalysisReport):
     fig, ax = plt.subplots(figsize=(8, 5))
     colors = _layer_color_cycle(len(report.layers))
     for layer, color in zip(report.layers, colors, strict=True):
-        cum = np.cumsum(layer.explained_var_ratio)
-        ax.plot(
-            np.arange(1, len(cum) + 1),
-            cum,
-            color=color,
+        draw_cumulative_explained_variance(
+            ax,
+            layer.explained_var_ratio,
             label=f"layer {layer.layer_index} (PR={layer.participation_ratio:.1f})",
+            color=color,
         )
-    ax.set_xlabel("PCA component (per layer)")
-    ax.set_ylabel("Cumulative explained variance")
-    ax.set_ylim(0, 1.02)
     ax.set_title("Per-layer covariance spectrum of MACE invariants")
-    ax.grid(alpha=0.3)
     ax.legend()
     fig.tight_layout()
     return fig

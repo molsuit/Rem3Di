@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 import numpy as np
 from matplotlib.lines import Line2D
@@ -14,7 +14,6 @@ from remedi.latent_evaluation.context import (
 from remedi.latent_evaluation.tmqm_clustering_utils import (
     get_atomic_num_colors,
     get_block_colors,
-    get_coordination_numbers,
     get_metal_center_type,
     get_tm_colormap,
 )
@@ -29,6 +28,15 @@ class ColorSpec:
     legend_handles: list[Line2D] | None = None
     colorbar: bool = False
     colorbar_label: str | None = None
+
+
+def _metal_center_atomic_numbers(ctx: DescriptorAnalysisContext) -> list[int]:
+    """The single transition metal of every structure (cached on the context)."""
+    atomic_numbers = ctx.cache.get("metal_center_atomic_numbers")
+    if atomic_numbers is None:
+        atomic_numbers = get_metal_center_type(ctx.molecules)
+        ctx.cache["metal_center_atomic_numbers"] = atomic_numbers
+    return cast("list[int]", atomic_numbers)
 
 
 class _BaseColorProvider(BaseModel):
@@ -54,8 +62,7 @@ class NumAtomsColor(_BaseColorProvider):
         return "Number of atoms"
 
     def compute(self, ctx: DescriptorAnalysisContext) -> ColorSpec:
-        molecules = ctx.dataset.get_all_molecules()
-        sizes = np.asarray([len(m) for m in molecules], dtype=np.int64)
+        sizes = np.asarray([len(m) for m in ctx.molecules], dtype=np.int64)
         return ColorSpec(
             values=sizes,
             scatter_kwargs={"cmap": "viridis"},
@@ -71,11 +78,7 @@ class MetalCenterElementColor(_BaseColorProvider):
         return "Metal center (element)"
 
     def compute(self, ctx: DescriptorAnalysisContext) -> ColorSpec:
-        molecules = ctx.dataset.get_all_molecules()
-        atomic_nums = get_metal_center_type(molecules)
-        ctx.cache["metal_center_atomic_nums"] = atomic_nums
-
-        colors, handles = get_atomic_num_colors(atomic_nums)
+        colors, handles = get_atomic_num_colors(_metal_center_atomic_numbers(ctx))
         return ColorSpec(
             values=colors,
             scatter_kwargs={},
@@ -90,12 +93,7 @@ class DBlockColor(_BaseColorProvider):
         return "Metal center (d-block)"
 
     def compute(self, ctx: DescriptorAnalysisContext) -> ColorSpec:
-        atomic_nums = ctx.cache.get("metal_center_atomic_nums")
-        if atomic_nums is None:
-            atomic_nums = get_metal_center_type(ctx.dataset.get_all_molecules())
-            ctx.cache["metal_center_atomic_nums"] = atomic_nums
-
-        colors = get_block_colors(atomic_nums)
+        colors = get_block_colors(_metal_center_atomic_numbers(ctx))
         return ColorSpec(
             values=colors,
             scatter_kwargs={"cmap": "tab10"},
@@ -111,14 +109,9 @@ class MetalCenterAtomicNumberColor(_BaseColorProvider):
         return "Metal center (atomic number)"
 
     def compute(self, ctx: DescriptorAnalysisContext) -> ColorSpec:
-        atomic_nums = ctx.cache.get("metal_center_atomic_nums")
-        if atomic_nums is None:
-            atomic_nums = get_metal_center_type(ctx.dataset.get_all_molecules())
-            ctx.cache["metal_center_atomic_nums"] = atomic_nums
-
         cmap, norm = get_tm_colormap()
         return ColorSpec(
-            values=np.asarray(atomic_nums, dtype=np.int64),
+            values=np.asarray(_metal_center_atomic_numbers(ctx), dtype=np.int64),
             scatter_kwargs={"cmap": cmap, "norm": norm},
             colorbar=True,
             colorbar_label="Atomic number",
@@ -126,18 +119,19 @@ class MetalCenterAtomicNumberColor(_BaseColorProvider):
 
 
 class CoordinationNumberColor(_BaseColorProvider):
+    """First-sphere coordination number of the metal (-1 where unresolved)."""
+
     kind: Literal["coordination_number"] = "coordination_number"
 
     def default_label(self) -> str:
         return "Coordination number"
 
     def compute(self, ctx: DescriptorAnalysisContext) -> ColorSpec:
-        cns = ctx.cache.get("coordination_numbers")
-        if cns is None:
-            cns = get_coordination_numbers(ctx.dataset.get_all_molecules())
-            ctx.cache["coordination_numbers"] = cns
+        coordination_numbers = [
+            features.coordination_number for features in ctx.metal_environment_features
+        ]
         return ColorSpec(
-            values=np.asarray(cns, dtype=np.int64),
+            values=np.asarray(coordination_numbers, dtype=np.int64),
             scatter_kwargs={"cmap": "tab10"},
             colorbar=True,
             colorbar_label=self.title_suffix(),
@@ -163,8 +157,9 @@ class RegressionTargetColor(_BaseColorProvider):
                 "RegressionTargetColor provider was requested."
             )
 
-        n_struct = ctx.dataset.N_structures
-        values = np.asarray(targets[:n_struct, self.target_index], dtype=np.float64)
+        values = np.asarray(
+            targets[: ctx.structure_count, self.target_index], dtype=np.float64
+        )
         return ColorSpec(
             values=values,
             scatter_kwargs={"cmap": self.cmap},

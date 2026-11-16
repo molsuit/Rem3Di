@@ -3,9 +3,10 @@
 It reads the dataset's embedding through the run's resource cache (for a Rem3Di
 checkpoint: the precomputed embeddings that ``embed_and_evaluate`` writes),
 builds one :class:`DescriptorAnalysisContext` (normalisation, optional 2D
-projection) and runs the configured analyses, each in its own try/except so one
-failing analysis does not lose the others. Artifacts go under
-``descriptor_analysis/``.
+projection) and runs the configured analyses. A failing analysis does not lose
+the others: they all run and write their artifacts, then the task raises
+:class:`DescriptorAnalysisError` naming every failure, so the run records it.
+Artifacts go under ``descriptor_analysis/``.
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
 
-import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi.latent_evaluation import (
@@ -33,6 +33,10 @@ from remedi_eval.framework.resources import EmbeddingSpec
 logger = logging.getLogger(__name__)
 
 
+class DescriptorAnalysisError(RuntimeError):
+    """One or more analyses of a :class:`DescriptorAnalysisConfig` failed."""
+
+
 class DescriptorAnalysisConfig(BaseModel):
     """Intrinsic descriptor analyses (capacity, distribution, projection, ...)."""
 
@@ -46,14 +50,14 @@ class DescriptorAnalysisConfig(BaseModel):
     # 2D projection for projection/chemiscope tasks. None (default) skips the
     # UMAP fit — fine for capacity / distribution tasks that don't need it.
     projection: ProjectionConfig | None = None
-    max_structures: int | None = None
+    max_structures: int | None = Field(default=None, gt=0)
     """Analyse only the first ``max_structures`` rows (the whole dataset is embedded)."""
     tasks: list[DescriptorAnalysisTask] = Field(default_factory=list, min_length=1)
 
     def run(self, ctx: EvalContext) -> Iterator[EvalResult]:
         ctx.task_dir("descriptor_analysis")
         dataset = MoleculeDataset.open_existing_dataset_from_dir(self.dataset_path)
-        X = ctx.resources.get(
+        descriptors = ctx.resources.get(
             EmbeddingSpec(
                 dataset_id=read_spec(self.dataset_path).dataset_id,
                 descriptor=ctx.model,
@@ -61,27 +65,31 @@ class DescriptorAnalysisConfig(BaseModel):
                 cache_dir=ctx.resource_cache_dir,
             )
         )
-        sample_indices = None
-        if self.max_structures is not None and self.max_structures < X.shape[0]:
-            X = X[: self.max_structures]
-            sample_indices = np.arange(X.shape[0], dtype=np.int64)
+        if self.max_structures is not None:
+            descriptors = descriptors[: self.max_structures]
 
-        da_ctx = DescriptorAnalysisContext.build(
+        analysis_context = DescriptorAnalysisContext.build(
             dataset=dataset,
-            descriptors=X,
+            descriptors=descriptors,
             normalization=self.normalization,
             projection_config=self.projection,
-            sample_indices=sample_indices,
         )
 
+        failures: list[str] = []
         for task in self.tasks:
             label = type(task).__name__
             try:
-                results = task.run(da_ctx)
-            except Exception:  # one analysis must not lose the others
-                logger.exception("descriptor-analysis %s failed; skipping", label)
+                results = task.run(analysis_context)
+            except Exception as error:  # run the others, raise below
+                logger.exception("descriptor analysis %s failed", label)
+                failures.append(f"{label}: {error!r}")
                 continue
-            for r in results:
-                yield r.model_copy(
-                    update={"file_name": Path("descriptor_analysis") / r.file_name}
+            for result in results:
+                yield result.model_copy(
+                    update={"file_name": Path("descriptor_analysis") / result.file_name}
                 )
+        if failures:
+            raise DescriptorAnalysisError(
+                f"{len(failures)} of {len(self.tasks)} descriptor analyses failed: "
+                + "; ".join(failures)
+            )
