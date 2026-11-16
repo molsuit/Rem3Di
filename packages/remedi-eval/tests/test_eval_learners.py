@@ -45,7 +45,7 @@ def test_config_yaml_roundtrip(tmp_path) -> None:
     write_model(path, cfg)
     loaded = read_model(path, LinearLearner)
     assert loaded == cfg
-    assert loaded.learner_kind == "linear"
+    assert loaded.kind == "linear"
 
 
 def test_an_unknown_parameter_is_refused() -> None:
@@ -180,9 +180,9 @@ def test_mlp_cpu_gate_raises_without_allow_flag() -> None:
 
 def test_discriminated_union_picks_concrete_kind() -> None:
     adapter = pydantic.TypeAdapter(Learner)
-    linear = adapter.validate_python({"learner_kind": "linear"})
-    lgbm = adapter.validate_python({"learner_kind": "lightgbm"})
-    mlp = adapter.validate_python({"learner_kind": "mlp"})
+    linear = adapter.validate_python({"kind": "linear"})
+    lgbm = adapter.validate_python({"kind": "lightgbm"})
+    mlp = adapter.validate_python({"kind": "mlp"})
     assert isinstance(linear, LinearLearner)
     assert isinstance(lgbm, LightGBMLearner)
     assert isinstance(mlp, MlpLearner)
@@ -231,9 +231,7 @@ def test_null_learner_predicts_train_constant_and_parses():
     assert np.allclose(pm[:, 0], 2 / 3) and np.allclose(pm[:, 1], 1.0)
 
     # discriminated-union round-trip on the string value (not bare ``null``)
-    parsed = pydantic.TypeAdapter(Learner).validate_python(
-        {"learner_kind": "null_baseline"}
-    )
+    parsed = pydantic.TypeAdapter(Learner).validate_python({"kind": "null_baseline"})
     assert isinstance(parsed, NullLearner)
 
 
@@ -269,9 +267,9 @@ def test_mlp_fits_with_one_seed_are_identical_whatever_the_global_rng(
 
 def test_learner_name_defaults_to_the_kind_and_can_be_set() -> None:
     adapter = pydantic.TypeAdapter(Learner)
-    assert adapter.validate_python({"learner_kind": "mlp"}).name == "mlp"
+    assert adapter.validate_python({"kind": "mlp"}).name == "mlp"
     assert LightGBMLearner().name == "lightgbm"
-    named = adapter.validate_python({"learner_kind": "mlp", "name": "mlp_focal"})
+    named = adapter.validate_python({"kind": "mlp", "name": "mlp_focal"})
     assert named.name == "mlp_focal"
 
 

@@ -35,25 +35,23 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from rdkit import rdBase
 
 from remedi_data.bundle import (
+    PREPARER_REPOSITORY,
+    BundleReport,
     DatasetSpec,
     EvalMetric,
     FileHash,
     LabelColumn,
     MergedRows,
-    PreparerRecord,
-    SourceRecord,
-    merge_source_rows,
-    sha256_of_file,
-)
-from remedi_data.bundle.preparation import (
-    PREPARER_REPOSITORY,
-    BundleReport,
     PreparationError,
+    PreparerRecord,
     PreparerSettings,
     SourceLabel,
+    SourceRecord,
     check_unique,
+    merge_source_rows,
     preparer_main,
     seeded_split_notice,
+    sha256_of_file,
     smiles_bundle_spec,
     smiles_evaluation_metrics,
     write_smiles_bundle,

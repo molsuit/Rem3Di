@@ -15,8 +15,7 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Geometry import Point3D
 
-from remedi_data.bundle.identity import mirror_isomeric_smiles
-from remedi_data.bundle.validate import stereo_agrees_with_frame
+from remedi_data.bundle import mirror_isomeric_smiles, stereo_agrees_with_frame
 from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.geometry import GeometryLimits, frame_geometry_violations
 from remedi_data.chemistry.smiles_filter import (

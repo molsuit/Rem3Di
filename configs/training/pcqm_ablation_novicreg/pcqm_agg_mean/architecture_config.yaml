@@ -27,8 +27,8 @@ encoder_config:
     dropout: 0.3
     num_heads: 8
 global_aggregator_config:
-  aggregator_type_config:
-    aggregator_type: mean
+  aggregator_config:
+    kind: mean
   global_molecular_descriptor_dropout: 0.0
   output_dim: 64
 kind: encoder_decoder

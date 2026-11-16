@@ -4,7 +4,7 @@
 #   uv run --no-sync python scripts/evaluation/run_eval.py \
 #       --config configs/evaluation/ecfp_linear_tdc.yaml
 model:
-  descriptor_kind: ecfp
+  kind: ecfp
   name: ecfp_2048
   fingerprint_size: 2048
 output_root: eval_runs/ecfp_linear
@@ -36,6 +36,6 @@ tasks:
       - AMES
       - DILI
     learners:
-      - learner_kind: linear
+      - kind: linear
         name: linear  # unique per panel; tells two configs of one kind apart
 seed: 0

@@ -27,8 +27,8 @@ encoder_config:
     dropout: 0.1
     num_heads: 8
 global_aggregator_config:
-  aggregator_type_config:
-    aggregator_type: attention
+  aggregator_config:
+    kind: attention
     attn_dropout: 0.1
     head_dim: null
     num_heads: 8

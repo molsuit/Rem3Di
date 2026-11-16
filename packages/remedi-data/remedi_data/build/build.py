@@ -29,6 +29,7 @@ from rdkit import Chem
 from remedi_data.build.verify import verify_dataset
 from remedi_data.build.write import write_dataset
 from remedi_data.bundle import (
+    ENANTIOMER_PARTNER_FAILED,
     Bundle,
     ConformerGenerationRecord,
     discover_bundles,
@@ -38,7 +39,6 @@ from remedi_data.bundle import (
     read_provenance,
     stereo_agrees_with_frame,
 )
-from remedi_data.bundle.expansion import ENANTIOMER_PARTNER_FAILED
 from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.conformers import (
     ConformerEmbeddingConfig,

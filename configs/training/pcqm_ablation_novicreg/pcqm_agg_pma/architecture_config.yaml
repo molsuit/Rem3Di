@@ -27,8 +27,8 @@ encoder_config:
     dropout: 0.3
     num_heads: 8
 global_aggregator_config:
-  aggregator_type_config:
-    aggregator_type: pma_attention
+  aggregator_config:
+    kind: pma_attention
     attn_dropout: 0.3
     head_dim: 16
     num_heads: 4

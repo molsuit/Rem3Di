@@ -17,18 +17,16 @@ import pytest
 
 from remedi_data.build import DatasetBuildConfig, build_datasets
 from remedi_data.bundle import (
+    EvalMetric,
+    PreparerRecord,
+    PreparerSettings,
+    SourceLabel,
     SourceRecord,
     merge_source_rows,
     read_bundle,
-)
-from remedi_data.bundle.preparation import (
-    PreparerSettings,
-    SourceLabel,
     smiles_bundle_spec,
     write_smiles_bundle,
 )
-from remedi_data.bundle.provenance import PreparerRecord
-from remedi_data.bundle.spec import EvalMetric
 from remedi_data.chemistry.splits import fixed_test_seeded_split_columns
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import TaskType

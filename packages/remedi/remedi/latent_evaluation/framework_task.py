@@ -23,7 +23,7 @@ from remedi.latent_evaluation import (
     DescriptorAnalysisTask,
     DescriptorNormalizationConfig,
 )
-from remedi_data.bundle.bundle import read_spec
+from remedi_data.bundle import read_spec
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import EvalResult
 from remedi_eval.framework.context import EvalContext

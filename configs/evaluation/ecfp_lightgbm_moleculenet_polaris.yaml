@@ -4,7 +4,7 @@
 #   uv run --no-sync python scripts/evaluation/run_eval.py \
 #       --config configs/evaluation/ecfp_lightgbm_moleculenet_polaris.yaml
 model:
-  descriptor_kind: ecfp
+  kind: ecfp
   name: ecfp_2048
   fingerprint_size: 2048
 output_root: eval_runs/ecfp_lightgbm_moleculenet_polaris
@@ -29,6 +29,6 @@ tasks:
       - polaris_pkis2_subset
       - polaris_pkis2_subset_cls
     learners:
-      - learner_kind: lightgbm
+      - kind: lightgbm
         name: lightgbm  # unique per panel; tells two configs of one kind apart
 seed: 0

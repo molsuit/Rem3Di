@@ -41,8 +41,8 @@ positional_encoding_config:
   basis_function_config:
     kind: bessel
 global_aggregator_config:
-  aggregator_type_config:
-    aggregator_type: attention
+  aggregator_config:
+    kind: attention
     attn_dropout: 0.3
     num_heads: 8
   global_molecular_descriptor_dropout: 0.0

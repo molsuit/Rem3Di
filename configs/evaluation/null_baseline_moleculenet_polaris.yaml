@@ -4,7 +4,7 @@
 #   uv run --no-sync python scripts/evaluation/run_eval.py \
 #       --config configs/evaluation/null_baseline_moleculenet_polaris.yaml
 model:
-  descriptor_kind: ecfp
+  kind: ecfp
   name: ecfp_2048
   fingerprint_size: 2048
 output_root: eval_runs/null_baseline_moleculenet_polaris
@@ -29,6 +29,6 @@ tasks:
       - polaris_pkis2_subset
       - polaris_pkis2_subset_cls
     learners:
-      - learner_kind: null_baseline
+      - kind: null_baseline
         name: null_baseline  # unique per panel; tells two configs of one kind apart
 seed: 0

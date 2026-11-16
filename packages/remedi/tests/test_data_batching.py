@@ -48,27 +48,27 @@ def test_collate_fn_regression(
     assert batch.regression_targets.shape[0] == 2
     assert batch.regression_masks.shape[0] == 2
 
-    assert batch.auxillary_data is None
+    assert batch.auxiliary_data is None
 
 
 def test_collate_fn_aux_data(
     embeddings, padding_mask, regression_target, regression_mask
 ):
-    auxillary_data = {"foo": torch.tensor([1.0]), "bar": torch.tensor([2.0])}
+    auxiliary_data = {"foo": torch.tensor([1.0]), "bar": torch.tensor([2.0])}
 
     Sample0 = Sample(
         embeddings=embeddings,
         padding_mask=padding_mask,
         regression_targets=regression_target,
         regression_masks=regression_mask,
-        auxillary_data=auxillary_data,
+        auxiliary_data=auxiliary_data,
     )
     Sample1 = Sample(
         embeddings=embeddings,
         padding_mask=padding_mask,
         regression_targets=regression_target,
         regression_masks=regression_mask,
-        auxillary_data=auxillary_data,
+        auxiliary_data=auxiliary_data,
     )
 
     batch = sample_collate_fn([Sample0, Sample1])
@@ -77,5 +77,5 @@ def test_collate_fn_aux_data(
     assert batch.regression_targets.shape[0] == 2
     assert batch.regression_masks.shape[0] == 2
 
-    for values in batch.auxillary_data.values():
+    for values in batch.auxiliary_data.values():
         assert values.shape[0] == 2

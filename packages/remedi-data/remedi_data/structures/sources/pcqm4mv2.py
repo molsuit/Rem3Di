@@ -19,7 +19,7 @@ import pandas as pd
 from pydantic import Field
 from rdkit import Chem
 
-from remedi_data.bundle.spec import LabelColumn
+from remedi_data.bundle import LabelColumn
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.chemistry.smiles_filter import SmilesFilterConfig

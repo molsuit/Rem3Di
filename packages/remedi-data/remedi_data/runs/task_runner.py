@@ -24,7 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from remedi_data.bundle.provenance import git_head_sha
+from remedi_data.bundle import git_head_sha
 from remedi_data.runs.task import (
     RunnableTask,
     TaskStatus,

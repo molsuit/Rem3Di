@@ -1,7 +1,7 @@
 """Embed every dataset a manifest needs with a Rem3Di checkpoint, then run it.
 
 The yaml holds the checkpoint (``embedding``) and an eval manifest whose
-``model`` reads those embeddings back (``descriptor_kind: precomputed``, same
+``model`` reads those embeddings back (``kind: precomputed``, same
 ``name``). Its tasks are benchmark panels and descriptor analyses
 (``kind: descriptor_analysis``, :mod:`remedi.latent_evaluation`). One GPU job
 runs both halves; ``remedi_eval`` itself never sees the model.
@@ -53,7 +53,7 @@ class EmbedAndEvaluateConfig(BaseModel):
         model = self.manifest.model
         if not isinstance(model, PrecomputedEmbeddingsConfig):
             raise ValueError(
-                "manifest.model must be descriptor_kind: precomputed, reading the "
+                "manifest.model must be kind: precomputed, reading the "
                 "embeddings this config writes"
             )
         if model.name != self.embedding.name:

@@ -17,8 +17,8 @@ positional_encoding_config:
   d_projection: 64
   distance_cutoff: 32.0
 global_aggregator_config:
-  aggregator_type_config:
-    aggregator_type: mean
+  aggregator_config:
+    kind: mean
 decoder_config:
   N_layers: 2
   attention_layer_config:

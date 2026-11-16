@@ -36,11 +36,11 @@ from remedi_data.bundle import (
     FileHash,
     PreparerRecord,
     SourceRecord,
+    git_head_sha,
     identity_from_canonical,
     read_provenance,
     sha256_of_file,
 )
-from remedi_data.bundle.provenance import git_head_sha
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.parallel import default_workers

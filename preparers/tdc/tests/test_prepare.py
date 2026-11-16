@@ -41,11 +41,11 @@ from remedi_data.bundle import (
     DUPLICATE_LABEL_TIE,
     DUPLICATE_SMILES,
     MEASUREMENT_COUNT_COLUMN,
+    BundleReport,
     EvalMetric,
     PreparerRecord,
     read_bundle,
 )
-from remedi_data.bundle.preparation import BundleReport
 from remedi_data.dataset.tasks import TaskType
 from remedi_data.yaml_io import read_model
 

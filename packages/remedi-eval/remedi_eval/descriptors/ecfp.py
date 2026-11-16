@@ -28,7 +28,7 @@ class EcfpConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    descriptor_kind: Literal["ecfp"] = "ecfp"
+    kind: Literal["ecfp"] = "ecfp"
     # Human-readable identifier used in the cache filename. Change this if you
     # change `radius` or `fingerprint_size` so different ECFP variants don't clash.
     name: str = "ecfp"

@@ -105,7 +105,7 @@ class RegressionHeadConfig(StrictBaseModel):
     hidden_dimensions: list[int] = Field(default_factory=lambda: [256, 128])
     dropout: float = 0.1
     # Width of the per-task auxiliary data concatenated to the flat descriptor
-    # (``Sample.auxillary_data[task_name]``); 0 when the task has none.
+    # (``Sample.auxiliary_data[task_name]``); 0 when the task has none.
     auxiliary_input_dimension: int = 0
     head_type: HeadType = HeadType.FULLY_CONNECTED
     # ``None`` -> scalar regression head (final Linear -> 1).
@@ -423,7 +423,7 @@ class EmbeddingPreprocessConfig(StrictBaseModel):
 
 
 class MeanAggregatorConfig(StrictBaseModel):
-    aggregator_type: Literal["mean"] = "mean"
+    kind: Literal["mean"] = "mean"
 
     @property
     def descriptor_seq_len(self) -> int:
@@ -442,7 +442,7 @@ class AttentionAggregatorConfig(StrictBaseModel):
     total key width is `num_heads * head_dim`. None: `input_dim / num_heads`.
     """
 
-    aggregator_type: Literal["attention"] = "attention"
+    kind: Literal["attention"] = "attention"
     num_heads: int
     head_dim: int | None = None
     attn_dropout: float | None = None
@@ -475,7 +475,7 @@ class PMAAggregatorConfig(StrictBaseModel):
     be divisible by `num_heads`.
     """
 
-    aggregator_type: Literal["pma_attention"] = "pma_attention"
+    kind: Literal["pma_attention"] = "pma_attention"
     head_dim: int
     num_heads: int = 4
     attn_dropout: float = 0.0
@@ -503,22 +503,22 @@ class PMAAggregatorConfig(StrictBaseModel):
 
 AggUnion = Annotated[
     MeanAggregatorConfig | AttentionAggregatorConfig | PMAAggregatorConfig,
-    Field(discriminator="aggregator_type"),
+    Field(discriminator="kind"),
 ]
 
 
 class GlobalAggregatorConfig(StrictBaseModel):
-    aggregator_type_config: AggUnion
+    aggregator_config: AggUnion
     # Width of one descriptor token. None: the atomic embedding width.
     output_dim: int | None = None
     global_molecular_descriptor_dropout: float | None = None
 
     @property
     def descriptor_seq_len(self) -> int:
-        return self.aggregator_type_config.descriptor_seq_len
+        return self.aggregator_config.descriptor_seq_len
 
     def build(self, dimensions: ModelDimensions) -> nn.Module:
-        return self.aggregator_type_config.build(
+        return self.aggregator_config.build(
             input_dim=dimensions.embedding_dimension,
             output_dim=dimensions.descriptor_dimension,
             output_dropout=self.global_molecular_descriptor_dropout,

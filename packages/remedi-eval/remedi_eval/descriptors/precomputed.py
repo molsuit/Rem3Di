@@ -28,7 +28,7 @@ class PrecomputedEmbeddingsConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    descriptor_kind: Literal["precomputed"] = "precomputed"
+    kind: Literal["precomputed"] = "precomputed"
     name: str
     embeddings_root: Path
 

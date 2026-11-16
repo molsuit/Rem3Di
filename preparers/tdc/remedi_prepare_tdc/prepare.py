@@ -35,23 +35,21 @@ from rdkit import rdBase
 
 from remedi_data.bundle import (
     METRICS_BY_TASK_TYPE,
+    PREPARER_REPOSITORY,
+    BundleReport,
     DatasetSpec,
     EvalMetric,
     FileHash,
     LabelColumn,
+    PreparationError,
     PreparerRecord,
+    PreparerSettings,
     SourceRecord,
+    check_unique,
     merge_source_rows,
     metrics_with_headline,
-    sha256_of_file,
-)
-from remedi_data.bundle.preparation import (
-    PREPARER_REPOSITORY,
-    BundleReport,
-    PreparationError,
-    PreparerSettings,
-    check_unique,
     preparer_main,
+    sha256_of_file,
     smiles_bundle_spec,
     write_smiles_bundle,
 )

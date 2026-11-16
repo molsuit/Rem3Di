@@ -31,22 +31,20 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rdkit import rdBase
 
 from remedi_data.bundle import (
+    PREPARER_REPOSITORY,
+    BundleReport,
     DatasetSpec,
     EvalMetric,
     FileHash,
     PinnedFile,
-    PreparerRecord,
-    SourceRecord,
-    ensure_pinned_file,
-    merge_source_rows,
-)
-from remedi_data.bundle.preparation import (
-    PREPARER_REPOSITORY,
-    BundleReport,
     PreparationError,
+    PreparerRecord,
     PreparerSettings,
     SourceLabel,
+    SourceRecord,
     check_unique,
+    ensure_pinned_file,
+    merge_source_rows,
     preparer_main,
     seeded_split_notice,
     smiles_bundle_spec,

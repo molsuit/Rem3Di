@@ -31,7 +31,7 @@ class MolecularDifferenceRegressor(nn.Module):
             nn.Linear(aux_embedding_dim, 1),
         )
 
-    def forward(self, descriptors: MolecularDescriptor, auxillary_data):
+    def forward(self, descriptors: MolecularDescriptor, auxiliary_data):
         flat = descriptors.flat
         B = flat.shape[0]
         if B % 2 != 0:
@@ -45,8 +45,8 @@ class MolecularDifferenceRegressor(nn.Module):
 
         embedded_difference = self.diff_layer(diff_descriptor)
 
-        auxillary_data_per_pair = auxillary_data[:N, :]
-        experimental_cond = self.experimental_cond_gate(auxillary_data_per_pair)
+        auxiliary_data_per_pair = auxiliary_data[:N, :]
+        experimental_cond = self.experimental_cond_gate(auxiliary_data_per_pair)
 
         gated_embedding = embedded_difference * experimental_cond
 

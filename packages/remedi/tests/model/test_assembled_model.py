@@ -69,8 +69,8 @@ def _architecture(
                 },
             },
             "global_aggregator_config": {
-                "aggregator_type_config": {
-                    "aggregator_type": "pma_attention",
+                "aggregator_config": {
+                    "kind": "pma_attention",
                     "head_dim": 4,
                     "num_heads": 2,
                     "num_seeds": 3,

@@ -36,6 +36,7 @@ from remedi_data.bundle import (
     INVALID_SMILES,
     MEASUREMENT_COUNT_COLUMN,
     SMILES_FILTER,
+    BundleReport,
     EvalMetric,
     IdentityLabelTransform,
     Log10LabelTransform,
@@ -44,7 +45,6 @@ from remedi_data.bundle import (
     merge_source_rows,
     read_bundle,
 )
-from remedi_data.bundle.preparation import BundleReport
 from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
 from remedi_data.dataset.tasks import Split, TaskType
 

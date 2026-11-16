@@ -32,8 +32,8 @@ def test_attnpool_identity_when_d_in_equals_d_out():
 
 def test_mean_cfg_roundtrip():
     cfg = MeanAggregatorConfig()
-    assert cfg.aggregator_type == "mean"
-    assert '"aggregator_type":"mean"' in cfg.model_dump_json()
+    assert cfg.kind == "mean"
+    assert '"kind":"mean"' in cfg.model_dump_json()
     assert MeanAggregatorConfig.model_validate_json(cfg.model_dump_json()) == cfg
 
 
@@ -51,7 +51,7 @@ def test_mean_cfg_build_honors_output_dim():
 def test_attention_cfg_success():
     cfg = AttentionAggregatorConfig(num_heads=8, head_dim=16)
     assert cfg.num_heads == 8
-    assert '"aggregator_type":"attention"' in cfg.model_dump_json()
+    assert '"kind":"attention"' in cfg.model_dump_json()
 
 
 @pytest.mark.parametrize(
@@ -87,15 +87,15 @@ adapter = TypeAdapter(GlobalAggregatorConfig)
     [
         (
             {
-                "aggregator_type_config": {"aggregator_type": "mean"},
+                "aggregator_config": {"kind": "mean"},
                 "output_dim": 16,
             },
             MeanAggregatorConfig,
         ),
         (
             {
-                "aggregator_type_config": {
-                    "aggregator_type": "attention",
+                "aggregator_config": {
+                    "kind": "attention",
                     "num_heads": 4,
                     "head_dim": 16,
                 },
@@ -107,12 +107,12 @@ adapter = TypeAdapter(GlobalAggregatorConfig)
 )
 def test_global_dispatch(payload, expected_cls):
     cfg = adapter.validate_python(payload)
-    assert isinstance(cfg.aggregator_type_config, expected_cls)
+    assert isinstance(cfg.aggregator_config, expected_cls)
 
 
 def test_global_invalid_discriminant():
     bad = {
-        "aggregator_type_config": {"aggregator_type": "foo"},
+        "aggregator_config": {"kind": "foo"},
         "output_dim": 1,
     }
     with pytest.raises(ValidationError):

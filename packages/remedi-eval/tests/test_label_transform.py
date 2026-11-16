@@ -11,9 +11,9 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from remedi_data.bundle import EvalMetric
-from remedi_data.bundle.spec import (
+from remedi_data.bundle import (
     DatasetSpec,
+    EvalMetric,
     IdentityLabelTransform,
     LabelColumn,
     Log10LabelTransform,

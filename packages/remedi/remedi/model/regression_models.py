@@ -145,14 +145,14 @@ class MultitaskHeads(nn.Module):
     def forward(
         self,
         descriptor: MolecularDescriptor,
-        auxillary_data: dict | None = None,
+        auxiliary_data: dict | None = None,
     ):
         flat = descriptor.flat
         preds = []
 
         for name, head in self.task_heads.items():
-            if auxillary_data is not None and name in auxillary_data:
-                aux = auxillary_data[name].to(flat.device)
+            if auxiliary_data is not None and name in auxiliary_data:
+                aux = auxiliary_data[name].to(flat.device)
                 input_data = torch.cat((flat, aux), dim=1)
                 preds.append(head(input_data))
             else:
@@ -166,14 +166,14 @@ class MultitaskHeads(nn.Module):
     def inference(
         self,
         descriptor: MolecularDescriptor,
-        auxillary_data: dict | None = None,
+        auxiliary_data: dict | None = None,
     ):
         flat = descriptor.flat
         preds = []
 
         for name, head in self.task_heads.items():
-            if auxillary_data is not None and name in auxillary_data:
-                aux = auxillary_data[name].to(flat.device)
+            if auxiliary_data is not None and name in auxiliary_data:
+                aux = auxiliary_data[name].to(flat.device)
                 input_data = torch.cat((flat, aux), dim=1)
                 preds.append(head.inference(input_data))
             else:
@@ -204,7 +204,7 @@ class MultiTaskRegressionModel(nn.Module):
     def forward(self, sample: Sample) -> ModelOutput:
         molecular_descriptor = self.get_molecular_descriptor(sample)
 
-        preds = self.multitask_heads(molecular_descriptor, sample.auxillary_data)
+        preds = self.multitask_heads(molecular_descriptor, sample.auxiliary_data)
 
         return ModelOutput(
             molecular_descriptor=molecular_descriptor, regression_predictions=preds
@@ -216,7 +216,7 @@ class MultiTaskRegressionModel(nn.Module):
         molecular_descriptor = self.get_molecular_descriptor(sample)
 
         preds = self.multitask_heads.inference(
-            molecular_descriptor, sample.auxillary_data
+            molecular_descriptor, sample.auxiliary_data
         )
 
         return ModelOutput(

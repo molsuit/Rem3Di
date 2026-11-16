@@ -142,7 +142,7 @@ def _pipeline_config(tmp_path: Path, model_name: str = "remedi_test") -> dict:
         "embedding": {"name": "remedi_test", "model_dir": str(_checkpoint(tmp_path))},
         "manifest": {
             "model": {
-                "descriptor_kind": "precomputed",
+                "kind": "precomputed",
                 "name": model_name,
                 "embeddings_root": str(tmp_path / "emb"),
             },
@@ -151,7 +151,7 @@ def _pipeline_config(tmp_path: Path, model_name: str = "remedi_test") -> dict:
                 {
                     "kind": "benchmark_panel",
                     "eval_root": str(tmp_path / "datasets"),
-                    "learners": [{"learner_kind": "linear", "ridge_alpha": 1.0}],
+                    "learners": [{"kind": "linear", "ridge_alpha": 1.0}],
                 }
             ],
         },
@@ -183,7 +183,7 @@ def test_the_pipeline_refuses_a_manifest_that_reads_other_embeddings(
     with pytest.raises(ValidationError, match=r"differs from embedding\.name"):
         EmbedAndEvaluateConfig.model_validate(_pipeline_config(tmp_path, "other"))
     ecfp_model = _pipeline_config(tmp_path)
-    ecfp_model["manifest"]["model"] = {"descriptor_kind": "ecfp", "name": "ecfp"}
+    ecfp_model["manifest"]["model"] = {"kind": "ecfp", "name": "ecfp"}
     with pytest.raises(ValidationError, match="precomputed"):
         EmbedAndEvaluateConfig.model_validate(ecfp_model)
 

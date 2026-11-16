@@ -8,5 +8,5 @@ from remedi_eval.descriptors.ecfp import EcfpConfig
 from remedi_eval.descriptors.precomputed import PrecomputedEmbeddingsConfig
 
 DescriptorConfig = Annotated[
-    EcfpConfig | PrecomputedEmbeddingsConfig, Field(discriminator="descriptor_kind")
+    EcfpConfig | PrecomputedEmbeddingsConfig, Field(discriminator="kind")
 ]

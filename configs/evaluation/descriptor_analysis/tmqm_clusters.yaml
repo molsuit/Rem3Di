@@ -12,7 +12,7 @@ embedding:
   model_dir: /dais/fs/scratch/wedigs/remedi/training_runs/mixture_smoke/1-2026_11_16_15_08_27-mixture_smoke_transition_metal_complex
 manifest:
   model:
-    descriptor_kind: precomputed
+    kind: precomputed
     name: mixture_smoke_transition_metal_complex
     embeddings_root: /dais/fs/scratch/wedigs/remedi/eval_runs/embeddings
   output_root: /dais/fs/scratch/wedigs/remedi/eval_runs/descriptor_analysis/tmqm_clusters

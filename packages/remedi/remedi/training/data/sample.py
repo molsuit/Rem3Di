@@ -24,7 +24,7 @@ class Sample:
     padding_mask: torch.Tensor | None = None
     regression_targets: torch.Tensor | None = None
     regression_masks: torch.Tensor | None = None
-    auxillary_data: dict[str, Any] | None = None
+    auxiliary_data: dict[str, Any] | None = None
     atomic_positions: torch.Tensor | None = None
     atomic_numbers: torch.Tensor | None = None
     system_index: torch.Tensor | None = None
@@ -55,7 +55,7 @@ class Sample:
             padding_mask=_pin(self.padding_mask),
             regression_targets=_pin(self.regression_targets),
             regression_masks=_pin(self.regression_masks),
-            auxillary_data=self.auxillary_data,
+            auxiliary_data=self.auxiliary_data,
             atomic_positions=_pin(self.atomic_positions),
             atomic_numbers=_pin(self.atomic_numbers),
             system_index=_pin(self.system_index),

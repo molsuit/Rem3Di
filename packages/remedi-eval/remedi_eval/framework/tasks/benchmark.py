@@ -74,7 +74,7 @@ class BenchmarkPanelConfig(BaseModel):
 
     kind: Literal["benchmark_panel"] = "benchmark_panel"
     eval_root: Path
-    # Each learner's ``name`` (default: its ``learner_kind``) must be unique:
+    # Each learner's ``name`` (default: its ``kind``) must be unique:
     # it is what tells two learners apart in results.csv and artifact paths.
     learners: list[Learner] = Field(default_factory=list, min_length=1)
     # Descriptors evaluated in addition to the run's model (e.g. an ECFP

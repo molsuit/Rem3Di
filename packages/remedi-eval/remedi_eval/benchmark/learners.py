@@ -15,15 +15,15 @@ masked when scored), a train fold with fewer than two classes falls back to
 its base rate, and a multilabel task is one binary fit per column unless the
 learner fits the columns jointly (the MLP, with a masked loss).
 
-The learners form a pydantic ``Annotated`` union on ``learner_kind``. Each
+The learners form a pydantic ``Annotated`` union on ``kind``. Each
 carries a ``name`` (defaulting to its kind) that identifies it in result rows
 and artifact paths, so two of one kind can sit side by side in a panel:
 
     learners:
-      - learner_kind: linear
-      - learner_kind: lightgbm
+      - kind: linear
+      - kind: lightgbm
         early_stopping_rounds: 50
-      - learner_kind: mlp
+      - kind: mlp
         name: mlp_focal
         loss: focal
 """
@@ -186,7 +186,7 @@ class LearnerBase(BaseModel):
 
 
 class LinearLearner(LearnerBase):
-    learner_kind: Literal["linear"] = "linear"
+    kind: Literal["linear"] = "linear"
     name: str = "linear"
     ridge_alpha: float = 1.0
     logreg_C: float = 1.0
@@ -235,7 +235,7 @@ class LinearLearner(LearnerBase):
 
 
 class LightGBMLearner(LearnerBase):
-    learner_kind: Literal["lightgbm"] = "lightgbm"
+    kind: Literal["lightgbm"] = "lightgbm"
     name: str = "lightgbm"
     n_estimators: int = 2000
     learning_rate: float = 0.03
@@ -372,7 +372,7 @@ def _standardize(
 
 
 class MlpLearner(LearnerBase):
-    learner_kind: Literal["mlp"] = "mlp"
+    kind: Literal["mlp"] = "mlp"
     name: str = "mlp"
     hidden_dims: list[int] = [256, 128]
     dropout: float = 0.2
@@ -597,7 +597,7 @@ class MlpLearner(LearnerBase):
 class NullLearner(LearnerBase):
     # "null_baseline" not "null": a bare ``null`` in yaml parses to None and
     # would break discriminated-union resolution.
-    learner_kind: Literal["null_baseline"] = "null_baseline"
+    kind: Literal["null_baseline"] = "null_baseline"
     name: str = "null_baseline"
 
     def _regression(self, train, valid, X_test, seed) -> np.ndarray:
@@ -612,5 +612,5 @@ class NullLearner(LearnerBase):
 
 Learner = Annotated[
     LinearLearner | LightGBMLearner | MlpLearner | NullLearner,
-    Field(discriminator="learner_kind"),
+    Field(discriminator="kind"),
 ]

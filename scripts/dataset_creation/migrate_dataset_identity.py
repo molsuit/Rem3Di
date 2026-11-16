@@ -57,12 +57,12 @@ from remedi_data.bundle import (
     DatasetSpec,
     content_hash_of_table,
     is_dataset_directory,
+    normalize_table,
     read_bundle,
     read_spec,
     read_table,
     sha256_of_file,
 )
-from remedi_data.bundle.bundle import normalize_table
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import Split, split_codes_from_names

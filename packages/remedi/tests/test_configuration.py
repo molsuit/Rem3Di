@@ -42,7 +42,7 @@ def _minimal_shared_parts():
     )
 
     global_aggregator_config = GlobalAggregatorConfig(
-        aggregator_type_config=MeanAggregatorConfig(),
+        aggregator_config=MeanAggregatorConfig(),
     )
 
     positional_encoding_config = RelativeDistancePositionalEncodingConfig(

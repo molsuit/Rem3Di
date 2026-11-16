@@ -1,7 +1,7 @@
 """Embed every panel dataset with a Rem3Di checkpoint, then run the eval manifest.
 
 The config holds ``embedding`` (a :class:`RemediConfig`) and ``manifest`` (an
-eval manifest whose ``model`` is ``descriptor_kind: precomputed`` with the same
+eval manifest whose ``model`` is ``kind: precomputed`` with the same
 ``name``). Datasets whose embeddings already match are not re-embedded. Run it
 as one GPU job.
 
