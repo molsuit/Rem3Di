@@ -4,8 +4,8 @@ import logging
 import os
 import time
 from collections import Counter, defaultdict
-from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -27,11 +27,11 @@ from remedi_data.runs.results import (
 from remedi_eval.dataset_analysis.analysis import (
     RDKIT_CHUNK_SIZE,
     SCAFFOLD_INCLUDE_CHIRALITY,
+)
+from remedi_eval.dataset_analysis.bitbirch import (
     BitBirchSummary,
-    BitBirchUmapSummary,
-    DistributionStats,
-    resolve_bitbirch_threshold,
-    timed,
+    fit_bitbirch,
+    fit_umap,
 )
 from remedi_eval.dataset_analysis.config import (
     CpuNnTanimotoBackend,
@@ -39,6 +39,7 @@ from remedi_eval.dataset_analysis.config import (
     DatasetEntry,
     NvmolkitNnTanimotoBackend,
 )
+from remedi_eval.dataset_analysis.statistics import DistributionStats, timed
 from remedi_eval.results import FigureResult
 
 RDLogger.DisableLog("rdApp.*")
@@ -156,25 +157,16 @@ class DatasetComparisonSummary(BaseModel):
 # ---------- Module-level worker fns (picklable) ----------
 
 
-def _murcko_specific(smiles: str) -> str | None:
-    """The scaffold splits group by; ``None`` for an unparseable or an acyclic
-    molecule (whose empty scaffold is no scaffold)."""
-    return murcko_scaffold(smiles, include_chirality=SCAFFOLD_INCLUDE_CHIRALITY) or None
-
-
-def _murcko_generic(smiles: str) -> str | None:
-    """The framework-only scaffold (atom and bond types stripped); ``None`` for
-    an unparseable or an acyclic molecule."""
+def _scaffold_of(smiles: str, generic: bool) -> str | None:
+    """The splits' scaffold (chirality kept), or its framework with ``generic``;
+    ``None`` for an unparseable or an acyclic molecule (whose empty scaffold is
+    no scaffold)."""
     return (
         murcko_scaffold(
-            smiles, include_chirality=SCAFFOLD_INCLUDE_CHIRALITY, generic=True
+            smiles, include_chirality=SCAFFOLD_INCLUDE_CHIRALITY, generic=generic
         )
         or None
     )
-
-
-def _parallel_map(function, items: Sequence[str], workers: int) -> list:
-    return process_map(function, items, workers=workers, chunk_size=RDKIT_CHUNK_SIZE)
 
 
 # ---------- Dataset loading ----------
@@ -306,6 +298,7 @@ class DatasetComparison:
         if len(self._name_to_idx) != len(self._entries):
             raise ValueError("DatasetComparisonConfig.datasets must have unique names")
         self._loaded: list[_LoadedDataset] = []
+        self._scaffold_cache: dict[bool, dict[str, str | None]] = {}
 
     # ----- Load + fingerprint -----
 
@@ -368,154 +361,43 @@ class DatasetComparison:
     def run_bitbirch_union(
         self, union: _UnionFps
     ) -> tuple[np.ndarray, BitBirchSummary]:
-        """Run BitBIRCH on the union FP array. Returns (row->cluster_id, summary).
-
-        Reuses the histograms-and-counts shape from
-        ``MoleculeDatasetAnalysis.run_bitbirch`` (but operates on a
-        pre-fingerprinted matrix instead of SMILES, so we can keep the
-        dataset-origin alignment)."""
-        import bblean
-
+        """Run BitBIRCH on the union FP array. Returns (row->cluster_id, summary)."""
         cfg = self.config.bitbirch
-        n_fps = int(union.fps_packed.shape[0])
-        if n_fps == 0:
+        if len(union.fps_packed) == 0:
             return np.zeros(0, dtype=np.int64), BitBirchSummary(
                 enabled=True, notes="empty union"
             )
-
-        threshold, source, mean_isim, std_isim = resolve_bitbirch_threshold(
-            cfg, union.fps_packed
-        )
-        log.info(
-            "BitBIRCH union: threshold=%.3f (source=%s, mean_iSIM=%s, std=%s)",
-            threshold,
-            source,
-            f"{mean_isim:.3f}" if mean_isim is not None else "n/a",
-            f"{std_isim:.3f}" if std_isim is not None else "n/a",
-        )
-        tree = bblean.BitBirch(
-            threshold=threshold,
-            branching_factor=cfg.branching_factor,
-            merge_criterion=cfg.merge_criterion,
-            tolerance=cfg.tolerance,
-        )
-        tree.fit(union.fps_packed)
-        clusters = tree.get_cluster_mol_ids()
-        sizes = np.asarray([len(c) for c in clusters], dtype=np.int64)
-        row_cluster = np.full(n_fps, -1, dtype=np.int64)
-        for cid, rows in enumerate(clusters):
-            row_cluster[np.asarray(rows, dtype=np.int64)] = cid
-
-        # Cluster size histogram
-        fig, ax = plt.subplots(figsize=(8, 4))
-        if sizes.size:
-            ax.hist(
-                sizes, bins=min(50, max(5, int(np.sqrt(sizes.size)))), color="#8172b3"
-            )
-            ax.set_yscale("log")
-        ax.set_xlabel("Molecules per cluster")
-        ax.set_ylabel("Cluster count (log)")
-        ax.set_title(
-            f"BitBIRCH union clusters (n={sizes.size},"
-            f" threshold={threshold:.2f} [{source}], Morgan radius {cfg.radius})"
-        )
-        fig.tight_layout()
+        clusters = fit_bitbirch(union.fps_packed, cfg)
         self.results.append(
-            FigureResult(figure=fig, file_name=Path("bitbirch_union_cluster_sizes.png"))
-        )
-
-        summary = BitBirchSummary(
-            enabled=True,
-            n_input_smiles=n_fps,
-            n_fingerprints=n_fps,
-            n_clusters=int(sizes.size),
-            singleton_clusters=int((sizes == 1).sum()),
-            largest_cluster=int(sizes.max()) if sizes.size else 0,
-            cluster_size_distribution=DistributionStats.from_array(sizes),
-            threshold_used=threshold,
-            threshold_source=source,
-            mean_isim=mean_isim,
-            std_isim=std_isim,
-            umap=self._bitbirch_umap(union, row_cluster, sizes),
-        )
-        return row_cluster, summary
-
-    def _bitbirch_umap(
-        self,
-        union: _UnionFps,
-        row_cluster: np.ndarray,
-        cluster_sizes: np.ndarray,
-    ) -> BitBirchUmapSummary | None:
-        cfg = self.config.bitbirch.umap
-        if not cfg.enabled:
-            return BitBirchUmapSummary(enabled=False, notes="disabled by config")
-        n_fps = int(union.fps_packed.shape[0])
-        if n_fps == 0:
-            return BitBirchUmapSummary(enabled=True, notes="no fingerprints")
-
-        cap = cfg.sample_size if cfg.sample_size is not None else n_fps
-        cap = min(cap, n_fps)
-        if cap < n_fps:
-            sample_rows = self._rng.choice(n_fps, size=cap, replace=False)
-            sample_rows.sort()
-        else:
-            sample_rows = np.arange(n_fps, dtype=np.int64)
-
-        import bblean
-        import umap
-
-        unpacked = bblean.unpack_fingerprints(
-            union.fps_packed[sample_rows],
-            n_features=self.config.bitbirch.fingerprint_size,
-        )
-        t0 = time.perf_counter()
-        try:
-            reducer = umap.UMAP(
-                n_components=2,
-                n_neighbors=cfg.n_neighbors,
-                min_dist=cfg.min_dist,
-                metric=cfg.metric,
-                random_state=cfg.random_state,
-            )
-            coords = reducer.fit_transform(unpacked.astype(np.float32, copy=False))
-        except Exception as exc:
-            return BitBirchUmapSummary(
-                enabled=True,
-                n_points=int(sample_rows.size),
-                notes=f"UMAP fit failed: {exc!r}",
-            )
-        elapsed = time.perf_counter() - t0
-
-        # Two scatter plots: one colored by dataset origin, one by top-N clusters.
-        self._plot_umap_by_origin(coords, union.dataset_index[sample_rows])
-        top_n = min(cfg.top_clusters_colored, int(cluster_sizes.size))
-        top_cids = (
-            np.argsort(cluster_sizes)[-top_n:][::-1]
-            if top_n > 0
-            else np.asarray([], dtype=np.int64)
-        )
-        self._plot_umap_by_cluster(coords, row_cluster[sample_rows], top_cids)
-
-        self.results.append(
-            ArrayResult(
-                file_name=Path("dataset_comparison_umap_coords.npz"),
-                arrays={
-                    "coords": coords.astype(np.float32),
-                    "cluster_id": row_cluster[sample_rows].astype(np.int64),
-                    "dataset_index": union.dataset_index[sample_rows].astype(np.int64),
-                    "row_index": sample_rows.astype(np.int64),
-                },
+            FigureResult(
+                figure=clusters.size_histogram(
+                    f"BitBIRCH union clusters, Morgan radius {cfg.radius}"
+                ),
+                file_name=Path("bitbirch_union_cluster_sizes.png"),
             )
         )
-        return BitBirchUmapSummary(
-            enabled=True,
-            n_points=int(sample_rows.size),
-            n_neighbors=cfg.n_neighbors,
-            min_dist=cfg.min_dist,
-            metric=cfg.metric,
-            top_clusters_colored=int(top_n),
-            fit_seconds=float(elapsed),
+        fit, umap_summary = fit_umap(
+            union.fps_packed, clusters, cfg.umap, cfg.fingerprint_size, self._rng
         )
+        if fit is not None:
+            # Two scatter plots: one colored by dataset origin, one by top-N clusters.
+            cluster_ids = clusters.row_cluster[fit.rows]
+            self._plot_umap_by_origin(fit.coordinates, union.dataset_index[fit.rows])
+            self._plot_umap_by_cluster(
+                fit.coordinates, cluster_ids, fit.top_cluster_ids
+            )
+            self.results.append(
+                ArrayResult(
+                    file_name=Path("dataset_comparison_umap_coords.npz"),
+                    arrays={
+                        "coords": fit.coordinates.astype(np.float32),
+                        "cluster_id": cluster_ids.astype(np.int64),
+                        "dataset_index": union.dataset_index[fit.rows].astype(np.int64),
+                        "row_index": fit.rows,
+                    },
+                )
+            )
+        return clusters.row_cluster, clusters.summary(len(union.smiles), umap_summary)
 
     def _umap_figure(self) -> tuple[Figure, Axes]:
         """A square figure of ``bitbirch.umap.plot_size`` pixels."""
@@ -646,11 +528,8 @@ class DatasetComparison:
                 mask.sum()
             )
 
-        # Scaffold purity per cluster (compute Murcko on union SMILES once).
-        with timed("scaffolds_for_purity", self._timings):
-            scaffolds = _parallel_map(
-                _murcko_specific, union.smiles, self.config.rdkit_n_workers
-            )
+        # Scaffold purity per cluster.
+        scaffolds = self._scaffolds(union.smiles, generic=False)
         purity = np.zeros(n_clusters, dtype=np.float64)
         bucket: dict[int, Counter[str]] = defaultdict(Counter)
         for sc, cid in zip(scaffolds, row_cluster.tolist(), strict=True):
@@ -890,8 +769,27 @@ class DatasetComparison:
 
     # ----- Bemis-Murcko scaffold overlap -----
 
+    def _scaffolds(self, smiles: list[str], generic: bool) -> list[str | None]:
+        """The scaffold of each of ``smiles``; each SMILES is computed once per
+        kind for the whole comparison (cluster purity and scaffold overlap
+        share them)."""
+        known = self._scaffold_cache.setdefault(generic, {})
+        missing = list(dict.fromkeys(s for s in smiles if s not in known))
+        if missing:
+            with timed(
+                f"scaffolds_{'generic' if generic else 'specific'}", self._timings
+            ):
+                scaffolds = process_map(
+                    partial(_scaffold_of, generic=generic),
+                    missing,
+                    workers=self.config.rdkit_n_workers,
+                    chunk_size=RDKIT_CHUNK_SIZE,
+                )
+            known.update(zip(missing, scaffolds, strict=True))
+        return [known[s] for s in smiles]
+
     def _collect_scaffold_sets(
-        self, include_generic: bool, n_workers: int
+        self, include_generic: bool
     ) -> tuple[
         dict[str, set[str]],
         dict[str, set[str]],
@@ -901,13 +799,11 @@ class DatasetComparison:
         generic_sets: dict[str, set[str]] = {}
         per_dataset: list[ScaffoldOverlapPerDataset] = []
         for ld in self._loaded:
-            with timed(f"scaffolds_specific[{ld.entry.name}]", self._timings):
-                spec = _parallel_map(_murcko_specific, ld.smiles, n_workers)
+            spec = self._scaffolds(ld.smiles, generic=False)
             specific_sets[ld.entry.name] = {s for s in spec if s is not None}
             generic_set: set[str] | None = None
             if include_generic:
-                with timed(f"scaffolds_generic[{ld.entry.name}]", self._timings):
-                    gen = _parallel_map(_murcko_generic, ld.smiles, n_workers)
+                gen = self._scaffolds(ld.smiles, generic=True)
                 generic_set = {s for s in gen if s is not None}
                 generic_sets[ld.entry.name] = generic_set
             per_dataset.append(
@@ -953,7 +849,7 @@ class DatasetComparison:
             return None
 
         specific_sets, generic_sets, per_dataset = self._collect_scaffold_sets(
-            include_generic=cfg.include_generic, n_workers=self.config.rdkit_n_workers
+            include_generic=cfg.include_generic
         )
         names = [e.name for e in self._entries]
 

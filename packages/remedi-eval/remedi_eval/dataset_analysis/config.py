@@ -7,6 +7,13 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+#: How the UMAP sample is drawn: ``uniform`` over all fingerprints (the
+#: dataset comparison's default, so the origin plot shows the datasets in
+#: proportion), or ``largest_clusters_first``: members of the
+#: ``top_clusters_colored`` largest clusters take up to half the budget (the
+#: single-dataset analysis's default, so the coloured clusters stay visible).
+UmapSampling = Literal["uniform", "largest_clusters_first"]
+
 
 class BitBirchUmapConfig(BaseModel):
     """UMAP projection of BitBIRCH fingerprints, colored by cluster id."""
@@ -16,6 +23,7 @@ class BitBirchUmapConfig(BaseModel):
     enabled: bool = True
     sample_size: int | None = 200_000
     """Cap on fingerprints fed to UMAP. UMAP scales poorly past a few 100k."""
+    sampling: UmapSampling = "uniform"
     n_neighbors: int = Field(50, ge=2)
     min_dist: float = Field(0.1, ge=0.0, le=1.0)
     metric: Literal["jaccard", "hamming", "euclidean", "cosine"] = "jaccard"
@@ -87,7 +95,11 @@ class MoleculeDatasetAnalysisConfig(BaseModel):
 
     random_seed: int = 1234
 
-    bitbirch: BitBirchConfig = Field(default_factory=BitBirchConfig)
+    bitbirch: BitBirchConfig = Field(
+        default_factory=lambda: BitBirchConfig(
+            umap=BitBirchUmapConfig(sampling="largest_clusters_first")
+        )
+    )
 
 
 class DatasetEntry(BaseModel):

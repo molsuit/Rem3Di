@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from collections import Counter
-from collections.abc import Generator
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,10 +25,13 @@ from remedi_data.runs.results import (
     EvalResult,
     PydanticResult,
 )
-from remedi_eval.dataset_analysis.config import (
-    BitBirchConfig,
-    MoleculeDatasetAnalysisConfig,
+from remedi_eval.dataset_analysis.bitbirch import (
+    BitBirchSummary,
+    fit_bitbirch,
+    fit_umap,
 )
+from remedi_eval.dataset_analysis.config import MoleculeDatasetAnalysisConfig
+from remedi_eval.dataset_analysis.statistics import DistributionStats, timed
 from remedi_eval.results import FigureResult
 
 #: The analyses group molecules by the scaffold the scaffold splits use
@@ -127,41 +127,6 @@ def _compute_descriptors(smiles: str) -> _MolDescriptors:
 # ---------- Summary stats Pydantic results ----------
 
 
-class DistributionStats(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    n: int
-    mean: float | None = None
-    std: float | None = None
-    min: float | None = None
-    p05: float | None = None
-    p25: float | None = None
-    p50: float | None = None
-    p75: float | None = None
-    p95: float | None = None
-    max: float | None = None
-
-    @classmethod
-    def from_array(cls, x: np.ndarray) -> DistributionStats:
-        x = np.asarray(x, dtype=np.float64).ravel()
-        x = x[np.isfinite(x)]
-        if x.size == 0:
-            return cls(n=0)
-        q = np.quantile(x, [0.05, 0.25, 0.5, 0.75, 0.95])
-        return cls(
-            n=int(x.size),
-            mean=float(x.mean()),
-            std=float(x.std()),
-            min=float(x.min()),
-            p05=float(q[0]),
-            p25=float(q[1]),
-            p50=float(q[2]),
-            p75=float(q[3]),
-            p95=float(q[4]),
-            max=float(x.max()),
-        )
-
-
 class TargetColumnStats(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -169,69 +134,6 @@ class TargetColumnStats(BaseModel):
     name: str
     coverage: float
     distribution: DistributionStats
-
-
-class BitBirchUmapSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool
-    n_points: int = 0
-    n_neighbors: int = 0
-    min_dist: float = 0.0
-    metric: str = ""
-    top_clusters_colored: int = 0
-    fit_seconds: float | None = None
-    notes: str | None = None
-
-
-class BitBirchSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool
-    n_input_smiles: int = 0
-    n_fingerprints: int = 0
-    n_clusters: int = 0
-    singleton_clusters: int = 0
-    largest_cluster: int = 0
-    cluster_size_distribution: DistributionStats = Field(
-        default_factory=lambda: DistributionStats(n=0)
-    )
-    threshold_used: float | None = None
-    """Actual threshold passed to BitBIRCH (resolved from auto-calibration
-    when ``BitBirchConfig.auto_threshold`` is true, else the config value)."""
-    threshold_source: Literal["config", "auto"] | None = None
-    mean_isim: float | None = None
-    """Mean pairwise Tanimoto (iSIM) of the fingerprint set, when computed."""
-    std_isim: float | None = None
-    """Estimated std of pairwise Tanimoto, when computed."""
-    umap: BitBirchUmapSummary | None = None
-    notes: str | None = None
-
-
-def resolve_bitbirch_threshold(
-    cfg: BitBirchConfig,
-    fps_packed: np.ndarray,
-) -> tuple[float, str, float | None, float | None]:
-    """Decide the BitBIRCH threshold for a given (packed-uint8) FP matrix.
-
-    Returns ``(threshold, source, mean_isim, std_isim)``. When
-    ``cfg.auto_threshold`` is false the source is ``"config"`` and the
-    iSIM/std fields are ``None``; otherwise the helper calls
-    ``bblean.bitbirch.guess_threshold`` (mean iSIM + factor·std) and the
-    returned numbers are filled in so callers can record what was used."""
-    if not cfg.auto_threshold:
-        return float(cfg.threshold), "config", None, None
-    import bblean.bitbirch as bb
-
-    threshold, mean, std = bb.guess_threshold(
-        fps_packed,
-        input_is_packed=True,
-        n_features=cfg.fingerprint_size,
-        factor=cfg.auto_threshold_factor,
-        return_mean_std=True,
-    )
-    threshold = float(np.clip(threshold, 0.0, 1.0))
-    return threshold, "auto", float(mean), float(std)
 
 
 class DatasetSummary(BaseModel):
@@ -255,21 +157,6 @@ class DatasetSummary(BaseModel):
     target_columns: list[TargetColumnStats] = Field(default_factory=list)
     bitbirch: BitBirchSummary | None = None
     timings_seconds: dict[str, float] = Field(default_factory=dict)
-
-
-# ---------- Utilities ----------
-
-
-@contextmanager
-def timed(name: str, timings: dict[str, float]) -> Generator[None]:
-    """Record the wall-clock seconds of the ``with`` body in ``timings[name]``."""
-    start = time.perf_counter()
-    try:
-        yield
-    finally:
-        elapsed = time.perf_counter() - start
-        timings[name] = elapsed
-        log.info("%s took %.2fs", name, elapsed)
 
 
 # ---------- MoleculeDatasetAnalysis ----------
@@ -555,8 +442,6 @@ class MoleculeDatasetAnalysis:
         if not smiles:
             return BitBirchSummary(enabled=True, notes="no SMILES available")
 
-        import bblean
-
         if cfg.max_molecules is not None and len(smiles) > cfg.max_molecules:
             idx = self._rng.choice(len(smiles), size=cfg.max_molecules, replace=False)
             idx.sort()
@@ -577,172 +462,36 @@ class MoleculeDatasetAnalysis:
             size=cfg.fingerprint_size,
             workers=self.config.rdkit_n_workers,
         )
-        n_fps = int(fps.shape[0])
-
-        threshold, source, mean_isim, std_isim = resolve_bitbirch_threshold(cfg, fps)
-        log.info(
-            "BitBIRCH: threshold=%.3f (source=%s, mean_iSIM=%s, std=%s)",
-            threshold,
-            source,
-            f"{mean_isim:.3f}" if mean_isim is not None else "n/a",
-            f"{std_isim:.3f}" if std_isim is not None else "n/a",
-        )
-        tree = bblean.BitBirch(
-            threshold=threshold,
-            branching_factor=cfg.branching_factor,
-            merge_criterion=cfg.merge_criterion,
-            tolerance=cfg.tolerance,
-        )
-        tree.fit(fps)
-        clusters = tree.get_cluster_mol_ids()
-        sizes = np.asarray([len(c) for c in clusters], dtype=np.int64)
-
-        # row -> cluster id assignment (row indices into the fps array)
-        row_cluster = np.full(n_fps, -1, dtype=np.int64)
-        for cid, rows in enumerate(clusters):
-            row_cluster[np.asarray(rows, dtype=np.int64)] = cid
-
-        # Cluster-size histogram figure
-        fig, ax = plt.subplots(figsize=(8, 4))
-        if sizes.size:
-            ax.hist(
-                sizes, bins=min(50, max(5, int(np.sqrt(sizes.size)))), color="#8172b3"
-            )
-            ax.set_yscale("log")
-        ax.set_xlabel("Molecules per cluster")
-        ax.set_ylabel("Cluster count (log)")
-        ax.set_title(
-            f"BitBIRCH clusters (n={sizes.size}, threshold={threshold:.2f}"
-            f" [{source}], Morgan radius {cfg.radius})"
-        )
-        fig.tight_layout()
+        clusters = fit_bitbirch(fps, cfg)
         self.results.append(
-            FigureResult(figure=fig, file_name=Path("bitbirch_cluster_sizes.png"))
-        )
-
-        umap_summary = self._bitbirch_umap(fps, row_cluster, sizes)
-
-        return BitBirchSummary(
-            enabled=True,
-            n_input_smiles=len(smi_subset),
-            n_fingerprints=n_fps,
-            n_clusters=int(sizes.size),
-            singleton_clusters=int((sizes == 1).sum()),
-            largest_cluster=int(sizes.max()) if sizes.size else 0,
-            cluster_size_distribution=DistributionStats.from_array(sizes),
-            threshold_used=threshold,
-            threshold_source=source,
-            mean_isim=mean_isim,
-            std_isim=std_isim,
-            umap=umap_summary,
-        )
-
-    def _bitbirch_umap(
-        self,
-        fps: np.ndarray,
-        row_cluster: np.ndarray,
-        cluster_sizes: np.ndarray,
-    ) -> BitBirchUmapSummary:
-        """Project BitBIRCH fingerprints to 2D with UMAP and datashade by cluster id.
-
-        - Stratified subsample: keep all members of the top-N largest clusters,
-          fill the remaining budget uniformly from the rest. This guarantees the
-          biggest clusters are visible even when sample_size << n_fps.
-        - UMAP runs on unpacked binary features with Jaccard distance by default.
-        - Datashader renders categorical colors for top-N; everything else is grey.
-        """
-        cfg = self.config.bitbirch.umap
-        if not cfg.enabled:
-            return BitBirchUmapSummary(enabled=False, notes="disabled by config")
-
-        n_fps = int(fps.shape[0])
-        if n_fps == 0:
-            return BitBirchUmapSummary(enabled=True, notes="no fingerprints")
-
-        top_n = min(cfg.top_clusters_colored, int(cluster_sizes.size))
-        top_cids = (
-            np.argsort(cluster_sizes)[-top_n:][::-1]
-            if top_n > 0
-            else np.asarray([], dtype=np.int64)
-        )
-        top_set = set(int(c) for c in top_cids)
-
-        cap = cfg.sample_size if cfg.sample_size is not None else n_fps
-        cap = min(cap, n_fps)
-
-        top_rows = (
-            np.where(np.isin(row_cluster, np.asarray(list(top_set), dtype=np.int64)))[0]
-            if top_set
-            else np.asarray([], dtype=np.int64)
-        )
-        # Cap top-cluster contribution to half of the budget to keep balance.
-        top_budget = min(top_rows.size, max(1, cap // 2))
-        if top_rows.size > top_budget:
-            top_rows = self._rng.choice(top_rows, size=top_budget, replace=False)
-        rest_rows = np.setdiff1d(np.arange(n_fps), top_rows, assume_unique=False)
-        rest_budget = max(0, cap - int(top_rows.size))
-        if rest_rows.size > rest_budget:
-            rest_rows = self._rng.choice(rest_rows, size=rest_budget, replace=False)
-        sample_rows = np.concatenate([top_rows, rest_rows]).astype(np.int64)
-        sample_rows.sort()
-
-        import bblean
-        import umap
-
-        n_features = self.config.bitbirch.fingerprint_size
-        unpacked = bblean.unpack_fingerprints(fps[sample_rows], n_features=n_features)
-
-        log.info(
-            "BitBIRCH UMAP: fitting %d points (n_neighbors=%d, metric=%s)",
-            sample_rows.size,
-            cfg.n_neighbors,
-            cfg.metric,
-        )
-        t0 = time.perf_counter()
-        try:
-            reducer = umap.UMAP(
-                n_components=2,
-                n_neighbors=cfg.n_neighbors,
-                min_dist=cfg.min_dist,
-                metric=cfg.metric,
-                random_state=cfg.random_state,
-            )
-            coords = reducer.fit_transform(unpacked.astype(np.float32, copy=False))
-        except Exception as exc:
-            return BitBirchUmapSummary(
-                enabled=True,
-                n_points=int(sample_rows.size),
-                notes=f"UMAP fit failed: {exc!r}",
-            )
-        elapsed = time.perf_counter() - t0
-
-        self._render_bitbirch_umap(
-            coords, row_cluster[sample_rows], top_cids, cfg.plot_size
-        )
-
-        # Save coords so users can re-render without refitting.
-        coords_path = Path("bitbirch_umap_coords.npz")
-        self.results.append(
-            ArrayResult(
-                file_name=coords_path,
-                arrays={
-                    "coords": coords.astype(np.float32),
-                    "cluster_id": row_cluster[sample_rows].astype(np.int64),
-                    "row_index": sample_rows.astype(np.int64),
-                    "top_cluster_ids": top_cids.astype(np.int64),
-                },
+            FigureResult(
+                figure=clusters.size_histogram(
+                    f"BitBIRCH clusters, Morgan radius {cfg.radius}"
+                ),
+                file_name=Path("bitbirch_cluster_sizes.png"),
             )
         )
-
-        return BitBirchUmapSummary(
-            enabled=True,
-            n_points=int(sample_rows.size),
-            n_neighbors=cfg.n_neighbors,
-            min_dist=cfg.min_dist,
-            metric=cfg.metric,
-            top_clusters_colored=int(top_n),
-            fit_seconds=float(elapsed),
+        fit, umap_summary = fit_umap(
+            fps, clusters, cfg.umap, cfg.fingerprint_size, self._rng
         )
+        if fit is not None:
+            cluster_ids = clusters.row_cluster[fit.rows]
+            self._render_bitbirch_umap(
+                fit.coordinates, cluster_ids, fit.top_cluster_ids, cfg.umap.plot_size
+            )
+            # Save coords so users can re-render without refitting.
+            self.results.append(
+                ArrayResult(
+                    file_name=Path("bitbirch_umap_coords.npz"),
+                    arrays={
+                        "coords": fit.coordinates.astype(np.float32),
+                        "cluster_id": cluster_ids.astype(np.int64),
+                        "row_index": fit.rows,
+                        "top_cluster_ids": fit.top_cluster_ids.astype(np.int64),
+                    },
+                )
+            )
+        return clusters.summary(len(smi_subset), umap_summary)
 
     def _render_bitbirch_umap(
         self,

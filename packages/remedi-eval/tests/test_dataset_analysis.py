@@ -38,7 +38,7 @@ def test_compute_descriptors_scaffold_keeps_chirality_like_the_splits():
 
 
 def test_distribution_stats_handles_empty():
-    from remedi_eval.dataset_analysis.analysis import DistributionStats
+    from remedi_eval.dataset_analysis.statistics import DistributionStats
 
     s = DistributionStats.from_array(np.asarray([], dtype=np.float64))
     assert s.n == 0

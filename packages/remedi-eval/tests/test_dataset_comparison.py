@@ -243,3 +243,25 @@ def test_nvmolkit_backend_needs_whole_fingerprint_words(tmp_path: Path) -> None:
                 "nn_tanimoto": {"backend": NvmolkitNnTanimotoBackend().model_dump()},
             }
         )
+
+
+def test_each_smiles_gets_its_scaffold_once(
+    two_small_datasets: tuple[Path, Path], tmp_path: Path, monkeypatch
+) -> None:
+    """Cluster purity and the scaffold overlap share one scaffold per SMILES."""
+    import remedi_eval.dataset_analysis.comparison as comparison_module
+
+    computed: list[tuple[str, bool]] = []
+    original = comparison_module._scaffold_of
+
+    def counting(smiles: str, generic: bool) -> str | None:
+        computed.append((smiles, generic))
+        return original(smiles, generic)
+
+    monkeypatch.setattr(comparison_module, "_scaffold_of", counting)
+    pretrain_path, eval_path = two_small_datasets
+    DatasetComparison(_make_config(pretrain_path, eval_path, tmp_path / "out")).run()
+    assert len(computed) == len(set(computed))
+    assert {smiles for smiles, generic in computed if not generic} == set(
+        PRETRAIN_SMILES + EVAL_SMILES
+    )

@@ -31,6 +31,7 @@ bitbirch:
   umap:
     enabled: true
     sample_size: null
+    sampling: uniform
     n_neighbors: 30
     min_dist: 0.1
     metric: jaccard
