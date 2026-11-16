@@ -930,7 +930,7 @@ def test_discovery_tells_bundles_from_datasets(tmp_path: Path) -> None:
     write_smiles_bundle(tmp_path, dataset_id="alpha")
     for root, dataset_id in [("", "omega"), ("", "beta"), ("nested", "too_deep")]:
         directory = write_smiles_bundle(tmp_path / root, dataset_id=dataset_id)
-        (directory / DATASET_CONFIG_FILENAME).write_text("contains_smiles: false\n")
+        (directory / DATASET_CONFIG_FILENAME).write_text("atom_chunk: 8192\n")
     (tmp_path / "config_only").mkdir()
     (tmp_path / "config_only" / DATASET_CONFIG_FILENAME).write_text("{}\n")
     (tmp_path / "status.yaml").write_text("n_tasks: 0\n")

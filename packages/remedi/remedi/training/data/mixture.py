@@ -305,12 +305,12 @@ class PretrainingData:
                 )
             opened.append(opened_parts)
 
-        def concatenate(parts: list[OpenedPart], positions: str) -> Dataset:
+        def concatenate(views: list[tuple[Dataset, np.ndarray]]) -> Dataset:
             return ConcatDataset(
                 [
-                    Subset(item.dataset, getattr(item, positions).tolist())
-                    for item in parts
-                    if len(getattr(item, positions))
+                    Subset(dataset, positions.tolist())
+                    for dataset, positions in views
+                    if len(positions)
                 ]
             )
 
@@ -320,13 +320,17 @@ class PretrainingData:
             with_validation = [p for p in parts if len(p.validation_positions)]
             if with_validation:
                 validation[component.name] = (
-                    concatenate(with_validation, "validation_positions"),
+                    concatenate(
+                        [(p.dataset, p.validation_positions) for p in with_validation]
+                    ),
                     np.concatenate(
                         [p.part.validation_atom_counts for p in with_validation]
                     ),
                 )
         return MixtureDatasets(
-            training=concatenate(everything, "train_positions"),
+            training=concatenate(
+                [(item.dataset, item.train_positions) for item in everything]
+            ),
             training_atom_counts=np.concatenate(
                 [item.part.train_atom_counts for item in everything]
             ),

@@ -55,11 +55,8 @@ def verify_dataset(dataset_path: Path, *, workers: int = 1) -> VerifyReport:
         report.problems.append("dataset.yaml declares no geometry_origin")
     report.problems += zarr_problems(dataset_path, bundle.spec, bundle.table)
     dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
-    try:
-        report.structures_sha256 = structures_sha256(dataset)
-        structures = read_packed_structures(dataset)
-    finally:
-        dataset.close()
+    report.structures_sha256 = structures_sha256(dataset)
+    structures = read_packed_structures(dataset)
     outputs = bundle.provenance.outputs
     recorded = None if outputs is None else outputs.structures_sha256
     if recorded != report.structures_sha256:

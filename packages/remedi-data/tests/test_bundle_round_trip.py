@@ -153,20 +153,17 @@ def test_the_zarr_matches_the_table_row_for_row(
     _, directory = round_trip
     table = read_bundle(directory).table
     dataset = MoleculeDataset.open_existing_dataset_from_dir(directory)
-    try:
-        assert np.array_equal(dataset.structure_ids[:], table["structure_id"])
-        assert np.array_equal(dataset.isomer_ids[:], table["stereoisomer_id"])
-        assert np.array_equal(dataset.molecule_ids[:], table["molecule_id"])
-        labels = table[list(LABELS)].to_numpy(dtype=np.float64)
-        present = ~np.isnan(labels)
-        assert np.array_equal(np.asarray(dataset.mask_system[:]).astype(bool), present)
-        targets = np.asarray(dataset.targets_system[:], dtype=np.float64)
-        np.testing.assert_allclose(targets[present], labels[present], rtol=1e-6)
-        assert np.asarray(dataset.split[:]).tolist() == [
-            SPLIT_CODES[value] for value in table["split"]
-        ]
-        frames = dataset.get_all_molecules()
-        assert len(frames) == len(table)
-        assert dataset.get_smiles_per_structure() == table["isomeric_smiles"].tolist()
-    finally:
-        dataset.close()
+    assert np.array_equal(dataset.structure_ids[:], table["structure_id"])
+    assert np.array_equal(dataset.isomer_ids[:], table["stereoisomer_id"])
+    assert np.array_equal(dataset.molecule_ids[:], table["molecule_id"])
+    labels = table[list(LABELS)].to_numpy(dtype=np.float64)
+    present = ~np.isnan(labels)
+    assert np.array_equal(np.asarray(dataset.mask_system[:]).astype(bool), present)
+    targets = np.asarray(dataset.targets_system[:], dtype=np.float64)
+    np.testing.assert_allclose(targets[present], labels[present], rtol=1e-6)
+    assert np.asarray(dataset.split[:]).tolist() == [
+        SPLIT_CODES[value] for value in table["split"]
+    ]
+    frames = dataset.get_all_molecules()
+    assert len(frames) == len(table)
+    assert dataset.get_smiles_per_structure() == table["isomeric_smiles"].tolist()

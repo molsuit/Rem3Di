@@ -211,19 +211,6 @@ class _LoadedDataset:
     kept_smiles: list[str]  # one per row of fps_packed (post skip_invalid)
 
 
-def _unique_smiles_from_dataset(ds: MoleculeDataset) -> list[str]:
-    store = ds.isomeric_smiles or ds.smiles
-    if store is None:
-        return []
-    seen: set[str] = set()
-    unique: list[str] = []
-    for s in store:
-        if s and s not in seen:
-            seen.add(s)
-            unique.append(s)
-    return unique
-
-
 # ---------- NN Tanimoto backends ----------
 
 
@@ -392,7 +379,7 @@ class DatasetComparison:
     def load_datasets(self) -> None:
         for entry in self._entries:
             ds = MoleculeDataset.open_existing_dataset_from_dir(entry.path)
-            smiles = _unique_smiles_from_dataset(ds)
+            smiles = ds.unique_smiles()
             if entry.max_molecules is not None and len(smiles) > entry.max_molecules:
                 idx = self._rng.choice(
                     len(smiles), size=entry.max_molecules, replace=False

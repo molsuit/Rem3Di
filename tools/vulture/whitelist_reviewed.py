@@ -23,8 +23,6 @@ _._run
 
 # --- Language and library hooks called by name ------------------------------------------------
 _._missing_  # enum lookup fallback (configuration/data_config.py)
-__getattr__  # module-level lazy imports (data_handling/dataset_creation/__init__.py)
-__dir__
 
 # --- Record fields written for the reports, read by humans and serialization --------------------
 # Dataclass fields of the ChiralCat preparer's audit records and Sample.
@@ -83,13 +81,3 @@ _.serialize  # latent_evaluation/runner.py
 # --- Public API without an in-repository caller -----------------------------------------------
 _.embed_atoms  # RemediCalculator: embed molecules that are not in a zarr
 registered_kinds  # remedi_eval.framework.plotting: lists the plotter registry
-
-# --- Old pretraining path, deleted with it in BENCHMARK_DATA_FORMAT.md §1.4 ---------------------
-_.concatenate_datasets  # remedi_data/dataset/dataset_concatenation.py
-_.concatenate_datasets_chunked
-LabeldDatasetConcatenation
-_.string_to_id  # remedi_data/dataset/smiles_storage.py
-_.verify_integrity
-TmqmGenerator  # data_handling/dataset_creation/generators/tmqm_generator.py
-_._structure_atom_span  # MoleculeDataset
-get_ase_atoms  # remedi_data/chemistry/data_utils.py

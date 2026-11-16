@@ -350,31 +350,34 @@ def write_small_dataset(
     return directory
 
 
-def write_dataset_with_smiles_stores(
+def write_synthetic_dataset(
     directory: Path, smiles: Sequence[str], structures_per_molecule: int = 1
 ) -> MoleculeDataset:
-    """A zarr dataset with the zarr SMILES stores, through ``ShardAlignedWriter``.
+    """A zarr of synthetic frames with a ``table.parquet`` naming their SMILES.
 
-    The layout the old pretraining path writes (no table files): every
-    structure is the same five-atom frame, ``structures_per_molecule`` copies
-    per SMILES, one SMILES line per molecule. The dataset is returned open;
-    call :meth:`MoleculeDataset.close` before reopening the path.
+    Every structure is the same five-atom frame (C, O, N, H, H), so atom and
+    heteroatom counts are known whatever the SMILES; ``structures_per_molecule``
+    copies per SMILES. The table holds ``structure_id``, ``molecule_id`` and
+    ``isomeric_smiles``, which is what the SMILES-based analyses read. It does
+    not satisfy the dataset invariants (the frames do not match the SMILES).
     """
-    config = DatasetConfig(atom_chunk=64, molecule_chunk=16, contains_smiles=True)
-    dataset = MoleculeDataset.create_empty_dataset(path=Path(directory), config=config)
+    directory = Path(directory)
+    config = DatasetConfig(atom_chunk=64, molecule_chunk=16)
+    dataset = MoleculeDataset.create_empty_dataset(path=directory, config=config)
     writer = ShardAlignedWriter(dataset)
 
     species = np.array([6, 8, 7, 1, 1], dtype=np.uint8)
     frame = np.arange(15, dtype=np.float32).reshape(5, 3)
     n_molecules = len(smiles)
     n_structures = n_molecules * structures_per_molecule
+    molecule_ids = np.repeat(
+        np.arange(n_molecules, dtype=np.int64), structures_per_molecule
+    )
     writer.append_batch(
         positions=np.tile(frame, (n_structures, 1)),
         atomic_numbers=np.tile(species, n_structures),
         batch_ptr_cumsum=np.arange(1, n_structures + 1, dtype=np.int64) * len(species),
-        molecule_ids=np.repeat(
-            np.arange(n_molecules, dtype=np.int64), structures_per_molecule
-        ),
+        molecule_ids=molecule_ids,
         stereoisomer_ids=np.zeros(n_structures, dtype=np.int64),
         total_charge=np.zeros(n_structures, dtype=np.float32),
         multiplicity=np.ones(n_structures, dtype=np.float32),
@@ -384,9 +387,15 @@ def write_dataset_with_smiles_stores(
         atom_masks=None,
     )
     writer.finalize()
-    for store in (dataset.smiles, dataset.isomeric_smiles):
-        if store is not None:
-            store.append_lines(list(smiles))
+    pd.DataFrame(
+        {
+            "structure_id": np.arange(n_structures, dtype=np.int64),
+            "molecule_id": molecule_ids,
+            "isomeric_smiles": np.repeat(
+                np.asarray(list(smiles), dtype=object), structures_per_molecule
+            ),
+        }
+    ).to_parquet(directory / "table.parquet", index=False)
     return dataset
 
 

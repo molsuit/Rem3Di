@@ -11,7 +11,7 @@ looser neighbourhood than the pretrain pool.
 Usage::
 
     uv run python scripts/dataset_creation/calibrate_bitbirch_threshold.py \\
-        --config configs/dataset_creation/dataset_comparison_pcqm100k.yaml
+        --config configs/dataset_creation/dataset_comparison_dev.yaml
 """
 
 from __future__ import annotations

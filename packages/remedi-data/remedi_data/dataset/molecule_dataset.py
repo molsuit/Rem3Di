@@ -11,7 +11,6 @@ from zarr.codecs import BloscCodec
 from zarr.storage import LocalStore
 
 from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.smiles_storage import SmilesStorage
 
 
 @dataclass(frozen=True)
@@ -91,11 +90,8 @@ class MoleculeDataset:
         structure_ids: Array,
         molecule_ids: Array,
         isomer_ids: Array,
-        bundle_row: Array | None,
         total_charge: Array,
         multiplicity: Array,
-        smiles: SmilesStorage | None,
-        isomeric_smiles: SmilesStorage | None,
         targets_system: Array | None,
         mask_system: Array | None,
         targets_atom: Array | None,
@@ -112,16 +108,9 @@ class MoleculeDataset:
         self.structure_ids = structure_ids
         self.molecule_ids = molecule_ids
         self.isomer_ids = isomer_ids
-        # Row index into the source bundle's ``table.parquet``. Written by the
-        # benchmark ingest; ``None`` for the pretraining zarrs on disk, which
-        # predate the array and are far too expensive to re-ingest.
-        self.bundle_row = bundle_row
 
         self.total_charge = total_charge
         self.multiplicity = multiplicity
-
-        self.smiles = smiles
-        self.isomeric_smiles = isomeric_smiles
 
         self.targets_system = targets_system
         self.mask_system = mask_system
@@ -194,23 +183,6 @@ class MoleculeDataset:
         mol_id = ids["molecule_id"]
         stereo_id = ids["stereoisomer_id"]
         struct_id = ids["structure_id"]
-        bundle_row = ids["bundle_row"] if "bundle_row" in ids else None
-
-        smiles = None
-        isomeric_smiles = None
-        smiles_text_path = os.path.join(path, "smiles.txt")
-        smiles_index_path = os.path.join(path, "smiles_idx")
-        isomeric_smiles_path = os.path.join(path, "isomeric_smiles.txt")
-        isomeric_index_path = os.path.join(path, "isomeric_smiles_idx")
-
-        if os.path.exists(smiles_text_path) and os.path.exists(smiles_index_path):
-            smiles = SmilesStorage(
-                text_path=smiles_text_path, index_path=smiles_index_path
-            )
-        if os.path.exists(isomeric_smiles_path) and os.path.exists(isomeric_index_path):
-            isomeric_smiles = SmilesStorage(
-                text_path=isomeric_smiles_path, index_path=isomeric_index_path
-            )
 
         config = pyd_yaml.parse_yaml_file_as(
             DatasetConfig, file=path / "dataset_config.yaml"
@@ -247,11 +219,8 @@ class MoleculeDataset:
             struct_id,
             mol_id,
             stereo_id,
-            bundle_row,
             total_charge,
             multiplicity,
-            smiles=smiles,
-            isomeric_smiles=isomeric_smiles,
             targets_system=targets_system,
             mask_system=mask_system,
             targets_atom=targets_atom,
@@ -260,33 +229,6 @@ class MoleculeDataset:
             config=config,
             root=path,
         )
-
-    def close(self) -> None:
-        """Release the SMILES file handles owned by this dataset."""
-        for store in (
-            getattr(self, "smiles", None),
-            getattr(self, "isomeric_smiles", None),
-        ):
-            if store is not None:
-                store.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_exception_info):
-        self.close()
-        return False
-
-    def __del__(self):
-        # Safety net for the case where close() / the context manager was not
-        # used (e.g. an owning script crashed).
-        self.close()
-
-    def _structure_atom_span(self, i: int) -> tuple[int, int]:
-        """Return [a0, a1) atom indices for structure i."""
-        a0 = int(self.ptr[i])
-        a1 = int(self.ptr[i + 1])
-        return a0, a1
 
     @classmethod
     def create_empty_dataset(cls, path: Path, config: DatasetConfig):
@@ -341,27 +283,6 @@ class MoleculeDataset:
             ids, "stereoisomer_id", (0,), config.molecule_chunk, m_cps, "i8"
         )
         struct_id = _mk(ids, "structure_id", (0,), config.molecule_chunk, m_cps, "i8")
-        # The row of the source bundle's ``table.parquet`` each structure came
-        # from, so a prediction can always be joined back to the bundle (§2.3).
-        bundle_row = _mk(ids, "bundle_row", (0,), config.molecule_chunk, m_cps, "i8")
-
-        smiles = None
-        isomeric_smiles = None
-        if config.contains_smiles:
-            smiles_text_path = os.path.join(path, "smiles.txt")
-            smiles_index_path = os.path.join(path, "smiles_idx")
-            isomeric_smiles_path = os.path.join(path, "isomeric_smiles.txt")
-            isomeric_index_path = os.path.join(path, "isomeric_smiles_idx")
-
-            SmilesStorage.create_files(smiles_text_path, smiles_index_path)
-            SmilesStorage.create_files(isomeric_smiles_path, isomeric_index_path)
-
-            smiles = SmilesStorage(
-                text_path=smiles_text_path, index_path=smiles_index_path
-            )
-            isomeric_smiles = SmilesStorage(
-                text_path=isomeric_smiles_path, index_path=isomeric_index_path
-            )
 
         targets_system = None
         mask_system = None
@@ -429,11 +350,8 @@ class MoleculeDataset:
             struct_id,
             mol_id,
             stereo_id,
-            bundle_row,
             total_charge,
             multiplicity,
-            smiles,
-            isomeric_smiles,
             targets_system,
             mask_system,
             targets_atom,
@@ -464,55 +382,40 @@ class MoleculeDataset:
     def __len__(self):
         return self.N_structures
 
-    def get_structure_ids_from_molecule_ids(self, molecule_ids: set):
-        if not molecule_ids:
-            return np.asarray([], dtype="i8")
-
-        mol_ids = np.asarray(self.molecule_ids[:])
-        mask = np.isin(mol_ids, list(molecule_ids))
-        struct_ids = np.asarray(self.structure_ids[:])
-        retrieved_structure_ids = struct_ids[mask]
-        return retrieved_structure_ids
-
-    @property
-    def bundle_rows_or_structure_ids(self) -> Array:
-        """``ids/bundle_row`` when the dataset has one, else ``ids/structure_id``.
-
-        Bundle-sourced zarrs carry the bundle row explicitly; the pretraining
-        zarrs do not, and there ``structure_id`` is the row index anyway.
-        """
-        return self.structure_ids if self.bundle_row is None else self.bundle_row
-
     def get_smiles_per_structure(self) -> list[str]:
-        """One isomeric SMILES per structure, in the dataset's structure order.
+        """One isomeric SMILES per structure, in structure order, from ``table.parquet``.
 
-        A benchmark zarr is ingested with ``contains_smiles=False`` and keeps
-        the bundle's ``table.parquet`` beside it, so the SMILES are read from
-        the table and gathered by ``ids/bundle_row``. Everything else reads the
-        zarr's own SMILES store.
+        Raises:
+            FileNotFoundError: if the dataset has no table.
+            KeyError: if the table has no ``isomeric_smiles`` (a corpus without
+                SMILES, such as tmQM).
         """
-        n_struct = self.N_structures
-        if n_struct == 0:
-            return []
+        import polars as pl
+
+        table = pl.read_parquet(self.path / "table.parquet")
+        if "isomeric_smiles" not in table.columns:
+            raise KeyError(f"{self.path} has no isomeric_smiles")
+        return table.sort("structure_id")["isomeric_smiles"].to_list()
+
+    def unique_smiles(self) -> list[str]:
+        """The distinct isomeric SMILES of ``table.parquet``, in first-seen order.
+
+        Empty for a dataset without SMILES (such as tmQM).
+        """
+        import polars as pl
 
         table_path = self.path / "table.parquet"
-        if table_path.is_file():
-            import pandas as pd
-
-            table = pd.read_parquet(table_path, columns=["isomeric_smiles"])
-            rows = np.asarray(
-                self.bundle_rows_or_structure_ids[:n_struct], dtype=np.int64
-            )
-            return table["isomeric_smiles"].to_numpy(dtype=object)[rows].tolist()
-
-        if self.isomeric_smiles is None:
+        if "isomeric_smiles" not in pl.read_parquet_schema(table_path):
             return []
-        # ``isomer_ids``, not ``molecule_ids``: the isomeric store is indexed by
-        # stereoisomer, and indexing it with the constitution id returned the
-        # wrong SMILES whenever a molecule had more than one stereoisomer.
-        isomer_ids = np.asarray(self.isomer_ids[:n_struct], dtype=np.int64)
-        smiles_array = np.asarray(self.isomeric_smiles.to_list(), dtype=object)
-        return smiles_array[isomer_ids].tolist()
+        smiles = pl.read_parquet(table_path, columns=["isomeric_smiles"])
+        present = pl.col("isomeric_smiles").is_not_null() & (
+            pl.col("isomeric_smiles") != ""
+        )
+        return (
+            smiles.filter(present)["isomeric_smiles"]
+            .unique(maintain_order=True)
+            .to_list()
+        )
 
     def get_all_molecules(self, N_molecules: int | None = None) -> list[Atoms]:
         n_struct = self.N_structures

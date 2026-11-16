@@ -39,7 +39,6 @@ def test_sharded_store_keeps_file_count_tiny(tmp_path: Path) -> None:
         molecule_chunk=4,
         atom_chunks_per_shard=64,
         molecule_chunks_per_shard=64,
-        contains_smiles=False,
     )
     root = tmp_path / "ds"
     ds = MoleculeDataset.create_empty_dataset(root, cfg)
@@ -95,7 +94,6 @@ def test_no_per_batch_read_modify_write(tmp_path: Path, monkeypatch) -> None:
         atom_chunks_per_shard=4,
         molecule_chunk=64,
         molecule_chunks_per_shard=64,
-        contains_smiles=False,
     )
     ds = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
     writer = ShardAlignedWriter(ds)
@@ -157,7 +155,6 @@ def test_all_buffered_until_shard_complete(tmp_path: Path, monkeypatch) -> None:
         atom_chunks_per_shard=64,
         molecule_chunk=64,
         molecule_chunks_per_shard=64,
-        contains_smiles=False,
     )
     ds = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
     writer = ShardAlignedWriter(ds)
@@ -188,19 +185,13 @@ if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
 
 
-def test_row_ids_default_to_the_shard_cursor(tmp_path: Path) -> None:
-    """A source that supplies no ids gets ``arange`` in both id arrays.
-
-    The pretraining corpora never carry a bundle row; ``ids/bundle_row`` must
-    still be dense and equal to ``ids/structure_id`` so anything reading
-    ``bundle_rows_or_structure_ids`` behaves identically on both kinds of zarr.
-    """
+def test_structure_ids_default_to_the_shard_cursor(tmp_path: Path) -> None:
+    """A source that supplies no ids gets ``arange``, continued across batches."""
     cfg = DatasetConfig(
         atom_chunk=8,
         molecule_chunk=4,
         atom_chunks_per_shard=4,
         molecule_chunks_per_shard=4,
-        contains_smiles=False,
     )
     dataset = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
     writer = ShardAlignedWriter(dataset)
@@ -209,27 +200,12 @@ def test_row_ids_default_to_the_shard_cursor(tmp_path: Path) -> None:
     append_carbon_structures(writer, n_molecules=7, atoms_per_molecule=3)
     writer.finalize()
 
-    expected = np.arange(12, dtype="i8")
-    np.testing.assert_array_equal(np.asarray(dataset.structure_ids[:]), expected)
-    assert dataset.bundle_row is not None
-    np.testing.assert_array_equal(np.asarray(dataset.bundle_row[:]), expected)
     np.testing.assert_array_equal(
-        np.asarray(dataset.bundle_rows_or_structure_ids[:]), expected
+        np.asarray(dataset.structure_ids[:]), np.arange(12, dtype="i8")
     )
 
 
-def test_explicit_row_ids_are_written_verbatim(tmp_path: Path) -> None:
-    """A bundle source's ids reach the zarr unchanged, including a gap."""
-    cfg = DatasetConfig(
-        atom_chunk=8,
-        molecule_chunk=4,
-        atom_chunks_per_shard=4,
-        molecule_chunks_per_shard=4,
-        contains_smiles=False,
-    )
-    dataset = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
-    writer = ShardAlignedWriter(dataset)
-    bundle_rows = np.array([3, 1, 4, 1, 5], dtype="i8")
+def _append_five(writer: ShardAlignedWriter, structure_ids: np.ndarray) -> None:
     writer.append_batch(
         positions=np.zeros((15, 3), dtype="f4"),
         atomic_numbers=np.full(15, 6, dtype="u1"),
@@ -242,15 +218,23 @@ def test_explicit_row_ids_are_written_verbatim(tmp_path: Path) -> None:
         system_masks=None,
         atom_targets=None,
         atom_masks=None,
-        structure_ids=np.arange(5, dtype="i8"),
-        bundle_rows=bundle_rows,
+        structure_ids=structure_ids,
     )
-    writer.finalize()
 
-    np.testing.assert_array_equal(np.asarray(dataset.bundle_row[:]), bundle_rows)
-    np.testing.assert_array_equal(
-        np.asarray(dataset.structure_ids[:]), np.arange(5, dtype="i8")
+
+def test_explicit_structure_ids_are_written_verbatim(tmp_path: Path) -> None:
+    cfg = DatasetConfig(
+        atom_chunk=8,
+        molecule_chunk=4,
+        atom_chunks_per_shard=4,
+        molecule_chunks_per_shard=4,
     )
+    dataset = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
+    writer = ShardAlignedWriter(dataset)
+    structure_ids = np.array([3, 1, 4, 1, 5], dtype="i8")
+    _append_five(writer, structure_ids)
+    writer.finalize()
+    np.testing.assert_array_equal(np.asarray(dataset.structure_ids[:]), structure_ids)
 
 
 def test_a_wrong_length_id_array_is_refused(tmp_path: Path) -> None:
@@ -259,23 +243,8 @@ def test_a_wrong_length_id_array_is_refused(tmp_path: Path) -> None:
         molecule_chunk=4,
         atom_chunks_per_shard=4,
         molecule_chunks_per_shard=4,
-        contains_smiles=False,
     )
     dataset = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
     writer = ShardAlignedWriter(dataset)
-
-    with pytest.raises(ValueError, match="bundle_rows must have length 5"):
-        writer.append_batch(
-            positions=np.zeros((15, 3), dtype="f4"),
-            atomic_numbers=np.full(15, 6, dtype="u1"),
-            batch_ptr_cumsum=np.arange(1, 6) * 3,
-            molecule_ids=np.arange(5),
-            stereoisomer_ids=np.arange(5),
-            total_charge=np.zeros(5, dtype="f4"),
-            multiplicity=np.ones(5, dtype="f4"),
-            system_targets=None,
-            system_masks=None,
-            atom_targets=None,
-            atom_masks=None,
-            bundle_rows=np.arange(4, dtype="i8"),
-        )
+    with pytest.raises(ValueError, match="structure_ids must have length 5"):
+        _append_five(writer, np.arange(4, dtype="i8"))

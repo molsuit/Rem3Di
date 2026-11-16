@@ -13,7 +13,7 @@ from remedi.data_handling.dataset_analysis import (
     MoleculeDatasetAnalysis,
     _compute_descriptors,
 )
-from remedi_data.testing import write_dataset_with_smiles_stores
+from remedi_data.testing import write_synthetic_dataset
 
 
 def test_compute_descriptors_valid_and_invalid():
@@ -44,7 +44,7 @@ def test_molecule_dataset_analysis_runs(tmp_path: Path):
         "NC(=O)c1ccncc1",
         "C[C@H](N)C(=O)O",
     ]
-    dataset = write_dataset_with_smiles_stores(
+    dataset = write_synthetic_dataset(
         tmp_path / "ds", smiles, structures_per_molecule=3
     )
 
@@ -78,7 +78,7 @@ def test_molecule_dataset_analysis_runs(tmp_path: Path):
 
 def test_heteroatom_chunking_matches_naive(tmp_path: Path):
     smiles = ["CCO", "c1ccncc1", "CCN"]
-    dataset = write_dataset_with_smiles_stores(
+    dataset = write_synthetic_dataset(
         tmp_path / "ds", smiles, structures_per_molecule=2
     )
 
@@ -110,7 +110,7 @@ def test_bitbirch_runs_when_available(tmp_path: Path):
         "COc1ccc(CC(N)C(=O)O)cc1",
         "NC(=O)c1ccncc1",
     ]
-    dataset = write_dataset_with_smiles_stores(
+    dataset = write_synthetic_dataset(
         tmp_path / "ds", smiles, structures_per_molecule=1
     )
 
@@ -168,7 +168,7 @@ def test_bitbirch_umap_projection_runs(tmp_path: Path):
     ]
     smiles = seed_smiles * 4  # 80 entries; UMAP handles this fine
     rng.shuffle(smiles)
-    dataset = write_dataset_with_smiles_stores(
+    dataset = write_synthetic_dataset(
         tmp_path / "ds", smiles, structures_per_molecule=1
     )
 

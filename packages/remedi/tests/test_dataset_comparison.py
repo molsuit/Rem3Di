@@ -18,12 +18,12 @@ from remedi.data_handling.dataset_comparison import (
     DatasetComparison,
     DatasetComparisonSummary,
 )
-from remedi_data.testing import write_dataset_with_smiles_stores
+from remedi_data.testing import write_synthetic_dataset
 
 
-def _written_and_closed(directory: Path, smiles: list[str]) -> Path:
-    """Write a dataset and close it; the comparison reopens the path itself."""
-    write_dataset_with_smiles_stores(directory, smiles).close()
+def _written(directory: Path, smiles: list[str]) -> Path:
+    """Write a dataset; the comparison reopens the path itself."""
+    write_synthetic_dataset(directory, smiles)
     return directory
 
 
@@ -57,8 +57,8 @@ EVAL_SMILES = [
 
 @pytest.fixture
 def two_small_datasets(tmp_path: Path) -> tuple[Path, Path]:
-    a = _written_and_closed(tmp_path / "ds_pretrain", PRETRAIN_SMILES)
-    b = _written_and_closed(tmp_path / "ds_eval", EVAL_SMILES)
+    a = _written(tmp_path / "ds_pretrain", PRETRAIN_SMILES)
+    b = _written(tmp_path / "ds_eval", EVAL_SMILES)
     return a, b
 
 

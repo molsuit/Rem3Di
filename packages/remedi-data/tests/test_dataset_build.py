@@ -330,26 +330,20 @@ def test_write_dataset_writes_a_zarr_and_the_three_files(
     assert written.outputs is not None
     assert structures_identity(directory) == written.outputs.structures_sha256
     dataset = MoleculeDataset.open_existing_dataset_from_dir(directory)
-    try:
-        assert written.outputs.structures_sha256 == structures_sha256(dataset)
-        assert dataset.N_structures == 6
-        assert dataset.config.contains_smiles is False
-        assert dataset.config.tasks is not None
-        assert [column.name for column in dataset.config.tasks.system_cols] == [
-            "activity",
-            "logp",
-        ]
-        for atoms, expected in zip(
-            dataset.get_all_molecules(), expanded.structures, strict=True
-        ):
-            assert list(atoms.get_atomic_numbers()) == list(
-                expected.get_atomic_numbers()
-            )
-            np.testing.assert_allclose(
-                atoms.get_positions(), expected.get_positions(), atol=1e-5
-            )
-    finally:
-        dataset.close()
+    assert written.outputs.structures_sha256 == structures_sha256(dataset)
+    assert dataset.N_structures == 6
+    assert dataset.config.tasks is not None
+    assert [column.name for column in dataset.config.tasks.system_cols] == [
+        "activity",
+        "logp",
+    ]
+    for atoms, expected in zip(
+        dataset.get_all_molecules(), expanded.structures, strict=True
+    ):
+        assert list(atoms.get_atomic_numbers()) == list(expected.get_atomic_numbers())
+        np.testing.assert_allclose(
+            atoms.get_positions(), expected.get_positions(), atol=1e-5
+        )
 
 
 def reflected(positions: np.ndarray) -> np.ndarray:
@@ -490,10 +484,7 @@ def test_a_labelled_corpus_without_evaluation_is_written_unassigned(
     write(expand(bundle, frames_for(bundle)), directory)
     assert read_bundle(directory).spec.evaluation is None
     dataset = MoleculeDataset.open_existing_dataset_from_dir(directory)
-    try:
-        assert set(np.asarray(dataset.split[:]).tolist()) == {Split.unassigned.value}
-    finally:
-        dataset.close()
+    assert set(np.asarray(dataset.split[:]).tolist()) == {Split.unassigned.value}
     assert verify_dataset(directory).problems == []
 
 
@@ -615,10 +606,7 @@ def test_build_datasets_builds_and_verifies_every_bundle(tmp_path: Path) -> None
     molecule_dataset = MoleculeDataset.open_existing_dataset_from_dir(
         zarr_root / "second"
     )
-    try:
-        total_charge = np.asarray(molecule_dataset.total_charge[:]).tolist()
-    finally:
-        molecule_dataset.close()
+    total_charge = np.asarray(molecule_dataset.total_charge[:]).tolist()
     assert total_charge == charged["total_charge"].tolist()
     assert 1.0 in total_charge
 

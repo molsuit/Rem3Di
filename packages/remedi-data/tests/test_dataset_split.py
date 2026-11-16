@@ -35,7 +35,6 @@ def _task_config() -> DatasetConfig:
         molecule_chunk=4,
         atom_chunks_per_shard=4,
         molecule_chunks_per_shard=4,
-        contains_smiles=False,
         tasks=TaskSet.from_list(
             [
                 TaskConfig(
@@ -52,7 +51,6 @@ def test_split_array_absent_without_tasks(tmp_path: Path) -> None:
     cfg = DatasetConfig(
         atom_chunk=8,
         molecule_chunk=4,
-        contains_smiles=False,
     )
     ds = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
     assert ds.split is None

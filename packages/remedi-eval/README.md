@@ -58,7 +58,7 @@ bash scripts/dataset_download/download_geomdrugs.sh ./raw_datasets
 ```
 
 ## Generating a MoleculeDataset for Training
-TL;DR: We generate molecular datasets containing molecular structures and their mace descriptors from various sources, examples can be found in ```scripts/dataset_creation```.
+TL;DR: a preparer writes each corpus once as a dataset (`scripts/dataset_creation/prepare_structures.py`), subsets of it are selections (`scripts/dataset_creation/select_structures.py`), and a pretraining config names a mixture of datasets and selections (`configs/training/mixture_smoke/` has two examples).
 
 
 ### Dataset Overview
@@ -90,10 +90,10 @@ from remedi.latent_evaluation.descriptor_embedding import (
 )
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
-    pos_emb_getitem,
+    atoms_getitem,
 )
 
-ds = TrainingMoleculeDataset(training_config.dataset_path, get_item=pos_emb_getitem)
+ds = TrainingMoleculeDataset(dataset_path, get_item=atoms_getitem)
 model = EncoderOnlyArchitectureConfig.from_directory(model_dir).build()
 model.encoder.load_state_dict(torch.load(f"{model_dir}/encoder.pth"))
 model.preprocessor.atomic_preprocessor.load_state_dict(

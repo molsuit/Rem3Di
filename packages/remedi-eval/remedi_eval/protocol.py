@@ -142,15 +142,15 @@ def read_partition(
 ) -> Partition:
     """The train / valid / test structure ids of one split column.
 
-    The split is read by name from the ``table.parquet`` beside the zarr and
-    gathered onto the zarr's rows through ``ids/bundle_row``, so any of the
-    bundle's split columns can be scored, not just the one materialised into
-    ``tasks/split``.
+    The split is read by name from the ``table.parquet`` beside the zarr, whose
+    row ``i`` is structure ``i`` (invariant 1), so any of the dataset's split
+    columns can be scored, not just the one materialised into ``tasks/split``.
 
     Raises:
         ValueError: if the dataset carries no table, if ``split_column`` is not
             one of its columns, if its ``structure_id`` column is not the row
-            index, or if a split value is not a known split name.
+            index or does not match the zarr, or if a split value is not a known
+            split name.
     """
     dataset_dir = Path(dataset_dir)
     n_structures = dataset.N_structures
@@ -176,10 +176,12 @@ def read_partition(
             f"{dataset_dir / TABLE_FILENAME} violates invariant 1: structure_id is not "
             "the row index, so predictions cannot be joined back to it"
         )
-    rows = np.asarray(
-        dataset.bundle_rows_or_structure_ids[:n_structures], dtype=np.int64
-    )
-    codes = split_codes_from_names(table[split_column].to_numpy(dtype=object)[rows])
+    if len(table) != n_structures:
+        raise ValueError(
+            f"{dataset_dir / TABLE_FILENAME} has {len(table)} rows for "
+            f"{n_structures} structures in the zarr"
+        )
+    codes = split_codes_from_names(table[split_column].to_numpy(dtype=object))
     return Partition(
         split_column=split_column,
         train=np.flatnonzero(codes == Split.train.value),

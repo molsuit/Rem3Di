@@ -127,7 +127,7 @@ def test_one_job_is_submitted_per_config(tmp_path: Path, monkeypatch) -> None:
     ]
     commands = []
     monkeypatch.setattr(
-        submit_job.subprocess, "run", lambda command, check: commands.append(command)
+        submit_job.subprocess, "run", lambda command, **_: commands.append(command)
     )
     monkeypatch.setattr(
         submit_job.sys, "argv", ["submit_job.py", *map(str, configs), "--group", "g"]

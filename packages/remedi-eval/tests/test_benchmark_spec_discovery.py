@@ -66,7 +66,7 @@ def write_zarr_dir(
             yaml.safe_dump(spec.model_dump(mode="json", exclude_none=True))
         )
     if with_dataset_config:
-        (directory / DATASET_CONFIG_FILENAME).write_text("contains_smiles: false\n")
+        (directory / DATASET_CONFIG_FILENAME).write_text("atom_chunk: 8192\n")
     return directory
 
 

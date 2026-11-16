@@ -4,7 +4,7 @@ import logging
 import os
 import time
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
@@ -280,13 +280,6 @@ def _timed(name: str, timings: dict[str, float]) -> Iterator[None]:
         log.info("%s took %.2fs", name, elapsed)
 
 
-def _iter_smiles(smiles_iter: Iterable[str]) -> Iterator[str]:
-    """Yield non-empty SMILES strings."""
-    for s in smiles_iter:
-        if s:
-            yield s
-
-
 def _bblean_available() -> bool:
     try:
         import bblean  # noqa: F401
@@ -392,21 +385,6 @@ class MoleculeDatasetAnalysis:
         return out
 
     # ----- SMILES / RDKit metrics -----
-
-    def _unique_smiles(self) -> list[str]:
-        """Return deduplicated isomeric SMILES (one per molecule_id)."""
-        store = self.dataset.isomeric_smiles
-        if store is None:
-            return []
-        smiles = list(_iter_smiles(store))
-        # Dedup while preserving order.
-        seen: set[str] = set()
-        unique: list[str] = []
-        for s in smiles:
-            if s not in seen:
-                seen.add(s)
-                unique.append(s)
-        return unique
 
     def _sample_smiles(self, smiles: list[str]) -> list[str]:
         cap = self.config.rdkit_subsample
@@ -952,10 +930,8 @@ class MoleculeDatasetAnalysis:
         ro5_pass_fraction: float | None = None
         bb_summary: BitBirchSummary | None = None
 
-        unique_smiles: list[str] = []
-        if ds.isomeric_smiles is not None:
-            with _timed("collect_unique_smiles", timings):
-                unique_smiles = self._unique_smiles()
+        with _timed("collect_unique_smiles", timings):
+            unique_smiles = ds.unique_smiles()
             log.info("Collected %d unique SMILES", len(unique_smiles))
 
         if unique_smiles:
