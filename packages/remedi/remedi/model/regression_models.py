@@ -9,11 +9,11 @@ from remedi.configuration.architecture_config import (
     RegressionHeadConfig,
 )
 from remedi.configuration.data_config import LabelScalingType
-from remedi.data_handling.sample import Sample
 from remedi.model.model_output import ModelOutput
 from remedi.model.molecular_descriptor import MolecularDescriptor
 from remedi.model.pair_encoder import TransformerPairEncoder
 from remedi.model.preprocessing.preprocessing import Preprocessor
+from remedi.training.data.sample import Sample
 
 
 class ResidualBlock(nn.Module):

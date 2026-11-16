@@ -4,21 +4,19 @@ from pathlib import Path
 
 import pytest
 
-from remedi.configuration.dataset_analysis_config import (
+from remedi_data.testing import write_synthetic_dataset
+from remedi_eval.dataset_analysis.comparison import (
+    DatasetComparison,
+    DatasetComparisonSummary,
+)
+from remedi_eval.dataset_analysis.config import (
     BitBirchConfig,
     BitBirchUmapConfig,
-)
-from remedi.configuration.dataset_comparison_config import (
     DatasetComparisonConfig,
     DatasetEntry,
     NnTanimotoConfig,
     ScaffoldOverlapConfig,
 )
-from remedi.data_handling.dataset_comparison import (
-    DatasetComparison,
-    DatasetComparisonSummary,
-)
-from remedi_data.testing import write_synthetic_dataset
 
 
 def _written(directory: Path, smiles: list[str]) -> Path:

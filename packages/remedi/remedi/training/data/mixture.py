@@ -34,7 +34,7 @@ from ase.data import atomic_numbers as atomic_number_of_symbol
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag
 from torch.utils.data import ConcatDataset, Dataset, Subset
 
-from remedi.data_handling.dataset.training_dataset import (
+from remedi.training.data.training_dataset import (
     GetItemFn,
     TrainingMoleculeDataset,
 )

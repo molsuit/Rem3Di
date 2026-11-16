@@ -44,16 +44,16 @@ from remedi.configuration.architecture_config import (
     RegressionArchitectureConfig,
 )
 from remedi.configuration.training_config import ClassifierTrainingConfig
-from remedi.data_handling.dataset.training_dataset import (
-    TrainingMoleculeDataset,
-    make_supervised_getitem,
-)
-from remedi.data_handling.sample import yield_molecules_supervised_collate_fn
 from remedi.training.classification_training import (
     FocalLoss,
     inverse_frequency_alpha,
 )
+from remedi.training.data.sample import yield_molecules_supervised_collate_fn
 from remedi.training.data.samplers import lengths_from_ptr
+from remedi.training.data.training_dataset import (
+    TrainingMoleculeDataset,
+    make_supervised_getitem,
+)
 from remedi.training.telemetry import TrainingTelemetry
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import Split

@@ -4,10 +4,10 @@ from ase import Atoms
 from mace.calculators import MACECalculator
 from torch import nn
 
-from remedi.data_handling.sample import Sample
 from remedi.model.model_output import ModelOutput
 from remedi.model.pair_encoder import TransformerPairEncoder
 from remedi.model.preprocessing.preprocessing import Preprocessor
+from remedi.training.data.sample import Sample
 from remedi.utils.model_utils import get_mace_calculator_irrep_signature
 
 

@@ -23,7 +23,7 @@ import numpy as np
 import torch
 import yaml
 
-from remedi.data_handling.molecule_clustering import (
+from remedi.training.data.molecule_clustering import (
     butina,
     cluster_size_summary,
     molecule_smiles,

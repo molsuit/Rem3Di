@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from remedi.configuration.dataset_analysis_config import (
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_eval.dataset_analysis.analysis import MoleculeDatasetAnalysis
+from remedi_eval.dataset_analysis.config import (
     BitBirchConfig,
     MoleculeDatasetAnalysisConfig,
 )
-from remedi.data_handling.dataset_analysis import MoleculeDatasetAnalysis
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 dataset_dir = Path("/path/to/datasets/qm9")
 

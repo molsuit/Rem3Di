@@ -1,7 +1,6 @@
 import torch.nn as nn
 
 from remedi.configuration.architecture_config import DecoderConfig
-from remedi.data_handling.sample import PreprocessedSample
 from remedi.model.molecular_descriptor import MolecularDescriptor
 from remedi.model.multihead_self_attention import MultiHeadCrossAttention
 from remedi.model.pair_biased_attention import (
@@ -9,6 +8,7 @@ from remedi.model.pair_biased_attention import (
     PairOuterProdUpdate,
 )
 from remedi.model.pair_block import FeedForward, PairFFN
+from remedi.training.data.sample import PreprocessedSample
 
 
 class DecoderPairBlock(nn.Module):

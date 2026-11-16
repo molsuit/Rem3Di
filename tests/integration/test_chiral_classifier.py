@@ -23,14 +23,14 @@ from remedi.configuration.architecture_config import (
     RegressionArchitectureConfig,
     RegressionHeadConfig,
 )
-from remedi.data_handling.sample import (
-    Sample,
-    yield_molecules_supervised_collate_fn,
-)
 from remedi.model.regression_models import RegressionHead
 from remedi.training.classification_training import (
     FocalLoss,
     inverse_frequency_alpha,
+)
+from remedi.training.data.sample import (
+    Sample,
+    yield_molecules_supervised_collate_fn,
 )
 
 

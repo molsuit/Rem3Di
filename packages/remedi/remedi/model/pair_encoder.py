@@ -1,9 +1,9 @@
 from torch import nn
 
 from remedi.configuration.architecture_config import EncoderConfig
-from remedi.data_handling.sample import PreprocessedSample
 from remedi.model.molecular_descriptor import MolecularDescriptor
 from remedi.model.pair_block import PairBlock
+from remedi.training.data.sample import PreprocessedSample
 
 
 class TransformerPairEncoder(nn.Module):

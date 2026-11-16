@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pydantic_yaml
 
-from remedi.data_handling.molecule_clustering import (
+from remedi.training.data.molecule_clustering import (
     MoleculeClusteringBatchConfig,
     cluster_batch,
 )

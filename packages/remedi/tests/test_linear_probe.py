@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
+from remedi.training.data.sample import Sample, yield_molecules_collate_fn
 from remedi.training.linear_probe import LinearProbeMonitor, _ridge_predict
 
 

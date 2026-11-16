@@ -69,7 +69,7 @@ remove_equivariants
 get_pseudoscalars_indices
 _.insert_task_configs  # ArchitectureConfig
 to_yaml  # configuration/config_utils.py
-pretraining_padded_collate_fn  # data_handling/sample.py
+pretraining_padded_collate_fn  # training/data/sample.py
 paired_sample_collate_fn
 
 # --- Latent-space analysis helpers kept for future analyses -------------------------------------

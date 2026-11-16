@@ -21,11 +21,11 @@ from ase import Atoms
 from pydantic import BaseModel
 from torch.utils.data import DataLoader, Subset
 
-from remedi.data_handling.dataset.training_dataset import (
+from remedi.training.data.sample import Sample, yield_molecules_collate_fn
+from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
 from remedi_data.bundle import sha256_of_file
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_eval.descriptors.base import DescriptorCalculator

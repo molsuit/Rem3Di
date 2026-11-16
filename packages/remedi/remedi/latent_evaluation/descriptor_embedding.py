@@ -15,11 +15,11 @@ from collections.abc import Iterable
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from remedi.data_handling.sample import (
+from remedi.model.remedi_model import REM3DIModel
+from remedi.training.data.sample import (
     Sample,
     yield_molecules_collate_fn,
 )
-from remedi.model.remedi_model import REM3DIModel
 
 
 def evaluate_molecular_descriptor_on_dataset(

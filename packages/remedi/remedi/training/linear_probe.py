@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import torch
 
-from remedi.data_handling.sample import Sample
+from remedi.training.data.sample import Sample
 
 
 def _ridge_predict(

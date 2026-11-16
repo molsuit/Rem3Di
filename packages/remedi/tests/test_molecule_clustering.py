@@ -9,7 +9,7 @@ import polars as pl
 import pytest
 import torch
 
-from remedi.data_handling.molecule_clustering import (
+from remedi.training.data.molecule_clustering import (
     MoleculeClusteringConfig,
     cluster_molecules,
     cluster_size_summary,
@@ -121,7 +121,7 @@ def test_cluster_molecules_writes_a_file_selections_can_draw_from(
 def test_the_production_clustering_config_parses() -> None:
     import pydantic_yaml
 
-    from remedi.data_handling.molecule_clustering import MoleculeClusteringBatchConfig
+    from remedi.training.data.molecule_clustering import MoleculeClusteringBatchConfig
 
     config = pydantic_yaml.parse_yaml_file_as(
         MoleculeClusteringBatchConfig,

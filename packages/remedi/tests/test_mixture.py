@@ -16,11 +16,6 @@ from remedi.configuration.training_config import (
     ClassifierTrainingConfig,
     PretrainingConfig,
 )
-from remedi.data_handling.dataset.training_dataset import (
-    TrainingMoleculeDataset,
-    atoms_getitem,
-)
-from remedi.data_handling.sample import yield_molecules_collate_fn
 from remedi.training.data.mixture import (
     RECORD_NAME,
     DatasetComponent,
@@ -30,6 +25,11 @@ from remedi.training.data.mixture import (
     PretrainingDataConfig,
     _check_domain,
     resolve_mixture,
+)
+from remedi.training.data.sample import yield_molecules_collate_fn
+from remedi.training.data.training_dataset import (
+    TrainingMoleculeDataset,
+    atoms_getitem,
 )
 from remedi_data.bundle import LabelColumn
 from remedi_data.dataset.tasks import TaskType

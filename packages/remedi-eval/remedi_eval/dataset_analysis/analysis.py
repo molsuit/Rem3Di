@@ -19,15 +19,15 @@ from rdkit import Chem, RDLogger
 from rdkit.Chem import rdMolDescriptors as rdMD
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
-from remedi.configuration.dataset_analysis_config import (
-    BitBirchConfig,
-    MoleculeDatasetAnalysisConfig,
-)
 from remedi_data.chemistry.physchem import DESCRIPTORS_2D
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import (
     EvalResult,
     PydanticResult,
+)
+from remedi_eval.dataset_analysis.config import (
+    BitBirchConfig,
+    MoleculeDatasetAnalysisConfig,
 )
 from remedi_eval.results import FigureResult
 
@@ -600,7 +600,7 @@ class MoleculeDatasetAnalysis:
         if not _bblean_available():
             return BitBirchSummary(
                 enabled=True,
-                notes="bblean not installed (install with `uv sync --extra cluster`)",
+                notes="bblean not installed",
             )
 
         import bblean  # local import keeps it optional

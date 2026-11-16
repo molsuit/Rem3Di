@@ -14,12 +14,12 @@ from remedi.configuration.architecture_config import (
     ArchitectureConfig,
 )
 from remedi.configuration.training_config import PretrainingConfig, ProbeConfig
-from remedi.data_handling.dataset.training_dataset import atoms_getitem
-from remedi.data_handling.sample import (
+from remedi.training.data.mixture import MixtureDatasets, resolve_mixture
+from remedi.training.data.sample import (
     PreprocessedSample,
     yield_molecules_collate_fn,
 )
-from remedi.training.data.mixture import MixtureDatasets, resolve_mixture
+from remedi.training.data.training_dataset import atoms_getitem
 from remedi.training.linear_probe import LinearProbeMonitor
 from remedi.training.noise_scheduler import ConstantSchedule, NoiseModule
 from remedi.training.pretraining import (

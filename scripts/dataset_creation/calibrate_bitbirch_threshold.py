@@ -23,10 +23,10 @@ from pathlib import Path
 import numpy as np
 import pydantic_yaml as pyd_yaml
 
-from remedi.configuration.dataset_comparison_config import (
+from remedi_eval.dataset_analysis.comparison import DatasetComparison
+from remedi_eval.dataset_analysis.config import (
     DatasetComparisonConfig,
 )
-from remedi.data_handling.dataset_comparison import DatasetComparison
 
 DEFAULT_FACTORS: tuple[float, ...] = (1.0, 2.0, 3.0, 4.0, 5.0)
 

@@ -22,7 +22,7 @@ from ase import Atoms
 from ase.build import molecule
 
 from remedi.configuration.mace_config import MaceConfig
-from remedi.data_handling.sample import Sample
+from remedi.training.data.sample import Sample
 
 
 def _sample_from_atoms(atoms: Atoms, device: torch.device) -> Sample:

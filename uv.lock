@@ -847,11 +847,11 @@ wheels = [
 
 [[package]]
 name = "configargparse"
-version = "1.9.0"
+version = "1.10.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/bc/d9/c591a80cf3335de7820c6762f8ee9298a43da5319803d319e16657b6fdf2/configargparse-1.9.0.tar.gz", hash = "sha256:48d9c22affe4ac419b4dd0691fa929d759e1f99574be41826785f2dbf3da63a5", size = 83875, upload-time = "2026-10-27T23:44:25.518Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/f0/ed6480f205619957357b29c60c0858220f1e9e2bfd742069bcb9f71287c4/configargparse-1.10.0.tar.gz", hash = "sha256:6c03a8cc3526af60c13d7fb31dea35f25b79d16d1e4ef33cbc16a037bfe7ceca", size = 103927, upload-time = "2026-11-16T14:23:19.457Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bd/de/f7fe2171f2b650ef7dd455c4c7f6dbaf53cc942430a2e0ff6b2450e728b5/configargparse-1.9.0-py3-none-any.whl", hash = "sha256:e4ecc54d821ca97c43e6152403f40e158aff79d809c3447746fa92b136dc1e31", size = 37381, upload-time = "2026-10-27T23:44:24.04Z" },
+    { url = "https://files.pythonhosted.org/packages/46/74/f5488eba5454eab1113480ab4b0aaedd50dad0e155822655824ff54a5fcd/configargparse-1.10.0-py3-none-any.whl", hash = "sha256:111cee60a789acac1ca6d3d0a4317a9c147a766214b41cbcf4d3079cb2f97e86", size = 48988, upload-time = "2026-11-16T14:23:18.096Z" },
 ]
 
 [[package]]
@@ -5437,9 +5437,7 @@ version = "0.1.1"
 source = { editable = "packages/remedi" }
 dependencies = [
     { name = "ase" },
-    { name = "bblean" },
     { name = "chemiscope" },
-    { name = "datashader" },
     { name = "matplotlib" },
     { name = "pydantic" },
     { name = "pydantic-yaml" },
@@ -5463,8 +5461,7 @@ cuda = [
     { name = "cuequivariance-ops-torch-cu13" },
     { name = "cuequivariance-torch" },
     { name = "mace-torch", extra = ["polar"] },
-    { name = "nvidia-cuda-runtime-cu12" },
-    { name = "nvmolkit" },
+    { name = "remedi-eval", extra = ["cuda"] },
     { name = "torch" },
     { name = "torch-sim-atomistic" },
 ]
@@ -5472,16 +5469,12 @@ cuda = [
 [package.metadata]
 requires-dist = [
     { name = "ase", specifier = ">=3.24.0" },
-    { name = "bblean", specifier = ">=0.10.3" },
     { name = "chemiscope", specifier = ">=1.0.3" },
     { name = "cuequivariance", marker = "extra == 'cuda'", specifier = "==0.13.0" },
     { name = "cuequivariance-ops-torch-cu13", marker = "extra == 'cuda'", specifier = "==0.13.0" },
     { name = "cuequivariance-torch", marker = "extra == 'cuda'", specifier = "==0.13.0" },
-    { name = "datashader", specifier = ">=0.19.0" },
     { name = "mace-torch", extras = ["polar"], marker = "extra == 'cpu'", specifier = ">=0.3.17" },
     { name = "matplotlib" },
-    { name = "nvidia-cuda-runtime-cu12", marker = "extra == 'cuda'", specifier = ">=12.8" },
-    { name = "nvmolkit", marker = "extra == 'cuda'", specifier = ">=0.7.0" },
     { name = "pydantic" },
     { name = "pydantic-yaml" },
     { name = "pymatgen", specifier = ">=2026.3.23" },
@@ -5489,6 +5482,7 @@ requires-dist = [
     { name = "remedi", extras = ["cpu"], marker = "extra == 'cuda'" },
     { name = "remedi-data", editable = "packages/remedi-data" },
     { name = "remedi-eval", editable = "packages/remedi-eval" },
+    { name = "remedi-eval", extras = ["cuda"], marker = "extra == 'cuda'", editable = "packages/remedi-eval" },
     { name = "scikit-learn" },
     { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.15.0", index = "https://download.pytorch.org/whl/cu132" },
     { name = "torch-sim-atomistic", marker = "extra == 'cpu'", git = "https://github.com/TorchSim/torch-sim.git?branch=main" },
@@ -5533,6 +5527,8 @@ name = "remedi-eval"
 version = "0.1.1"
 source = { editable = "packages/remedi-eval" }
 dependencies = [
+    { name = "bblean" },
+    { name = "datashader" },
     { name = "lightgbm" },
     { name = "matplotlib" },
     { name = "molfeat", version = "0.11.0", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'" },
@@ -5545,14 +5541,25 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "torch" },
+    { name = "umap-learn" },
+]
+
+[package.optional-dependencies]
+cuda = [
+    { name = "nvidia-cuda-runtime-cu12" },
+    { name = "nvmolkit" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "bblean", specifier = ">=0.10.3" },
+    { name = "datashader", specifier = ">=0.19.0" },
     { name = "lightgbm", specifier = ">=4.6.0" },
     { name = "matplotlib" },
     { name = "molfeat" },
     { name = "numpy" },
+    { name = "nvidia-cuda-runtime-cu12", marker = "extra == 'cuda'", specifier = ">=12.8" },
+    { name = "nvmolkit", marker = "extra == 'cuda'", specifier = ">=0.7.0" },
     { name = "pandas" },
     { name = "pydantic" },
     { name = "pydantic-yaml" },
@@ -5560,7 +5567,9 @@ requires-dist = [
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "torch", specifier = ">=2.15.0", index = "https://download.pytorch.org/whl/cu132" },
+    { name = "umap-learn" },
 ]
+provides-extras = ["cuda"]
 
 [[package]]
 name = "remedi-prepare-moleculenet"

@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 
-from remedi.data_handling.sample import Sample
 from remedi.model.model_output import ModelOutput
+from remedi.training.data.sample import Sample
 
 
 def multitask_masked_loss(predictions, labels, regression_mask):

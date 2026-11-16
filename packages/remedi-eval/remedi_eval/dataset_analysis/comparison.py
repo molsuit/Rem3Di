@@ -16,20 +16,20 @@ from pydantic import BaseModel, ConfigDict, Field
 from rdkit import Chem, RDLogger
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
-from remedi.configuration.dataset_comparison_config import (
-    DatasetComparisonConfig,
-    DatasetEntry,
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.runs.results import (
+    EvalResult,
+    PydanticResult,
 )
-from remedi.data_handling.dataset_analysis import (
+from remedi_eval.dataset_analysis.analysis import (
     BitBirchSummary,
     BitBirchUmapSummary,
     DistributionStats,
     resolve_bitbirch_threshold,
 )
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.runs.results import (
-    EvalResult,
-    PydanticResult,
+from remedi_eval.dataset_analysis.config import (
+    DatasetComparisonConfig,
+    DatasetEntry,
 )
 from remedi_eval.results import FigureResult
 

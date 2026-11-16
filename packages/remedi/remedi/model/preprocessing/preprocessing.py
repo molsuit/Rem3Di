@@ -5,13 +5,13 @@ from torch import nn
 from torch_sim.state import SimState
 from torch_sim.typing import SystemExtras
 
-from remedi.data_handling.sample import PreprocessedSample, Sample
 from remedi.model.preprocessing.atomic_descriptor_preprocessor import (
     AtomicDescriptorPreprocessor,
 )
 from remedi.model.preprocessing.geometric_preprocessor import (
     PairDistanceMatrixGeometricPreprocessor,
 )
+from remedi.training.data.sample import PreprocessedSample, Sample
 from remedi.training.data.samplers import quantize_pad_length
 
 _ATOMIC_MASS_TABLE = torch.as_tensor(atomic_masses, dtype=torch.float32)

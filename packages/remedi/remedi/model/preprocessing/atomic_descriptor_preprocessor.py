@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 
 from remedi.configuration.architecture_config import EmbeddingPreprocessConfig
-from remedi.data_handling.sample import PreprocessedSample
 from remedi.model.preprocessing.chiral_embedding_model import (
     ChiralEmbeddingModel,
 )
+from remedi.training.data.sample import PreprocessedSample
 from remedi.utils.model_utils import (
     get_equivariant_irreps,
     get_invariant_indices,

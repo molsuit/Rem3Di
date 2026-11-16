@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from remedi.data_handling.sample import Sample, sample_collate_fn
+from remedi.training.data.sample import Sample, sample_collate_fn
 
 
 @pytest.fixture

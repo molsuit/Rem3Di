@@ -34,11 +34,6 @@ from pydantic import BaseModel, ConfigDict
 from torch.utils.data import DataLoader
 
 from remedi.configuration.mace_config import MaceConfig
-from remedi.data_handling.dataset.training_dataset import (
-    TrainingMoleculeDataset,
-    atoms_getitem,
-)
-from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
 from remedi.latent_evaluation.mace_invariant_stats import (
     AnalysisReport,
     LayerSpec,
@@ -53,6 +48,11 @@ from remedi.latent_evaluation.mace_invariant_stats import (
 )
 from remedi.model.preprocessing.preprocessing import _sample_to_simstate
 from remedi.training.data import worker_init_fn
+from remedi.training.data.sample import Sample, yield_molecules_collate_fn
+from remedi.training.data.training_dataset import (
+    TrainingMoleculeDataset,
+    atoms_getitem,
+)
 from remedi.utils.model_utils import get_invariant_indices
 
 logger = logging.getLogger("mace_invariant_analysis")

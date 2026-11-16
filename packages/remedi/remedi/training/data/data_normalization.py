@@ -6,10 +6,10 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from remedi.configuration.data_config import LabelScalingType
-from remedi.data_handling.dataset.training_dataset import (
+from remedi.training.data.sample import Sample, normalization_collate_fn
+from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
 )
-from remedi.data_handling.sample import Sample, normalization_collate_fn
 from remedi.utils.model_utils import (
     get_invariant_indices,
 )

@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from remedi.data_handling.sample import Sample
+from remedi.training.data.sample import Sample
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 GetItemFn = Callable[["TrainingMoleculeDataset", int], Sample]

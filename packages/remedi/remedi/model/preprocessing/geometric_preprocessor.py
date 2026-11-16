@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from remedi.data_handling.sample import Sample
+from remedi.training.data.sample import Sample
 
 
 class RadialFilter(nn.Module):

@@ -38,10 +38,7 @@ dependencies = [
     "wandb",
     "umap-learn",
     "pymatgen>=2026.3.23",
-    "datashader>=0.19.0",
     "chemiscope>=1.0.3",
-    # BitBIRCH clustering in data_handling/dataset_{analysis,comparison}.py.
-    "bblean>=0.10.3",
     "matplotlib",
     "scikit-learn",
 ]
@@ -70,12 +67,11 @@ cpu = [
 ]
 cuda = [
     "remedi[cpu]",
+    # nvmolkit (molecule clustering, GPU Tanimoto) and its CUDA runtime pin.
+    "remedi-eval[cuda]",
     "cuequivariance-torch==0.13.0",
     "cuequivariance==0.13.0",
     "cuequivariance-ops-torch-cu13==0.13.0",
-    "nvmolkit>=0.7.0",
-    # nvmolkit declares cuda-runtime-cu12 >= 12.0 but calls cudaStreamGetDevice (CUDA 12.8+).
-    "nvidia-cuda-runtime-cu12>=12.8",
 ]
 
 [build-system]

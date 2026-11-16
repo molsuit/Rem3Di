@@ -3,17 +3,17 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from remedi.configuration.dataset_analysis_config import (
-    BitBirchConfig,
-    BitBirchUmapConfig,
-    MoleculeDatasetAnalysisConfig,
-)
-from remedi.data_handling.dataset_analysis import (
+from remedi_data.testing import write_synthetic_dataset
+from remedi_eval.dataset_analysis.analysis import (
     DatasetSummary,
     MoleculeDatasetAnalysis,
     _compute_descriptors,
 )
-from remedi_data.testing import write_synthetic_dataset
+from remedi_eval.dataset_analysis.config import (
+    BitBirchConfig,
+    BitBirchUmapConfig,
+    MoleculeDatasetAnalysisConfig,
+)
 
 
 def test_compute_descriptors_valid_and_invalid():
@@ -28,7 +28,7 @@ def test_compute_descriptors_valid_and_invalid():
 
 
 def test_distribution_stats_handles_empty():
-    from remedi.data_handling.dataset_analysis import DistributionStats
+    from remedi_eval.dataset_analysis.analysis import DistributionStats
 
     s = DistributionStats.from_array(np.asarray([], dtype=np.float64))
     assert s.n == 0

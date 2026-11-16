@@ -10,11 +10,11 @@ import torch
 from ase import Atoms
 from torch.utils.data import DataLoader
 
-from remedi.data_handling.dataset.training_dataset import (
+from remedi.training.data.sample import Sample, yield_molecules_collate_fn
+from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from remedi.data_handling.sample import Sample, yield_molecules_collate_fn
 from remedi_data.testing import (
     ACHIRAL_TEN_SMILES,
     embed_frame,
