@@ -1,12 +1,10 @@
 """Fault-tolerant eval-manifest runner.
 
-Builds the run's :class:`EvalContext`, hands the manifest's tasks to the shared
-:func:`remedi_data.runs.task_runner.run_tasks` loop, and always
-writes ``manifest.yaml`` (resolved config) and ``status.yaml`` (the
-:class:`RunReport`) so the run is self-describing even on failure.
-
-The per-task loop itself lives in :mod:`task_runner`, which the prepare
-manifest (``BENCHMARK_DATA_FORMAT.md`` §3) shares.
+Builds the run's :class:`EvalContext` and hands the manifest's tasks to the
+shared :func:`remedi_data.runs.task_runner.run_and_record`, which writes
+``manifest.yaml`` (resolved config) first and ``status.yaml`` (the
+:class:`RunReport`) after every task, so the run is self-describing even on
+failure.
 """
 
 from __future__ import annotations
@@ -14,13 +12,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from remedi_data.runs.task import TaskStatus
 from remedi_data.runs.task_runner import (
     RunReport,
-    make_run_report,
-    run_tasks,
+    run_and_record,
 )
-from remedi_data.yaml_io import write_model
 from remedi_eval.framework.config import EvalManifest
 from remedi_eval.framework.context import EvalContext
 from remedi_eval.framework.resources import ResourceCache
@@ -43,34 +38,6 @@ def run_manifest(manifest: EvalManifest) -> RunReport:
         keep_going=manifest.keep_going,
     )
 
-    # ``run_tasks`` re-raises on ``keep_going=False``; mirroring its statuses
-    # into this list keeps the outer ``finally`` writing the partial run rather
-    # than overwriting ``status.yaml`` with an empty one.
-    statuses: list[TaskStatus] = []
-
-    def flush(current: list[TaskStatus]) -> None:
-        statuses[:] = current
-        _write_run_files(out, manifest, statuses)
-
-    try:
-        run_tasks(
-            manifest.tasks,
-            ctx,
-            out,
-            keep_going=manifest.keep_going,
-            flush=flush,
-        )
-    finally:
-        _write_run_files(out, manifest, statuses)
-
-    report = make_run_report(len(manifest.tasks), statuses)
-    if report.n_failed:
-        logger.warning("%d/%d task(s) failed", report.n_failed, len(statuses))
-    return report
-
-
-def _write_run_files(
-    out: Path, manifest: EvalManifest, statuses: list[TaskStatus]
-) -> None:
-    write_model(out / "manifest.yaml", manifest)
-    write_model(out / "status.yaml", make_run_report(len(manifest.tasks), statuses))
+    return run_and_record(
+        [manifest.tasks], ctx, out, manifest, keep_going=manifest.keep_going
+    )

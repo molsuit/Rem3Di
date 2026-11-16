@@ -52,13 +52,10 @@ from remedi_data.chemistry.geometry import GeometryLimits, frame_geometry_violat
 from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.parallel import default_workers
 from remedi_data.runs.results import EvalResult, PydanticResult
-from remedi_data.runs.task import TaskStatus
 from remedi_data.runs.task_runner import (
     RunReport,
-    make_run_report,
-    run_tasks,
+    run_and_record,
 )
-from remedi_data.yaml_io import write_model
 
 logger = logging.getLogger(__name__)
 
@@ -413,61 +410,19 @@ def build_datasets(config: DatasetBuildConfig) -> RunReport:
     also when a task fails and ``keep_going`` is False.
     """
     output_root = Path(config.zarr_root)
-    output_root.mkdir(parents=True, exist_ok=True)
-    statuses: list[TaskStatus] = []
-    # The statuses of the group that is running; ``run_tasks`` re-raises on
-    # ``keep_going=False`` before returning them, so they are mirrored here.
-    running: list[TaskStatus] = []
-    planned = 0
 
-    def flush(current: list[TaskStatus]) -> None:
-        running[:] = current
-        _write_run_files(output_root, config, planned, [*statuses, *running])
-
-    def run_group(tasks: list[BuildDatasetTask] | list[VerifyDatasetTask]) -> None:
-        nonlocal planned
-        planned += len(tasks)
-        running.clear()
-        try:
-            run_tasks(
-                tasks,
-                None,
-                output_root,
-                keep_going=config.keep_going,
-                flush=flush,
-                first_index=len(statuses),
-            )
-        finally:
-            statuses.extend(running)
-            running.clear()
-
-    try:
-        run_group(
-            [
-                BuildDatasetTask(dataset_id=dataset_id, config=config)
-                for dataset_id in config.resolve_dataset_ids()
-            ]
-        )
+    def task_groups() -> Iterator[list[BuildDatasetTask] | list[VerifyDatasetTask]]:
+        yield [
+            BuildDatasetTask(dataset_id=dataset_id, config=config)
+            for dataset_id in config.resolve_dataset_ids()
+        ]
         if config.verify:
-            run_group(
-                [
-                    VerifyDatasetTask(dataset_path=path, workers=config.worker_count())
-                    for path, _ in discover_datasets(output_root)
-                ]
-            )
-    finally:
-        _write_run_files(output_root, config, planned, statuses)
-    report = make_run_report(planned, statuses)
-    if report.n_failed:
-        logger.warning("%d/%d task(s) failed", report.n_failed, len(statuses))
-    return report
+            # Discovered only now, so the datasets just built are verified too.
+            yield [
+                VerifyDatasetTask(dataset_path=path, workers=config.worker_count())
+                for path, _ in discover_datasets(output_root)
+            ]
 
-
-def _write_run_files(
-    output_root: Path,
-    config: DatasetBuildConfig,
-    planned: int,
-    statuses: list[TaskStatus],
-) -> None:
-    write_model(output_root / "manifest.yaml", config)
-    write_model(output_root / "status.yaml", make_run_report(planned, statuses))
+    return run_and_record(
+        task_groups(), None, output_root, config, keep_going=config.keep_going
+    )

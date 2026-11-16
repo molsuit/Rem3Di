@@ -15,14 +15,15 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.runs.results import EvalResult, PydanticResult
-from remedi_data.runs.task import TaskStatus
-from remedi_data.runs.task_runner import RunReport, make_run_report, run_tasks
+from remedi_data.runs.task_runner import (
+    RunReport,
+    run_and_record,
+)
 from remedi_data.structures.pipeline import (
     StructurePreparationSettings,
     prepare_structures,
 )
 from remedi_data.structures.sources import StructureSource
-from remedi_data.yaml_io import write_model
 
 logger = logging.getLogger(__name__)
 
@@ -79,23 +80,7 @@ def prepare_structure_datasets(
     if only and len(sources) != len(set(only)):
         known = [source.dataset_id for source in config.sources]
         raise ValueError(f"--only {only} names sources not in the config {known}")
-    config.work_root.mkdir(parents=True, exist_ok=True)
     tasks = [PrepareStructuresTask(source=source, config=config) for source in sources]
-    statuses: list[TaskStatus] = []
-
-    def flush(current: list[TaskStatus]) -> None:
-        statuses[:] = current
-        write_model(
-            config.work_root / "status.yaml", make_run_report(len(tasks), current)
-        )
-
-    try:
-        run_tasks(
-            tasks, None, config.work_root, keep_going=config.keep_going, flush=flush
-        )
-    finally:
-        write_model(config.work_root / "manifest.yaml", config)
-    report = make_run_report(len(tasks), statuses)
-    if report.n_failed:
-        logger.warning("%d/%d source(s) failed", report.n_failed, len(tasks))
-    return report
+    return run_and_record(
+        [tasks], None, config.work_root, config, keep_going=config.keep_going
+    )
