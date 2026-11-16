@@ -21,7 +21,10 @@ class DecoderPairBlock(nn.Module):
         d_descriptor,
         d_geo,
         dropout=0.1,
+        update_pair: bool = True,
     ):
+        """``update_pair=False`` (the last layer) leaves the pair tensor as it
+        is: nothing after the last layer reads it."""
         super().__init__()
 
         # 1 attention sub-layer
@@ -39,23 +42,23 @@ class DecoderPairBlock(nn.Module):
         self.layer_norm_2 = nn.LayerNorm(embedding_dim)
 
         # Pair Representation update
-        self.pair_update = PairOuterProdUpdate(embedding_dim, d_pair, d_geo)
-        self.pair_ffn = PairFFN(d_pair, dropout)
-
-        # Layers to apply in between the main layers
-        self.dropout = nn.Dropout(dropout)
+        self.pair_update = (
+            PairOuterProdUpdate(embedding_dim, d_pair, d_geo) if update_pair else None
+        )
+        self.pair_ffn = PairFFN(d_pair, dropout) if update_pair else None
 
     def forward(self, S, P, M, p_geo, padding_mask, mask_pair):
         # Self Attention based update
         S = S + self.attn(self.layer_norm_0(S), P, padding_mask)
 
-        S = S + self.cross_attention(self.layer_norm_1(S), M, padding_mask)
+        S = S + self.cross_attention(self.layer_norm_1(S), M)
 
         S = S + self.ffn(self.layer_norm_2(S))
 
         # Both pair updates are residual already (they return P + delta).
-        P = self.pair_update(S, P, p_geo, mask_pair)  # Outer product update
-        P = self.pair_ffn(P)
+        if self.pair_update is not None and self.pair_ffn is not None:
+            P = self.pair_update(S, P, p_geo, mask_pair)  # Outer product update
+            P = self.pair_ffn(P)
 
         return S, P
 
@@ -76,8 +79,9 @@ class TransformerPairDecoder(nn.Module):
                     d_descriptor=dimensions.descriptor_dimension,
                     d_pair=dimensions.pair_dimension,
                     d_geo=dimensions.radial_basis_dimension,
+                    update_pair=index < decoder_config.N_layers - 1,
                 )
-                for _ in range(decoder_config.N_layers)
+                for index in range(decoder_config.N_layers)
             ]
         )
 

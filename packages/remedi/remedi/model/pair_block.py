@@ -48,7 +48,10 @@ class PairBlock(nn.Module):
         d_geo,
         dropout=0.1,
         pair_ffn: bool = True,
+        update_pair: bool = True,
     ):
+        """``update_pair=False`` (the last layer) leaves the pair tensor as it
+        is: nothing after the last layer reads it."""
         super().__init__()
 
         # 1 attention sub-layer
@@ -59,11 +62,13 @@ class PairBlock(nn.Module):
         self.ln_s2 = nn.LayerNorm(embedding_dim)
         self.ffn_s = FeedForward(embedding_dim, dim_feedforward, dropout)
 
-        # pair update as before
-        self.pair_up = PairOuterProdUpdate(embedding_dim, d_pair, d_geo)
-
-        # optional mini-FFN over the pair tensor
-        self.pair_ffn = PairFFN(d_pair, dropout) if pair_ffn else nn.Identity()
+        # pair update (outer product, then an optional mini-FFN)
+        self.pair_up = (
+            PairOuterProdUpdate(embedding_dim, d_pair, d_geo) if update_pair else None
+        )
+        self.pair_ffn = (
+            PairFFN(d_pair, dropout) if pair_ffn and update_pair else nn.Identity()
+        )
 
     def forward(self, S, mask, P, p_geo, mask_pair):
         # Atom Representation Attention Update
@@ -71,10 +76,9 @@ class PairBlock(nn.Module):
 
         S = S + self.ffn_s(self.ln_s2(S))  # FFN Update
 
-        # Pair Representation update
-
-        P = self.pair_up(S, P, p_geo, mask_pair)  # Outer product update
-        P = self.pair_ffn(P)  # Pair FFNN
+        if self.pair_up is not None:
+            P = self.pair_up(S, P, p_geo, mask_pair)  # Outer product update
+            P = self.pair_ffn(P)  # Pair FFNN
 
         return S, P
 

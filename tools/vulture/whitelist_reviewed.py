@@ -44,7 +44,6 @@ PairCrossAttentionBlock  # model/pair_block.py
 FusedMultiHeadRegression  # model/regression_models.py
 OddMLP  # alternative output MLP of ChiralEmbeddingModel (commented-out use)
 _.d_cutoff  # GeometricPreprocessor
-_.layer_norm  # PairBiasedAttention: part of the state dict; removing it breaks strict checkpoint loads
 chiral_difference_loss  # training/regression_training.py, enantiomer-difference losses (CMRT work)
 direct_difference_loss
 BaseMultitaskLoss

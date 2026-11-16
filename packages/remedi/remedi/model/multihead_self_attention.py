@@ -1,22 +1,25 @@
-import math
-
-import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
+
+from remedi.model.attention import key_padding_bias
 
 
 class MultiHeadSelfAttention(nn.Module):
     """
-    Multi-head self-attention with an *additive* pair-tensor bias.
+    Multi-head self-attention.
 
     Inputs
     ------
     S : (B, N, d_model)     atom/sequence embeddings
-    mask : (B, N) Bool      True for *real* atoms, False for padding
+    mask : (B, N) Bool      True for padding, False for *real* atoms
 
     Output
     ------
     S_out : (B, N, d_model)
+
+    Padded atoms are masked as keys; their own (query) rows are computed but
+    meaningless.
     """
 
     def __init__(self, d_model: int = 128, n_heads: int = 8, dropout: float = 0.1):
@@ -28,7 +31,6 @@ class MultiHeadSelfAttention(nn.Module):
 
         assert d_model % n_heads == 0, "`d_model` must be divisible by `n_heads`"
 
-        # --- Q, K, V projections ------------------------------------------------
         self.W_q = nn.Linear(d_model, d_model, bias=False)
         self.W_k = nn.Linear(d_model, d_model, bias=False)
         self.W_v = nn.Linear(d_model, d_model, bias=False)
@@ -39,37 +41,17 @@ class MultiHeadSelfAttention(nn.Module):
     def forward(self, S: Tensor, mask: Tensor | None = None) -> Tensor:
         B, N, _ = S.shape
 
-        # 1) project & reshape to (B, H, N, d_k)
-        def _proj(W, x):
-            return W(x).view(B, N, self.n_heads, self.d_k).transpose(1, 2)
-            #              (B, N, d) → (B, N, H, d_k) → (B, H, N, d_k)
+        def heads(W: nn.Linear) -> Tensor:  # (B, N, d) -> (B, H, N, d_k)
+            return W(S).view(B, N, self.n_heads, self.d_k).transpose(1, 2)
 
-        Q = _proj(self.W_q, S)
-        K = _proj(self.W_k, S)
-        V = _proj(self.W_v, S)  # (B, H, N, d_k) each
-
-        # 2) scaled dot-product attention logits
-        logits = torch.matmul(Q, K.transpose(-1, -2))  # (B, H, N, N)
-        logits /= math.sqrt(self.d_k)
-
-        # 3) padding mask  (True = pad, False = real atom)
-        if mask is not None:
-            neg_inf = torch.finfo(logits.dtype).min
-            logits = logits.masked_fill(mask[:, None, None, :], neg_inf)  # mask keys
-            logits = logits.masked_fill(mask[:, None, :, None], neg_inf)  # mask queries
-
-        # 4) soft-max → weights
-        attn_weights = torch.softmax(logits, dim=-1)  # (B, H, N, N)
-        attn_weights = self.dropout(attn_weights)
-
-        # 6) weighted sum
-        S_head = torch.matmul(attn_weights, V)  # (B, H, N, d_k)
-        S_head = S_head.transpose(1, 2)  # (B, N, H, d_k)
-        S_head = S_head.reshape(B, N, self.d_model)  # (B, N, d_model)
-
-        # 7) output projection
-        S_out = self.W_o(S_head)  # (B, N, d_model)
-        return S_out
+        attended = F.scaled_dot_product_attention(
+            heads(self.W_q),
+            heads(self.W_k),
+            heads(self.W_v),
+            attn_mask=None if mask is None else key_padding_bias(mask, S.dtype),
+            dropout_p=self.dropout.p if self.training else 0.0,
+        )
+        return self.W_o(attended.transpose(1, 2).reshape(B, N, self.d_model))
 
 
 class MultiHeadCrossAttention(nn.Module):
@@ -79,15 +61,15 @@ class MultiHeadCrossAttention(nn.Module):
     Inputs
     ------
     S : (B, N, d_model)            atom/sequence embeddings
-    M : (B, L, d_descriptor)       descriptor sequence (e.g. PMA seeds).
-                                   A 2D `(B, d_descriptor)` is also accepted
-                                   for single-vector aggregators and treated
-                                   as L=1.
-    mask : (B, N) Bool             True for padding (atom side)
+    M : (B, L, d_descriptor)       descriptor sequence (e.g. PMA seeds);
+                                   single-vector aggregators emit L=1.
 
     Output
     ------
     S_out : (B, N, d_model)
+
+    Every descriptor token is a valid key, so nothing is masked; the rows of
+    padded atoms are computed but meaningless, and every consumer masks them.
     """
 
     def __init__(self, d_model=256, d_descriptor=256, n_heads=8, dropout=0.1):
@@ -102,29 +84,15 @@ class MultiHeadCrossAttention(nn.Module):
         self.W_o = nn.Linear(d_model, d_model, bias=False)
         self.dropout = nn.Dropout(dropout)
 
-    def _proj(self, W, x):
+    def _heads(self, W: nn.Linear, x: Tensor) -> Tensor:
         B, L, _ = x.shape
         return W(x).view(B, L, self.n_heads, self.d_k).transpose(1, 2)
 
-    def forward(self, S, M, mask=None):
-        # M is always (B, L, d_descriptor); aggregators that emit a single
-        # vector use L=1.
-        Q = self._proj(self.W_q, S)  # (B, H, N, d_k)
-        K = self._proj(self.W_k, M)  # (B, H, L, d_k)
-        V = self._proj(self.W_v, M)  # (B, H, L, d_k)
-
-        logits = torch.matmul(Q, K.transpose(-1, -2))  # (B, H, N, L)
-        logits = logits / math.sqrt(self.d_k)
-
-        if mask is not None:
-            # mask is on the *query* (atom) side, not the descriptor side.
-            logits = logits.masked_fill(
-                mask[:, None, :, None], torch.finfo(logits.dtype).min
-            )
-
-        attn = self.dropout(torch.softmax(logits, dim=-1))
-
-        S_head = torch.matmul(attn, V)  # (B, H, N, d_k)
-        S_head = S_head.transpose(1, 2).contiguous().view(S.size(0), S.size(1), -1)
-
-        return self.W_o(S_head)
+    def forward(self, S: Tensor, M: Tensor) -> Tensor:
+        attended = F.scaled_dot_product_attention(
+            self._heads(self.W_q, S),  # (B, H, N, d_k)
+            self._heads(self.W_k, M),  # (B, H, L, d_k)
+            self._heads(self.W_v, M),  # (B, H, L, d_k)
+            dropout_p=self.dropout.p if self.training else 0.0,
+        )
+        return self.W_o(attended.transpose(1, 2).reshape(S.size(0), S.size(1), -1))

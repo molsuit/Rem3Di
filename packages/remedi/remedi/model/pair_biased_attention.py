@@ -1,9 +1,9 @@
-import math
-
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 
+from remedi.model.attention import key_padding_bias
 from remedi.model.preprocessing.geometric_preprocessor import RadialFilter
 
 
@@ -15,11 +15,14 @@ class PairBiasedSelfAttention(nn.Module):
     ------
     S : (B, N, d_model)     atom/sequence embeddings
     P : (B, N, N, d_pair)   pair latent from PairTensorInit
-    mask : (B, N) Bool      True for *real* atoms, False for padding
+    mask : (B, N) Bool      True for padding, False for *real* atoms
 
     Output
     ------
     S_out : (B, N, d_model)
+
+    Padded atoms are masked as keys; their own (query) rows are computed but
+    meaningless, and every consumer masks them out.
     """
 
     def __init__(
@@ -37,59 +40,37 @@ class PairBiasedSelfAttention(nn.Module):
 
         assert d_model % n_heads == 0, "`d_model` must be divisible by `n_heads`"
 
-        # --- Q, K, V projections ------------------------------------------------
         self.W_q = nn.Linear(d_model, d_model, bias=False)
         self.W_k = nn.Linear(d_model, d_model, bias=False)
         self.W_v = nn.Linear(d_model, d_model, bias=False)
         self.W_o = nn.Linear(d_model, d_model, bias=False)
 
-        # --- pair → per-head bias ----------------------------------------------
+        # pair → per-head bias, zero-initialised so the first forward pass is
+        # the plain attention
         self.ln_pair = nn.LayerNorm(d_pair)
         self.pair2bias = nn.Linear(d_pair, n_heads, bias=False)
-        nn.init.zeros_(self.pair2bias.weight)  # ← keeps first forward identical
-        #   to baseline encoder
-        # --- misc. --------------------------------------------------------------
+        nn.init.zeros_(self.pair2bias.weight)
         self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, S: Tensor, P: Tensor, mask: Tensor | None = None) -> Tensor:
         B, N, _ = S.shape
 
-        # 1) project & reshape to (B, H, N, d_k)
-        def _proj(W, x):
-            return W(x).view(B, N, self.n_heads, self.d_k).transpose(1, 2)
-            #              (B, N, d) → (B, N, H, d_k) → (B, H, N, d_k)
+        def heads(W: nn.Linear) -> Tensor:  # (B, N, d) -> (B, H, N, d_k)
+            return W(S).view(B, N, self.n_heads, self.d_k).transpose(1, 2)
 
-        Q = _proj(self.W_q, S)
-        K = _proj(self.W_k, S)
-        V = _proj(self.W_v, S)  # (B, H, N, d_k) each
-
-        # 2) scaled dot-product attention logits
-        logits = torch.matmul(Q, K.transpose(-1, -2))  # (B, H, N, N)
-        logits /= math.sqrt(self.d_k)
-
-        # 3) add pair bias
-        #    P: (B,N,N,d_p) → ln → (B,N,N,d_p) → linear → (B,N,N,H) → permute
-        bias = self.pair2bias(self.ln_pair(P)).permute(0, 3, 1, 2)
-        logits = logits + bias  # (B, H, N, N)
-
-        # 4) padding mask  (True = pad, False = real atom)
+        Q, K, V = heads(self.W_q), heads(self.W_k), heads(self.W_v)
+        # (B, N, N, d_pair) -> (B, H, N, N)
+        bias = self.pair2bias(self.ln_pair(P)).permute(0, 3, 1, 2).to(Q.dtype)
         if mask is not None:
-            neg_inf = torch.finfo(logits.dtype).min
-            logits = logits.masked_fill(mask[:, None, None, :], neg_inf)  # mask keys
-            logits = logits.masked_fill(mask[:, None, :, None], neg_inf)  # mask queries
-
-        # 5) soft-max → weights
-        attn_weights = torch.softmax(logits, dim=-1)  # (B, H, N, N)
-        attn_weights = self.dropout(attn_weights)
-
-        # 6) weighted sum
-        S_head = torch.matmul(attn_weights, V)  # (B, H, N, d_k)
-        S_head = S_head.transpose(1, 2)  # (B, N, H, d_k)
-        S_head = S_head.reshape(B, N, self.d_model)  # (B, N, d_model)
-
-        # 7) output projection
-        S_out = self.W_o(S_head)  # (B, N, d_model)
-        return S_out
+            bias = bias + key_padding_bias(mask, Q.dtype)
+        attended = F.scaled_dot_product_attention(
+            Q,
+            K,
+            V,
+            attn_mask=bias,
+            dropout_p=self.dropout.p if self.training else 0.0,
+        )
+        return self.W_o(attended.transpose(1, 2).reshape(B, N, self.d_model))
 
 
 class PairOuterProdUpdate(nn.Module):
@@ -100,8 +81,6 @@ class PairOuterProdUpdate(nn.Module):
         self.W_R = nn.Linear(d_model, d_pair, bias=False)
 
         self.p_geo_filter = RadialFilter(d_geo, d_pair)
-
-        self.layer_norm = nn.LayerNorm(d_pair)  # Unused
 
     def forward(self, S, P, p_geo, mask_pair):
         # The outer product of atomic descriptors thats gated by the rbf

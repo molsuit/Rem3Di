@@ -98,3 +98,45 @@ def test_encoder_pair_ffn_uses_the_configured_dropout():
         dropout=0.37,
     )
     assert block.pair_ffn.dropout.p == pytest.approx(0.37)
+
+
+@pytest.mark.parametrize("kind", ["encoder", "decoder"])
+def test_a_block_without_pair_update_returns_the_same_atoms(kind: str) -> None:
+    """The last layer skips the pair update: its atom output is unchanged and
+    the pair tensor passes through."""
+    atoms, pairs, radial_basis, padding_mask, pair_mask, descriptor = _block_inputs()
+    outputs = []
+    for update_pair in (True, False):
+        torch.manual_seed(0)
+        if kind == "encoder":
+            block = PairBlock(
+                embedding_dim=EMBEDDING_DIMENSION,
+                num_heads=2,
+                d_pair=PAIR_DIMENSION,
+                dim_feedforward=16,
+                d_geo=RADIAL_BASIS_DIMENSION,
+                update_pair=update_pair,
+            ).eval()
+            with torch.no_grad():
+                outputs.append(
+                    block(atoms, padding_mask, pairs, radial_basis, pair_mask)
+                )
+        else:
+            block = DecoderPairBlock(
+                embedding_dim=EMBEDDING_DIMENSION,
+                num_heads=2,
+                dim_feedforward=16,
+                d_pair=PAIR_DIMENSION,
+                d_descriptor=EMBEDDING_DIMENSION,
+                d_geo=RADIAL_BASIS_DIMENSION,
+                update_pair=update_pair,
+            ).eval()
+            with torch.no_grad():
+                outputs.append(
+                    block(
+                        atoms, pairs, descriptor, radial_basis, padding_mask, pair_mask
+                    )
+                )
+    (atoms_updated, _), (atoms_skipped, pairs_skipped) = outputs
+    torch.testing.assert_close(atoms_skipped, atoms_updated)
+    assert pairs_skipped is pairs

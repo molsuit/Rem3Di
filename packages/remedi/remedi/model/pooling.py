@@ -1,8 +1,8 @@
-import math
-
 import torch
 import torch.nn.functional as F
 from torch import nn
+
+from remedi.model.attention import key_padding_bias
 
 
 class MeanPool(nn.Module):
@@ -59,7 +59,6 @@ class AttnPool(nn.Module):
 
         self.d_k = self.d_hidden // n_heads
         self.d_out = d_out if d_out is not None else d_in
-        self.scale = self.d_k**-0.5
 
         self.key_proj = nn.Linear(d_in, self.d_hidden, bias=False)
         self.query = nn.Parameter(torch.randn(n_heads, self.d_k))
@@ -77,26 +76,24 @@ class AttnPool(nn.Module):
     def forward(self, x, pad_mask=None):
         """
         x        : (B, N, d_in)
-        pad_mask : (B, N)  1 for padding, 0 for real tokens
+        pad_mask : (B, N)  True (or 1) for padding, False for real tokens
         returns  : (B, 1, d_out) — length-1 descriptor sequence
+
+        One learned query per head attends over the atoms; the values are the
+        atom embeddings themselves, and the heads are averaged.
         """
-        B, N, _ = x.shape
-
-        k = self.key_proj(x)
-        k = k.view(B, N, self.n_heads, self.d_k)
-
-        logits = torch.einsum("bnhd,hd->bhn", k * self.scale, self.query)
-
-        if pad_mask is not None:
-            pad_exp = pad_mask[:, None, :].expand(B, self.n_heads, N)
-            logits = logits.masked_fill(pad_exp == 1, torch.finfo(logits.dtype).min)
-
-        attn = F.softmax(logits, dim=-1)
-        attn = self.dropout(attn)
-
-        pooled = torch.einsum("bhn,bnd->bhd", attn, x)
-        out = pooled.mean(dim=1)
-        out = self.out_proj(out)
+        B, N, d_in = x.shape
+        keys = self.key_proj(x).view(B, N, self.n_heads, self.d_k).transpose(1, 2)
+        query = self.query[None, :, None, :].expand(B, -1, -1, -1).to(keys.dtype)
+        values = x[:, None].expand(B, self.n_heads, N, d_in)
+        pooled = F.scaled_dot_product_attention(
+            query,
+            keys,
+            values,
+            attn_mask=None if pad_mask is None else key_padding_bias(pad_mask, x.dtype),
+            dropout_p=self.dropout.p if self.training else 0.0,
+        )  # (B, H, 1, d_in)
+        out = self.out_proj(pooled.squeeze(2).mean(dim=1))
         if self.output_dropout is not None:
             out = self.output_dropout(out)
         return out.unsqueeze(1)
@@ -159,7 +156,6 @@ class PMAAggregator(nn.Module):
         self.head_dim = head_dim
         self.d_v = d_out // num_heads
         self.use_mlp = use_mlp
-        self.scale = 1.0 / math.sqrt(head_dim)
 
         self.seeds = nn.Parameter(torch.empty(1, k_seeds, d_out))
         nn.init.xavier_uniform_(self.seeds)
@@ -203,25 +199,24 @@ class PMAAggregator(nn.Module):
         K = self.W_K(Z).view(B, N, H, d_h).transpose(1, 2)
         V = self.W_V(Z).view(B, N, H, d_v).transpose(1, 2)
 
-        logits = torch.matmul(Q, K.transpose(-2, -1)) * self.scale
-
-        if padding_mask is not None:
-            mask = padding_mask[:, None, None, :]
-            logits = logits.masked_fill(mask, torch.finfo(logits.dtype).min)
-
-        attn = logits.softmax(dim=-1)
-
-        # When every key is masked, softmax-of-all-(-inf) collapses to a uniform
-        # distribution (max-subtraction yields zeros), which would leak gradients
-        # back through padded V projections. Zero those rows out explicitly.
+        head_out = F.scaled_dot_product_attention(
+            Q,
+            K,
+            V,
+            attn_mask=(
+                None
+                if padding_mask is None
+                else key_padding_bias(padding_mask, Q.dtype)
+            ),
+            dropout_p=self.attn_drop.p if self.training else 0.0,
+        )
+        # When every key is masked the softmax is uniform over padded values;
+        # zero those rows so no gradient leaks back through padded V
+        # projections.
         if padding_mask is not None:
             all_pad = padding_mask.all(dim=-1)
             if all_pad.any():
-                attn = attn.masked_fill(all_pad[:, None, None, None], 0.0)
-
-        attn = self.attn_drop(attn)
-
-        head_out = torch.matmul(attn, V)
+                head_out = head_out.masked_fill(all_pad[:, None, None, None], 0.0)
         head_out = head_out.transpose(1, 2).contiguous().view(B, self.k_seeds, H * d_v)
 
         # MAB residual + optional pre-norm rFF residual.

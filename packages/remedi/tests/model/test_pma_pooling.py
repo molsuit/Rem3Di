@@ -189,7 +189,7 @@ def test_cross_attention_with_pma_seeds():
         d_model=d_in, d_descriptor=d_out, n_heads=2, dropout=0.0
     ).eval()
     atoms = torch.randn(B, N, d_in)
-    out = cross(atoms, M, mask=pad_mask)
+    out = cross(atoms, M)
     assert out.shape == (B, N, d_in)
     assert _finite_tensor(out)
 

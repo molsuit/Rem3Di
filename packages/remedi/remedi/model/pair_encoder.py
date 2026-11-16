@@ -27,8 +27,9 @@ class TransformerPairEncoder(nn.Module):
                     dropout=attention.dropout,
                     d_pair=dimensions.pair_dimension,
                     d_geo=dimensions.radial_basis_dimension,
+                    update_pair=index < encoder_config.N_layers - 1,
                 )
-                for _ in range(encoder_config.N_layers)
+                for index in range(encoder_config.N_layers)
             ]
         )
 
