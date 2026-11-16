@@ -19,7 +19,6 @@ from __future__ import annotations
 import numpy as np
 
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.tasks import Split
 
 
 class ShardAlignedWriter:
@@ -42,17 +41,12 @@ class ShardAlignedWriter:
         # in-memory tails holding rows in [flushed, cursor)
         self._buf_pos: list[np.ndarray] = []
         self._buf_anum: list[np.ndarray] = []
-        self._buf_at: list[np.ndarray] = []
-        self._buf_amask: list[np.ndarray] = []
         self._buf_sizes: list[np.ndarray] = []  # per-molecule atom counts
         self._buf_mid: list[np.ndarray] = []
         self._buf_iso: list[np.ndarray] = []
         self._buf_sid: list[np.ndarray] = []
         self._buf_q: list[np.ndarray] = []
         self._buf_mult: list[np.ndarray] = []
-        self._buf_tsys: list[np.ndarray] = []
-        self._buf_msys: list[np.ndarray] = []
-        self._buf_split: list[np.ndarray] = []
 
     # -- logical progress --
     @property
@@ -73,11 +67,6 @@ class ShardAlignedWriter:
         stereoisomer_ids,
         total_charge,
         multiplicity,
-        system_targets,
-        system_masks,
-        atom_targets,
-        atom_masks,
-        split=None,
         *,
         structure_ids=None,
     ) -> None:
@@ -124,35 +113,6 @@ class ShardAlignedWriter:
         self._buf_mult.append(S_mult)
         self._buffer_structure_ids(structure_ids, n_mols)
 
-        if atom_targets is not None:
-            if self.ds.targets_atom is None:
-                raise ValueError(
-                    "atom_targets supplied but dataset has no atom task arrays"
-                )
-            self._buf_at.append(np.asarray(atom_targets, dtype="f4", order="C"))
-            self._buf_amask.append(np.asarray(atom_masks, dtype="u1", order="C"))
-
-        if system_targets is not None:
-            if self.ds.targets_system is None:
-                raise ValueError(
-                    "system_targets supplied but dataset has no system task arrays"
-                )
-            self._buf_tsys.append(np.asarray(system_targets, dtype="f4", order="C"))
-            self._buf_msys.append(np.asarray(system_masks, dtype="u1", order="C"))
-
-        # Buffer a split code per molecule whenever the dataset carries a split
-        # array, defaulting absent splits to Split.unassigned so the buffer
-        # stays aligned with the molecule axis.
-        if self.ds.split is not None:
-            if split is None:
-                split = np.full(n_mols, Split.unassigned.value, dtype="u1")
-            split = np.asarray(split, dtype="u1", order="C")
-            if split.shape[0] != n_mols:
-                raise ValueError(
-                    f"split must have length {n_mols}, got {split.shape[0]}"
-                )
-            self._buf_split.append(split)
-
         self._atom_cursor += n_atoms
         self._mol_cursor += n_mols
 
@@ -193,16 +153,6 @@ class ShardAlignedWriter:
         ds.isomer_ids.resize((self._mol_cursor,))
         ds.total_charge.resize((self._mol_cursor,))
         ds.multiplicity.resize((self._mol_cursor,))
-        if ds.split is not None:
-            ds.split.resize((self._mol_cursor,))
-        if ds.targets_system is not None:
-            ncols = ds.targets_system.shape[1]
-            ds.targets_system.resize((self._mol_cursor, ncols))
-            ds.mask_system.resize((self._mol_cursor, ncols))
-        if ds.targets_atom is not None:
-            ncols = ds.targets_atom.shape[1]
-            ds.targets_atom.resize((self._atom_cursor, ncols))
-            ds.mask_atom.resize((self._atom_cursor, ncols))
 
     # -- flushing ----------------------------------------------------------
     def _next_stop(
@@ -236,9 +186,6 @@ class ShardAlignedWriter:
         ds = self.ds
         pos = np.concatenate(self._buf_pos, axis=0)
         anum = np.concatenate(self._buf_anum, axis=0)
-        has_at = ds.targets_atom is not None
-        at = np.concatenate(self._buf_at, axis=0) if has_at else None
-        am = np.concatenate(self._buf_amask, axis=0) if has_at else None
         off = 0
         while self._atom_flushed < self._atom_cursor:
             stop = self._next_stop(
@@ -252,19 +199,10 @@ class ShardAlignedWriter:
             ds.atomic_numbers.resize((stop,))
             ds.positions[b:stop, :] = pos[off : off + n]
             ds.atomic_numbers[b:stop] = anum[off : off + n]
-            if has_at:
-                ncols = ds.targets_atom.shape[1]
-                ds.targets_atom.resize((stop, ncols))
-                ds.mask_atom.resize((stop, ncols))
-                ds.targets_atom[b:stop] = at[off : off + n]
-                ds.mask_atom[b:stop] = am[off : off + n]
             off += n
             self._atom_flushed = stop
         self._buf_pos = [pos[off:]]
         self._buf_anum = [anum[off:]]
-        if has_at:
-            self._buf_at = [at[off:]]
-            self._buf_amask = [am[off:]]
 
     def _flush_mol_axis(self, final: bool) -> None:
         if self._mol_flushed >= self._mol_cursor:
@@ -282,11 +220,6 @@ class ShardAlignedWriter:
         sid = np.concatenate(self._buf_sid, axis=0)
         q = np.concatenate(self._buf_q, axis=0)
         mult = np.concatenate(self._buf_mult, axis=0)
-        has_sys = ds.targets_system is not None
-        tsys = np.concatenate(self._buf_tsys, axis=0) if has_sys else None
-        msys = np.concatenate(self._buf_msys, axis=0) if has_sys else None
-        has_split = ds.split is not None
-        spl = np.concatenate(self._buf_split, axis=0) if has_split else None
         off = 0
         while self._mol_flushed < self._mol_cursor:
             stop = self._next_stop(
@@ -315,15 +248,6 @@ class ShardAlignedWriter:
             ds.isomer_ids[b:stop] = iso[off : off + n]
             ds.total_charge[b:stop] = q[off : off + n]
             ds.multiplicity[b:stop] = mult[off : off + n]
-            if has_sys:
-                ncols = ds.targets_system.shape[1]
-                ds.targets_system.resize((stop, ncols))
-                ds.mask_system.resize((stop, ncols))
-                ds.targets_system[b:stop] = tsys[off : off + n]
-                ds.mask_system[b:stop] = msys[off : off + n]
-            if has_split:
-                ds.split.resize((stop,))
-                ds.split[b:stop] = spl[off : off + n]
             off += n
             self._mol_flushed = stop
         self._buf_sizes = [sizes[off:]]
@@ -332,8 +256,3 @@ class ShardAlignedWriter:
         self._buf_sid = [sid[off:]]
         self._buf_q = [q[off:]]
         self._buf_mult = [mult[off:]]
-        if has_sys:
-            self._buf_tsys = [tsys[off:]]
-            self._buf_msys = [msys[off:]]
-        if has_split:
-            self._buf_split = [spl[off:]]

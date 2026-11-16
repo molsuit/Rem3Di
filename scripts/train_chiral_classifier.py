@@ -10,11 +10,12 @@ axial/helical/planar imbalance).
 The architecture is the *unified* ``kind: regression`` config whose single head
 carries ``n_classes`` — that and ``mace_config`` (which switches the preprocessor
 to on-the-fly MACE) are the only things that make it a classifier. The
-train/valid split is the **stored stratified split** materialized into the zarr
-by the ``ingest_benchmark`` prepare task, which copies it from the ChiralCat
-bundle's ``default_split`` column (``split_config`` in the training yaml is not
-used for this task); the test fold is held out for the eval framework's
-``benchmark_panel``, whose multiclass cells carry the per-class report.
+train/valid split is the dataset's ``default_split`` column of ``table.parquet``
+(the stored stratified split; ``split_config`` in the training yaml is not used
+for this task), and the labels are its multiclass label column, both read
+through :func:`remedi_eval.protocol.load_benchmark`; the test fold is held out
+for the eval framework's ``benchmark_panel``, whose multiclass cells carry the
+per-class report.
 
 Best-by-balanced-accuracy checkpoints are written in the REM3DI layout
 (``encoder.pth`` / ``atomic_preprocessor.pth`` / ``geometric_preprocessor.pth``)
@@ -54,13 +55,12 @@ from remedi.training.data.training_dataset import (
     make_supervised_getitem,
 )
 from remedi.training.telemetry import TrainingTelemetry
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.tasks import Split
 from remedi_eval.benchmark.metrics import (
     balanced_accuracy,
     macro_auroc_ovr,
     macro_f1,
 )
+from remedi_eval.protocol import load_benchmark
 
 logger = logging.getLogger("remedi.chiral")
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -79,19 +79,6 @@ def parse_args() -> argparse.Namespace:
         "--device", type=str, default=None, help="Override compute device (e.g. cpu)."
     )
     return p.parse_args()
-
-
-def _stored_split_indices(dataset: MoleculeDataset) -> tuple[np.ndarray, np.ndarray]:
-    """Train / valid index arrays from the materialized stratified split."""
-    if dataset.split is None:
-        raise ValueError(
-            "Dataset has no `split` column. Build it with the ingest_benchmark "
-            "prepare task so the bundle's stratified split is materialized."
-        )
-    codes = np.asarray(dataset.split[:], dtype=np.uint8)
-    train_idx = np.nonzero(codes == Split.train.value)[0]
-    val_idx = np.nonzero(codes == Split.valid.value)[0]
-    return train_idx, val_idx
 
 
 def _trainable_parameters(model) -> list[torch.nn.Parameter]:
@@ -171,9 +158,11 @@ def main() -> None:
     n_classes = int(head_cfgs[0].n_classes)
 
     dataset_path = args.dataset_path or training_config.dataset_path
-    full_dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
-    labels = np.asarray(full_dataset.targets_system[:, 0]).astype(np.int64)
-    train_idx, val_idx = _stored_split_indices(full_dataset)
+    benchmark = load_benchmark(dataset_path)
+    full_dataset = benchmark.dataset
+    labels = benchmark.class_indices()
+    partition = benchmark.partition()
+    train_idx, val_idx = partition.train, partition.valid
     logger.info(
         "stored split: train=%d valid=%d | train class counts=%s",
         len(train_idx),

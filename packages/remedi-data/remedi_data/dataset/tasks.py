@@ -2,15 +2,14 @@ from collections.abc import Sequence
 from enum import Enum
 
 import numpy as np
-from pydantic import BaseModel
 
 
 class Split(int, Enum):
-    """Per-structure split membership, materialized into the dataset on disk.
+    """Per-structure split membership as a uint8 code.
 
-    Stored as a uint8 zarr column. ``unassigned`` is the default for datasets
-    ingested without a literature split; eval may still override the split at
-    run time regardless of what is stored.
+    The table's split columns spell the splits out (``train`` / ``valid`` /
+    ``test`` / ``unassigned``); the evaluation converts one column to these
+    codes to build a partition.
     """
 
     train = 0
@@ -20,14 +19,12 @@ class Split(int, Enum):
 
 
 #: The split names a table's split columns use (``BENCHMARK_DATA_FORMAT.md``
-#: §4.2) mapped onto the uint8 codes the zarr stores. The table is the
-#: human-facing artifact and spells the splits out; the codes are an internal
-#: detail of the zarr.
+#: §4.2) mapped onto their uint8 codes.
 SPLIT_CODE_BY_NAME: dict[str, Split] = {split.name: split for split in Split}
 
 
 def split_codes_from_names(values: Sequence[str]) -> np.ndarray:
-    """Convert bundle split names to the uint8 ``Split`` codes stored in a zarr.
+    """Convert table split names to uint8 ``Split`` codes.
 
     Args:
         values: one split name per structure, each of ``train`` / ``valid`` /
@@ -55,41 +52,5 @@ class TaskType(str, Enum):
     regression = "regression"
     classification = "classification"  # single-label or multi-label (see output_dim)
     # Single-label, multi-class (>2 mutually exclusive classes in one column).
-    # The integer class index lives in a single ``targets_system`` column; the
-    # class count is derived from the data at eval time (``int(nanmax)+1``).
+    # The integer class index lives in a single label column of the table.
     multiclass = "multiclass"
-
-
-class TaskScope(str, Enum):
-    system = "system"
-    atom = "atom"
-
-
-class TaskConfig(BaseModel):
-    name: str
-    task_type: TaskType
-    scope: TaskScope
-    auxillary_dim: int | None = None
-
-
-class TaskSet(BaseModel):
-    system_cols: list[TaskConfig] = []
-    atom_cols: list[TaskConfig] = []
-
-    system_map: dict[str, int] = {}
-    atom_map: dict[str, int] = {}
-
-    @classmethod
-    def from_list(cls, task_list: list[TaskConfig]):
-        sys_cols, atom_cols = [], []
-        for t in task_list:
-            if t.scope == TaskScope.system:
-                sys_cols.append(t)
-            else:
-                atom_cols.append(t)
-        return cls(system_cols=sys_cols, atom_cols=atom_cols).finalize()
-
-    def finalize(self):
-        self.system_map = {c.name: i for i, c in enumerate(self.system_cols)}
-        self.atom_map = {c.name: i for i, c in enumerate(self.atom_cols)}
-        return self

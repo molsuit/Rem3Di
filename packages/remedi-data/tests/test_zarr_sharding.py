@@ -214,10 +214,6 @@ def _append_five(writer: ShardAlignedWriter, structure_ids: np.ndarray) -> None:
         stereoisomer_ids=np.arange(5),
         total_charge=np.zeros(5, dtype="f4"),
         multiplicity=np.ones(5, dtype="f4"),
-        system_targets=None,
-        system_masks=None,
-        atom_targets=None,
-        atom_masks=None,
         structure_ids=structure_ids,
     )
 
@@ -264,10 +260,6 @@ def test_molecule_count_is_the_number_of_distinct_molecule_ids(tmp_path: Path) -
         stereoisomer_ids=np.array([0, 9, 10]),
         total_charge=np.zeros(3, dtype="f4"),
         multiplicity=np.ones(3, dtype="f4"),
-        system_targets=None,
-        system_masks=None,
-        atom_targets=None,
-        atom_masks=None,
     )
     writer.finalize()
     reopened = MoleculeDataset.open_existing_dataset_from_dir(tmp_path / "ds")

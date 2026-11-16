@@ -1,12 +1,15 @@
 from pydantic import BaseModel, ConfigDict
 
-from remedi_data.dataset.tasks import (
-    TaskSet,
-)
-
 
 class DatasetConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    """``dataset_config.yaml``: the chunk and shard geometry of a dataset's zarr.
+
+    Labels are not part of the zarr: their names and task types are in
+    ``dataset.yaml`` (``DatasetSpec.labels``) and their values in
+    ``table.parquet``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     atom_chunk: int = 8192
     molecule_chunk: int = 4_096
@@ -19,5 +22,3 @@ class DatasetConfig(BaseModel):
     # per chunk.
     atom_chunks_per_shard: int = 64
     molecule_chunks_per_shard: int = 256
-
-    tasks: TaskSet | None = None

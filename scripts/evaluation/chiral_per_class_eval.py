@@ -10,7 +10,7 @@ The per-class table and the confusion matrix come from
 :func:`remedi_eval.benchmark.metrics.multiclass_report`, headed with the class
 names the dataset spec declares (``LabelColumn.class_names``); the scored rows
 are a fold of one split column of the dataset table
-(:func:`remedi_eval.protocol.read_partition`).
+(:meth:`remedi_eval.protocol.Benchmark.partition`).
 
 Run on a GPU node (MACE featurizes on the fly):
     uv run python scripts/evaluation/chiral_per_class_eval.py \
@@ -40,11 +40,9 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
 )
-from remedi_data.bundle import read_spec
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_eval.benchmark.cells import multiclass_labelling
 from remedi_eval.benchmark.metrics import balanced_accuracy, multiclass_report
-from remedi_eval.protocol import read_partition
+from remedi_eval.protocol import load_benchmark
 
 logger = logging.getLogger("remedi.chiral.per_class")
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -107,18 +105,18 @@ def evaluate_run(
         ClassifierTrainingConfig, cfg_dir / "training_config.yaml"
     )
     dataset_path = training_config.dataset_path
-    n_classes, class_names = multiclass_labelling(read_spec(dataset_path))
+    benchmark = load_benchmark(dataset_path)
+    n_classes, class_names = multiclass_labelling(benchmark.spec)
     if n_classes is None:
         raise ValueError(f"{dataset_path} declares no single multiclass label column")
-    full = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
-    labels = np.asarray(full.targets_system[:, 0]).astype(np.int64)
-    partition = read_partition(dataset_path, full, split_column)
+    labels = benchmark.class_indices()
+    partition = benchmark.partition(split_column)
     idx = partition.valid if fold == "valid" else partition.test
 
     ds = TrainingMoleculeDataset(
         dataset_path, get_item=make_supervised_getitem(labels), in_memory=True
     )
-    all_lengths = lengths_from_ptr(np.asarray(full.ptr[:]))
+    all_lengths = lengths_from_ptr(np.asarray(benchmark.dataset.ptr[:]))
     loader = training_config.dataloader.build(
         Subset(ds, idx),
         lengths=all_lengths[idx],

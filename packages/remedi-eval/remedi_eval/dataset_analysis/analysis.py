@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from rdkit import Chem, RDLogger
 from rdkit.Chem import rdMolDescriptors as rdMD
 
+from remedi_data.bundle import SPEC_FILENAME, read_spec, read_table
 from remedi_data.chemistry.physchem import DESCRIPTORS_2D
 from remedi_data.chemistry.splits import murcko_scaffold
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
@@ -161,7 +162,7 @@ class TargetColumnStats(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     column_index: int
-    name: str | None = None
+    name: str
     coverage: float
     distribution: DistributionStats
 
@@ -247,8 +248,7 @@ class DatasetSummary(BaseModel):
     lipinski_ro5_pass_fraction: float | None = None
     n_unique_scaffolds: int | None = None
     top_scaffolds: list[tuple[str, int]] = Field(default_factory=list)
-    target_columns_system: list[TargetColumnStats] = Field(default_factory=list)
-    target_columns_atom: list[TargetColumnStats] = Field(default_factory=list)
+    target_columns: list[TargetColumnStats] = Field(default_factory=list)
     bitbirch: BitBirchSummary | None = None
     timings_seconds: dict[str, float] = Field(default_factory=dict)
 
@@ -516,58 +516,34 @@ class MoleculeDatasetAnalysis:
 
     # ----- Targets EDA -----
 
-    def _target_column_stats(
-        self,
-        targets: np.ndarray,
-        masks: np.ndarray | None,
-        prefix: str,
-    ) -> list[TargetColumnStats]:
-        if targets is None or targets.shape[0] == 0:
+    def target_stats(self) -> list[TargetColumnStats]:
+        """Coverage and distribution of every label ``dataset.yaml`` declares.
+
+        The values are the label columns of ``table.parquet`` (NaN = missing).
+        A dataset without ``dataset.yaml`` declares no labels and gets none.
+        """
+        directory = Path(self.dataset.path)
+        if not (directory / SPEC_FILENAME).is_file():
             return []
-        n_rows, n_cols = targets.shape
-        if masks is None:
-            masks = np.ones_like(targets, dtype=bool)
-        else:
-            masks = masks.astype(bool, copy=False)
-
-        out: list[TargetColumnStats] = []
-        for j in range(n_cols):
-            col = targets[:, j]
-            mask_col = masks[:, j]
-            valid = col[mask_col]
-            coverage = float(mask_col.sum()) / float(n_rows) if n_rows else 0.0
-            out.append(
-                TargetColumnStats(
-                    column_index=j,
-                    name=f"{prefix}_{j}",
-                    coverage=coverage,
-                    distribution=DistributionStats.from_array(valid),
-                )
+        names = read_spec(directory).label_names()
+        if not names:
+            return []
+        values = read_table(directory, columns=names).to_numpy(
+            dtype=np.float64, na_value=np.nan
+        )
+        present = ~np.isnan(values)
+        n_rows = values.shape[0]
+        return [
+            TargetColumnStats(
+                column_index=index,
+                name=name,
+                coverage=float(present[:, index].sum()) / n_rows if n_rows else 0.0,
+                distribution=DistributionStats.from_array(
+                    values[present[:, index], index]
+                ),
             )
-        return out
-
-    def target_stats(self) -> tuple[list[TargetColumnStats], list[TargetColumnStats]]:
-        n_struct = self.dataset.N_structures
-        n_atoms = self.dataset.N_atoms
-        sys_stats: list[TargetColumnStats] = []
-        atom_stats: list[TargetColumnStats] = []
-        if self.dataset.targets_system is not None and n_struct:
-            t = np.asarray(self.dataset.targets_system[:n_struct])
-            m = (
-                np.asarray(self.dataset.mask_system[:n_struct])
-                if self.dataset.mask_system is not None
-                else None
-            )
-            sys_stats = self._target_column_stats(t, m, "sys")
-        if self.dataset.targets_atom is not None and n_atoms:
-            t = np.asarray(self.dataset.targets_atom[:n_atoms])
-            m = (
-                np.asarray(self.dataset.mask_atom[:n_atoms])
-                if self.dataset.mask_atom is not None
-                else None
-            )
-            atom_stats = self._target_column_stats(t, m, "atom")
-        return sys_stats, atom_stats
+            for index, name in enumerate(names)
+        ]
 
     # ----- BitBIRCH clustering -----
 
@@ -934,7 +910,7 @@ class MoleculeDatasetAnalysis:
                 bb_summary = self.run_bitbirch(unique_smiles)
 
         with timed("targets", timings):
-            sys_stats, atom_stats = self.target_stats()
+            label_stats = self.target_stats()
 
         charges = np.asarray(ds.total_charge[:n_struct]) if n_struct else np.asarray([])
         mults = np.asarray(ds.multiplicity[:n_struct]) if n_struct else np.asarray([])
@@ -955,8 +931,7 @@ class MoleculeDatasetAnalysis:
             lipinski_ro5_pass_fraction=ro5_pass_fraction,
             n_unique_scaffolds=n_unique_scaffolds,
             top_scaffolds=top_scaffolds,
-            target_columns_system=sys_stats,
-            target_columns_atom=atom_stats,
+            target_columns=label_stats,
             bitbirch=bb_summary,
             timings_seconds=dict(timings),
         )

@@ -61,16 +61,18 @@ def evaluation_of(spec: DatasetSpec) -> EvaluationSpec:
     return spec.evaluation
 
 
-def task_kind(dataset: MoleculeDataset) -> TaskKind:
-    """Regression, binary, multilabel or multiclass, from the zarr's task columns.
+def task_kind(spec: DatasetSpec) -> TaskKind:
+    """Regression, binary, multilabel or multiclass, from the spec's labels.
 
     Raises:
-        ValueError: if the dataset has no task set, mixes task types, or has a
-            multiclass task with more than one column.
+        ValueError: if the spec declares no labels, mixes task types, or has a
+            multiclass label next to other labels.
     """
-    if dataset.config.tasks is None:
-        raise ValueError("Dataset has no TaskSet; cannot infer task kind.")
-    columns = dataset.config.tasks.system_cols
+    columns = spec.labels
+    if not columns:
+        raise ValueError(
+            f"{spec.dataset_id} declares no labels; cannot infer task kind"
+        )
     types = {column.task_type for column in columns}
     if types == {TaskType.regression}:
         # Multi-target regression (e.g. polaris_adme_fang) is scored per column
@@ -118,25 +120,21 @@ def apply_label_transforms(
     return transformed
 
 
-def build_targets_with_nan(dataset: MoleculeDataset, spec: DatasetSpec) -> np.ndarray:
-    """``targets_system`` with NaN where ``mask_system == 0``, label transforms applied.
+def build_targets_with_nan(table: pd.DataFrame, spec: DatasetSpec) -> np.ndarray:
+    """The spec's label columns of ``table``, NaN for missing, transforms applied.
 
-    Downstream learner code uses NaN to skip missing labels in sparse multi-
-    label benchmarks (SIDER / ClinTox / Tox21). The zarr holds raw labels; each
-    column goes through its spec label's ``transform`` here, the single place
-    targets enter fitting and scoring, so metrics are on the transformed scale.
+    ``(n_rows, n_labels)`` in the spec's label order. Downstream learner code
+    uses NaN to skip missing labels in sparse multi-label benchmarks (SIDER /
+    ClinTox / Tox21). The table holds raw labels; each column goes through its
+    spec label's ``transform`` here, the single place targets enter fitting and
+    scoring, so metrics are on the transformed scale.
+
+    Raises:
+        KeyError: if a label column is missing from ``table``.
     """
-    if dataset.targets_system is None or dataset.mask_system is None:
-        raise ValueError(
-            "Dataset has no system task arrays; cannot evaluate. Build with "
-            "the benchmark ingest runner so targets are materialized."
-        )
-    if dataset.config.tasks is None:
-        raise ValueError("Dataset has no TaskSet; cannot name its target columns.")
-    targets = np.asarray(dataset.targets_system[:], dtype=float)
-    mask = np.asarray(dataset.mask_system[:], dtype=bool)
-    column_names = [column.name for column in dataset.config.tasks.system_cols]
-    return apply_label_transforms(np.where(mask, targets, np.nan), column_names, spec)
+    column_names = spec.label_names()
+    targets = table[column_names].to_numpy(dtype=float, na_value=np.nan)
+    return apply_label_transforms(targets, column_names, spec)
 
 
 def read_partition(
@@ -146,7 +144,7 @@ def read_partition(
 
     The split is read by name from the ``table.parquet`` beside the zarr, whose
     row ``i`` is structure ``i`` (invariant 1), so any of the dataset's split
-    columns can be scored, not just the one materialised into ``tasks/split``.
+    columns can be scored.
 
     Raises:
         ValueError: if the dataset carries no table, if ``split_column`` or
@@ -223,12 +221,11 @@ class Benchmark:
 
     @cached_property
     def task_kind(self) -> TaskKind:
-        return task_kind(self.dataset)
+        return task_kind(self.spec)
 
     @property
     def target_columns(self) -> list[str]:
-        assert self.dataset.config.tasks is not None  # checked by load_benchmark
-        return [column.name for column in self.dataset.config.tasks.system_cols]
+        return self.spec.label_names()
 
     @property
     def n_structures(self) -> int:
@@ -236,16 +233,36 @@ class Benchmark:
 
     @cached_property
     def _all_targets(self) -> np.ndarray:
-        return build_targets_with_nan(self.dataset, self.spec)
+        table = read_table(self.path, columns=self.target_columns)
+        return build_targets_with_nan(table, self.spec)
 
     def targets(self, structure_ids: np.ndarray | None = None) -> np.ndarray:
         """``(n, n_target_columns)`` targets, NaN for missing, transforms applied.
 
+        Read from the table (row ``i`` is structure ``i``, invariant 1).
         ``None`` returns every structure in zarr order.
         """
         if structure_ids is None:
             return self._all_targets
         return self._all_targets[np.asarray(structure_ids, dtype=np.int64)]
+
+    def class_indices(self) -> np.ndarray:
+        """The multiclass label as ``int64`` class indices, one per structure.
+
+        Raises:
+            ValueError: if the benchmark is not multiclass or a label is missing.
+        """
+        if self.task_kind != "multiclass":
+            raise ValueError(
+                f"{self.dataset_id} is a {self.task_kind} benchmark, not multiclass"
+            )
+        values = self.targets()[:, 0]
+        if np.isnan(values).any():
+            raise ValueError(
+                f"{self.dataset_id}: {int(np.isnan(values).sum())} structures have "
+                "no class label"
+            )
+        return values.astype(np.int64)
 
     def partition(self, split_column: str | None = None) -> Partition:
         """The partition of ``split_column``; ``None`` is the spec's ``default_split``."""
@@ -267,15 +284,15 @@ def load_benchmark(dataset_dir: Path) -> Benchmark:
     """Open a built benchmark dataset and check what the protocol relies on.
 
     Raises:
-        ValueError: if the dataset declares no evaluation block, has no task
-            set, or its zarr ``structure_id`` is not the row index.
+        ValueError: if the dataset declares no evaluation block or no labels,
+            or its zarr ``structure_id`` is not the row index.
     """
     dataset_dir = Path(dataset_dir)
     spec = read_spec(dataset_dir)
     evaluation_of(spec)
+    if not spec.labels:
+        raise ValueError(f"{dataset_dir} declares no labels; it is not a benchmark")
     dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
-    if dataset.config.tasks is None:
-        raise ValueError(f"{dataset_dir} has no TaskSet; it is not a benchmark")
     structure_ids = np.asarray(dataset.structure_ids[:], dtype=np.int64)
     if not np.array_equal(structure_ids, np.arange(len(structure_ids))):
         raise ValueError(

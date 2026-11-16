@@ -86,6 +86,36 @@ def test_molecule_dataset_analysis_runs(tmp_path: Path):
     assert (out_dir / "molecule_size_distribution.png").exists()
 
 
+def test_target_stats_come_from_the_spec_labels_in_the_table(tmp_path: Path):
+    from remedi_data.bundle import LabelColumn
+    from remedi_data.dataset.molecule_dataset import MoleculeDataset
+    from remedi_data.dataset.tasks import TaskType
+    from remedi_data.testing import write_small_dataset
+
+    values = np.linspace(0.0, 9.0, 10)
+    values[3] = np.nan
+    directory = write_small_dataset(
+        tmp_path,
+        dataset_id="labelled",
+        labels=[LabelColumn(name="gap", task_type=TaskType.regression)],
+        metrics=None,
+        targets=values.reshape(-1, 1),
+    )
+    analysis = MoleculeDatasetAnalysis(
+        MoleculeDataset.open_existing_dataset_from_dir(directory)
+    )
+
+    (stats,) = analysis.target_stats()
+
+    assert stats.name == "gap"
+    assert stats.coverage == pytest.approx(0.9)
+    assert stats.distribution.n == 9
+    assert stats.distribution.mean == pytest.approx(np.nanmean(values))
+    # A dataset without dataset.yaml (no declared labels) has no target stats.
+    synthetic = write_synthetic_dataset(tmp_path / "synthetic", ["CCO"])
+    assert MoleculeDatasetAnalysis(synthetic).target_stats() == []
+
+
 def test_heteroatom_chunking_matches_naive(tmp_path: Path):
     smiles = ["CCO", "c1ccncc1", "CCN"]
     dataset = write_synthetic_dataset(

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+import shutil
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 import yaml
 from pydantic import ValidationError
 
+from remedi_data.bundle import EvalMetric
 from remedi_data.bundle.spec import (
     DatasetSpec,
     IdentityLabelTransform,
@@ -16,7 +19,12 @@ from remedi_data.bundle.spec import (
     Log10LabelTransform,
 )
 from remedi_data.dataset.tasks import TaskType
-from remedi_eval.protocol import apply_label_transforms, build_targets_with_nan
+from remedi_data.testing import write_small_dataset
+from remedi_eval.protocol import (
+    apply_label_transforms,
+    build_targets_with_nan,
+    load_benchmark,
+)
 
 LOG10 = Log10LabelTransform()
 
@@ -119,16 +127,47 @@ def test_apply_label_transforms_rejects(
         apply_label_transforms(np.zeros(shape), column_names, spec)
 
 
-def test_build_targets_masks_then_transforms() -> None:
+def test_build_targets_reads_the_label_columns_then_transforms() -> None:
     spec = _spec(
-        [LabelColumn(name="y", task_type=TaskType.regression, transform=LOG10)]
+        [
+            LabelColumn(name="y", task_type=TaskType.regression, transform=LOG10),
+            LabelColumn(name="z", task_type=TaskType.regression),
+        ]
     )
-    fake_dataset = SimpleNamespace(
-        targets_system=np.array([[9.0], [-4.0], [123.0]]),
-        mask_system=np.array([[1], [1], [0]]),
-        config=SimpleNamespace(
-            tasks=SimpleNamespace(system_cols=[SimpleNamespace(name="y")])
-        ),
+    table = pd.DataFrame(
+        {"z": [1.0, 2.0, 3.0], "other": [0.0, 0.0, 0.0], "y": [9.0, -4.0, np.nan]}
     )
-    targets = build_targets_with_nan(fake_dataset, spec)  # ty: ignore[invalid-argument-type]
-    np.testing.assert_allclose(targets, [[1.0], [0.0], [np.nan]], equal_nan=True)
+    targets = build_targets_with_nan(table, spec)
+    np.testing.assert_allclose(
+        targets, [[1.0, 1.0], [0.0, 2.0], [np.nan, 3.0]], equal_nan=True
+    )
+
+
+def test_a_benchmark_reads_its_labels_from_the_spec_and_the_table(
+    tmp_path: Path,
+) -> None:
+    """The zarr holds no label arrays and no label names; the protocol takes the
+    names and task types from ``dataset.yaml`` and the values from the table."""
+    labels = [
+        LabelColumn(name="active", task_type=TaskType.classification),
+        LabelColumn(name="toxic", task_type=TaskType.classification),
+    ]
+    targets = np.tile([[1.0, 0.0], [0.0, np.nan]], (5, 1))
+    directory = write_small_dataset(
+        tmp_path,
+        dataset_id="two_labels",
+        labels=labels,
+        metrics=[EvalMetric.macro_auroc],
+        targets=targets,
+    )
+    shutil.rmtree(directory / "tasks", ignore_errors=True)
+    config_path = directory / "dataset_config.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config.pop("tasks", None)
+    config_path.write_text(yaml.safe_dump(config))
+
+    benchmark = load_benchmark(directory)
+
+    assert benchmark.task_kind == "multilabel"
+    assert benchmark.target_columns == ["active", "toxic"]
+    np.testing.assert_array_equal(benchmark.targets(), targets)

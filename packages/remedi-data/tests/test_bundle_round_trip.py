@@ -31,11 +31,10 @@ from remedi_data.bundle.provenance import PreparerRecord
 from remedi_data.bundle.spec import EvalMetric
 from remedi_data.chemistry.splits import fixed_test_seeded_split_columns
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.tasks import Split, TaskType
+from remedi_data.dataset.tasks import TaskType
 
 DATASET_ID = "round_trip"
 LABELS = ("y", "z")
-SPLIT_CODES = {split.name: split.value for split in Split}
 
 #: Source rows: a replicate (ethanol twice), an enantiomer pair (alanine), a
 #: molecule the filter drops (an isotope), and a sparse second label.
@@ -155,14 +154,8 @@ def test_the_zarr_matches_the_table_row_for_row(
     assert np.array_equal(dataset.structure_ids[:], table["structure_id"])
     assert np.array_equal(dataset.isomer_ids[:], table["stereoisomer_id"])
     assert np.array_equal(dataset.molecule_ids[:], table["molecule_id"])
-    labels = table[list(LABELS)].to_numpy(dtype=np.float64)
-    present = ~np.isnan(labels)
-    assert np.array_equal(np.asarray(dataset.mask_system[:]).astype(bool), present)
-    targets = np.asarray(dataset.targets_system[:], dtype=np.float64)
-    np.testing.assert_allclose(targets[present], labels[present], rtol=1e-6)
-    assert np.asarray(dataset.split[:]).tolist() == [
-        SPLIT_CODES[value] for value in table["split"]
-    ]
+    assert np.array_equal(dataset.total_charge[:], table["total_charge"])
+    assert np.array_equal(dataset.multiplicity[:], table["multiplicity"])
     frames = dataset.get_all_molecules()
     assert len(frames) == len(table)
     assert dataset.get_smiles_per_structure() == table["isomeric_smiles"].tolist()

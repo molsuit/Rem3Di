@@ -23,13 +23,7 @@ from pydantic import (
     model_validator,
 )
 
-from remedi_data.dataset.tasks import (
-    SPLIT_CODE_BY_NAME,
-    TaskConfig,
-    TaskScope,
-    TaskSet,
-    TaskType,
-)
+from remedi_data.dataset.tasks import SPLIT_CODE_BY_NAME, TaskType
 
 #: The identity columns every table starts with, in order.
 IDENTITY_COLUMNS: tuple[str, ...] = ("stereoisomer_id", "molecule_id", "enantiomer_of")
@@ -311,15 +305,4 @@ class DatasetSpec(BaseModel):
         """The spec of the dataset built from this bundle."""
         return DatasetSpec.model_validate(
             {**self.model_dump(), "geometry_origin": geometry_origin}
-        )
-
-    def task_set(self) -> TaskSet:
-        """The zarr-side :class:`TaskSet` the labels become: all per structure."""
-        return TaskSet.from_list(
-            [
-                TaskConfig(
-                    name=label.name, task_type=label.task_type, scope=TaskScope.system
-                )
-                for label in self.labels
-            ]
         )

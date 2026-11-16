@@ -62,7 +62,7 @@ from remedi_data.bundle import (
 from remedi_data.bundle import bundle as bundle_module
 from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.dataset.packed_structures import PackedStructures
-from remedi_data.dataset.tasks import TaskScope, TaskType
+from remedi_data.dataset.tasks import TaskType
 from remedi_data.testing import (
     GEOMETRY_LIMITS,
     embed_frame,
@@ -294,16 +294,6 @@ def test_evaluation_validators_refuse(update: dict) -> None:
 def test_label_column_validators_refuse(fields: dict) -> None:
     with pytest.raises(pydantic.ValidationError):
         LabelColumn.model_validate({"name": "label", **fields})
-
-
-def test_task_set_maps_every_label_to_a_system_column() -> None:
-    task_set = make_bundle_spec().task_set()
-    assert [(config.name, config.task_type) for config in task_set.system_cols] == [
-        ("activity", TaskType.classification),
-        ("logp", TaskType.regression),
-    ]
-    assert all(config.scope is TaskScope.system for config in task_set.system_cols)
-    assert task_set.atom_cols == []
 
 
 def test_metrics_with_headline_puts_the_headline_first_without_repeats() -> None:

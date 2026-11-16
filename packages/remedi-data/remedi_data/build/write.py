@@ -33,10 +33,7 @@ from remedi_data.bundle import (
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.packed_structures import PackedStructures
-from remedi_data.dataset.shard_aligned_writer import (
-    ShardAlignedWriter,
-)
-from remedi_data.dataset.tasks import Split, split_codes_from_names
+from remedi_data.dataset.shard_aligned_writer import ShardAlignedWriter
 
 logger = logging.getLogger(__name__)
 
@@ -89,27 +86,8 @@ def structures_sha256(dataset: MoleculeDataset) -> str:
     return digest.hexdigest()
 
 
-def _labels_and_masks(
-    table: pd.DataFrame, spec: DatasetSpec
-) -> tuple[np.ndarray | None, np.ndarray | None]:
-    if not spec.labels:
-        return None, None
-    values = table[spec.label_names()].to_numpy(dtype=np.float64)
-    masks = (~np.isnan(values)).astype(np.uint8)
-    return np.where(masks.astype(bool), values, 0.0), masks
-
-
-def _split_codes(table: pd.DataFrame, spec: DatasetSpec) -> np.ndarray:
-    if spec.evaluation is None:
-        return np.full(len(table), Split.unassigned.value, dtype=np.uint8)
-    return split_codes_from_names(
-        table[spec.evaluation.default_split].astype(str).tolist()
-    )
-
-
 def _write_zarr(
     path: Path,
-    spec: DatasetSpec,
     table: pd.DataFrame,
     structures: PackedStructures,
     layout: ZarrLayout,
@@ -121,12 +99,9 @@ def _write_zarr(
             molecule_chunk=layout.molecule_chunk,
             atom_chunks_per_shard=layout.atom_chunks_per_shard,
             molecule_chunks_per_shard=layout.molecule_chunks_per_shard,
-            tasks=spec.task_set() if spec.labels else None,
         ),
     )
     writer = ShardAlignedWriter(dataset)
-    targets, masks = _labels_and_masks(table, spec)
-    split_codes = _split_codes(table, spec)
     structure_ids = table["structure_id"].to_numpy(dtype=np.int64)
     molecule_ids = table["molecule_id"].to_numpy(dtype=np.int64)
     stereoisomer_ids = table["stereoisomer_id"].to_numpy(dtype=np.int64)
@@ -146,22 +121,17 @@ def _write_zarr(
             stereoisomer_ids[start:stop],
             total_charge[start:stop],
             multiplicity[start:stop],
-            None if targets is None else targets[start:stop],
-            None if masks is None else masks[start:stop],
-            None,
-            None,
-            split_codes[start:stop],
             structure_ids=structure_ids[start:stop],
         )
     writer.finalize()
 
 
-def zarr_problems(path: Path, spec: DatasetSpec, table: pd.DataFrame) -> list[str]:
+def zarr_problems(path: Path, table: pd.DataFrame) -> list[str]:
     """Invariant 8: the zarr at ``path`` against the table, row for row.
 
-    Structure count, the three id arrays, ``total_charge``, ``multiplicity``,
-    the default split's codes and the label values must all equal what the
-    table says.
+    Structure count, the three id arrays, ``total_charge`` and ``multiplicity``
+    must all equal what the table says. Labels and splits live only in the
+    table, so there is nothing of theirs to compare.
     """
     dataset = MoleculeDataset.open_existing_dataset_from_dir(path)
     rows = len(table)
@@ -188,23 +158,6 @@ def zarr_problems(path: Path, spec: DatasetSpec, table: pd.DataFrame) -> list[st
             table[name].to_numpy(dtype=np.float64),
         ):
             problems.append(f"8: {name} does not match the table")
-    # A corpus without labels has no task arrays, so no tasks/split either.
-    if spec.evaluation is not None and (
-        dataset.split is None
-        or not np.array_equal(
-            np.asarray(dataset.split[:rows], dtype=np.uint8),
-            _split_codes(table, spec),
-        )
-    ):
-        problems.append("8: tasks/split does not match the table's default split")
-    targets, masks = _labels_and_masks(table, spec)
-    if targets is not None and masks is not None:
-        stored_masks = np.asarray(dataset.mask_system[:rows]).astype(np.uint8)
-        stored_targets = np.asarray(dataset.targets_system[:rows], dtype=np.float64)
-        if not np.array_equal(stored_masks, masks) or not np.allclose(
-            np.where(masks.astype(bool), stored_targets, 0.0), targets
-        ):
-            problems.append("8: the zarr's labels do not match the table")
     return problems
 
 
@@ -247,8 +200,8 @@ def write_dataset(
     if staging.exists():
         shutil.rmtree(staging)  # left by an earlier run that died mid-write
     try:
-        _write_zarr(staging, spec, table, structures, layout or ZarrLayout())
-        problems = zarr_problems(staging, spec, table)
+        _write_zarr(staging, table, structures, layout or ZarrLayout())
+        problems = zarr_problems(staging, table)
         if problems:
             raise BundleValidationError(directory, problems)
         dataset = MoleculeDataset.open_existing_dataset_from_dir(staging)

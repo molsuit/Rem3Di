@@ -61,7 +61,7 @@ def verify_dataset(dataset_path: Path, *, workers: int = 1) -> VerifyReport:
         report.problems.append(f"the zarr cannot be opened: {error!r}")
         report.elapsed_seconds = time.monotonic() - started
         return report
-    report.problems += zarr_problems(dataset_path, bundle.spec, bundle.table)
+    report.problems += zarr_problems(dataset_path, bundle.table)
     report.structures_sha256 = structures_sha256(dataset)
     structures = read_packed_structures(dataset)
     outputs = bundle.provenance.outputs

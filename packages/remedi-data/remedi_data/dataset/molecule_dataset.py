@@ -92,11 +92,6 @@ class MoleculeDataset:
         isomer_ids: Array,
         total_charge: Array,
         multiplicity: Array,
-        targets_system: Array | None,
-        mask_system: Array | None,
-        targets_atom: Array | None,
-        mask_atom: Array | None,
-        split: Array | None,
         config: DatasetConfig,
         root: Path,
     ):
@@ -111,14 +106,6 @@ class MoleculeDataset:
 
         self.total_charge = total_charge
         self.multiplicity = multiplicity
-
-        self.targets_system = targets_system
-        self.mask_system = mask_system
-        self.targets_atom = targets_atom
-        self.mask_atom = mask_atom
-        # Per-structure literature split (uint8 Split codes). None when the
-        # dataset was created without the tasks group.
-        self.split = split
 
         self.config = config
 
@@ -178,6 +165,10 @@ class MoleculeDataset:
             FileNotFoundError: if ``path`` holds no zarr group or no
                 ``dataset_config.yaml``.
             KeyError: if one of the arrays is missing.
+            pydantic.ValidationError: if ``dataset_config.yaml`` holds a key
+                :class:`DatasetConfig` does not know, such as the ``tasks`` of
+                the layout before labels left the zarr
+                (``scripts/dataset_creation/migrate_dataset_identity.py``).
         """
         path = Path(path)
         store = LocalStore(path, read_only=True)
@@ -198,30 +189,6 @@ class MoleculeDataset:
             DatasetConfig, file=path / "dataset_config.yaml"
         )
 
-        tasks_grp = g["tasks"] if "tasks" in g else None
-
-        if tasks_grp is not None:
-            targets_system = (
-                tasks_grp["targets_system"] if "targets_system" in tasks_grp else None
-            )
-            mask_system = (
-                tasks_grp["mask_system"] if "mask_system" in tasks_grp else None
-            )
-            targets_atom = (
-                tasks_grp["targets_atom"] if "targets_atom" in tasks_grp else None
-            )
-            mask_atom = tasks_grp["mask_atom"] if "mask_atom" in tasks_grp else None
-            split = tasks_grp["split"] if "split" in tasks_grp else None
-
-        else:
-            targets_system, targets_atom, mask_atom, mask_system, split = (
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-
         return cls(
             positions,
             atomic_numbers,
@@ -231,11 +198,6 @@ class MoleculeDataset:
             stereo_id,
             total_charge,
             multiplicity,
-            targets_system=targets_system,
-            mask_system=mask_system,
-            targets_atom=targets_atom,
-            mask_atom=mask_atom,
-            split=split,
             config=config,
             root=path,
         )
@@ -294,63 +256,6 @@ class MoleculeDataset:
         )
         struct_id = _mk(ids, "structure_id", (0,), config.molecule_chunk, m_cps, "i8")
 
-        targets_system = None
-        mask_system = None
-        targets_atom = None
-        mask_atom = None
-        split = None
-
-        if config.tasks is not None:
-            tasks_grp = g.require_group("tasks")
-
-            # Per-structure literature split; written for every molecule by the
-            # ShardAlignedWriter (defaults to Split.unassigned when a generator
-            # supplies no split).
-            split = _mk(tasks_grp, "split", (0,), config.molecule_chunk, m_cps, "u1")
-
-            Nsys = len(config.tasks.system_cols)
-            Natom = len(config.tasks.atom_cols)
-
-            if Nsys > 0:
-                targets_system = _mk(
-                    tasks_grp,
-                    "targets_system",
-                    (0, Nsys),
-                    config.molecule_chunk,
-                    m_cps,
-                    "f4",
-                    max(1, Nsys),
-                )
-                mask_system = _mk(
-                    tasks_grp,
-                    "mask_system",
-                    (0, Nsys),
-                    config.molecule_chunk,
-                    m_cps,
-                    "u1",
-                    max(1, Nsys),
-                )
-
-            if Natom > 0:
-                targets_atom = _mk(
-                    tasks_grp,
-                    "targets_atom",
-                    (0, Natom),
-                    config.atom_chunk,
-                    a_cps,
-                    "f4",
-                    max(1, Natom),
-                )
-                mask_atom = _mk(
-                    tasks_grp,
-                    "mask_atom",
-                    (0, Natom),
-                    config.atom_chunk,
-                    a_cps,
-                    "u1",
-                    max(1, Natom),
-                )
-
         pyd_yaml.to_yaml_file(path / "dataset_config.yaml", config)
 
         return cls(
@@ -362,11 +267,6 @@ class MoleculeDataset:
             stereo_id,
             total_charge,
             multiplicity,
-            targets_system,
-            mask_system,
-            targets_atom,
-            mask_atom,
-            split,
             config,
             root=path,
         )

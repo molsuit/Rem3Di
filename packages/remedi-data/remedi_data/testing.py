@@ -384,10 +384,6 @@ def write_synthetic_dataset(
         stereoisomer_ids=np.zeros(n_structures, dtype=np.int64),
         total_charge=np.zeros(n_structures, dtype=np.float32),
         multiplicity=np.ones(n_structures, dtype=np.float32),
-        system_targets=None,
-        system_masks=None,
-        atom_targets=None,
-        atom_masks=None,
     )
     writer.finalize()
     pd.DataFrame(
@@ -403,19 +399,9 @@ def write_synthetic_dataset(
 
 
 def append_carbon_structures(
-    writer: ShardAlignedWriter,
-    n_molecules: int,
-    atoms_per_molecule: int,
-    *,
-    with_system_target: bool = False,
-    split: np.ndarray | None = None,
+    writer: ShardAlignedWriter, n_molecules: int, atoms_per_molecule: int
 ) -> None:
-    """Append ``n_molecules`` all-carbon structures at the origin through ``writer``.
-
-    ``with_system_target`` writes one zero-valued, unmasked system target per
-    structure (the dataset must declare one task column); ``split`` is passed
-    through to ``append_batch``.
-    """
+    """Append ``n_molecules`` all-carbon structures at the origin through ``writer``."""
     n_atoms = n_molecules * atoms_per_molecule
     writer.append_batch(
         positions=np.zeros((n_atoms, 3), dtype="f4"),
@@ -425,15 +411,6 @@ def append_carbon_structures(
         stereoisomer_ids=np.arange(n_molecules),
         total_charge=np.zeros(n_molecules, dtype="f4"),
         multiplicity=np.ones(n_molecules, dtype="f4"),
-        system_targets=np.zeros((n_molecules, 1), dtype="f4")
-        if with_system_target
-        else None,
-        system_masks=np.ones((n_molecules, 1), dtype="u1")
-        if with_system_target
-        else None,
-        atom_targets=None,
-        atom_masks=None,
-        split=split,
     )
 
 

@@ -70,7 +70,7 @@ from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.conformers import ConformerEmbeddingConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.packed_structures import PackedStructures
-from remedi_data.dataset.tasks import Split, TaskType
+from remedi_data.dataset.tasks import TaskType
 from remedi_data.runs.results import PydanticResult
 from remedi_data.testing import (
     ACHIRAL_TEN_SMILES,
@@ -327,18 +327,13 @@ def test_write_dataset_writes_a_zarr_and_the_three_files(
         "test": 1,
         "unassigned": 1,
     }
-    assert zarr_problems(directory, reloaded.spec, reloaded.table) == []
+    assert zarr_problems(directory, reloaded.table) == []
 
     assert written.outputs is not None
     assert structures_identity(directory) == written.outputs.structures_sha256
     dataset = MoleculeDataset.open_existing_dataset_from_dir(directory)
     assert written.outputs.structures_sha256 == structures_sha256(dataset)
     assert dataset.N_structures == 6
-    assert dataset.config.tasks is not None
-    assert [column.name for column in dataset.config.tasks.system_cols] == [
-        "activity",
-        "logp",
-    ]
     for atoms, expected in zip(
         dataset.get_all_molecules(), expanded.structures, strict=True
     ):
@@ -505,17 +500,15 @@ def test_zarr_problems_compares_the_zarr_to_the_table_row_for_row(
 ) -> None:
     directory = tmp_path / DATASET_ID
     write(expanded, directory)
-    reloaded = read_bundle(directory)
-    spec, table = reloaded.spec, reloaded.table
+    table = read_bundle(directory).table
 
-    assert zarr_problems(directory, spec, table.iloc[:-1]) == [
+    assert zarr_problems(directory, table.iloc[:-1]) == [
         "8: the zarr holds 6 structures for 5 rows"
     ]
     changes: list[tuple[str, Any, str]] = [
         ("molecule_id", table["molecule_id"][::-1].to_numpy(), "ids/molecule_id"),
-        ("split", "test", "tasks/split does not match the table's default split"),
-        ("logp", 99.0, "the zarr's labels do not match the table"),
-        ("activity", np.nan, "the zarr's labels do not match the table"),
+        ("total_charge", 1.0, "total_charge"),
+        ("multiplicity", 3.0, "multiplicity"),
     ]
     for column, value, expected in changes:
         changed = table.copy()
@@ -523,19 +516,40 @@ def test_zarr_problems_compares_the_zarr_to_the_table_row_for_row(
             changed[column] = value
         else:
             changed.loc[0, column] = value
-        (problem,) = zarr_problems(directory, spec, changed)
+        (problem,) = zarr_problems(directory, changed)
         assert problem.startswith("8:") and expected in problem
+    # Labels and splits are not in the zarr, so the table alone holds them.
+    relabelled = table.assign(logp=99.0, split="test")
+    assert zarr_problems(directory, relabelled) == []
 
 
-def test_a_labelled_corpus_without_evaluation_is_written_unassigned(
+def test_labels_and_splits_live_only_in_the_spec_and_the_table(
+    tmp_path: Path,
+) -> None:
+    directory = write_small_dataset(
+        tmp_path,
+        dataset_id="labelled",
+        labels=REGRESSION_LABEL,
+        metrics=[EvalMetric.mae],
+        targets=np.linspace(0.0, 1.0, 10),
+    )
+    assert not (directory / "tasks").exists()
+    config = yaml.safe_load((directory / "dataset_config.yaml").read_text())
+    assert set(config) == {
+        "atom_chunk",
+        "molecule_chunk",
+        "atom_chunks_per_shard",
+        "molecule_chunks_per_shard",
+    }
+
+
+def test_a_labelled_corpus_without_evaluation_is_written(
     tmp_path: Path,
 ) -> None:
     bundle = make_bundle(evaluation=False)
     directory = tmp_path / "corpus"
     write(expand(bundle, frames_for(bundle)), directory)
     assert read_bundle(directory).spec.evaluation is None
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(directory)
-    assert set(np.asarray(dataset.split[:]).tolist()) == {Split.unassigned.value}
     assert verify_dataset(directory).problems == []
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
 import numpy as np
@@ -17,6 +18,7 @@ from remedi.latent_evaluation.tmqm_clustering_utils import (
     get_metal_center_type,
     get_tm_colormap,
 )
+from remedi_data.bundle import read_spec, read_table
 
 
 @dataclass
@@ -139,29 +141,32 @@ class CoordinationNumberColor(_BaseColorProvider):
 
 
 class RegressionTargetColor(_BaseColorProvider):
+    """Colour by one label of the dataset, read from its ``table.parquet``."""
+
     kind: Literal["regression_target"] = "regression_target"
-    target_index: int = 0
+    #: The ``dataset.yaml`` label to colour by; ``None`` is its first label.
     target_name: str | None = None
     cmap: str = "viridis"
 
     def default_label(self) -> str:
-        if self.target_name is not None:
-            return self.target_name
-        return f"Regression target #{self.target_index}"
+        return self.target_name or "First label"
 
     def compute(self, ctx: DescriptorAnalysisContext) -> ColorSpec:
-        targets = ctx.dataset.targets_system
-        if targets is None:
+        directory = Path(ctx.dataset.path)
+        names = read_spec(directory).label_names()
+        if not names:
             raise ValueError(
-                "Dataset has no system-level regression targets but a "
-                "RegressionTargetColor provider was requested."
+                f"{directory} declares no labels but a RegressionTargetColor "
+                "provider was requested"
             )
-
-        values = np.asarray(
-            targets[: ctx.structure_count, self.target_index], dtype=np.float64
+        name = self.target_name or names[0]
+        if name not in names:
+            raise ValueError(f"{name!r} is not a label of {directory} ({names})")
+        values = read_table(directory, columns=[name])[name].to_numpy(
+            dtype=np.float64, na_value=np.nan
         )
         return ColorSpec(
-            values=values,
+            values=values[: ctx.structure_count],
             scatter_kwargs={"cmap": self.cmap},
             colorbar=True,
             colorbar_label=self.title_suffix(),
