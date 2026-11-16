@@ -1,10 +1,10 @@
 """The descriptor-calculator interface.
 
 A *descriptor calculator* turns a prepared :class:`MoleculeDataset` into an
-``(N, D)`` matrix aligned with the dataset's structure order. The optional
-``train_indices`` keyword is for future fitted descriptors (e.g. a learned PCA)
-that must only fit on the train split; deterministic and pre-trained
-calculators ignore it.
+``(N, D)`` matrix aligned with the dataset's structure order. Calculators are
+fit-free (deterministic or pre-trained): one matrix per dataset is cached and
+shared by every split, so a calculator that fitted on a train fold would leak
+that fold into every other partition's cache entry.
 """
 
 from __future__ import annotations
@@ -26,10 +26,5 @@ class DescriptorCalculator(ABC):
     """
 
     @abstractmethod
-    def calculate(
-        self,
-        dataset: MoleculeDataset,
-        *,
-        train_indices: np.ndarray | None = None,
-    ) -> np.ndarray:
+    def calculate(self, dataset: MoleculeDataset) -> np.ndarray:
         """Return shape ``(dataset.N_structures, descriptor_dim)``."""

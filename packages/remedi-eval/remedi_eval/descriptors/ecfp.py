@@ -19,13 +19,7 @@ class EcfpCalculator(DescriptorCalculator):
         self.fingerprint = fingerprint
         self.length = length
 
-    def calculate(
-        self,
-        dataset: MoleculeDataset,
-        *,
-        train_indices: np.ndarray | None = None,
-    ) -> np.ndarray:
-        del train_indices  # ECFP is deterministic — no fit step
+    def calculate(self, dataset: MoleculeDataset) -> np.ndarray:
         from molfeat.trans.fp import FPVecTransformer
 
         featurizer = FPVecTransformer(kind=self.fingerprint, length=self.length)

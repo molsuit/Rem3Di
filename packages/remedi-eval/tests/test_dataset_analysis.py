@@ -27,6 +27,16 @@ def test_compute_descriptors_valid_and_invalid():
     assert bad.valid is False
 
 
+def test_compute_descriptors_scaffold_keeps_chirality_like_the_splits():
+    """The analysis scaffold is the one the scaffold splits group by."""
+    from remedi_data.chemistry.splits import murcko_scaffold
+
+    trans_decalin = "C1CC[C@H]2CCCC[C@@H]2C1"
+    scaffold = _compute_descriptors(trans_decalin).scaffold
+    assert scaffold is not None and "@" in scaffold
+    assert scaffold == murcko_scaffold(trans_decalin)
+
+
 def test_distribution_stats_handles_empty():
     from remedi_eval.dataset_analysis.analysis import DistributionStats
 
@@ -209,3 +219,20 @@ def test_bitbirch_umap_projection_runs(tmp_path: Path):
     assert (out_dir / "bitbirch_umap.png").exists()
     assert (out_dir / "bitbirch_umap_legend.png").exists()
     assert (out_dir / "bitbirch_umap_coords.npz").exists()
+
+
+def test_datashader_image_result_returns_the_standard_manifest_entry(tmp_path: Path):
+    import datashader as ds
+    import datashader.transfer_functions as tf
+    import pandas as pd
+
+    from remedi_eval.dataset_analysis.analysis import _DatashaderImageResult
+
+    points = pd.DataFrame({"x": [0.0, 1.0], "y": [0.0, 1.0]})
+    image = tf.shade(ds.Canvas(plot_width=8, plot_height=8).points(points, "x", "y"))
+    result = _DatashaderImageResult(file_name=Path("umap.png"), image=image)
+
+    entry = result.serialize_to(tmp_path)
+
+    assert entry == {"result_type": "datashader_image", "file_name": "umap.png"}
+    assert (tmp_path / "umap.png").exists()

@@ -4,11 +4,11 @@ import logging
 import os
 import time
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Generator
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,11 +17,12 @@ from ase.visualize.plot import plot_atoms
 from pydantic import BaseModel, ConfigDict, Field
 from rdkit import Chem, RDLogger
 from rdkit.Chem import rdMolDescriptors as rdMD
-from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from remedi_data.chemistry.physchem import DESCRIPTORS_2D
+from remedi_data.chemistry.splits import murcko_scaffold
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import (
+    ArrayResult,
     EvalResult,
     PydanticResult,
 )
@@ -31,22 +32,10 @@ from remedi_eval.dataset_analysis.config import (
 )
 from remedi_eval.results import FigureResult
 
-
-class _NpzResult(EvalResult):
-    """Serializable bundle of numpy arrays written as a single .npz."""
-
-    result_type: str = "npz"
-    arrays: dict[str, np.ndarray]
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
-
-    def serialize_to(self, directory: Path) -> dict:
-        output_path = directory / self.file_name
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        # Build positional kwarg dict; np.savez_compressed accepts **kwds: ArrayLike.
-        arrays: dict[str, np.ndarray] = dict(self.arrays)
-        np.savez_compressed(str(output_path), **arrays)  # ty: ignore[invalid-argument-type]
-        return {"path": str(output_path)}
+#: The analyses group molecules by the scaffold the scaffold splits use
+#: (:func:`remedi_data.chemistry.splits.murcko_scaffold`, chirality kept), so a
+#: scaffold count here means what a scaffold split would see.
+SCAFFOLD_INCLUDE_CHIRALITY = True
 
 
 class _DatashaderImageResult(EvalResult):
@@ -57,7 +46,7 @@ class _DatashaderImageResult(EvalResult):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
-    def serialize_to(self, directory: Path) -> dict:
+    def serialize_to(self, directory: Path) -> dict[str, Any]:
         from datashader.utils import export_image
 
         output_path = directory / self.file_name
@@ -69,7 +58,7 @@ class _DatashaderImageResult(EvalResult):
             background="white",
             export_path=str(output_path.parent),
         )
-        return {"path": str(output_path)}
+        return self._manifest_entry()
 
 
 log = logging.getLogger(__name__)
@@ -105,16 +94,14 @@ def _compute_descriptors(smiles: str) -> _MolDescriptors:
 
     The numeric fields come from the shared :data:`physchem.DESCRIPTORS_2D`
     registry (one source of truth with the dataset-creation probe stage); the
-    scaffold / stereo fields stay analysis-only.
+    scaffold / stereo fields stay analysis-only. ``scaffold`` is the splits'
+    Bemis-Murcko scaffold, ``""`` for an acyclic molecule.
     """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return _MolDescriptors(valid=False)
     Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
-    try:
-        scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
-    except Exception:
-        scaffold = ""
+    scaffold = murcko_scaffold(smiles, include_chirality=SCAFFOLD_INCLUDE_CHIRALITY)
     d = DESCRIPTORS_2D
     return _MolDescriptors(
         mw=d["mw"](mol),
@@ -270,22 +257,15 @@ class DatasetSummary(BaseModel):
 
 
 @contextmanager
-def _timed(name: str, timings: dict[str, float]) -> Iterator[None]:
-    t0 = time.perf_counter()
+def timed(name: str, timings: dict[str, float]) -> Generator[None]:
+    """Record the wall-clock seconds of the ``with`` body in ``timings[name]``."""
+    start = time.perf_counter()
     try:
         yield
     finally:
-        elapsed = time.perf_counter() - t0
+        elapsed = time.perf_counter() - start
         timings[name] = elapsed
         log.info("%s took %.2fs", name, elapsed)
-
-
-def _bblean_available() -> bool:
-    try:
-        import bblean  # noqa: F401
-    except Exception:
-        return False
-    return True
 
 
 # ---------- MoleculeDatasetAnalysis ----------
@@ -597,13 +577,8 @@ class MoleculeDatasetAnalysis:
             return BitBirchSummary(enabled=False, notes="disabled by config")
         if not smiles:
             return BitBirchSummary(enabled=True, notes="no SMILES available")
-        if not _bblean_available():
-            return BitBirchSummary(
-                enabled=True,
-                notes="bblean not installed",
-            )
 
-        import bblean  # local import keeps it optional
+        import bblean
 
         if cfg.max_molecules is not None and len(smiles) > cfg.max_molecules:
             idx = self._rng.choice(len(smiles), size=cfg.max_molecules, replace=False)
@@ -750,17 +725,11 @@ class MoleculeDatasetAnalysis:
         sample_rows = np.concatenate([top_rows, rest_rows]).astype(np.int64)
         sample_rows.sort()
 
-        import bblean  # local import; we only get here if bblean was available
+        import bblean
+        import umap
 
         n_features = self.config.bitbirch.n_features
         unpacked = bblean.unpack_fingerprints(fps[sample_rows], n_features=n_features)
-
-        try:
-            import umap
-        except Exception as exc:
-            return BitBirchUmapSummary(
-                enabled=True, notes=f"umap-learn import failed: {exc!r}"
-            )
 
         log.info(
             "BitBIRCH UMAP: fitting %d points (n_neighbors=%d, metric=%s)",
@@ -793,7 +762,7 @@ class MoleculeDatasetAnalysis:
         # Save coords so users can re-render without refitting.
         coords_path = Path("bitbirch_umap_coords.npz")
         self.results.append(
-            _NpzResult(
+            ArrayResult(
                 file_name=coords_path,
                 arrays={
                     "coords": coords.astype(np.float32),
@@ -903,22 +872,22 @@ class MoleculeDatasetAnalysis:
             n_atoms,
         )
 
-        with _timed("molecule_sizes", timings):
+        with timed("molecule_sizes", timings):
             sizes = self.molecule_sizes()
         self.plot_molecule_size_distribution(sizes)
 
-        with _timed("atom_species", timings):
+        with timed("atom_species", timings):
             species_counts = self.atom_species()
         self.plot_atom_species_histogram(species_counts)
 
-        with _timed("heteroatom_counts", timings):
+        with timed("heteroatom_counts", timings):
             hetero = self.heteroatom_counts_per_structure()
         self.plot_heteroatom_distribution(hetero)
 
-        with _timed("charge_multiplicity", timings):
+        with timed("charge_multiplicity", timings):
             self.plot_charge_multiplicity()
 
-        with _timed("example_molecules", timings):
+        with timed("example_molecules", timings):
             self.plot_relaxed_atoms()
 
         # SMILES-derived metrics
@@ -930,12 +899,12 @@ class MoleculeDatasetAnalysis:
         ro5_pass_fraction: float | None = None
         bb_summary: BitBirchSummary | None = None
 
-        with _timed("collect_unique_smiles", timings):
+        with timed("collect_unique_smiles", timings):
             unique_smiles = ds.unique_smiles()
             log.info("Collected %d unique SMILES", len(unique_smiles))
 
         if unique_smiles:
-            with _timed("rdkit_descriptors", timings):
+            with timed("rdkit_descriptors", timings):
                 sample = self._sample_smiles(unique_smiles)
                 descriptors = self.compute_rdkit_descriptors(sample)
             valid = [d for d in descriptors if d.valid]
@@ -961,10 +930,10 @@ class MoleculeDatasetAnalysis:
                     / len(valid)
                 )
 
-            with _timed("bitbirch", timings):
+            with timed("bitbirch", timings):
                 bb_summary = self.run_bitbirch(unique_smiles)
 
-        with _timed("targets", timings):
+        with timed("targets", timings):
             sys_stats, atom_stats = self.target_stats()
 
         charges = np.asarray(ds.total_charge[:n_struct]) if n_struct else np.asarray([])

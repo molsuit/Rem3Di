@@ -4,32 +4,40 @@ import logging
 import os
 import time
 from collections import Counter, defaultdict
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from pydantic import BaseModel, ConfigDict, Field
 from rdkit import Chem, RDLogger
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
+from remedi_data.chemistry.splits import murcko_scaffold
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import (
+    ArrayResult,
     EvalResult,
     PydanticResult,
 )
 from remedi_eval.dataset_analysis.analysis import (
+    SCAFFOLD_INCLUDE_CHIRALITY,
     BitBirchSummary,
     BitBirchUmapSummary,
     DistributionStats,
     resolve_bitbirch_threshold,
+    timed,
 )
 from remedi_eval.dataset_analysis.config import (
+    MORGAN_RADIUS,
+    CpuNnTanimotoBackend,
     DatasetComparisonConfig,
     DatasetEntry,
+    NvmolkitNnTanimotoBackend,
 )
 from remedi_eval.results import FigureResult
 
@@ -37,22 +45,8 @@ RDLogger.DisableLog("rdApp.*")
 
 log = logging.getLogger(__name__)
 
-
-# ---------- Result helpers ----------
-
-
-class _NpzResult(EvalResult):
-    result_type: str = "npz"
-    arrays: dict[str, np.ndarray]
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
-
-    def serialize_to(self, directory: Path) -> dict:
-        output_path = directory / self.file_name
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        arrays: dict[str, np.ndarray] = dict(self.arrays)
-        np.savez_compressed(str(output_path), **arrays)  # ty: ignore[invalid-argument-type]
-        return {"path": str(output_path)}
+#: How often (in queries) the CPU nearest-neighbour search logs its progress.
+_CPU_PROGRESS_EVERY = 10_000
 
 
 # ---------- Pydantic summary models ----------
@@ -164,23 +158,22 @@ class DatasetComparisonSummary(BaseModel):
 
 
 def _murcko_specific(smiles: str) -> str | None:
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    try:
-        return MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
-    except Exception:
-        return None
+    """The scaffold splits group by; ``None`` for an unparseable or an acyclic
+    molecule (whose empty scaffold is no scaffold)."""
+    return murcko_scaffold(smiles, include_chirality=SCAFFOLD_INCLUDE_CHIRALITY) or None
 
 
 def _murcko_generic(smiles: str) -> str | None:
+    """The framework-only scaffold (atom and bond types stripped); ``None`` for
+    an unparseable or an acyclic molecule."""
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
     try:
-        scaf = MurckoScaffold.GetScaffoldForMol(mol)
-        scaf = MurckoScaffold.MakeScaffoldGeneric(scaf)
-        return Chem.MolToSmiles(scaf)
+        scaffold = MurckoScaffold.MakeScaffoldGeneric(
+            MurckoScaffold.GetScaffoldForMol(mol)
+        )
+        return Chem.MolToSmiles(scaffold) or None
     except Exception:
         return None
 
@@ -214,11 +207,7 @@ class _LoadedDataset:
 # ---------- NN Tanimoto backends ----------
 
 
-def _nn_tanimoto_cpu(
-    query_packed: np.ndarray,
-    ref_packed: np.ndarray,
-    chunk_size: int,
-) -> np.ndarray:
+def _nn_tanimoto_cpu(query_packed: np.ndarray, ref_packed: np.ndarray) -> np.ndarray:
     """Max Tanimoto of each query packed-uint8 fingerprint vs the reference
     set. Returns shape (n_query,) float64."""
     import bblean
@@ -231,13 +220,13 @@ def _nn_tanimoto_cpu(
     for i in range(n_q):
         sims = bblean.similarity.jt_sim_packed(query_packed[i], ref_packed)
         out[i] = float(np.max(sims))
-        if (i + 1) % max(1, chunk_size) == 0:
+        if (i + 1) % _CPU_PROGRESS_EVERY == 0:
             log.debug("NN-Tanimoto (cpu): %d/%d", i + 1, n_q)
     return out
 
 
 def _nvmolkit_radius(fingerprint_kind: str) -> int:
-    radius = {"ecfp4": 2, "ecfp6": 3}.get(fingerprint_kind)
+    radius = MORGAN_RADIUS.get(fingerprint_kind)
     if radius is None:
         raise ValueError(
             f"nvmolkit backend requires Morgan FPs (ecfp4/ecfp6); got {fingerprint_kind}."
@@ -325,17 +314,6 @@ def _nn_tanimoto_nvmolkit(
 # ---------- Orchestrator ----------
 
 
-@contextmanager
-def _timed(name: str, timings: dict[str, float]) -> Iterator[None]:
-    t0 = time.perf_counter()
-    try:
-        yield
-    finally:
-        elapsed = time.perf_counter() - t0
-        timings[name] = elapsed
-        log.info("%s took %.2fs", name, elapsed)
-
-
 @dataclass
 class _UnionFps:
     fps_packed: np.ndarray  # (N, F/8) uint8
@@ -355,7 +333,8 @@ class DatasetComparison:
          dataset name.
       2. Per-eval-dataset nearest-neighbor Tanimoto distribution against the
          pooled pretrain reference. CPU (bblean packed) backend is the
-         default; ``nn_tanimoto.backend='nvmolkit'`` switches to GPU.
+         default; ``nn_tanimoto.backend: {kind: nvmolkit}`` switches to GPU.
+         Both score the BitBIRCH fingerprint.
       3. Bemis-Murcko scaffold-set overlaps (pairwise Jaccards plus
          eval-coverage-by-pretrain). Both specific and generic Murcko
          scaffolds are reported.
@@ -429,6 +408,8 @@ class DatasetComparison:
         return fps, kept_smiles
 
     def _build_union(self) -> _UnionFps:
+        """Every dataset's fingerprints stacked, capped at ``bitbirch.max_molecules``
+        rows by a uniform random subsample of the union."""
         fps_list = [ld.fps_packed for ld in self._loaded if ld.fps_packed.shape[0] > 0]
         if not fps_list:
             raise RuntimeError("No fingerprints produced for any dataset")
@@ -441,11 +422,17 @@ class DatasetComparison:
                 continue
             idx_list.append(np.full(n, di, dtype=np.int64))
             smiles.extend(ld.kept_smiles)
-        return _UnionFps(
-            fps_packed=fps,
-            dataset_index=np.concatenate(idx_list),
-            smiles=smiles,
-        )
+        dataset_index = np.concatenate(idx_list)
+        cap = self.config.bitbirch.max_molecules
+        if cap is not None and len(dataset_index) > cap:
+            rows = np.sort(
+                self._rng.choice(len(dataset_index), size=cap, replace=False)
+            )
+            log.info("BitBIRCH union: subsampled %d of %d molecules", cap, len(smiles))
+            fps = fps[rows]
+            dataset_index = dataset_index[rows]
+            smiles = [smiles[int(row)] for row in rows]
+        return _UnionFps(fps_packed=fps, dataset_index=dataset_index, smiles=smiles)
 
     # ----- BitBIRCH on the union -----
 
@@ -545,14 +532,8 @@ class DatasetComparison:
         else:
             sample_rows = np.arange(n_fps, dtype=np.int64)
 
-        try:
-            import umap
-        except Exception as exc:  # pragma: no cover - optional
-            return BitBirchUmapSummary(
-                enabled=True, notes=f"umap-learn import failed: {exc!r}"
-            )
-
         import bblean
+        import umap
 
         unpacked = bblean.unpack_fingerprints(
             union.fps_packed[sample_rows], n_features=self.config.bitbirch.n_features
@@ -577,7 +558,7 @@ class DatasetComparison:
 
         # Two scatter plots: one colored by dataset origin, one by top-N clusters.
         self._plot_umap_by_origin(coords, union.dataset_index[sample_rows])
-        top_n = min(self.config.top_clusters_plotted, int(cluster_sizes.size))
+        top_n = min(cfg.top_clusters_colored, int(cluster_sizes.size))
         top_cids = (
             np.argsort(cluster_sizes)[-top_n:][::-1]
             if top_n > 0
@@ -586,7 +567,7 @@ class DatasetComparison:
         self._plot_umap_by_cluster(coords, row_cluster[sample_rows], top_cids)
 
         self.results.append(
-            _NpzResult(
+            ArrayResult(
                 file_name=Path("dataset_comparison_umap_coords.npz"),
                 arrays={
                     "coords": coords.astype(np.float32),
@@ -606,11 +587,17 @@ class DatasetComparison:
             fit_seconds=float(elapsed),
         )
 
+    def _umap_figure(self) -> tuple[Figure, Axes]:
+        """A square figure of ``bitbirch.umap.plot_size`` pixels."""
+        dots_per_inch = 100
+        inches = self.config.bitbirch.umap.plot_size / dots_per_inch
+        return plt.subplots(figsize=(inches, inches), dpi=dots_per_inch)
+
     def _plot_umap_by_origin(
         self, coords: np.ndarray, dataset_index: np.ndarray
     ) -> None:
         cmap = plt.colormaps.get_cmap("tab20")
-        fig, ax = plt.subplots(figsize=(8, 8))
+        fig, ax = self._umap_figure()
         for di, ld in enumerate(self._loaded):
             m = dataset_index == di
             if not np.any(m):
@@ -639,7 +626,7 @@ class DatasetComparison:
     ) -> None:
         top_set = set(int(c) for c in top_cids)
         cmap = plt.colormaps.get_cmap("tab20")
-        fig, ax = plt.subplots(figsize=(8, 8))
+        fig, ax = self._umap_figure()
         mask_other = np.asarray([int(c) not in top_set for c in cluster_ids])
         ax.scatter(
             coords[mask_other, 0],
@@ -730,7 +717,7 @@ class DatasetComparison:
             )
 
         # Scaffold purity per cluster (compute Murcko on union SMILES once).
-        with _timed("scaffolds_for_purity", self._timings):
+        with timed("scaffolds_for_purity", self._timings):
             scaffolds = _parallel_map(
                 _murcko_specific, union.smiles, self.config.rdkit_n_workers
             )
@@ -765,17 +752,17 @@ class DatasetComparison:
 
         # Save the contingency for downstream inspection.
         self.results.append(
-            _NpzResult(
+            ArrayResult(
                 file_name=Path("cluster_contingency.npz"),
                 arrays={
                     "contingency": contingency,
                     "cluster_sizes": sizes,
                     "scaffold_purity": purity,
                     "dataset_names": np.asarray(
-                        [e.name for e in self._entries], dtype=object
+                        [e.name for e in self._entries], dtype=np.str_
                     ),
                     "dataset_roles": np.asarray(
-                        [e.role for e in self._entries], dtype=object
+                        [e.role for e in self._entries], dtype=np.str_
                     ),
                 },
             )
@@ -847,18 +834,19 @@ class DatasetComparison:
 
     # ----- NN Tanimoto -----
 
-    def nn_tanimoto(self, union: _UnionFps) -> NnTanimotoSummary | None:
+    def nn_tanimoto(self) -> NnTanimotoSummary | None:
+        """Each eval molecule's nearest pretrain neighbour, by Tanimoto on the
+        ``bitbirch`` fingerprint (the same definition for both backends)."""
         cfg = self.config.nn_tanimoto
         if not cfg.enabled:
             return None
+        backend = cfg.backend
+        fingerprint = self.config.bitbirch
         pretrain_loaded = [ld for ld in self._loaded if ld.entry.role == "pretrain"]
         eval_loaded = [ld for ld in self._loaded if ld.entry.role == "eval"]
         if not pretrain_loaded or not eval_loaded:
             log.warning("NN Tanimoto skipped: need >=1 pretrain and >=1 eval dataset")
-            return NnTanimotoSummary(
-                backend=cfg.backend,
-                n_pretrain_reference=0,
-            )
+            return NnTanimotoSummary(backend=backend.kind, n_pretrain_reference=0)
 
         ref_packed = np.vstack([ld.fps_packed for ld in pretrain_loaded])
         ref_smiles: list[str] = []
@@ -868,19 +856,19 @@ class DatasetComparison:
             "NN Tanimoto: %d eval datasets vs %d pretrain molecules (backend=%s)",
             len(eval_loaded),
             ref_packed.shape[0],
-            cfg.backend,
+            backend.kind,
         )
 
         # GPU backend amortizes ref fingerprinting across eval datasets --
         # parsing 3.5M pretrain SMILES once is the difference between the
         # NN-Tanimoto step finishing in minutes vs. dominating the run.
         ref_gpu_fps = None
-        if cfg.backend == "nvmolkit":
-            with _timed("nn_tanimoto_ref_fps", self._timings):
+        if isinstance(backend, NvmolkitNnTanimotoBackend):
+            with timed("nn_tanimoto_ref_fps", self._timings):
                 ref_gpu_fps = _nvmolkit_compute_ref_fps(
                     ref_smiles,
-                    fingerprint_kind=cfg.fingerprint_kind,
-                    n_features=cfg.n_features,
+                    fingerprint_kind=fingerprint.fingerprint_kind,
+                    n_features=fingerprint.n_features,
                 )
             log.info(
                 "nvmolkit: ref FPs on %s, shape=%s",
@@ -892,20 +880,16 @@ class DatasetComparison:
         per_dataset: list[NnTanimotoPerDataset] = []
         per_dataset_values: dict[str, np.ndarray] = {}
         for ld in eval_loaded:
-            if cfg.backend == "cpu":
-                values = _nn_tanimoto_cpu(
-                    ld.fps_packed, ref_packed, chunk_size=cfg.chunk_size
-                )
-            elif cfg.backend == "nvmolkit":
+            if isinstance(backend, CpuNnTanimotoBackend):
+                values = _nn_tanimoto_cpu(ld.fps_packed, ref_packed)
+            else:
                 values = _nn_tanimoto_nvmolkit(
                     ld.kept_smiles,
                     ref_gpu_fps,
-                    fingerprint_kind=cfg.fingerprint_kind,
-                    n_features=cfg.n_features,
-                    chunk_size=cfg.chunk_size,
+                    fingerprint_kind=fingerprint.fingerprint_kind,
+                    n_features=fingerprint.n_features,
+                    chunk_size=backend.chunk_size,
                 )
-            else:  # pragma: no cover - exhaustive Literal
-                raise ValueError(f"unknown backend {cfg.backend!r}")
             per_dataset_values[ld.entry.name] = values
             per_dataset.append(
                 NnTanimotoPerDataset(
@@ -922,9 +906,9 @@ class DatasetComparison:
             )
         elapsed = time.perf_counter() - t0
 
-        self._plot_nn_tanimoto(per_dataset_values, cfg.histogram_bins)
+        self._plot_nn_tanimoto(per_dataset_values)
         self.results.append(
-            _NpzResult(
+            ArrayResult(
                 file_name=Path("nn_tanimoto_values.npz"),
                 arrays={
                     name: vals.astype(np.float32)
@@ -933,19 +917,14 @@ class DatasetComparison:
             )
         )
         return NnTanimotoSummary(
-            backend=cfg.backend,
+            backend=backend.kind,
             n_pretrain_reference=int(ref_packed.shape[0]),
             seconds_total=float(elapsed),
             per_dataset=per_dataset,
         )
 
-    def _plot_nn_tanimoto(
-        self, per_dataset_values: dict[str, np.ndarray], bins: int
-    ) -> None:
-        # `bins` is kept for API stability; the figure is now a violin plot
-        # which gives a cleaner side-by-side view of per-dataset distributions
-        # than overlaid histograms.
-        del bins
+    def _plot_nn_tanimoto(self, per_dataset_values: dict[str, np.ndarray]) -> None:
+        """Violin plot of the per-dataset nearest-neighbour similarities."""
         items = [(name, vals) for name, vals in per_dataset_values.items() if vals.size]
         if not items:
             return
@@ -1006,14 +985,14 @@ class DatasetComparison:
         generic_sets: dict[str, set[str]] = {}
         per_dataset: list[ScaffoldOverlapPerDataset] = []
         for ld in self._loaded:
-            with _timed(f"scaffolds_specific[{ld.entry.name}]", self._timings):
+            with timed(f"scaffolds_specific[{ld.entry.name}]", self._timings):
                 spec = _parallel_map(_murcko_specific, ld.kept_smiles, n_workers)
-            specific_sets[ld.entry.name] = {s for s in spec if s}
+            specific_sets[ld.entry.name] = {s for s in spec if s is not None}
             generic_set: set[str] | None = None
             if include_generic:
-                with _timed(f"scaffolds_generic[{ld.entry.name}]", self._timings):
+                with timed(f"scaffolds_generic[{ld.entry.name}]", self._timings):
                     gen = _parallel_map(_murcko_generic, ld.kept_smiles, n_workers)
-                generic_set = {s for s in gen if s}
+                generic_set = {s for s in gen if s is not None}
                 generic_sets[ld.entry.name] = generic_set
             per_dataset.append(
                 ScaffoldOverlapPerDataset(
@@ -1058,7 +1037,7 @@ class DatasetComparison:
             return None
 
         specific_sets, generic_sets, per_dataset = self._collect_scaffold_sets(
-            include_generic=cfg.include_generic, n_workers=cfg.n_rdkit_workers
+            include_generic=cfg.include_generic, n_workers=self.config.rdkit_n_workers
         )
         names = [e.name for e in self._entries]
 
@@ -1139,11 +1118,12 @@ class DatasetComparison:
     # ----- Orchestration -----
 
     def run(self) -> DatasetComparisonSummary:
-        with _timed("load_datasets", self._timings):
+        with timed("load_datasets", self._timings):
             self.load_datasets()
 
-        with _timed("build_union", self._timings):
+        with timed("build_union", self._timings):
             union = self._build_union()
+        n_in_union = np.bincount(union.dataset_index, minlength=len(self._loaded))
 
         per_dataset_counts = [
             PerDatasetCounts(
@@ -1151,25 +1131,28 @@ class DatasetComparison:
                 role=ld.entry.role,
                 n_smiles_unique=len(ld.smiles),
                 n_fingerprints=int(ld.fps_packed.shape[0]),
-                n_in_union=int(ld.fps_packed.shape[0]),
+                n_in_union=int(n_in_union[dataset_position]),
             )
-            for ld in self._loaded
+            for dataset_position, ld in enumerate(self._loaded)
         ]
 
-        with _timed("bitbirch_union", self._timings):
-            row_cluster, bb_summary = self.run_bitbirch_union(union)
-
-        with _timed("analyze_clusters", self._timings):
-            composition = self.analyze_clusters(union, row_cluster)
+        composition = None
+        if self.config.bitbirch.enabled:
+            with timed("bitbirch_union", self._timings):
+                row_cluster, bb_summary = self.run_bitbirch_union(union)
+            with timed("analyze_clusters", self._timings):
+                composition = self.analyze_clusters(union, row_cluster)
+        else:
+            bb_summary = BitBirchSummary(enabled=False, notes="disabled by config")
 
         nn = None
         if self.config.nn_tanimoto.enabled:
-            with _timed("nn_tanimoto", self._timings):
-                nn = self.nn_tanimoto(union)
+            with timed("nn_tanimoto", self._timings):
+                nn = self.nn_tanimoto()
 
         overlap = None
         if self.config.scaffold_overlap.enabled:
-            with _timed("scaffold_overlap", self._timings):
+            with timed("scaffold_overlap", self._timings):
                 overlap = self.scaffold_overlap()
 
         summary = DatasetComparisonSummary(

@@ -2,16 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
+from remedi_data.runs.results import ArrayResult
 from remedi_data.testing import write_synthetic_dataset
 from remedi_eval.dataset_analysis.comparison import (
     DatasetComparison,
     DatasetComparisonSummary,
+    _UnionFps,
 )
 from remedi_eval.dataset_analysis.config import (
     BitBirchConfig,
     BitBirchUmapConfig,
+    CpuNnTanimotoBackend,
     DatasetComparisonConfig,
     DatasetEntry,
     NnTanimotoConfig,
@@ -81,19 +85,8 @@ def _make_config(
             merge_criterion="diameter",
             umap=BitBirchUmapConfig(enabled=False),
         ),
-        nn_tanimoto=NnTanimotoConfig(
-            enabled=True,
-            fingerprint_kind="ecfp4",
-            n_features=1024,
-            chunk_size=8,
-            backend="cpu",
-            histogram_bins=20,
-        ),
-        scaffold_overlap=ScaffoldOverlapConfig(
-            enabled=True,
-            include_generic=True,
-            n_rdkit_workers=1,
-        ),
+        nn_tanimoto=NnTanimotoConfig(enabled=True, backend=CpuNnTanimotoBackend()),
+        scaffold_overlap=ScaffoldOverlapConfig(enabled=True, include_generic=True),
     )
 
 
@@ -174,3 +167,80 @@ def test_dataset_comparison_no_pretrain_skips_nn(
     # Composition still produced, but pretrain stats are zero.
     assert summary.composition is not None
     assert summary.composition.pretrain_molecules_in_eval_clusters == 0
+
+
+TRANS_DECALIN = "C1CC[C@H]2CCCC[C@@H]2C1"
+CIS_DECALIN = "C1CC[C@H]2CCCC[C@H]2C1"
+
+
+def test_scaffold_purity_skips_acyclic_molecules_and_keeps_chirality(
+    tmp_path: Path,
+) -> None:
+    """Purity uses the splits' scaffold definition: chirality kept, and the
+    empty scaffold of an acyclic molecule is no scaffold at all."""
+    config = _make_config(tmp_path / "a", tmp_path / "b", tmp_path / "out")
+    comparison = DatasetComparison(config)
+    union = _UnionFps(
+        fps_packed=np.zeros((6, 128), dtype=np.uint8),
+        dataset_index=np.array([0, 0, 1, 1, 0, 1]),
+        smiles=["CCO", "CCCN", TRANS_DECALIN, CIS_DECALIN, "c1ccccc1", "Cc1ccccc1"],
+    )
+    # Cluster 0: acyclic only; 1: the two decalin diastereomers; 2: benzene ring.
+    row_cluster = np.array([0, 0, 1, 1, 2, 2])
+
+    composition = comparison.analyze_clusters(union, row_cluster)
+
+    assert composition is not None
+    purity = composition.scaffold_purity_distribution
+    assert (purity.n, purity.min, purity.max) == (2, 0.5, 1.0)
+
+    out = comparison.output(tmp_path / "out")
+    # Plain string arrays: the npz loads without allow_pickle.
+    arrays = ArrayResult.load(out / "cluster_contingency.npz")
+    assert list(arrays["dataset_names"]) == ["pretrain_aliph", "eval_arom"]
+
+
+def test_disabled_bitbirch_is_not_run(
+    two_small_datasets: tuple[Path, Path], tmp_path: Path
+) -> None:
+    pretrain_path, eval_path = two_small_datasets
+    config = _make_config(pretrain_path, eval_path, tmp_path / "out")
+    config.bitbirch.enabled = False
+
+    summary = DatasetComparison(config).run()
+
+    assert summary.bitbirch.enabled is False
+    assert summary.composition is None
+    assert summary.nn_tanimoto is not None
+    assert summary.nn_tanimoto.per_dataset
+
+
+def test_bitbirch_max_molecules_caps_the_union(
+    two_small_datasets: tuple[Path, Path], tmp_path: Path
+) -> None:
+    pretrain_path, eval_path = two_small_datasets
+    config = _make_config(pretrain_path, eval_path, tmp_path / "out")
+    config.bitbirch.max_molecules = 8
+
+    summary = DatasetComparison(config).run()
+
+    assert summary.bitbirch.n_fingerprints == 8
+    assert summary.composition is not None
+    assert (
+        summary.composition.cluster_size_distribution.n == summary.bitbirch.n_clusters
+    )
+
+
+def test_nvmolkit_backend_needs_morgan_fingerprints(tmp_path: Path) -> None:
+    from remedi_eval.dataset_analysis.config import NvmolkitNnTanimotoBackend
+
+    config = _make_config(tmp_path / "a", tmp_path / "b", tmp_path / "out")
+    with pytest.raises(ValueError, match="ecfp4"):
+        DatasetComparisonConfig.model_validate(
+            config.model_dump()
+            | {
+                "bitbirch": config.bitbirch.model_dump()
+                | {"fingerprint_kind": "rdkit"},
+                "nn_tanimoto": {"backend": NvmolkitNnTanimotoBackend().model_dump()},
+            }
+        )

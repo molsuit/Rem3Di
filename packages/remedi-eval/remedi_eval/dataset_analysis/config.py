@@ -1,9 +1,19 @@
 """Configs for ``MoleculeDatasetAnalysis`` and ``DatasetComparison``."""
 
-from pathlib import Path
-from typing import Literal
+from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pathlib import Path
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+#: The bblean fingerprint kinds. ``ecfp4`` / ``ecfp6`` are RDKit Morgan
+#: fingerprints of radius 2 / 3 folded to ``n_features`` bits, the definition
+#: the nvMolKit nearest-neighbour backend reproduces on the GPU.
+FingerprintKind = Literal["ecfp4", "ecfp6", "rdkit", "topological", "ap"]
+
+#: Morgan radius of each fingerprint kind the nvMolKit backend can compute.
+MORGAN_RADIUS: dict[str, int] = {"ecfp4": 2, "ecfp6": 3}
 
 
 class BitBirchUmapConfig(BaseModel):
@@ -20,17 +30,23 @@ class BitBirchUmapConfig(BaseModel):
     random_state: int = 42
     top_clusters_colored: int = Field(20, ge=1)
     """How many largest clusters get distinct colors. Smaller ones go grey."""
-    plot_size: int = 1600
-    """Datashader canvas size (square pixels)."""
+    plot_size: int = Field(1600, ge=100)
+    """Size of the square UMAP image in pixels (the datashader canvas, or the
+    matplotlib scatter of the dataset comparison)."""
 
 
 class BitBirchConfig(BaseModel):
-    """BitBIRCH clustering configuration (used when bblean is installed)."""
+    """BitBIRCH clustering configuration.
+
+    The fingerprint (``fingerprint_kind``, ``n_features``) is also the one the
+    dataset comparison scores nearest-neighbour Tanimoto on, with either
+    backend.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    fingerprint_kind: Literal["ecfp4", "ecfp6", "rdkit", "maccs"] = "ecfp4"
+    fingerprint_kind: FingerprintKind = "ecfp4"
     n_features: int = 2048
     threshold: float = Field(0.65, ge=0.0, le=1.0)
     """Hard-coded threshold. Ignored when ``auto_threshold`` is true."""
@@ -43,8 +59,9 @@ class BitBirchConfig(BaseModel):
     branching_factor: int = Field(50, gt=1)
     merge_criterion: Literal["radius", "diameter", "tolerance"] = "diameter"
     tolerance: float | None = None
-    max_molecules: int | None = 1_000_000
-    """Cap on number of unique SMILES fed to BitBIRCH. None = use all."""
+    max_molecules: int | None = Field(1_000_000, ge=1)
+    """Cap on the number of molecules clustered (a uniform random subsample;
+    for the comparison, of the union of all datasets). None = use all."""
     umap: BitBirchUmapConfig = Field(default_factory=BitBirchUmapConfig)
 
 
@@ -101,36 +118,58 @@ class DatasetEntry(BaseModel):
     None = use all unique SMILES."""
 
 
+class CpuNnTanimotoBackend(BaseModel):
+    """bblean's packed Tanimoto kernel, one query at a time against the reference."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["cpu"] = "cpu"
+
+
+class NvmolkitNnTanimotoBackend(BaseModel):
+    """``nvmolkit.similarity.crossTanimotoSimilarity`` on the GPU.
+
+    Requires nvMolKit and a CUDA PyTorch, and a Morgan fingerprint
+    (``bitbirch.fingerprint_kind`` ``ecfp4`` or ``ecfp6``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["nvmolkit"] = "nvmolkit"
+    chunk_size: int = Field(2048, ge=1)
+    """How many query (eval) fingerprints to score against the whole pretrain
+    reference per GPU call (clamped so one similarity block stays under ~8 GB)."""
+
+
+NnTanimotoBackend = Annotated[
+    CpuNnTanimotoBackend | NvmolkitNnTanimotoBackend, Field(discriminator="kind")
+]
+
+
 class NnTanimotoConfig(BaseModel):
-    """Eval -> pretrain nearest-neighbor Tanimoto search."""
+    """Eval -> pretrain nearest-neighbor Tanimoto search.
+
+    Both backends score the ``bitbirch`` fingerprint (kind and size), so the
+    numbers do not depend on the backend.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    fingerprint_kind: Literal["ecfp4", "ecfp6", "rdkit", "maccs"] = "ecfp4"
-    """Re-used when the BitBIRCH fingerprints can't be shared (e.g. when the
-    GPU backend wants its own packing). Kept consistent with
-    ``BitBirchConfig.fingerprint_kind`` by default."""
-    n_features: int = 2048
-    chunk_size: int = Field(2048, ge=1)
-    """How many query (eval) fingerprints to score against the full pretrain
-    set per inner loop iteration. Trades RAM for Python overhead."""
-    backend: Literal["cpu", "nvmolkit"] = "cpu"
-    """`cpu` uses bblean's packed Tanimoto kernel. `nvmolkit` uses
-    ``nvmolkit.similarity.crossTanimotoSimilarity`` on the GPU (requires
-    nvMolKit + a CUDA-capable PyTorch install)."""
-    histogram_bins: int = Field(50, ge=4)
+    backend: NnTanimotoBackend = Field(default_factory=CpuNnTanimotoBackend)
 
 
 class ScaffoldOverlapConfig(BaseModel):
-    """Bemis-Murcko scaffold set overlap configuration."""
+    """Bemis-Murcko scaffold set overlap configuration.
+
+    Runs on the comparison's ``rdkit_n_workers`` processes.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
     include_generic: bool = True
     """Also compute the framework-only (atom-types stripped) scaffold."""
-    n_rdkit_workers: int = Field(8, ge=1)
 
 
 class DatasetComparisonConfig(BaseModel):
@@ -146,6 +185,7 @@ class DatasetComparisonConfig(BaseModel):
 
     random_seed: int = 1234
     rdkit_n_workers: int = Field(8, ge=1)
+    """Processes for the per-molecule RDKit work (scaffolds)."""
 
     bitbirch: BitBirchConfig = Field(default_factory=BitBirchConfig)
     nn_tanimoto: NnTanimotoConfig = Field(default_factory=NnTanimotoConfig)
@@ -154,8 +194,20 @@ class DatasetComparisonConfig(BaseModel):
     )
 
     top_clusters_plotted: int = Field(20, ge=1)
-    """How many largest clusters get distinct colors in the composition plot."""
+    """How many largest clusters the composition bar plot shows. The UMAP
+    colours ``bitbirch.umap.top_clusters_colored`` clusters."""
 
-    @property
-    def umap(self) -> BitBirchUmapConfig:
-        return self.bitbirch.umap
+    @model_validator(mode="after")
+    def _nvmolkit_needs_a_morgan_fingerprint(self) -> DatasetComparisonConfig:
+        backend = self.nn_tanimoto.backend
+        if (
+            self.nn_tanimoto.enabled
+            and isinstance(backend, NvmolkitNnTanimotoBackend)
+            and self.bitbirch.fingerprint_kind not in MORGAN_RADIUS
+        ):
+            raise ValueError(
+                "nn_tanimoto backend nvmolkit computes Morgan fingerprints only: "
+                f"set bitbirch.fingerprint_kind to one of {sorted(MORGAN_RADIUS)} "
+                f"(got {self.bitbirch.fingerprint_kind!r})"
+            )
+        return self
