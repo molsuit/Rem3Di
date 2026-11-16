@@ -112,7 +112,9 @@ def content_hash_of_table(table: pd.DataFrame) -> str:
     This is the comparability key of §4.7. Unlike ``sha256(table.parquet)`` it
     does not move when the parquet writer's compression or row-group size
     changes. String columns are hashed as plain objects so that the hash does
-    not depend on which pandas string backend is in use.
+    not depend on which pandas string backend is in use. Float columns are
+    hashed with ``-0.0`` folded into ``0.0``: pandas 3.0 and 3.1 hash the two
+    zeros differently, which moved tmQM's hash although its table was unchanged.
     """
     digest = hashlib.sha256()
     hashable = pd.DataFrame(index=table.index)
@@ -121,6 +123,8 @@ def content_hash_of_table(table: pd.DataFrame) -> str:
         digest.update(f"{column_name}:{_canonical_dtype_label(series)}\n".encode())
         if _canonical_dtype_label(series) == "string":
             hashable[column_name] = series.astype(object)
+        elif series.dtype.kind == "f":
+            hashable[column_name] = series + 0.0  # -0.0 + 0.0 is 0.0; NaN stays NaN
         else:
             hashable[column_name] = series
     digest.update(

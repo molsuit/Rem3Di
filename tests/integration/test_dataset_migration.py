@@ -268,3 +268,37 @@ def test_the_command_line_writes_a_report_and_fails_on_a_failure(
     zarr.open_array(directory / "tasks" / "split", mode="r+")[:] = Split.train.value
     assert migration.main(["--workers", "1", str(directory)]) == 1
     assert (directory / "tasks").is_dir()
+
+
+def _record_in_provenance(directory: Path, key: str, value: str) -> None:
+    path = directory / "provenance.yaml"
+    document = yaml.safe_load(path.read_text())
+    document["outputs"]["table.parquet"][key] = value
+    path.write_text(yaml.safe_dump(document, sort_keys=False))
+
+
+def test_a_moved_content_hash_is_re_recorded_when_the_table_bytes_are_unchanged(
+    tmp_path: Path,
+) -> None:
+    directory = _benchmark(tmp_path)
+    content = read_provenance(directory).outputs.table_parquet.content_sha256
+    _record_in_provenance(directory, "content_sha256", "0" * 64)
+
+    report = migration.migrate_dataset(directory, dry_run=False, workers=1)
+
+    assert report.outcome == "migrated", report.problems
+    assert any("content_sha256" in change for change in report.changes)
+    assert read_provenance(directory).outputs.table_parquet.content_sha256 == content
+    read_bundle(directory)
+
+
+def test_a_changed_table_is_not_re_keyed(tmp_path: Path) -> None:
+    directory = _benchmark(tmp_path)
+    _record_in_provenance(directory, "content_sha256", "0" * 64)
+    _record_in_provenance(directory, "file_sha256", "1" * 64)
+
+    report = migration.migrate_dataset(directory, dry_run=False, workers=1)
+
+    assert report.outcome == "failed"
+    assert "file_sha256 differs" in " ".join(report.problems)
+    assert read_provenance(directory).outputs.table_parquet.content_sha256 == "0" * 64

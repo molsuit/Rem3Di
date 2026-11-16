@@ -1021,3 +1021,30 @@ def test_preparer_record_path_is_relative_to_the_nearest_checkout(
     record = PreparerRecord.for_script("somewhere", loose_script)
     if not any((parent / ".git").exists() for parent in loose_script.parents):
         assert record.script == "loose_script.py"
+
+
+def _hash_pinning_table(value: list[float]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "structure_id": np.arange(3, dtype=np.int64),
+            "enantiomer_of": pd.array([1, 0, None], dtype="Int64"),
+            "value": value,
+            "name": pd.array(["a", None, "c"], dtype="str"),
+        }
+    )
+
+
+def test_content_hash_folds_negative_zero_and_is_pinned() -> None:
+    """pandas 3.0 and 3.1 hash ``-0.0`` differently, which moved tmQM's recorded
+    hash; the hash folds it into ``0.0``. The pinned digest was computed with
+    pandas 3.0.6 and 3.1.1 alike, so a pandas upgrade that moves it fails here
+    instead of in every ``read_bundle``."""
+    with_negative_zero = _hash_pinning_table([0.0, -0.0, 1.5])
+    with_zero = _hash_pinning_table([0.0, 0.0, 1.5])
+    assert bundle_module.content_hash_of_table(
+        with_negative_zero
+    ) == bundle_module.content_hash_of_table(with_zero)
+    assert (
+        bundle_module.content_hash_of_table(with_negative_zero)
+        == "133d4712d15256dbfcf872537b52b878219476d6845d81bbf3b2e562101434ec"
+    )

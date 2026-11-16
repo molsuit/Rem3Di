@@ -1,8 +1,12 @@
 """Bring datasets written before 2026-11-16 to the current layout, in place (one-off).
 
-Two format changes, neither of which touches coordinates or any other array the
+Three format changes, none of which touches coordinates or any other array the
 model reads:
 
+* ``content_sha256`` of ``table.parquet`` folds ``-0.0`` into ``0.0`` (pandas 3.0
+  and 3.1 hash the two zeros differently). A recorded value that no longer
+  matches is re-recorded, but only when the table's ``file_sha256`` proves its
+  bytes are the ones recorded; otherwise the dataset fails.
 * ``structures_sha256`` now also covers ``total_charge`` and ``multiplicity``.
   It is recomputed and written to ``provenance.yaml`` (``outputs``), the only
   place a dataset records it.
@@ -51,11 +55,17 @@ from remedi_data.build import structures_sha256, verify_dataset
 from remedi_data.bundle import (
     DATASET_CONFIG_FILENAME,
     PROVENANCE_FILENAME,
+    TABLE_FILENAME,
     BundleProvenance,
     DatasetSpec,
+    content_hash_of_table,
     is_dataset_directory,
     read_bundle,
+    read_spec,
+    read_table,
+    sha256_of_file,
 )
+from remedi_data.bundle.bundle import normalize_table
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import Split, split_codes_from_names
@@ -219,28 +229,61 @@ def _remove_tasks_group(directory: Path) -> None:
         shutil.rmtree(path)
 
 
-def _rewrite_structures_sha256(directory: Path, value: str) -> None:
-    """Set ``outputs.structures_sha256`` in ``provenance.yaml``, nothing else.
+def _rewrite_provenance_output(
+    directory: Path, keys: tuple[str, ...], value: str
+) -> None:
+    """Set one value under ``outputs`` in ``provenance.yaml``, nothing else.
 
     The document is edited as loaded and dumped with the writer's own options,
     so every other line stays as it was.
     """
     path = directory / PROVENANCE_FILENAME
     document = yaml.safe_load(path.read_text())
-    document["outputs"]["structures_sha256"] = value
+    node = document["outputs"]
+    for key in keys[:-1]:
+        node = node[key]
+    node[keys[-1]] = value
     BundleProvenance.model_validate(document)
     _write_atomically(
         path, yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
     )
 
 
+def rekey_table_content(directory: Path, report: DatasetMigrationReport) -> None:
+    """Re-record the table's ``content_sha256`` if only its definition moved.
+
+    Raises:
+        MigrationError: if the recorded hash differs and the table's bytes are
+            not the recorded ones either (a changed table, not a changed hash).
+    """
+    provenance = yaml.safe_load((directory / PROVENANCE_FILENAME).read_text())
+    record = provenance["outputs"][TABLE_FILENAME]
+    actual = content_hash_of_table(
+        normalize_table(read_table(directory), read_spec(directory))
+    )
+    if actual == record["content_sha256"]:
+        return
+    if sha256_of_file(directory / TABLE_FILENAME) != record["file_sha256"]:
+        raise MigrationError(
+            f"{TABLE_FILENAME} content_sha256 is {actual} but "
+            f"{record['content_sha256']} is recorded, and its file_sha256 differs too"
+        )
+    _rewrite_provenance_output(directory, (TABLE_FILENAME, "content_sha256"), actual)
+    report.changes.append(
+        f"provenance.yaml: {TABLE_FILENAME} content_sha256 "
+        f"{record['content_sha256']} -> {actual} (file bytes unchanged)"
+    )
+
+
 def migrate_layout(directory: Path, report: DatasetMigrationReport) -> None:
-    """Apply both changes to ``directory`` and record them in ``report``.
+    """Apply the three changes to ``directory`` and record them in ``report``.
 
     Raises:
         MigrationError: if the dataset cannot be migrated as it is (see
-            :func:`inspect_layout`); nothing was changed then.
+            :func:`rekey_table_content` and :func:`inspect_layout`); at most a
+            re-recorded table content hash was written then.
     """
+    rekey_table_content(directory, report)
     changes = inspect_layout(directory)
     if changes.removed_config_keys:
         _write_atomically(
@@ -263,7 +306,9 @@ def migrate_layout(directory: Path, report: DatasetMigrationReport) -> None:
         MoleculeDataset.open_existing_dataset_from_dir(directory)
     )
     if report.structures_sha256 != report.recorded_structures_sha256:
-        _rewrite_structures_sha256(directory, report.structures_sha256)
+        _rewrite_provenance_output(
+            directory, ("structures_sha256",), report.structures_sha256
+        )
         report.changes.append(
             "provenance.yaml: structures_sha256 "
             f"{report.recorded_structures_sha256} -> {report.structures_sha256}"
