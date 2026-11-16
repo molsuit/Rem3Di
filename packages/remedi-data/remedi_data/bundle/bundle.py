@@ -90,11 +90,8 @@ class Bundle:
 
 def sha256_of_file(path: Path) -> str:
     """Streaming sha256 of a file's bytes."""
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    with Path(path).open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
 def _canonical_dtype_label(series: pd.Series) -> str:

@@ -21,11 +21,7 @@ either way.
 from __future__ import annotations
 
 import logging
-import shutil
 import sys
-import tempfile
-import urllib.error
-import urllib.request
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,10 +34,11 @@ from remedi_data.bundle import (
     DatasetSpec,
     EvalMetric,
     FileHash,
+    PinnedFile,
     PreparerRecord,
     SourceRecord,
+    ensure_pinned_file,
     merge_source_rows,
-    sha256_of_file,
 )
 from remedi_data.bundle.preparation import (
     PREPARER_REPOSITORY,
@@ -142,6 +139,14 @@ class MoleculeNetCatalog(BaseModel):
             raise ValueError(f"source files {unpinned} have no pinned sha256")
         return self
 
+    def pinned_file(self, file_name: str) -> PinnedFile:
+        """The pin of one source file, fetched from ``<base_url><file name>``."""
+        return PinnedFile(
+            file_name=file_name,
+            sha256=self.source_files[file_name],
+            url=f"{self.base_url}{file_name}",
+        )
+
 
 #: The ten MoleculeNet bundles (§5a).
 MOLECULENET_CATALOG = read_model(DATASETS_FILE, MoleculeNetCatalog)
@@ -198,68 +203,25 @@ class MoleculeNetPreparerConfig(PreparerSettings):
 # ------------------------------------------------------------ source files
 
 
-def download_missing_file(base_url: str, raw_root: Path, file_name: str) -> None:
-    """Fetch ``file_name`` into ``raw_root`` unless it is already there.
-
-    The download goes to a temporary file first so that an interrupted
-    transfer never leaves a truncated file under the real name.
-
-    Raises:
-        MoleculeNetPreparationError: if the transfer fails.
-    """
-    target = raw_root / file_name
-    if target.is_file():
-        return
-    raw_root.mkdir(parents=True, exist_ok=True)
-    url = f"{base_url}{file_name}"
-    logger.info("downloading %s", url)
-    with tempfile.NamedTemporaryFile(dir=raw_root, delete=False) as handle:
-        temporary = Path(handle.name)
-        try:
-            with urllib.request.urlopen(url, timeout=60) as response:
-                shutil.copyfileobj(response, handle)
-        except (urllib.error.URLError, OSError) as error:
-            handle.close()
-            temporary.unlink(missing_ok=True)
-            raise MoleculeNetPreparationError(
-                f"downloading {url} failed: {error}"
-            ) from error
-    temporary.replace(target)
-
-
-def verify_source_file(raw_root: Path, file_name: str, pinned_sha256: str) -> FileHash:
-    """Check one source file against its pin and return its recorded hash.
-
-    Raises:
-        MoleculeNetPreparationError: if the file is missing or its sha256 differs.
-    """
-    path = raw_root / file_name
-    if not path.is_file():
-        raise MoleculeNetPreparationError(
-            f"missing raw file {path}; put the DeepChem S3 file there or run "
-            "with --download to fetch the missing files"
-        )
-    actual = sha256_of_file(path)
-    if actual != pinned_sha256:
-        raise MoleculeNetPreparationError(
-            f"{path} has sha256 {actual}, but datasets.yaml pins {pinned_sha256}"
-        )
-    return FileHash(sha256=actual)
-
-
 def ensure_source_files(config: MoleculeNetPreparerConfig) -> dict[str, FileHash]:
-    """Download (if asked) and verify every file the selected datasets read."""
+    """Download (with ``--download``) and verify every file the selected
+    datasets read.
+
+    Raises:
+        PinnedFileError: if a file is missing, cannot be fetched or is not the
+            pinned one.
+    """
     file_names = dict.fromkeys(
         dataset.source_file for dataset in config.selected_datasets()
     )
-    hashes: dict[str, FileHash] = {}
-    for file_name in file_names:
-        if config.download:
-            download_missing_file(config.catalog.base_url, config.raw_root, file_name)
-        hashes[file_name] = verify_source_file(
-            config.raw_root, file_name, config.catalog.source_files[file_name]
+    return {
+        file_name: ensure_pinned_file(
+            config.catalog.pinned_file(file_name),
+            config.raw_root,
+            download=config.download,
         )
-    return hashes
+        for file_name in file_names
+    }
 
 
 @dataclass(frozen=True)

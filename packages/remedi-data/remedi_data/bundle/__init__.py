@@ -65,6 +65,11 @@ from remedi_data.bundle.identity import (
     identity_from_canonical,
     mirror_isomeric_smiles,
 )
+from remedi_data.bundle.pinned_files import (
+    PinnedFile,
+    PinnedFileError,
+    ensure_pinned_file,
+)
 from remedi_data.bundle.provenance import (
     BundleCounts,
     BundleOutputs,
@@ -138,6 +143,8 @@ __all__ = [
     "LabelTransform",
     "Log10LabelTransform",
     "MergedRows",
+    "PinnedFile",
+    "PinnedFileError",
     "PreparerRecord",
     "SmilesParseError",
     "SourceRecord",
@@ -152,6 +159,7 @@ __all__ = [
     "count_stereoisomer_straddling_constitutions",
     "discover_bundles",
     "discover_datasets",
+    "ensure_pinned_file",
     "expand_to_structures",
     "filter_source_smiles",
     "git_head_sha",

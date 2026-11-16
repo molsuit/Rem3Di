@@ -1,8 +1,8 @@
 """Tests for the MoleculeNet-specific parts of the MoleculeNet preparer.
 
 The shared mechanics (merge, table, spec, report, CLI) are tested with
-``remedi_data.bundle``. Here: the catalog, the pin check, the download
-and the csv reader on tiny synthetic files, :func:`run` end to end on a
+``remedi_data.bundle``. Here: the catalog, its source files
+(pinned and downloaded by ``remedi_data.bundle.ensure_pinned_file``), the csv reader on tiny synthetic files, :func:`run` end to end on a
 synthetic catalog whose pins are computed in the test, and one test on the
 smallest real dataset (freesolv), skipped when the pinned raw file is absent.
 """
@@ -21,18 +21,17 @@ from remedi_prepare_moleculenet.prepare import (
     MoleculeNetDataset,
     MoleculeNetPreparationError,
     MoleculeNetPreparerConfig,
-    download_missing_file,
     ensure_source_files,
     main,
     read_source_table,
     run,
-    verify_source_file,
 )
 
 from remedi_data.bundle import (
     AGGREGATION_NOTICE,
     INVALID_SMILES,
     EvalMetric,
+    PinnedFileError,
     read_bundle,
     sha256_of_file,
 )
@@ -173,31 +172,6 @@ def test_the_scaffold_fractions_must_leave_a_test_fold() -> None:
 # ------------------------------------------------------------ source files
 
 
-def test_verify_source_file_checks_the_pin(tmp_path: Path) -> None:
-    pin = _write_csv(tmp_path, "toy.csv", pd.DataFrame({"smiles": ["CCO"]}))
-    assert verify_source_file(tmp_path, "toy.csv", pin).sha256 == pin
-    with pytest.raises(MoleculeNetPreparationError, match=r"but datasets\.yaml pins"):
-        verify_source_file(tmp_path, "toy.csv", PIN)
-    with pytest.raises(MoleculeNetPreparationError, match="run with --download"):
-        verify_source_file(tmp_path, "missing.csv", PIN)
-
-
-def test_download_fetches_only_missing_files(tmp_path: Path) -> None:
-    origin = tmp_path / "origin"
-    pin = _write_csv(origin, "toy.csv", pd.DataFrame({"smiles": ["CCO"]}))
-    raw_root = tmp_path / "raw"
-    download_missing_file(origin.as_uri() + "/", raw_root, "toy.csv")
-    assert sha256_of_file(raw_root / "toy.csv") == pin
-
-    (raw_root / "toy.csv").write_text("kept as is\n")
-    download_missing_file(origin.as_uri() + "/", raw_root, "toy.csv")
-    assert (raw_root / "toy.csv").read_text() == "kept as is\n"
-
-    with pytest.raises(MoleculeNetPreparationError, match="downloading"):
-        download_missing_file(origin.as_uri() + "/", raw_root, "absent.csv")
-    assert sorted(path.name for path in raw_root.iterdir()) == ["toy.csv"]
-
-
 def test_ensure_source_files_downloads_then_checks_the_pin(tmp_path: Path) -> None:
     origin = tmp_path / "origin"
     _write_csv(origin, "toy.csv", pd.DataFrame({"smiles": ["CCO"]}))
@@ -205,7 +179,7 @@ def test_ensure_source_files_downloads_then_checks_the_pin(tmp_path: Path) -> No
     config = MoleculeNetPreparerConfig(
         raw_root=tmp_path / "raw", catalog=catalog, download=True
     )
-    with pytest.raises(MoleculeNetPreparationError, match=r"but datasets\.yaml pins"):
+    with pytest.raises(PinnedFileError, match="is pinned"):
         ensure_source_files(config)
     assert (tmp_path / "raw" / "toy.csv").is_file()
 
@@ -337,7 +311,7 @@ def test_run_checks_every_pin_before_writing(tmp_path: Path) -> None:
     config = MoleculeNetPreparerConfig(
         raw_root=tmp_path / "raw", bundle_root=tmp_path / "bundles", catalog=catalog
     )
-    with pytest.raises(MoleculeNetPreparationError, match=r"but datasets\.yaml pins"):
+    with pytest.raises(PinnedFileError, match="is pinned"):
         run(config)
     assert not (tmp_path / "bundles").exists()
     assert main(["--raw-root", str(tmp_path), "--bundle-root", str(tmp_path)]) == 1
