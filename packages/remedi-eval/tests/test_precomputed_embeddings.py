@@ -183,7 +183,7 @@ def _panel(
         EvalManifest(
             model=model,
             output_root=output_root,
-            resource_cache_dir=tmp_path / "cache",
+            descriptor_cache_dir=tmp_path / "cache",
             tasks=[
                 BenchmarkPanelConfig(
                     eval_root=tmp_path / "datasets",
@@ -204,7 +204,7 @@ def test_a_panel_on_precomputed_embeddings_matches_the_in_process_descriptor(
 
     # The same matrix, written by "another package" in shuffled order.
     dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
-    matrix = ecfp.build().calculate(dataset)
+    matrix = ecfp.calculate(dataset)
     ids = _structure_ids(dataset_dir)
     order = np.random.default_rng(1).permutation(N_ROWS)
     _write(tmp_path / "emb", dataset_dir, ids[order], matrix[order])

@@ -1,7 +1,7 @@
 """Run a unified evaluation manifest (model x tasks) fault-tolerantly.
 
 One manifest describes one model's full evaluation — currently the benchmark
-panel. Tasks share embeddings via the run's :class:`ResourceCache`; artifacts
+panel. Tasks share descriptor matrices through the run's context; artifacts
 are written incrementally and a failing task is recorded in ``status.yaml``
 rather than sinking the run.
 

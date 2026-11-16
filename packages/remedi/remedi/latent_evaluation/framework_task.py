@@ -28,7 +28,6 @@ from remedi_data.bundle.bundle import read_spec
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import EvalResult
 from remedi_eval.framework.context import EvalContext
-from remedi_eval.framework.resources import EmbeddingSpec
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +56,8 @@ class DescriptorAnalysisConfig(BaseModel):
     def run(self, ctx: EvalContext) -> Iterator[EvalResult]:
         ctx.task_dir("descriptor_analysis")
         dataset = MoleculeDataset.open_existing_dataset_from_dir(self.dataset_path)
-        descriptors = ctx.resources.get(
-            EmbeddingSpec(
-                dataset_id=read_spec(self.dataset_path).dataset_id,
-                descriptor=ctx.model,
-                dataset=dataset,
-                cache_dir=ctx.resource_cache_dir,
-            )
+        descriptors = ctx.descriptor_matrix(
+            ctx.model, dataset, read_spec(self.dataset_path).dataset_id
         )
         if self.max_structures is not None:
             descriptors = descriptors[: self.max_structures]

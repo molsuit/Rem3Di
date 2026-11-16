@@ -5,10 +5,8 @@
 precomputed embeddings, the entry for every trained encoder.
 """
 
-from remedi_eval.descriptors.base import DescriptorCalculator
-from remedi_eval.descriptors.cache import compute_and_cache
 from remedi_eval.descriptors.config import DescriptorConfig
-from remedi_eval.descriptors.ecfp import EcfpCalculator, EcfpConfig
+from remedi_eval.descriptors.ecfp import EcfpConfig
 from remedi_eval.descriptors.embeddings_file import (
     EmbeddingsFile,
     EmbeddingsFileError,
@@ -26,9 +24,7 @@ from remedi_eval.descriptors.embeddings_file import (
 from remedi_eval.descriptors.precomputed import PrecomputedEmbeddingsConfig
 
 __all__ = [
-    "DescriptorCalculator",
     "DescriptorConfig",
-    "EcfpCalculator",
     "EcfpConfig",
     "EmbeddingsFile",
     "EmbeddingsFileError",
@@ -36,7 +32,6 @@ __all__ = [
     "EnsuredEmbeddings",
     "PrecomputedEmbeddingsConfig",
     "ProducerRecord",
-    "compute_and_cache",
     "embeddings_aligned_to",
     "embeddings_paths",
     "ensure_embeddings",

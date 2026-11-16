@@ -1,4 +1,13 @@
-"""ECFP fingerprints over a dataset's SMILES (:mod:`remedi_data.chemistry.fingerprints`)."""
+"""ECFP fingerprints over a dataset's SMILES (:mod:`remedi_data.chemistry.fingerprints`).
+
+The matrix is cached as an embeddings pair (:mod:`embeddings_file`) at
+``<cache_root>/<dataset_id>/<name>.npz`` with the config's hash as
+``descriptor_identity``. A pair whose ``structures_sha256`` or identity does
+not match the request, or that does not read back intact, is recomputed and
+overwritten (:func:`~remedi_eval.descriptors.embeddings_file.ensure_embeddings`,
+under a per-pair file lock), so one name holds one variant at a time and a
+stale matrix is never served.
+"""
 
 from __future__ import annotations
 
@@ -11,23 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.chemistry.fingerprints import morgan_fingerprints
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_eval.descriptors.base import DescriptorCalculator
-from remedi_eval.descriptors.cache import compute_and_cache
-
-
-class EcfpCalculator(DescriptorCalculator):
-    def __init__(self, *, radius: int, fingerprint_size: int) -> None:
-        self.radius = radius
-        self.fingerprint_size = fingerprint_size
-
-    def calculate(self, dataset: MoleculeDataset) -> np.ndarray:
-        bits = morgan_fingerprints(
-            dataset.get_smiles_per_structure(),
-            layout="dense",
-            radius=self.radius,
-            size=self.fingerprint_size,
-        )
-        return bits.astype(np.float32)
+from remedi_eval.descriptors.embeddings_file import ensure_embeddings, producer_record
 
 
 class EcfpConfig(BaseModel):
@@ -42,11 +35,6 @@ class EcfpConfig(BaseModel):
     radius: int = Field(2, ge=0)
     fingerprint_size: int = Field(2048, gt=0)
 
-    def build(self) -> EcfpCalculator:
-        return EcfpCalculator(
-            radius=self.radius, fingerprint_size=self.fingerprint_size
-        )
-
     def identity(self) -> str:
         """sha256 over the config: every knob that changes the matrix.
 
@@ -56,8 +44,31 @@ class EcfpConfig(BaseModel):
         """
         return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
 
+    def calculate(self, dataset: MoleculeDataset) -> np.ndarray:
+        """``(N, fingerprint_size)`` float32 bits, one row per structure."""
+        bits = morgan_fingerprints(
+            dataset.get_smiles_per_structure(),
+            layout="dense",
+            radius=self.radius,
+            size=self.fingerprint_size,
+        )
+        return bits.astype(np.float32)
+
     def load_matrix(
         self, dataset: MoleculeDataset, dataset_id: str, cache_root: Path
     ) -> np.ndarray:
-        """The fingerprint matrix in zarr order, cached under ``cache_root``."""
-        return compute_and_cache(self, dataset, cache_root, dataset_id)
+        """The fingerprint matrix in zarr order, cached under ``cache_root``.
+
+        Raises:
+            FileNotFoundError: if the dataset directory carries no
+                ``provenance.yaml`` to identify its contents by.
+        """
+        return ensure_embeddings(
+            cache_root,
+            dataset,
+            dataset_id=dataset_id,
+            descriptor_name=self.name,
+            descriptor_identity=self.identity(),
+            compute=lambda: self.calculate(dataset),
+            producer=producer_record("remedi-eval"),
+        ).embedding

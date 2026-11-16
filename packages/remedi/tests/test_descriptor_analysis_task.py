@@ -15,7 +15,7 @@ from remedi_data.dataset.tasks import TaskType
 from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
 from remedi_data.yaml_io import read_model
 from remedi_eval.descriptors import EcfpConfig
-from remedi_eval.framework import EvalContext, ResourceCache
+from remedi_eval.framework import EvalContext
 
 
 def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
@@ -36,8 +36,7 @@ def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
     out.mkdir(parents=True)
     ctx = EvalContext(
         output_root=out,
-        resource_cache_dir=tmp_path / "cache",
-        resources=ResourceCache(),
+        descriptor_cache_dir=tmp_path / "cache",
         model=EcfpConfig(name="ecfp_256", fingerprint_size=256),
     )
     task = DescriptorAnalysisConfig(
@@ -101,8 +100,7 @@ def _context(tmp_path: Path) -> tuple[EvalContext, Path]:
     return (
         EvalContext(
             output_root=out,
-            resource_cache_dir=tmp_path / "cache",
-            resources=ResourceCache(),
+            descriptor_cache_dir=tmp_path / "cache",
             model=EcfpConfig(name="ecfp_256", fingerprint_size=256),
         ),
         out,

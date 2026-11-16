@@ -82,7 +82,13 @@ def run_tasks(
         logger.info("=== task %s ===", name)
         started = time.monotonic()
         try:
-            artifacts = [artifact.serialize_to(out) for artifact in task.run(ctx)]
+            # A task may rewrite one artifact as it goes (a results table after
+            # every cell); it is listed once, in the place it first appeared.
+            artifacts_by_file: dict[str, dict[str, Any]] = {}
+            for artifact in task.run(ctx):
+                entry = artifact.serialize_to(out)
+                artifacts_by_file[str(entry.get("file_name"))] = entry
+            artifacts = list(artifacts_by_file.values())
             statuses.append(
                 TaskStatus(
                     name=name,

@@ -26,10 +26,10 @@ from remedi_data.bundle import (
 )
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_eval.descriptors import (
-    DescriptorCalculator,
     EcfpConfig,
-    compute_and_cache,
     embeddings_paths,
+    ensure_embeddings,
+    producer_record,
     read_embeddings,
     read_metadata,
 )
@@ -80,14 +80,14 @@ def write_stub_dataset(
     return stub_dataset(directory)
 
 
-def test_compute_and_cache_writes_then_short_circuits(
+def test_the_matrix_is_written_then_read_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = EcfpConfig(fingerprint_size=128, name="ecfp_128")
     ds = write_stub_dataset(tmp_path / "toy", "a" * 64)
     cache_dir = tmp_path / "cache"
 
-    X = compute_and_cache(cfg, ds, cache_dir, "toy")
+    X = cfg.load_matrix(ds, "toy", cache_dir)
     npz_path, yaml_path = embeddings_paths(cache_dir, "toy", "ecfp_128")
     assert npz_path.exists() and yaml_path.exists()
     assert X.shape == (len(_SMILES), 128)
@@ -98,8 +98,10 @@ def test_compute_and_cache_writes_then_short_circuits(
     assert metadata.structures_sha256 == "a" * 64
 
     # Second call with the identical config hits the cache: nothing is computed.
-    monkeypatch.setattr(EcfpConfig, "build", lambda self: pytest.fail("recomputed"))
-    X2 = compute_and_cache(cfg, ds, cache_dir, "toy")
+    monkeypatch.setattr(
+        EcfpConfig, "calculate", lambda self, dataset: pytest.fail("recomputed")
+    )
+    X2 = cfg.load_matrix(ds, "toy", cache_dir)
     np.testing.assert_array_equal(X, X2)
     visible = [
         path.name
@@ -131,12 +133,12 @@ def test_a_mismatched_cache_entry_is_recomputed_and_overwritten(
     second = write_stub_dataset(
         tmp_path / "second" / "HIA_Hou", second_structures_sha256
     )
-    compute_and_cache(
-        EcfpConfig(fingerprint_size=64, name="ecfp"), first, cache_dir, "HIA_Hou"
+    EcfpConfig(fingerprint_size=64, name="ecfp").load_matrix(
+        first, "HIA_Hou", cache_dir
     )
 
     second_cfg = EcfpConfig(fingerprint_size=length, name="ecfp")
-    X = compute_and_cache(second_cfg, second, cache_dir, "HIA_Hou")
+    X = second_cfg.load_matrix(second, "HIA_Hou", cache_dir)
 
     assert X.shape == (len(_SMILES), length)
     metadata = read_metadata(cache_dir, "HIA_Hou", "ecfp")
@@ -149,11 +151,8 @@ def test_dataset_ids_do_not_share_a_cache_entry(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     cfg = EcfpConfig(fingerprint_size=64, name="ecfp")
     for dataset_id in ["lipo", "HIA_Hou"]:
-        compute_and_cache(
-            cfg,
-            write_stub_dataset(tmp_path / dataset_id, "a" * 64),
-            cache_dir,
-            dataset_id,
+        cfg.load_matrix(
+            write_stub_dataset(tmp_path / dataset_id, "a" * 64), dataset_id, cache_dir
         )
     assert sorted(path.name for path in cache_dir.iterdir()) == ["HIA_Hou", "lipo"]
 
@@ -164,7 +163,7 @@ def test_a_dataset_without_provenance_names_the_problem(tmp_path: Path) -> None:
     ds.path.mkdir()
 
     with pytest.raises(FileNotFoundError, match=r"provenance\.yaml"):
-        compute_and_cache(cfg, ds, tmp_path / "cache", "toy")
+        cfg.load_matrix(ds, "toy", tmp_path / "cache")
 
 
 # ------------------------------------------------ concurrent jobs, broken pairs
@@ -179,20 +178,24 @@ class _SlowCountingDescriptor:
         self.computations = 0
         self._counter_lock = threading.Lock()
 
-    def identity(self) -> str:
-        return "slow-v1"
+    def _compute(self) -> np.ndarray:
+        with self._counter_lock:
+            self.computations += 1
+        time.sleep(0.5)
+        return np.ones((len(_SMILES), 4), dtype=np.float32)
 
-    def build(self) -> DescriptorCalculator:
-        descriptor = self
-
-        class _Calculator(DescriptorCalculator):
-            def calculate(self, dataset: MoleculeDataset) -> np.ndarray:
-                with descriptor._counter_lock:
-                    descriptor.computations += 1
-                time.sleep(0.5)
-                return np.ones((len(_SMILES), 4), dtype=np.float32)
-
-        return _Calculator()
+    def load_matrix(
+        self, dataset: MoleculeDataset, dataset_id: str, cache_root: Path
+    ) -> np.ndarray:
+        return ensure_embeddings(
+            cache_root,
+            dataset,
+            dataset_id=dataset_id,
+            descriptor_name=self.name,
+            descriptor_identity="slow-v1",
+            compute=self._compute,
+            producer=producer_record("tests"),
+        ).embedding
 
 
 def test_two_jobs_computing_one_pair_compute_it_once(tmp_path: Path) -> None:
@@ -206,7 +209,7 @@ def test_two_jobs_computing_one_pair_compute_it_once(tmp_path: Path) -> None:
 
     def job() -> None:
         try:
-            results.append(compute_and_cache(descriptor, dataset, cache_dir, "toy"))
+            results.append(descriptor.load_matrix(dataset, "toy", cache_dir))
         except BaseException as error:  # surfaced below
             errors.append(error)
 
@@ -232,7 +235,7 @@ def test_a_broken_cached_pair_is_recomputed(tmp_path: Path) -> None:
     cfg = EcfpConfig(fingerprint_size=64, name="ecfp")
     dataset = write_stub_dataset(tmp_path / "toy", "a" * 64)
     cache_dir = tmp_path / "cache"
-    expected = compute_and_cache(cfg, dataset, cache_dir, "toy")
+    expected = cfg.load_matrix(dataset, "toy", cache_dir)
     npz_path, _ = embeddings_paths(cache_dir, "toy", "ecfp")
     np.savez_compressed(
         npz_path,
@@ -240,7 +243,7 @@ def test_a_broken_cached_pair_is_recomputed(tmp_path: Path) -> None:
         embedding=np.zeros((len(_SMILES), 64), dtype=np.float32),
     )
 
-    recomputed = compute_and_cache(cfg, dataset, cache_dir, "toy")
+    recomputed = cfg.load_matrix(dataset, "toy", cache_dir)
 
     np.testing.assert_array_equal(recomputed, expected)
     np.testing.assert_array_equal(

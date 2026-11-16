@@ -23,9 +23,8 @@ from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import (
     BenchmarkPanelConfig,
-    EmbeddingSpec,
+    EvalContext,
     EvalManifest,
-    ResourceCache,
     render,
     run_manifest,
 )
@@ -105,20 +104,34 @@ def test_fail_fast_raises(tmp_path: Path) -> None:
     assert (manifest.output_root / "status.yaml").exists()
 
 
-def test_shared_resource_built_once(tmp_path: Path) -> None:
+def test_a_descriptor_matrix_is_loaded_once_per_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keyed on the descriptor's identity and the structures, not the dataset id
+    or the descriptor's name."""
     zarr_path = _build_reg_zarr(tmp_path, "toy_a", np.linspace(0, 1, _N_ROWS))
-    ds = MoleculeDataset.open_existing_dataset_from_dir(zarr_path)
-    spec = EmbeddingSpec(
-        dataset_id="toy_a",
-        descriptor=EcfpConfig(name="ecfp_256", fingerprint_size=256),
-        dataset=ds,
-        cache_dir=tmp_path / "cache",
+    dataset = MoleculeDataset.open_existing_dataset_from_dir(zarr_path)
+    descriptor = EcfpConfig(name="ecfp_256", fingerprint_size=256)
+    loads: list[str] = []
+    original = EcfpConfig.load_matrix
+
+    def counting_load(self, dataset, dataset_id, cache_root):
+        loads.append(self.name)
+        return original(self, dataset, dataset_id, cache_root)
+
+    monkeypatch.setattr(EcfpConfig, "load_matrix", counting_load)
+    ctx = EvalContext(
+        output_root=tmp_path / "out",
+        descriptor_cache_dir=tmp_path / "cache",
+        model=descriptor,
     )
-    cache = ResourceCache()
-    X1 = cache.get(spec)
-    X2 = cache.get(spec)  # same key -> served from memo, not rebuilt
-    assert X1 is X2
-    assert cache.build_count(spec) == 1
+    first = ctx.descriptor_matrix(descriptor, dataset, "toy_a")
+    assert ctx.descriptor_matrix(descriptor, dataset, "toy_a") is first
+    assert loads == ["ecfp_256"]
+    ctx.descriptor_matrix(
+        EcfpConfig(name="ecfp_256", fingerprint_size=128), dataset, "toy_a"
+    )
+    assert loads == ["ecfp_256", "ecfp_256"]
 
 
 def test_benchmark_plotter_renders_from_a_loaded_results_table(tmp_path: Path) -> None:

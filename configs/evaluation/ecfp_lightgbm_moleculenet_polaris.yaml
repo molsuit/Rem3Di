@@ -8,7 +8,7 @@ model:
   name: ecfp_2048
   fingerprint_size: 2048
 output_root: eval_runs/ecfp_lightgbm_moleculenet_polaris
-resource_cache_dir: eval_runs/descriptor_cache
+descriptor_cache_dir: eval_runs/descriptor_cache
 tasks:
   - kind: benchmark_panel
     eval_root: benchmark_data/datasets

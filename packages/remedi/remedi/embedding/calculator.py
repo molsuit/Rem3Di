@@ -34,10 +34,9 @@ from remedi.training.data.training_dataset import (
 from remedi_data.bundle import sha256_of_file
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.yaml_io import read_yaml
-from remedi_eval.descriptors.base import DescriptorCalculator
 
 
-class RemediCalculator(DescriptorCalculator):
+class RemediCalculator:
     def __init__(
         self,
         *,

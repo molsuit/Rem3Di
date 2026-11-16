@@ -28,7 +28,6 @@ from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
 from remedi_data.yaml_io import read_model
 from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.descriptors import (
-    DescriptorCalculator,
     EcfpConfig,
     PrecomputedEmbeddingsConfig,
     read_embeddings,
@@ -39,16 +38,14 @@ from remedi_eval.framework import BenchmarkPanelConfig, EvalManifest
 N_ROWS = len(ACHIRAL_TEN_SMILES)
 
 
-class _EcfpStandIn(DescriptorCalculator):
+class _EcfpStandIn:
     """Stands in for the encoder: ECFP-128, counting how often it is called."""
 
     calls: list[str] = []  # noqa: RUF012 - shared on purpose, reset per test
 
     def calculate(self, dataset: MoleculeDataset) -> np.ndarray:
         _EcfpStandIn.calls.append(Path(dataset.path).name)
-        return (
-            EcfpConfig(name="ecfp_128", fingerprint_size=128).build().calculate(dataset)
-        )
+        return EcfpConfig(name="ecfp_128", fingerprint_size=128).calculate(dataset)
 
 
 @pytest.fixture

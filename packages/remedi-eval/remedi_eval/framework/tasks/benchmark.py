@@ -2,17 +2,18 @@
 
 The one panel loop. It opens each benchmark through
 :mod:`remedi_eval.protocol` (partition, targets, task kind), scores it with the
-per-cell helpers of :mod:`remedi_eval.benchmark.cells`, and sources descriptor
-matrices from the shared :class:`ResourceCache` (so a baseline fingerprint / the
-model embedding is computed once and reused).
+per-cell helpers of :mod:`remedi_eval.benchmark.cells`, and takes descriptor
+matrices from :meth:`EvalContext.descriptor_matrix` (so a baseline fingerprint /
+the model embedding is computed once and reused).
 
 Failures are isolated as narrowly as they happen: a benchmark that cannot be
 opened, a descriptor matrix that cannot be loaded for one benchmark, and one
 (descriptor x learner) cell that raises are each recorded in ``failures.yaml``
 and the panel continues with everything else (with the manifest's
 ``keep_going: false`` the first failure is recorded and re-raised instead).
-Both ``results.csv`` and ``failures.yaml`` are rewritten after every cell and
-every failure, so a job killed by its wall-clock limit keeps what it did.
+``results.csv`` is yielded (and so rewritten once) after every cell and
+``failures.yaml`` after every failure, so a job killed by its wall-clock limit
+keeps what it did.
 
 A multiclass cell also carries a :class:`MulticlassReport`; this task is what
 serialises it, under ``benchmark/<dataset_id>/<descriptor>__<learner name>/`` as
@@ -43,7 +44,6 @@ from remedi_data.runs.results import (
     PydanticResult,
     TableResult,
 )
-from remedi_data.yaml_io import write_model
 from remedi_eval.benchmark.cells import (
     BenchmarkCell,
     BenchmarkFailure,
@@ -57,7 +57,6 @@ from remedi_eval.benchmark.learners import Learner
 from remedi_eval.benchmark.metrics import MulticlassReport
 from remedi_eval.descriptors import DescriptorConfig
 from remedi_eval.framework.context import EvalContext
-from remedi_eval.framework.resources import EmbeddingSpec
 from remedi_eval.protocol import Benchmark, Partition, TaskKind, load_benchmark
 
 logger = logging.getLogger(__name__)
@@ -120,7 +119,7 @@ class BenchmarkPanelConfig(BaseModel):
         return [(path, spec) for path, spec in discovered if spec.dataset_id in wanted]
 
     def run(self, ctx: EvalContext) -> Iterator[EvalResult]:
-        record = _PanelRecord(ctx.task_dir("benchmark"), keep_going=ctx.keep_going)
+        record = _PanelRecord(keep_going=ctx.keep_going)
         descriptors = [ctx.model, *self.baseline_descriptors]
 
         for zarr_path, spec in self.selected_benchmarks():
@@ -128,23 +127,20 @@ class BenchmarkPanelConfig(BaseModel):
             try:
                 opened = self._open_benchmark(ctx, zarr_path, spec)
             except Exception as error:
-                record.fail(
+                yield from record.fail(
                     BenchmarkFailure(dataset_id=spec.dataset_id, error=repr(error)),
                     error,
                 )
                 continue
             for descriptor in descriptors:
                 try:
-                    features = ctx.resources.get(
-                        EmbeddingSpec(
-                            dataset_id=opened.benchmark.dataset_id,
-                            descriptor=descriptor,
-                            dataset=opened.benchmark.dataset,
-                            cache_dir=ctx.resource_cache_dir,
-                        )
+                    features = ctx.descriptor_matrix(
+                        descriptor,
+                        opened.benchmark.dataset,
+                        opened.benchmark.dataset_id,
                     )
                 except Exception as error:
-                    record.fail(
+                    yield from record.fail(
                         BenchmarkFailure(
                             dataset_id=spec.dataset_id,
                             descriptor_name=descriptor.name,
@@ -159,7 +155,7 @@ class BenchmarkPanelConfig(BaseModel):
                             opened, features, descriptor.name, learner
                         )
                     except Exception as error:
-                        record.fail(
+                        yield from record.fail(
                             BenchmarkFailure(
                                 dataset_id=spec.dataset_id,
                                 descriptor_name=descriptor.name,
@@ -169,17 +165,10 @@ class BenchmarkPanelConfig(BaseModel):
                             error,
                         )
                         continue
-                    record.add(rows)
+                    yield record.add(rows)
                     yield from results
-
-        yield TableResult(
-            file_name=Path("benchmark") / RESULTS_FILE_NAME, frame=record.frame()
-        )
-        if record.failures:
-            yield PydanticResult(
-                file_name=Path("benchmark") / FAILURES_FILE_NAME,
-                obj=_FailureBundle(failures=record.failures),
-            )
+        if not record.rows:
+            yield record.table()
 
     def _open_benchmark(
         self, ctx: EvalContext, zarr_path: Path, spec: DatasetSpec
@@ -228,22 +217,29 @@ class _OpenedBenchmark:
 
 @dataclass
 class _PanelRecord:
-    """The rows and failures so far, rewritten to disk on every change."""
+    """The rows and failures so far.
 
-    out_dir: Path
+    Every change comes back as the artifact to yield, so the runner rewrites
+    ``results.csv`` or ``failures.yaml`` once per new cell or failure.
+    """
+
     keep_going: bool
     rows: list[BenchmarkResultRow] = field(default_factory=list)
     failures: list[BenchmarkFailure] = field(default_factory=list)
 
-    def frame(self) -> pd.DataFrame:
-        return pd.DataFrame([row.model_dump() for row in self.rows])
+    def table(self) -> TableResult:
+        return TableResult(
+            file_name=Path("benchmark") / RESULTS_FILE_NAME,
+            frame=pd.DataFrame([row.model_dump() for row in self.rows]),
+        )
 
-    def add(self, rows: list[BenchmarkResultRow]) -> None:
+    def add(self, rows: list[BenchmarkResultRow]) -> TableResult:
         self.rows.extend(rows)
-        self.frame().to_csv(self.out_dir / RESULTS_FILE_NAME, index=False)
+        return self.table()
 
-    def fail(self, failure: BenchmarkFailure, error: Exception) -> None:
-        """Record ``failure``; re-raise ``error`` unless the run keeps going."""
+    def fail(self, failure: BenchmarkFailure, error: Exception) -> Iterator[EvalResult]:
+        """Record ``failure`` and yield ``failures.yaml``; then re-raise
+        ``error`` unless the run keeps going."""
         logger.error(
             "benchmark %s (descriptor %s, learner %s) failed; recording",
             failure.dataset_id,
@@ -252,8 +248,9 @@ class _PanelRecord:
             exc_info=error,
         )
         self.failures.append(failure)
-        write_model(
-            self.out_dir / FAILURES_FILE_NAME, _FailureBundle(failures=self.failures)
+        yield PydanticResult(
+            file_name=Path("benchmark") / FAILURES_FILE_NAME,
+            obj=_FailureBundle(failures=self.failures),
         )
         if not self.keep_going:
             raise error

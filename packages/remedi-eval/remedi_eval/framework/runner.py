@@ -18,7 +18,6 @@ from remedi_data.runs.task_runner import (
 )
 from remedi_eval.framework.config import EvalManifest
 from remedi_eval.framework.context import EvalContext
-from remedi_eval.framework.resources import ResourceCache
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +30,7 @@ def run_manifest(manifest: EvalManifest) -> RunReport:
     out.mkdir(parents=True, exist_ok=True)
     ctx = EvalContext(
         output_root=out,
-        resource_cache_dir=manifest.cache_dir(),
-        resources=ResourceCache(),
+        descriptor_cache_dir=manifest.descriptor_cache(),
         model=manifest.model,
         seed=manifest.seed,
         keep_going=manifest.keep_going,
