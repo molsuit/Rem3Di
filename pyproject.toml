@@ -15,8 +15,10 @@ members = [
 ]
 
 [[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
+# CUDA 13.2 build: torch >= 2.15 ships only cu13x wheels, and these carry sm_100 for the B200
+# nodes. The DAIS driver (580, CUDA 13.0) runs them through minor-version compatibility.
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
 explicit = true
 
 [tool.ruff]

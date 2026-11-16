@@ -78,7 +78,7 @@ class TwoLevelClusters:
 
 
 def butina(fingerprints: torch.Tensor, cutoff: float) -> np.ndarray:
-    """Butina cluster ids (0 = largest cluster) of packed fingerprints on the GPU.
+    """Butina cluster ids (contiguous from 0) of packed fingerprints on the GPU.
 
     Raises:
         RuntimeError: if nvmolkit is not installed or CUDA is not available.
@@ -86,15 +86,16 @@ def butina(fingerprints: torch.Tensor, cutoff: float) -> np.ndarray:
     if len(fingerprints) == 1:
         return np.zeros(1, dtype=np.int64)
     try:
-        from nvmolkit.clustering import fused_butina
+        from nvmolkit.clustering import OutputMode, fused_butina
     except ImportError as error:
         raise RuntimeError(
             "Butina clustering needs nvmolkit (uv sync --extra cuda) and a GPU"
         ) from error
-    result = fused_butina(fingerprints, cutoff=cutoff, metric="tanimoto")
-    assert not isinstance(result, tuple), "centroids were not asked for"
+    result = fused_butina(
+        fingerprints, cutoff=cutoff, metric="tanimoto", output=OutputMode.DEVICE
+    )
     torch.cuda.synchronize()
-    return result.torch().cpu().numpy().astype(np.int64)
+    return result.cluster_ids.torch().cpu().numpy().astype(np.int64)
 
 
 def two_level_butina(

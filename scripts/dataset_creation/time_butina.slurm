@@ -14,10 +14,6 @@
 
 # Butina timing study on nested PCQM4Mv2 samples (BENCHMARK_DATA_FORMAT.md §5.2.3).
 set -euo pipefail
-# nvmolkit 0.6 needs libcudart >= 12.8 (cudaStreamGetDevice); torch's cu126 wheels pin
-# nvidia-cuda-runtime-cu12 12.6, so preload the cluster's 12.8 runtime
-# (BENCHMARK_REFACTOR_ISSUES.md).
-export LD_PRELOAD=/mpcdf/soft/SLE_15/packages/x86_64/cuda/12.8.1/lib64/libcudart.so.12
 uv run --no-sync python scripts/dataset_creation/time_butina.py \
     --dataset /dais/fs/scratch/wedigs/remedi/pretraining/pcqm4mv2 \
     --sizes 100000 300000 1000000 3500000 \

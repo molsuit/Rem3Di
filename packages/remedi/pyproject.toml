@@ -63,19 +63,19 @@ Paper = "https://openreview.net/forum?id=jOmZsvXoK5"
 # adds GPU accelerators. For a specific CUDA build of torch, install it from the
 # PyTorch index yourself before/with the extra (PyPI ships the default build).
 cpu = [
-    "torch>=2.5.1",
+    "torch>=2.15.0",
     # The polar extra (mace-torch >= 0.3.17) brings graph_longrange for the MACE-POLAR models.
     "mace-torch[polar]>=0.3.17",
     "torch-sim-atomistic",
 ]
 cuda = [
     "remedi[cpu]",
-    "cuequivariance-torch==0.9.1",
-    "cuequivariance==0.9.1",
-    "cuequivariance-ops-torch-cu12==0.9.1",
-    # torch's cu126 wheels need libcusparseLt.so.0 at `import torch`.
-    "nvidia-cusparselt-cu12",
-    "nvmolkit>=0.5.0",
+    "cuequivariance-torch==0.13.0",
+    "cuequivariance==0.13.0",
+    "cuequivariance-ops-torch-cu13==0.13.0",
+    "nvmolkit>=0.7.0",
+    # nvmolkit declares cuda-runtime-cu12 >= 12.0 but calls cudaStreamGetDevice (CUDA 12.8+).
+    "nvidia-cuda-runtime-cu12>=12.8",
 ]
 
 [build-system]
@@ -90,4 +90,4 @@ packages = ["remedi"]
 remedi-data = { workspace = true }
 remedi-eval = { workspace = true }
 torch-sim-atomistic = { git = "https://github.com/TorchSim/torch-sim.git", branch = "main"}
-torch = { index = "pytorch-cu126" }
+torch = { index = "pytorch-cu132" }

@@ -29,7 +29,7 @@ dependencies = [
     "pydantic_yaml",
     "scikit-learn",
     "scipy",
-    "torch>=2.5.1",
+    "torch>=2.15.0",
 ]
 
 [project.urls]
@@ -46,4 +46,4 @@ packages = ["remedi_eval"]
 # Local-dev only (uv): stripped from the built package's metadata.
 [tool.uv.sources]
 remedi-data = { workspace = true }
-torch = { index = "pytorch-cu126" }
+torch = { index = "pytorch-cu132" }
