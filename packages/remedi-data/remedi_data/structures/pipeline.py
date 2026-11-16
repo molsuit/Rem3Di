@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi_data.build.write import ZarrLayout, write_dataset
+from remedi_data.build.write import write_dataset
 from remedi_data.bundle import (
     BundleCounts,
     BundleProvenance,
@@ -41,6 +41,7 @@ from remedi_data.bundle import (
     sha256_of_file,
 )
 from remedi_data.bundle.provenance import git_head_sha
+from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.parallel import default_workers
 from remedi_data.structures.records import (
@@ -71,7 +72,7 @@ class StructurePreparationSettings(BaseModel):
 
     shard_size: int = Field(default=100_000, ge=1)
     workers: int = Field(default_factory=default_workers, ge=1)
-    zarr: ZarrLayout = Field(default_factory=ZarrLayout)
+    zarr: DatasetConfig = Field(default_factory=DatasetConfig)
 
 
 class ShardSummary(BaseModel):

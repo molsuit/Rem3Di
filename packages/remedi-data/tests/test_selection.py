@@ -256,7 +256,7 @@ def test_steps_chain_and_their_counts_are_recorded(
         (3, 3),
     ]
     assert record.structures == 3
-    pointer = np.asarray(MoleculeDataset.open_structure_arrays(corpus).molecule_ptr[:])
+    pointer = np.asarray(MoleculeDataset.open_existing_dataset_from_dir(corpus).ptr[:])
     structure_ids = read_selection(corpus, "chained")
     assert record.atoms == int(
         np.sum(pointer[structure_ids + 1] - pointer[structure_ids])
@@ -471,15 +471,14 @@ def test_the_hierarchical_order_is_a_seeded_permutation() -> None:
 
 
 def test_gathered_structures_match_the_full_arrays(corpus: Path) -> None:
-    full = MoleculeDataset.open_structure_arrays(corpus, in_memory=True)
+    dataset = MoleculeDataset.open_existing_dataset_from_dir(corpus)
+    full = dataset.read_structures()
     structure_ids = np.array([0, 5, 6, 13, 22, 23])
-    gathered = MoleculeDataset.open_structure_arrays(
-        corpus, structure_ids=structure_ids
-    )
-    pointer = np.asarray(full.molecule_ptr)
+    gathered = dataset.read_structures(structure_ids)
+    pointer = np.asarray(full.ptr)
     for position, structure_id in enumerate(structure_ids):
         start, stop = pointer[structure_id], pointer[structure_id + 1]
-        new_start, new_stop = np.asarray(gathered.molecule_ptr)[position : position + 2]
+        new_start, new_stop = gathered.ptr[position : position + 2]
         np.testing.assert_array_equal(
             gathered.positions[new_start:new_stop], full.positions[start:stop]
         )
@@ -492,9 +491,7 @@ def test_gathered_structures_match_the_full_arrays(corpus: Path) -> None:
     np.testing.assert_array_equal(
         gathered.multiplicity, np.asarray(full.multiplicity)[structure_ids]
     )
-    empty = MoleculeDataset.open_structure_arrays(
-        corpus, structure_ids=np.zeros(0, dtype=np.int64)
-    )
+    empty = dataset.read_structures(np.zeros(0, dtype=np.int64))
     assert empty.positions.shape == (0, 3)
 
 
@@ -503,8 +500,8 @@ def test_unsorted_repeated_or_out_of_range_ids_are_refused(
     corpus: Path, structure_ids: list[int]
 ) -> None:
     with pytest.raises(ValueError, match="structure_ids"):
-        MoleculeDataset.open_structure_arrays(
-            corpus, structure_ids=np.array(structure_ids)
+        MoleculeDataset.open_existing_dataset_from_dir(corpus).read_structures(
+            np.array(structure_ids)
         )
 
 

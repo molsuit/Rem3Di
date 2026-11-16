@@ -349,15 +349,13 @@ def test_each_part_reads_its_selected_structures_once(
 
     dataset = corpus(tmp_path, "first", FIRST)
     calls: list[np.ndarray | None] = []
-    original_open = MoleculeDataset.open_structure_arrays
+    original_read = MoleculeDataset.read_structures
 
-    def recording_open(path, in_memory=False, structure_ids=None):
+    def recording_read(self, structure_ids=None):
         calls.append(None if structure_ids is None else np.asarray(structure_ids))
-        return original_open(path, in_memory=in_memory, structure_ids=structure_ids)
+        return original_read(self, structure_ids)
 
-    monkeypatch.setattr(
-        MoleculeDataset, "open_structure_arrays", staticmethod(recording_open)
-    )
+    monkeypatch.setattr(MoleculeDataset, "read_structures", recording_read)
     columns_read: list[object] = []
     original_read_parquet = pl.read_parquet
 

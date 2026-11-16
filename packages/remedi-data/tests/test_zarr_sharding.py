@@ -1,267 +1,190 @@
-"""zarr v3 sharding regression tests.
+"""The zarr layout ``MoleculeDataset.write`` produces.
 
 The dataset store used to be a one-file-per-chunk zarr v2 ``DirectoryStore``,
 which exploded the on-disk file (inode) count and blew the 1M scratch quota.
-zarr v3 sharding groups many chunks into a single shard file, and the
-``ShardAlignedWriter`` buffers appended rows so each shard is written exactly
-once. These tests pin both behaviours: tiny on-disk file count, and no
-per-batch read-modify-write of the in-progress shard.
+zarr v3 sharding groups many chunks into a single shard file, and the writer
+hands each array to zarr in one piece, so each shard is written exactly once.
+These tests pin the chunk and shard shapes, the tiny file count, the absence of
+a read-modify-write, and the structure hash of a fixed dataset.
 """
 
 from __future__ import annotations
 
 import os
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
 import pytest
-from zarr.storage import LoggingStore
+import zarr
+from zarr.storage import LocalStore
 
-import remedi_data.dataset.molecule_dataset as md
+import remedi_data.dataset.molecule_dataset as molecule_dataset_module
+from remedi_data.build import structures_sha256
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.shard_aligned_writer import (
-    ShardAlignedWriter,
+from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.testing import write_synthetic_dataset
+
+
+def _carbon_structures(n_molecules: int, atoms_per_molecule: int) -> PackedStructures:
+    n_atoms = n_molecules * atoms_per_molecule
+    return PackedStructures.from_arrays(
+        np.zeros((n_atoms, 3)),
+        np.full(n_atoms, 6),
+        np.arange(n_molecules + 1) * atoms_per_molecule,
+        np.zeros(n_molecules),
+        np.ones(n_molecules),
+    )
+
+
+def _write(
+    path: Path,
+    structures: PackedStructures,
+    config: DatasetConfig,
+    molecule_ids: np.ndarray | None = None,
+) -> MoleculeDataset:
+    count = len(structures)
+    return MoleculeDataset.write(
+        path,
+        structures,
+        structure_ids=np.arange(count),
+        molecule_ids=np.arange(count) if molecule_ids is None else molecule_ids,
+        stereoisomer_ids=np.arange(count),
+        config=config,
+    )
+
+
+SMALL = DatasetConfig(
+    atom_chunk=8, molecule_chunk=4, atom_chunks_per_shard=4, molecule_chunks_per_shard=4
 )
-from remedi_data.testing import append_carbon_structures
 
 
-def _count_files(root: Path) -> int:
-    return sum(len(files) for _, _, files in os.walk(root))
+def test_chunks_and_shards_follow_the_config(tmp_path: Path) -> None:
+    _write(tmp_path / "ds", _carbon_structures(50, 3), SMALL)
+    group = zarr.open_group(tmp_path / "ds", mode="r")
+    expected = {
+        "positions": ((8, 3), (32, 3), (150, 3)),
+        "atomic_numbers": ((8,), (32,), (150,)),
+        "molecule_ptr": ((4,), (16,), (51,)),
+        "total_charge": ((4,), (16,), (50,)),
+        "multiplicity": ((4,), (16,), (50,)),
+        "ids/structure_id": ((4,), (16,), (50,)),
+        "ids/molecule_id": ((4,), (16,), (50,)),
+        "ids/stereoisomer_id": ((4,), (16,), (50,)),
+    }
+    for name, (chunks, shards, shape) in expected.items():
+        array = group[name]
+        assert isinstance(array, zarr.Array)
+        assert (array.chunks, array.shards, array.shape) == (chunks, shards, shape), (
+            name
+        )
 
 
 def test_sharded_store_keeps_file_count_tiny(tmp_path: Path) -> None:
-    # Deliberately tiny chunks so the data spans MANY chunks. Under the old
-    # one-file-per-chunk DirectoryStore this would be ~300+ files; sharding
-    # must collapse them into a handful of shard files.
-    cfg = DatasetConfig(
+    # Deliberately tiny chunks so the data spans MANY chunks (~312 atom chunks
+    # of 8, 300+ files under a one-file-per-chunk store).
+    config = DatasetConfig(
         atom_chunk=8,
         molecule_chunk=4,
         atom_chunks_per_shard=64,
         molecule_chunks_per_shard=64,
     )
     root = tmp_path / "ds"
-    ds = MoleculeDataset.create_empty_dataset(root, cfg)
-    writer = ShardAlignedWriter(ds)
-
-    n_mols = 500
-    atoms_per = 5
-    n_atoms = n_mols * atoms_per  # 2500 atoms -> ~312 atom-chunks of 8
-
-    append_carbon_structures(writer, n_mols, atoms_per)
-    writer.finalize()
-
-    n_files = _count_files(root)
-    # ~312 atom-chunks alone would be 300+ files under DirectoryStore.
+    dataset = _write(root, _carbon_structures(500, 5), config)
+    n_files = sum(len(files) for _, _, files in os.walk(root))
     assert n_files < 60, f"sharding regressed: {n_files} files on disk"
-
-    reopened = MoleculeDataset.open_existing_dataset_from_dir(root)
-    assert reopened.N_structures == n_mols
-    assert reopened.N_atoms == n_atoms
+    assert dataset.N_structures == 500
+    assert dataset.N_atoms == 2500
     np.testing.assert_array_equal(
-        np.asarray(reopened.atomic_numbers[:n_atoms]),
-        np.full(n_atoms, 6, dtype="u1"),
-    )
-    np.testing.assert_array_equal(
-        np.asarray(reopened.multiplicity[:n_mols]),
-        np.ones(n_mols, dtype="f4"),
+        np.asarray(dataset.atomic_numbers[:]), np.full(2500, 6, dtype="u1")
     )
 
 
-def test_no_per_batch_read_modify_write(tmp_path: Path, monkeypatch) -> None:
-    """Appending many sub-shard batches must not rewrite the in-progress
-    shard per batch.
+def test_each_shard_is_written_once_without_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """zarr v3 does a read-modify-write of a shard for any partial write; the
+    writer covers whole shards, so a data key is set once per shard and read
+    at most once per array (the trailing, partially filled shard)."""
+    data_gets: Counter[str] = Counter()
+    data_sets: Counter[str] = Counter()
 
-    zarr v3 sharding does a full read-modify-write of a shard file for any
-    write that doesn't cover whole shards. The shard-aligned writer must
-    therefore produce: (1) ZERO store ``get`` calls during the append loop
-    (no read-modify-write), and (2) a write count that scales with the shard
-    count, not the (much larger) batch count.
-    """
-    created: dict[str, LoggingStore] = {}
-    real_local_store = md.LocalStore
+    class CountingStore(LocalStore):
+        async def get(self, key, *args, **kwargs):
+            if "/c/" in key:
+                data_gets[key.split("/c/")[0]] += 1
+            return await super().get(key, *args, **kwargs)
 
-    def factory(path, **options):
-        s = LoggingStore(real_local_store(path, **options))
-        created["store"] = s
-        return s
+        async def set(self, key, value, *args, **kwargs):
+            if "/c/" in key:
+                data_sets[key] += 1
+            return await super().set(key, value, *args, **kwargs)
 
-    monkeypatch.setattr(md, "LocalStore", factory)
-
-    # atom_shard = 8 * 4 = 32 atoms; many tiny batches span ~31 shards.
-    cfg = DatasetConfig(
+    monkeypatch.setattr(molecule_dataset_module, "LocalStore", CountingStore)
+    config = DatasetConfig(
         atom_chunk=8,
         atom_chunks_per_shard=4,
         molecule_chunk=64,
         molecule_chunks_per_shard=64,
     )
-    ds = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
-    writer = ShardAlignedWriter(ds)
-    store = created["store"]
-
-    n_batches, mols_per_batch, atoms_per = 20, 10, 5
-    total_atoms = n_batches * mols_per_batch * atoms_per  # 1000
-    atom_shard = cfg.atom_chunk * cfg.atom_chunks_per_shard  # 32
-
-    before = dict(store.counter)
-    for _ in range(n_batches):
-        append_carbon_structures(writer, mols_per_batch, atoms_per)
-    after_loop = dict(store.counter)
-    writer.finalize()
-
-    def delta(a, b, k):
-        return b.get(k, 0) - a.get(k, 0)
-
-    gets_during_append = delta(before, after_loop, "get")
-    sets_during_append = delta(before, after_loop, "set")
-
-    # (1) the core invariant: no read-modify-write while appending.
-    assert gets_during_append == 0, (
-        f"read-modify-write during append: {gets_during_append} store gets "
-        "(must be 0 — the shard-aligned buffer was bypassed)"
-    )
-    # (2) writes scale with shards, not batches: with one set per shard for
-    # positions + atomic_numbers (+ metadata), the count is far below what a
-    # per-batch write path would produce (which would be O(n_batches) writes
-    # into the in-progress shard *per array*).
-    n_atom_shards = total_atoms // atom_shard
-    assert sets_during_append <= 4 * n_atom_shards + 16, (
-        f"too many writes ({sets_during_append}) for {n_atom_shards} shards "
-        f"over {n_batches} batches — looks per-batch, not per-shard"
-    )
-
-    reopened = MoleculeDataset.open_existing_dataset_from_dir(tmp_path / "ds")
-    assert reopened.N_atoms == total_atoms
-    assert reopened.N_structures == n_batches * mols_per_batch
+    structures = _carbon_structures(200, 5)
+    _write(tmp_path / "ds", structures, config)
+    assert max(data_gets.values()) <= 1
+    assert set(data_sets.values()) == {1}
+    atom_shards = -(-1000 // 32)
+    assert sum("atomic_numbers" in key for key in data_sets) == atom_shards
 
 
-def test_all_buffered_until_shard_complete(tmp_path: Path, monkeypatch) -> None:
-    """If every appended batch fits within a single (not-yet-complete)
-    shard, nothing is written to the store until finalize — proving writes
-    happen per shard, never per batch."""
-    created: dict[str, LoggingStore] = {}
-    real_local_store = md.LocalStore
-
-    def factory(path, **options):
-        s = LoggingStore(real_local_store(path, **options))
-        created["store"] = s
-        return s
-
-    monkeypatch.setattr(md, "LocalStore", factory)
-
-    # atom_shard = 16 * 64 = 1024; total atoms below one shard.
-    cfg = DatasetConfig(
-        atom_chunk=16,
-        atom_chunks_per_shard=64,
-        molecule_chunk=64,
-        molecule_chunks_per_shard=64,
-    )
-    ds = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
-    writer = ShardAlignedWriter(ds)
-    store = created["store"]
-
-    before = dict(store.counter)
-    for _ in range(40):  # 40 * 5 * 5 = 1000 atoms < 1024 (one shard)
-        append_carbon_structures(writer, 5, 5)
-    after_loop = dict(store.counter)
-
-    # Nothing flushed yet: no data writes happened during the append loop.
-    assert after_loop.get("set", 0) == before.get("set", 0), (
-        "data was written before a shard completed — buffering bypassed"
-    )
-    assert after_loop.get("get", 0) == before.get("get", 0)
-
-    writer.finalize()  # single partial-shard write here
-    reopened = MoleculeDataset.open_existing_dataset_from_dir(tmp_path / "ds")
-    assert reopened.N_atoms == 1000
-    assert reopened.N_structures == 200
-    np.testing.assert_array_equal(
-        np.asarray(reopened.atomic_numbers[:1000]),
-        np.full(1000, 6, dtype="u1"),
-    )
+def test_an_empty_dataset_can_be_written(tmp_path: Path) -> None:
+    dataset = _write(tmp_path / "ds", _carbon_structures(0, 3), SMALL)
+    assert (dataset.N_structures, dataset.N_atoms) == (0, 0)
+    assert len(dataset.read_structures()) == 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q"]))
-
-
-def test_structure_ids_default_to_the_shard_cursor(tmp_path: Path) -> None:
-    """A source that supplies no ids gets ``arange``, continued across batches."""
-    cfg = DatasetConfig(
-        atom_chunk=8,
-        molecule_chunk=4,
-        atom_chunks_per_shard=4,
-        molecule_chunks_per_shard=4,
-    )
-    dataset = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
-    writer = ShardAlignedWriter(dataset)
-    # Two batches, so the second must continue the cursor rather than restart.
-    append_carbon_structures(writer, n_molecules=5, atoms_per_molecule=3)
-    append_carbon_structures(writer, n_molecules=7, atoms_per_molecule=3)
-    writer.finalize()
-
-    np.testing.assert_array_equal(
-        np.asarray(dataset.structure_ids[:]), np.arange(12, dtype="i8")
-    )
-
-
-def _append_five(writer: ShardAlignedWriter, structure_ids: np.ndarray) -> None:
-    writer.append_batch(
-        positions=np.zeros((15, 3), dtype="f4"),
-        atomic_numbers=np.full(15, 6, dtype="u1"),
-        batch_ptr_cumsum=np.arange(1, 6) * 3,
-        molecule_ids=np.arange(5),
+def test_the_ids_are_written_verbatim(tmp_path: Path) -> None:
+    dataset = MoleculeDataset.write(
+        tmp_path / "ds",
+        _carbon_structures(5, 3),
+        structure_ids=np.array([3, 1, 4, 1, 5]),
+        molecule_ids=np.array([0, 7, 7, 8, 8]),
         stereoisomer_ids=np.arange(5),
-        total_charge=np.zeros(5, dtype="f4"),
-        multiplicity=np.ones(5, dtype="f4"),
-        structure_ids=structure_ids,
+        config=SMALL,
     )
-
-
-def test_explicit_structure_ids_are_written_verbatim(tmp_path: Path) -> None:
-    cfg = DatasetConfig(
-        atom_chunk=8,
-        molecule_chunk=4,
-        atom_chunks_per_shard=4,
-        molecule_chunks_per_shard=4,
-    )
-    dataset = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
-    writer = ShardAlignedWriter(dataset)
-    structure_ids = np.array([3, 1, 4, 1, 5], dtype="i8")
-    _append_five(writer, structure_ids)
-    writer.finalize()
-    np.testing.assert_array_equal(np.asarray(dataset.structure_ids[:]), structure_ids)
+    np.testing.assert_array_equal(dataset.structure_ids[:], [3, 1, 4, 1, 5])
+    # Ids stay as the bundle assigned them, so a dropped molecule leaves a gap.
+    assert dataset.N_molecules == 3
 
 
 def test_a_wrong_length_id_array_is_refused(tmp_path: Path) -> None:
-    cfg = DatasetConfig(
-        atom_chunk=8,
-        molecule_chunk=4,
-        atom_chunks_per_shard=4,
-        molecule_chunks_per_shard=4,
-    )
-    dataset = MoleculeDataset.create_empty_dataset(tmp_path / "ds", cfg)
-    writer = ShardAlignedWriter(dataset)
-    with pytest.raises(ValueError, match="structure_ids must have length 5"):
-        _append_five(writer, np.arange(4, dtype="i8"))
+    with pytest.raises(ValueError, match=r"structure_ids has shape \(4,\)"):
+        MoleculeDataset.write(
+            tmp_path / "ds",
+            _carbon_structures(5, 3),
+            structure_ids=np.arange(4),
+            molecule_ids=np.arange(5),
+            stereoisomer_ids=np.arange(5),
+            config=SMALL,
+        )
 
 
-def test_molecule_count_is_the_number_of_distinct_molecule_ids(tmp_path: Path) -> None:
-    """Ids stay as the bundle assigned them, so a dropped molecule leaves a gap."""
-    dataset = MoleculeDataset.create_empty_dataset(
-        tmp_path / "ds", DatasetConfig(atom_chunk=8, molecule_chunk=4)
+def test_structures_without_charges_are_refused(tmp_path: Path) -> None:
+    structures = PackedStructures.from_arrays(
+        np.zeros((3, 3)), np.full(3, 6), np.array([0, 3])
     )
-    writer = ShardAlignedWriter(dataset)
-    writer.append_batch(
-        positions=np.zeros((9, 3), dtype="f4"),
-        atomic_numbers=np.full(9, 6, dtype="u1"),
-        batch_ptr_cumsum=np.array([3, 6, 9]),
-        molecule_ids=np.array([0, 7, 7]),
-        stereoisomer_ids=np.array([0, 9, 10]),
-        total_charge=np.zeros(3, dtype="f4"),
-        multiplicity=np.ones(3, dtype="f4"),
+    with pytest.raises(ValueError, match="charges"):
+        _write(tmp_path / "ds", structures, SMALL)
+
+
+def test_the_structure_hash_of_a_fixed_dataset_is_pinned(tmp_path: Path) -> None:
+    """The value the shard-aligned writer produced before ``create_array``
+    replaced it: the switch moved no byte the hash covers."""
+    write_synthetic_dataset(
+        tmp_path / "synthetic",
+        ["CCO", "c1ccccc1", "CCN", "CCCl"] * 10,
+        structures_per_molecule=3,
     )
-    writer.finalize()
-    reopened = MoleculeDataset.open_existing_dataset_from_dir(tmp_path / "ds")
-    assert reopened.N_structures == 3
-    assert reopened.N_molecules == 2
+    dataset = MoleculeDataset.open_existing_dataset_from_dir(tmp_path / "synthetic")
+    assert structures_sha256(dataset) == (
+        "f3a84caadf9163df410cb1adc07417a44413d4a744660e93abe8073ff1198715"
+    )

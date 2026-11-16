@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from rdkit import Chem
 
 from remedi_data.build.verify import verify_dataset
-from remedi_data.build.write import ZarrLayout, write_dataset
+from remedi_data.build.write import write_dataset
 from remedi_data.bundle import (
     Bundle,
     ConformerGenerationRecord,
@@ -49,6 +49,7 @@ from remedi_data.chemistry.conformers import (
 )
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits, frame_geometry_violations
+from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.parallel import default_workers
 from remedi_data.runs.results import EvalResult, PydanticResult
@@ -103,7 +104,7 @@ class DatasetBuildConfig(BaseModel):
         default_factory=ConformerEmbeddingConfig
     )
     geometry_limits: GeometryLimits = DEFAULT_GEOMETRY_LIMITS
-    zarr: ZarrLayout = Field(default_factory=ZarrLayout)
+    zarr: DatasetConfig = Field(default_factory=DatasetConfig)
     #: ``None`` means every CPU; ``1`` embeds in-process.
     n_workers: int | None = Field(default=None, ge=1)
     #: False skips a dataset already built from the same bundle content with the

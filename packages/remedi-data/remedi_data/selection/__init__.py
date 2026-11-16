@@ -3,7 +3,7 @@
 :mod:`config` holds the steps and records, :mod:`order` the seeded drawing
 orders and the cluster files they read, :mod:`select` makes, writes and reads
 selections. Train on a selection with
-``MoleculeDataset.open_structure_arrays(path, structure_ids=read_selection(path, name))``.
+``MoleculeDataset.open_existing_dataset_from_dir(path).read_structures(read_selection(path, name))``.
 """
 
 from remedi_data.selection.config import (

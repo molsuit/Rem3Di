@@ -328,7 +328,7 @@ def _read_rows(dataset: Path) -> pl.DataFrame:
     """The table with an ``atom_count`` column from the zarr's atom pointer."""
     rows = read_table_polars(dataset)
     pointer = np.asarray(
-        MoleculeDataset.open_structure_arrays(Path(dataset)).molecule_ptr[:],
+        MoleculeDataset.open_existing_dataset_from_dir(Path(dataset)).ptr[:],
         dtype=np.int64,
     )
     if len(pointer) != rows.height + 1:

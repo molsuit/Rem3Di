@@ -1,10 +1,13 @@
-"""``PackedStructures``: many structures as three flat arrays, no per-structure objects.
+"""``PackedStructures``: many structures as flat arrays, no per-structure objects.
 
-The in-memory form the writer, the validator and the structure preparers pass
-around. Structure ``i`` owns atoms ``ptr[i]:ptr[i + 1]`` of ``positions`` and
-``atomic_numbers``. The dtypes are the ones the zarr stores (float32 positions,
-uint8 atomic numbers), so whatever is checked in memory is exactly what is
-written.
+The in-memory form the writer, the validator, the structure preparers and the
+training data pass around. Structure ``i`` owns atoms ``ptr[i]:ptr[i + 1]`` of
+``positions`` and ``atomic_numbers``; ``total_charge`` and ``multiplicity``, one
+per structure, are there when the structures were read from a dataset (or are
+about to be written to one) and ``None`` where only the frames are known. The
+dtypes are the ones the zarr stores (float32 positions, charges and
+multiplicities, uint8 atomic numbers), so whatever is checked in memory is
+exactly what is written.
 """
 
 from __future__ import annotations
@@ -14,19 +17,51 @@ from dataclasses import dataclass
 
 import numpy as np
 from ase import Atoms
+from numpy.typing import ArrayLike
 
 POSITION_DTYPE = np.float32
 ATOMIC_NUMBER_DTYPE = np.uint8
+#: ``total_charge`` and ``multiplicity``.
+PER_STRUCTURE_DTYPE = np.float32
+
+
+def gather_index(
+    ptr: np.ndarray, structure_indices: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """The atom rows of ``structure_indices`` (in that order) and their new ``ptr``.
+
+    Returns:
+        ``(new_ptr, atom_index)``: ``atom_index`` lists the atoms of the chosen
+        structures, so ``positions[atom_index]`` (or a zarr array's
+        ``oindex[atom_index]``) holds them back to back, and ``new_ptr`` is
+        their pointer, starting at 0.
+    """
+    structure_indices = np.asarray(structure_indices, dtype=np.int64)
+    starts = ptr[structure_indices]
+    counts = ptr[structure_indices + 1] - starts
+    new_ptr = np.zeros(len(structure_indices) + 1, dtype=np.int64)
+    np.cumsum(counts, out=new_ptr[1:])
+    atom_index = np.repeat(starts - new_ptr[:-1], counts) + np.arange(
+        new_ptr[-1], dtype=np.int64
+    )
+    return new_ptr, atom_index
+
+
+def _per_structure(values: ArrayLike | None) -> np.ndarray | None:
+    return None if values is None else np.ascontiguousarray(values, PER_STRUCTURE_DTYPE)
 
 
 @dataclass(frozen=True)
 class PackedStructures:
     """``positions`` ``(n_atoms, 3)`` float32, ``atomic_numbers`` ``(n_atoms,)`` uint8,
-    ``ptr`` ``(n_structures + 1,)`` int64 starting at 0."""
+    ``ptr`` ``(n_structures + 1,)`` int64 starting at 0; optional
+    ``total_charge`` and ``multiplicity`` ``(n_structures,)`` float32."""
 
     positions: np.ndarray
     atomic_numbers: np.ndarray
     ptr: np.ndarray
+    total_charge: np.ndarray | None = None
+    multiplicity: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         ptr = self.ptr
@@ -43,10 +78,21 @@ class PackedStructures:
                 f"atomic_numbers has shape {self.atomic_numbers.shape}, "
                 f"expected ({ptr[-1]},)"
             )
+        for name in ("total_charge", "multiplicity"):
+            values = getattr(self, name)
+            if values is not None and values.shape != (len(ptr) - 1,):
+                raise ValueError(
+                    f"{name} has shape {values.shape}, expected ({len(ptr) - 1},)"
+                )
 
     @classmethod
     def from_arrays(
-        cls, positions: np.ndarray, atomic_numbers: np.ndarray, ptr: np.ndarray
+        cls,
+        positions: ArrayLike,
+        atomic_numbers: ArrayLike,
+        ptr: ArrayLike,
+        total_charge: ArrayLike | None = None,
+        multiplicity: ArrayLike | None = None,
     ) -> PackedStructures:
         """Cast to the stored dtypes and validate the shapes."""
         return cls(
@@ -55,6 +101,8 @@ class PackedStructures:
                 atomic_numbers, dtype=ATOMIC_NUMBER_DTYPE
             ),
             ptr=np.ascontiguousarray(ptr, dtype=np.int64),
+            total_charge=_per_structure(total_charge),
+            multiplicity=_per_structure(multiplicity),
         )
 
     @classmethod
@@ -89,7 +137,12 @@ class PackedStructures:
 
     @classmethod
     def concatenate(cls, parts: Sequence[PackedStructures]) -> PackedStructures:
-        """The structures of ``parts`` in order, as one block."""
+        """The structures of ``parts`` in order, as one block.
+
+        Raises:
+            ValueError: if some parts carry charges and multiplicities and
+                others do not.
+        """
         if not parts:
             return cls.empty()
         offsets = np.cumsum([0] + [int(part.ptr[-1]) for part in parts[:-1]])
@@ -100,10 +153,26 @@ class PackedStructures:
                 for part, offset in zip(parts, offsets, strict=True)
             ]
         )
+        per_structure: dict[str, np.ndarray | None] = {}
+        for name in ("total_charge", "multiplicity"):
+            values = [getattr(part, name) for part in parts]
+            present = [value for value in values if value is not None]
+            if present and len(present) != len(values):
+                raise ValueError(f"only some parts carry {name}")
+            per_structure[name] = np.concatenate(present) if present else None
         return cls.from_arrays(
             np.concatenate([part.positions for part in parts]),
             np.concatenate([part.atomic_numbers for part in parts]),
             ptr,
+            **per_structure,
+        )
+
+    def with_charges(
+        self, total_charge: ArrayLike, multiplicity: ArrayLike
+    ) -> PackedStructures:
+        """These structures with their total charges and multiplicities."""
+        return PackedStructures.from_arrays(
+            self.positions, self.atomic_numbers, self.ptr, total_charge, multiplicity
         )
 
     def __len__(self) -> int:
@@ -127,31 +196,27 @@ class PackedStructures:
         return Atoms(numbers=numbers, positions=positions, pbc=[0, 0, 0])
 
     def slice(self, start: int, stop: int) -> PackedStructures:
-        """Structures ``start:stop`` (copies, ``ptr`` rebased to 0)."""
-        atom_start, atom_stop = int(self.ptr[start]), int(self.ptr[stop])
-        return PackedStructures(
-            positions=self.positions[atom_start:atom_stop].copy(),
-            atomic_numbers=self.atomic_numbers[atom_start:atom_stop].copy(),
-            ptr=self.ptr[start : stop + 1] - atom_start,
-        )
+        """Structures ``start:stop``, ``ptr`` rebased to 0."""
+        return self.take(np.arange(start, stop))
 
     def take(self, indices: Sequence[int] | np.ndarray) -> PackedStructures:
-        """The structures at ``indices``, in that order."""
+        """The structures at ``indices``, in that order (copies)."""
         indices = np.asarray(indices, dtype=np.int64)
-        counts = self.atom_counts[indices]
-        ptr = np.concatenate([[0], np.cumsum(counts)]).astype(np.int64)
-        atom_index = (
-            np.repeat(self.ptr[indices] - ptr[:-1], counts) + np.arange(ptr[-1])
-            if len(indices)
-            else np.zeros(0, dtype=np.int64)
-        )
+        ptr, atom_index = gather_index(self.ptr, indices)
         return PackedStructures(
             positions=self.positions[atom_index],
             atomic_numbers=self.atomic_numbers[atom_index],
             ptr=ptr,
+            total_charge=None
+            if self.total_charge is None
+            else self.total_charge[indices],
+            multiplicity=None
+            if self.multiplicity is None
+            else self.multiplicity[indices],
         )
 
     def save_npz(self, path) -> None:
+        """The frames (not the charges, which the table holds) to ``path``."""
         np.savez(
             path,
             positions=self.positions,

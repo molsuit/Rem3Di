@@ -1,4 +1,4 @@
-"""``TrainingMoleculeDataset`` reads the zarr through ``MoleculeDataset.open_structure_arrays``."""
+"""``TrainingMoleculeDataset`` reads the zarr through ``MoleculeDataset``."""
 
 from __future__ import annotations
 

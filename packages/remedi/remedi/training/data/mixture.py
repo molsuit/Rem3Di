@@ -40,7 +40,8 @@ from remedi.training.data.training_dataset import (
 )
 from remedi_data.bundle import read_spec, read_table_polars, table_columns
 from remedi_data.chemistry.elements import D_BLOCK_ATOMIC_NUMBERS, MACE_OFF_ELEMENTS
-from remedi_data.dataset.molecule_dataset import MoleculeDataset, StructureArrays
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.selection import (
     SelectionError,
     dataset_identity,
@@ -188,7 +189,7 @@ class MixturePart:
 
     dataset: Path
     selected_structure_ids: np.ndarray
-    structures: StructureArrays
+    structures: PackedStructures
     train_structure_ids: np.ndarray
     validation_structure_ids: np.ndarray
     train_atom_counts: np.ndarray
@@ -445,19 +446,19 @@ def _check_rows(rows: pl.DataFrame, deduplicate: bool, name: str) -> None:
 
 def _read_structures(
     dataset: Path, structure_ids: np.ndarray, domain: Domain, name: str
-) -> tuple[StructureArrays, np.ndarray]:
+) -> tuple[PackedStructures, np.ndarray]:
     """Gather the selected structures once; check them against the domain.
 
     Returns the structures and their atom counts.
     """
     try:
-        structures = MoleculeDataset.open_structure_arrays(
-            Path(dataset), structure_ids=structure_ids
-        )
+        structures = MoleculeDataset.open_existing_dataset_from_dir(
+            Path(dataset)
+        ).read_structures(structure_ids)
     except ValueError as error:
         raise MixtureError(f"{name}: {error}") from error
-    atom_counts = np.diff(np.asarray(structures.molecule_ptr, dtype=np.int64))
-    _check_domain(domain, np.asarray(structures.atomic_numbers), atom_counts, name)
+    atom_counts = structures.atom_counts
+    _check_domain(domain, structures.atomic_numbers, atom_counts, name)
     return structures, atom_counts
 
 

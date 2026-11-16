@@ -8,7 +8,8 @@ import torch
 from torch.utils.data import Dataset
 
 from remedi.training.data.sample import Sample
-from remedi_data.dataset.molecule_dataset import MoleculeDataset, StructureArrays
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.packed_structures import PackedStructures
 
 GetItemFn = Callable[["TrainingMoleculeDataset", int], Sample]
 
@@ -66,7 +67,7 @@ class TrainingMoleculeDataset(Dataset):
         get_item: GetItemFn,
         in_memory: bool = False,
         structure_ids: np.ndarray | None = None,
-        arrays: StructureArrays | None = None,
+        arrays: PackedStructures | None = None,
     ):
         self.root = str(root)
         self._get_item = get_item
@@ -105,16 +106,21 @@ class TrainingMoleculeDataset(Dataset):
         if self._ptr is not None:
             return
 
-        self._set_arrays(
-            MoleculeDataset.open_structure_arrays(
-                Path(self.root),
-                in_memory=self._in_memory,
-                structure_ids=self._structure_ids,
-            )
-        )
+        dataset = MoleculeDataset.open_existing_dataset_from_dir(Path(self.root))
+        if self._in_memory or self._structure_ids is not None:
+            self._set_arrays(dataset.read_structures(self._structure_ids))
+        else:
+            # Lazy: the zarr arrays themselves, read per sample.
+            self._ptr = dataset.ptr
+            self._pos = dataset.positions
+            self._atom_num = dataset.atomic_numbers
+            self._charge = dataset.total_charge
+            self._multiplicity = dataset.multiplicity
 
-    def _set_arrays(self, arrays: StructureArrays) -> None:
-        self._ptr = arrays.molecule_ptr
+    def _set_arrays(self, arrays: PackedStructures) -> None:
+        if arrays.total_charge is None or arrays.multiplicity is None:
+            raise ValueError("training structures need charges and multiplicities")
+        self._ptr = arrays.ptr
         self._pos = arrays.positions
         self._atom_num = arrays.atomic_numbers
         self._charge = arrays.total_charge

@@ -32,7 +32,7 @@ from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
 
-from remedi_data.build import ZarrLayout, write_dataset
+from remedi_data.build import write_dataset
 from remedi_data.bundle import (
     Bundle,
     BundleCounts,
@@ -52,7 +52,6 @@ from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.packed_structures import PackedStructures
-from remedi_data.dataset.shard_aligned_writer import ShardAlignedWriter
 from remedi_data.dataset.tasks import TaskType
 
 #: One enantiomer pair, an achiral ring, a meso compound, a lone chiral
@@ -85,13 +84,12 @@ GEOMETRY_LIMITS = GeometryLimits(
 )
 
 #: Small chunks and shards, so a ten-structure zarr already spans several
-#: chunks and writer batches.
-SMALL_ZARR_LAYOUT = ZarrLayout(
+#: chunks and shards.
+SMALL_ZARR_LAYOUT = DatasetConfig(
     atom_chunk=8,
     molecule_chunk=4,
     atom_chunks_per_shard=4,
     molecule_chunks_per_shard=4,
-    batch_size=4,
 )
 
 #: Which split each ``molecule_id`` lands in, so invariant 6 holds by
@@ -365,10 +363,6 @@ def write_synthetic_dataset(
     not satisfy the dataset invariants (the frames do not match the SMILES).
     """
     directory = Path(directory)
-    config = DatasetConfig(atom_chunk=64, molecule_chunk=16)
-    dataset = MoleculeDataset.create_empty_dataset(path=directory, config=config)
-    writer = ShardAlignedWriter(dataset)
-
     species = np.array([6, 8, 7, 1, 1], dtype=np.uint8)
     frame = np.arange(15, dtype=np.float32).reshape(5, 3)
     n_molecules = len(smiles)
@@ -376,16 +370,20 @@ def write_synthetic_dataset(
     molecule_ids = np.repeat(
         np.arange(n_molecules, dtype=np.int64), structures_per_molecule
     )
-    writer.append_batch(
-        positions=np.tile(frame, (n_structures, 1)),
-        atomic_numbers=np.tile(species, n_structures),
-        batch_ptr_cumsum=np.arange(1, n_structures + 1, dtype=np.int64) * len(species),
+    dataset = MoleculeDataset.write(
+        directory,
+        PackedStructures.from_arrays(
+            np.tile(frame, (n_structures, 1)),
+            np.tile(species, n_structures),
+            np.arange(n_structures + 1, dtype=np.int64) * len(species),
+            np.zeros(n_structures),
+            np.ones(n_structures),
+        ),
+        structure_ids=np.arange(n_structures, dtype=np.int64),
         molecule_ids=molecule_ids,
         stereoisomer_ids=np.zeros(n_structures, dtype=np.int64),
-        total_charge=np.zeros(n_structures, dtype=np.float32),
-        multiplicity=np.ones(n_structures, dtype=np.float32),
+        config=DatasetConfig(atom_chunk=64, molecule_chunk=16),
     )
-    writer.finalize()
     pd.DataFrame(
         {
             "structure_id": np.arange(n_structures, dtype=np.int64),
@@ -396,22 +394,6 @@ def write_synthetic_dataset(
         }
     ).to_parquet(directory / "table.parquet", index=False)
     return dataset
-
-
-def append_carbon_structures(
-    writer: ShardAlignedWriter, n_molecules: int, atoms_per_molecule: int
-) -> None:
-    """Append ``n_molecules`` all-carbon structures at the origin through ``writer``."""
-    n_atoms = n_molecules * atoms_per_molecule
-    writer.append_batch(
-        positions=np.zeros((n_atoms, 3), dtype="f4"),
-        atomic_numbers=np.full(n_atoms, 6, dtype="u1"),
-        batch_ptr_cumsum=np.arange(1, n_molecules + 1) * atoms_per_molecule,
-        molecule_ids=np.arange(n_molecules),
-        stereoisomer_ids=np.arange(n_molecules),
-        total_charge=np.zeros(n_molecules, dtype="f4"),
-        multiplicity=np.ones(n_molecules, dtype="f4"),
-    )
 
 
 def write_ten_structure_dataset(directory: Path, frames: Sequence[Atoms]) -> Path:

@@ -13,7 +13,6 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.build.write import (
-    read_packed_structures,
     structures_sha256,
     zarr_problems,
 )
@@ -63,7 +62,7 @@ def verify_dataset(dataset_path: Path, *, workers: int = 1) -> VerifyReport:
         return report
     report.problems += zarr_problems(dataset_path, bundle.table)
     report.structures_sha256 = structures_sha256(dataset)
-    structures = read_packed_structures(dataset)
+    structures = dataset.read_structures()
     outputs = bundle.provenance.outputs
     recorded = None if outputs is None else outputs.structures_sha256
     if recorded != report.structures_sha256:

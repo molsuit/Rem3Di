@@ -3,8 +3,9 @@
 The one writer every structure dataset goes through (§4.1): the preparer of a
 source that ships structures calls it directly, and ``dataset_build`` calls it
 after generating conformers for a SMILES bundle. It validates the table and
-every structure (invariants 1-10), writes the zarr through
-:class:`ShardAlignedWriter` into a staging directory, checks the zarr against
+every structure (invariants 1-10), writes the zarr
+(:meth:`MoleculeDataset.write`, chunked and sharded as ``layout`` says) into a
+staging directory, checks the zarr against
 the table (invariant 8), and only then moves the directory into place and
 writes ``dataset.yaml``, ``table.parquet`` and ``provenance.yaml`` beside it.
 """
@@ -19,7 +20,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.bundle import (
     BundleProvenance,
@@ -33,35 +33,8 @@ from remedi_data.bundle import (
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.packed_structures import PackedStructures
-from remedi_data.dataset.shard_aligned_writer import ShardAlignedWriter
 
 logger = logging.getLogger(__name__)
-
-
-class ZarrLayout(BaseModel):
-    """Chunk and shard geometry of the written zarr; defaults match ``DatasetConfig``."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    atom_chunk: int = Field(default=8192, ge=1)
-    molecule_chunk: int = Field(default=4096, ge=1)
-    atom_chunks_per_shard: int = Field(default=64, ge=1)
-    molecule_chunks_per_shard: int = Field(default=256, ge=1)
-    #: Structures handed to the writer per append.
-    batch_size: int = Field(default=4096, ge=1)
-
-
-def read_packed_structures(dataset: MoleculeDataset) -> PackedStructures:
-    """Every structure of an open dataset as one :class:`PackedStructures`."""
-    count = dataset.N_structures
-    ptr = np.asarray(dataset.ptr[: count + 1], dtype=np.int64)
-    if count == 0:
-        return PackedStructures.empty()
-    return PackedStructures.from_arrays(
-        np.asarray(dataset.positions[: ptr[-1]]),
-        np.asarray(dataset.atomic_numbers[: ptr[-1]]),
-        ptr - ptr[0],
-    )
 
 
 def structures_sha256(dataset: MoleculeDataset) -> str:
@@ -90,40 +63,19 @@ def _write_zarr(
     path: Path,
     table: pd.DataFrame,
     structures: PackedStructures,
-    layout: ZarrLayout,
+    layout: DatasetConfig,
 ) -> None:
-    dataset = MoleculeDataset.create_empty_dataset(
+    MoleculeDataset.write(
         path,
-        DatasetConfig(
-            atom_chunk=layout.atom_chunk,
-            molecule_chunk=layout.molecule_chunk,
-            atom_chunks_per_shard=layout.atom_chunks_per_shard,
-            molecule_chunks_per_shard=layout.molecule_chunks_per_shard,
+        structures.with_charges(
+            table["total_charge"].to_numpy(dtype=np.float64),
+            table["multiplicity"].to_numpy(dtype=np.float64),
         ),
+        structure_ids=table["structure_id"].to_numpy(dtype=np.int64),
+        molecule_ids=table["molecule_id"].to_numpy(dtype=np.int64),
+        stereoisomer_ids=table["stereoisomer_id"].to_numpy(dtype=np.int64),
+        config=layout,
     )
-    writer = ShardAlignedWriter(dataset)
-    structure_ids = table["structure_id"].to_numpy(dtype=np.int64)
-    molecule_ids = table["molecule_id"].to_numpy(dtype=np.int64)
-    stereoisomer_ids = table["stereoisomer_id"].to_numpy(dtype=np.int64)
-    total_charge = table["total_charge"].to_numpy(dtype=np.float64)
-    multiplicity = table["multiplicity"].to_numpy(dtype=np.float64)
-    for start in range(0, len(table), layout.batch_size):
-        stop = min(start + layout.batch_size, len(table))
-        atom_start, atom_stop = (
-            int(structures.ptr[start]),
-            int(structures.ptr[stop]),
-        )
-        writer.append_batch(
-            structures.positions[atom_start:atom_stop],
-            structures.atomic_numbers[atom_start:atom_stop],
-            structures.ptr[start + 1 : stop + 1] - atom_start,
-            molecule_ids[start:stop],
-            stereoisomer_ids[start:stop],
-            total_charge[start:stop],
-            multiplicity[start:stop],
-            structure_ids=structure_ids[start:stop],
-        )
-    writer.finalize()
 
 
 def zarr_problems(path: Path, table: pd.DataFrame) -> list[str]:
@@ -168,7 +120,7 @@ def write_dataset(
     provenance: BundleProvenance,
     directory: Path,
     *,
-    layout: ZarrLayout | None = None,
+    layout: DatasetConfig | None = None,
     workers: int = 1,
 ) -> BundleProvenance:
     """Validate and write one dataset; returns the provenance as written.
@@ -200,7 +152,7 @@ def write_dataset(
     if staging.exists():
         shutil.rmtree(staging)  # left by an earlier run that died mid-write
     try:
-        _write_zarr(staging, table, structures, layout or ZarrLayout())
+        _write_zarr(staging, table, structures, layout or DatasetConfig())
         problems = zarr_problems(staging, table)
         if problems:
             raise BundleValidationError(directory, problems)
