@@ -20,6 +20,7 @@ from scipy.spatial.transform import Rotation
 
 from remedi.configuration.architecture_config import EncoderOnlyArchitectureConfig
 from remedi.embedding.calculator import RemediCalculator
+from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
 from remedi.training.data.sample import Sample, yield_molecules_collate_fn
 
 MACE_OFF_MEDIUM = Path.home() / ".cache" / "mace" / "MACE-OFF23_medium.model"
@@ -228,18 +229,8 @@ def test_calculator_runs_mace_on_the_requested_device(
     data["mace_config"]["device"] = "cuda"
     data["mace_config"]["enable_cueq"] = True
     data["mace_config"]["model_path"] = "/nonexistent/MACE-OFF23_medium.model"
-    (tmp_path / "post_training_architecture_config.yaml").write_text(
-        yaml.safe_dump(data)
-    )
-    torch.save(model.encoder.state_dict(), tmp_path / "encoder.pth")
-    torch.save(
-        model.preprocessor.atomic_preprocessor.state_dict(),
-        tmp_path / "atomic_preprocessor.pth",
-    )
-    torch.save(
-        model.preprocessor.geometric_preprocessor.state_dict(),
-        tmp_path / "geometric_preprocessor.pth",
-    )
+    (tmp_path / ARCHITECTURE_FILENAME).write_text(yaml.safe_dump(data))
+    save_checkpoint(model, tmp_path)
 
     calculator = RemediCalculator(
         model_dir=tmp_path, device="cpu", mace_model_path=mace_off_medium

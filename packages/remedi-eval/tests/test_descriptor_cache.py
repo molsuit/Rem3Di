@@ -8,6 +8,8 @@ surfaced only as an ``IndexError`` four datasets into a panel.
 
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 from typing import cast
 
@@ -24,9 +26,11 @@ from remedi_data.bundle import (
 )
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_eval.descriptors import (
+    DescriptorCalculator,
     EcfpConfig,
     compute_and_cache,
     embeddings_paths,
+    read_embeddings,
     read_metadata,
 )
 
@@ -97,10 +101,13 @@ def test_compute_and_cache_writes_then_short_circuits(
     monkeypatch.setattr(EcfpConfig, "build", lambda self: pytest.fail("recomputed"))
     X2 = compute_and_cache(cfg, ds, cache_dir, "toy")
     np.testing.assert_array_equal(X, X2)
-    assert sorted(path.name for path in (cache_dir / "toy").iterdir()) == [
-        "ecfp_128.npz",
-        "ecfp_128.yaml",
+    visible = [
+        path.name
+        for path in (cache_dir / "toy").iterdir()
+        if not path.name.startswith(".")
     ]
+    assert sorted(visible) == ["ecfp_128.npz", "ecfp_128.yaml"]
+    assert not list((cache_dir / "toy").glob("*partial*"))
 
 
 # ------------------------------------------------- the two halves of the key
@@ -156,3 +163,84 @@ def test_a_dataset_without_provenance_names_the_problem(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError, match=r"provenance\.yaml"):
         compute_and_cache(cfg, ds, tmp_path / "cache", "toy")
+
+
+# ------------------------------------------------ concurrent jobs, broken pairs
+
+
+class _SlowCountingDescriptor:
+    """A cached descriptor whose computation takes a while and is counted."""
+
+    name = "slow"
+
+    def __init__(self) -> None:
+        self.computations = 0
+        self._counter_lock = threading.Lock()
+
+    def identity(self) -> str:
+        return "slow-v1"
+
+    def build(self) -> DescriptorCalculator:
+        descriptor = self
+
+        class _Calculator(DescriptorCalculator):
+            def calculate(self, dataset: MoleculeDataset) -> np.ndarray:
+                with descriptor._counter_lock:
+                    descriptor.computations += 1
+                time.sleep(0.5)
+                return np.ones((len(_SMILES), 4), dtype=np.float32)
+
+        return _Calculator()
+
+
+def test_two_jobs_computing_one_pair_compute_it_once(tmp_path: Path) -> None:
+    """Every eval job shares one cache root: the second job waits for the first
+    and reuses its pair instead of computing it again over the same files."""
+    descriptor = _SlowCountingDescriptor()
+    dataset = write_stub_dataset(tmp_path / "toy", "a" * 64)
+    cache_dir = tmp_path / "cache"
+    results: list[np.ndarray] = []
+    errors: list[BaseException] = []
+
+    def job() -> None:
+        try:
+            results.append(compute_and_cache(descriptor, dataset, cache_dir, "toy"))
+        except BaseException as error:  # surfaced below
+            errors.append(error)
+
+    threads = [threading.Thread(target=job) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+        time.sleep(0.1)
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert descriptor.computations == 1
+    assert len(results) == 2
+    np.testing.assert_array_equal(results[0], results[1])
+    assert read_embeddings(cache_dir, "toy", "slow").embedding.shape == (
+        len(_SMILES),
+        4,
+    )
+    assert not list((cache_dir / "toy").glob("*partial*"))
+
+
+def test_a_broken_cached_pair_is_recomputed(tmp_path: Path) -> None:
+    cfg = EcfpConfig(length=64, name="ecfp")
+    dataset = write_stub_dataset(tmp_path / "toy", "a" * 64)
+    cache_dir = tmp_path / "cache"
+    expected = compute_and_cache(cfg, dataset, cache_dir, "toy")
+    npz_path, _ = embeddings_paths(cache_dir, "toy", "ecfp")
+    np.savez_compressed(
+        npz_path,
+        structure_id=np.arange(len(_SMILES)),
+        embedding=np.zeros((len(_SMILES), 64), dtype=np.float32),
+    )
+
+    recomputed = compute_and_cache(cfg, dataset, cache_dir, "toy")
+
+    np.testing.assert_array_equal(recomputed, expected)
+    np.testing.assert_array_equal(
+        read_embeddings(cache_dir, "toy", "ecfp").embedding, expected
+    )

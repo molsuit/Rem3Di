@@ -13,6 +13,7 @@ from remedi.configuration.architecture_config import (
     ArchitectureConfig,
 )
 from remedi.configuration.training_config import PretrainingConfig, ProbeConfig
+from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
 from remedi.training.data.mixture import MixtureDatasets, resolve_mixture
 from remedi.training.data.sample import yield_molecules_collate_fn
 from remedi.training.data.training_dataset import atoms_getitem
@@ -248,7 +249,7 @@ def main():  # noqa: C901 - one training loop
     )
 
     pyaml.to_yaml_file(
-        training_data_dir / "post_training_architecture_config.yaml",
+        training_data_dir / ARCHITECTURE_FILENAME,
         architecture_config,
     )
 
@@ -486,18 +487,9 @@ def main():  # noqa: C901 - one training loop
                 )
 
                 if telemetry.best_epoch:
-                    encoder_to_save = getattr(encoder, "_orig_mod", encoder)
-                    torch.save(
-                        encoder_to_save.state_dict(), f"{training_data_dir}/encoder.pth"
-                    )
-                    torch.save(
-                        preprocessor.atomic_preprocessor.state_dict(),
-                        f"{training_data_dir}/atomic_preprocessor.pth",
-                    )
-                    torch.save(
-                        preprocessor.geometric_preprocessor.state_dict(),
-                        f"{training_data_dir}/geometric_preprocessor.pth",
-                    )
+                    # The bundle holds the uncompiled encoder, which shares its
+                    # parameters with the torch.compile wrapper trained above.
+                    save_checkpoint(bundle, training_data_dir)
 
             # Throw out the partial window so the first window of the next
             # training epoch isn't polluted with validation/checkpointing time.
@@ -505,7 +497,7 @@ def main():  # noqa: C901 - one training loop
             window_t0 = perf_counter()
 
     pyaml.to_yaml_file(
-        training_data_dir / "post_training_architecture_config.yaml",
+        training_data_dir / ARCHITECTURE_FILENAME,
         architecture_config,
     )
 

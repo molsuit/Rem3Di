@@ -17,10 +17,16 @@ from typing import Literal
 
 import numpy as np
 import torch
+import yaml
 from ase import Atoms
 from pydantic import BaseModel
 from torch.utils.data import DataLoader, Subset
 
+from remedi.model.checkpoint import (
+    ARCHITECTURE_FILENAME,
+    DESCRIPTOR_IDENTITY_FILES,
+    load_checkpoint,
+)
 from remedi.training.data.sample import Sample, yield_molecules_collate_fn
 from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
@@ -67,25 +73,7 @@ class RemediCalculator(DescriptorCalculator):
             mace_model_path=self.mace_model_path,
         )
         model = cfg.build()
-        model.encoder.load_state_dict(
-            torch.load(
-                self.model_dir / "encoder.pth", map_location=device, weights_only=True
-            )
-        )
-        model.preprocessor.atomic_preprocessor.load_state_dict(
-            torch.load(
-                self.model_dir / "atomic_preprocessor.pth",
-                map_location=device,
-                weights_only=True,
-            )
-        )
-        model.preprocessor.geometric_preprocessor.load_state_dict(
-            torch.load(
-                self.model_dir / "geometric_preprocessor.pth",
-                map_location=device,
-                weights_only=True,
-            )
-        )
+        load_checkpoint(model, self.model_dir, map_location=device)
         self._model = model.to(device).eval()
 
     def _resolve_device(self) -> torch.device:
@@ -97,18 +85,13 @@ class RemediCalculator(DescriptorCalculator):
         return torch.device(self.device_str)
 
     def calculate(
-        self,
-        dataset: MoleculeDataset,
-        *,
-        train_indices: np.ndarray | None = None,
-        limit: int | None = None,
+        self, dataset: MoleculeDataset, *, limit: int | None = None
     ) -> np.ndarray:
         """Embed the dataset into ``(N, D)`` (or ``(limit, D)`` for a prefix).
 
         ``limit`` embeds only the first ``limit`` structures — used for cheap
         smoke runs so a capped store does not pay to embed the whole dataset.
         """
-        del train_indices  # REM3DI is pre-trained — no fit step
         self._ensure_model_loaded()
         assert self._model is not None  # narrowed by _ensure_model_loaded
         device = self._resolve_device()
@@ -209,6 +192,11 @@ class RemediCalculator(DescriptorCalculator):
         return descriptors.numpy()
 
 
+#: The identity of the MACE model when the yaml names none: ``MaceConfig``
+#: then loads mace-torch's MACE-OFF medium download.
+DEFAULT_MACE_MODEL = "mace-off-medium (mace-torch default)"
+
+
 class RemediConfig(BaseModel):
     # The descriptor name of the embeddings files, usually the checkpoint name
     # (e.g. "remedi-geom-350k"); the manifest reads them back under this name.
@@ -227,30 +215,55 @@ class RemediConfig(BaseModel):
     checkpoint_sha256: str | None = None
 
     def identity(self) -> str:
-        """sha256 over the checkpoint weights, computed once and memoised.
+        """sha256 over what decides the descriptor, computed once and memoised.
 
-        The weights are the descriptor: ``batch_size`` and ``device`` change
-        nothing about the matrix and must not force a re-embedding, while two
-        checkpoints under one ``name`` must never share embeddings.
+        The architecture yaml and the encoder weights
+        (:data:`~remedi.model.checkpoint.DESCRIPTOR_IDENTITY_FILES`) and the MACE
+        model file the calculator loads (``mace_model_path`` if set, else the
+        path the yaml names; the MACE-OFF medium default when neither does).
+        ``batch_size`` and ``device`` change nothing about the matrix and must
+        not force a re-embedding, while two checkpoints under one ``name`` must
+        never share embeddings.
 
         Raises:
-            FileNotFoundError: if ``model_dir`` holds no ``.pth`` file.
+            FileNotFoundError: if ``model_dir`` lacks one of the identity files,
+                or the MACE model file does not exist.
         """
         if self.checkpoint_sha256 is None:
             self.checkpoint_sha256 = self._hash_checkpoint()
         return self.checkpoint_sha256
 
     def _hash_checkpoint(self) -> str:
-        checkpoint_files = sorted(Path(self.model_dir).glob("*.pth"))
-        if not checkpoint_files:
-            raise FileNotFoundError(
-                f"{self.model_dir} holds no .pth checkpoint file, so the "
-                f"descriptor {self.name!r} has no identity to key its cache on"
-            )
+        model_dir = Path(self.model_dir)
         digest = hashlib.sha256()
-        for path in checkpoint_files:
-            digest.update(f"{path.name}:{sha256_of_file(path)}\n".encode())
+        for filename in DESCRIPTOR_IDENTITY_FILES:
+            path = model_dir / filename
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"{model_dir} has no {filename}, so the descriptor "
+                    f"{self.name!r} has no identity to key its cache on"
+                )
+            digest.update(f"{filename}:{sha256_of_file(path)}\n".encode())
+        digest.update(f"mace_model:{self._mace_model_identity()}\n".encode())
         return digest.hexdigest()
+
+    def _mace_model_identity(self) -> str:
+        """sha256 of the MACE model file the calculator will load."""
+        mace_model_path = self.mace_model_path
+        if mace_model_path is None:
+            architecture = yaml.safe_load(
+                (Path(self.model_dir) / ARCHITECTURE_FILENAME).read_text()
+            )
+            named = ((architecture or {}).get("mace_config") or {}).get("model_path")
+            mace_model_path = None if named is None else Path(named)
+        if mace_model_path is None:
+            return DEFAULT_MACE_MODEL
+        if not mace_model_path.is_file():
+            raise FileNotFoundError(
+                f"the MACE model {mace_model_path} of {self.name!r} does not exist; "
+                "set mace_model_path to the local copy"
+            )
+        return sha256_of_file(mace_model_path)
 
     def build(self) -> RemediCalculator:
         return RemediCalculator(

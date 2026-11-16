@@ -9,16 +9,24 @@ The entry point for every frozen model (``BENCHMARK_DATA_FORMAT.md`` §7.5)::
       EmbeddingsMetadata, including the npz's sha256
 
 The yaml records the npz's sha256, so an npz replaced or copied without its
-yaml is refused. The writer removes the old yaml first, writes the npz, and
-writes the yaml last: a yaml on disk means a complete pair. The ECFP descriptor
-cache uses the same files.
+yaml is refused. The writer removes the old yaml first, writes the npz under a
+unique temporary name and renames it into place, and writes the yaml last: a
+yaml on disk means a complete pair. :func:`ensure_embeddings` is the one "up to
+date, else compute and write" path: the Rem3Di embedding writer and the ECFP
+descriptor cache both go through it, under a per-pair file lock
+(``.<descriptor_name>.lock`` beside the pair), so jobs sharing a root never
+compute one pair twice or write it over each other.
 """
 
 from __future__ import annotations
 
+import fcntl
 import importlib.metadata
 import logging
-import subprocess
+import os
+import uuid
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -27,7 +35,8 @@ import numpy as np
 import pydantic_yaml as pyd_yaml
 from pydantic import BaseModel, ConfigDict
 
-from remedi_data.bundle import sha256_of_file, structures_identity
+from remedi_data.bundle import git_head_sha, sha256_of_file, structures_identity
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 logger = logging.getLogger(__name__)
 
@@ -89,22 +98,11 @@ def producer_record(package: str) -> ProducerRecord:
         version = importlib.metadata.version(package)
     except importlib.metadata.PackageNotFoundError:
         version = "unknown"
-    return ProducerRecord(package=package, version=version, git_sha=_git_sha())
-
-
-def _git_sha() -> str | None:
-    try:
-        completed = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=Path(__file__).resolve().parent,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return completed.stdout.strip() or None
+    return ProducerRecord(
+        package=package,
+        version=version,
+        git_sha=git_head_sha(Path(__file__).resolve().parent),
+    )
 
 
 def write_embeddings(
@@ -146,9 +144,14 @@ def write_embeddings(
     npz_path, yaml_path = embeddings_paths(embeddings_root, dataset_id, descriptor_name)
     npz_path.parent.mkdir(parents=True, exist_ok=True)
     yaml_path.unlink(missing_ok=True)
-    temporary_path = npz_path.with_name(npz_path.stem + ".partial.npz")
-    np.savez_compressed(temporary_path, structure_id=structure_id, embedding=embedding)
-    temporary_path.replace(npz_path)
+    temporary_npz = _temporary_path(npz_path)
+    try:
+        np.savez_compressed(
+            temporary_npz, structure_id=structure_id, embedding=embedding
+        )
+        temporary_npz.replace(npz_path)
+    finally:
+        temporary_npz.unlink(missing_ok=True)
     metadata = EmbeddingsMetadata(
         dataset_id=dataset_id,
         structures_sha256=structures_sha256,
@@ -159,8 +162,18 @@ def write_embeddings(
         embedding_dimension=int(embedding.shape[1]),
         producer=producer,
     )
-    pyd_yaml.to_yaml_file(yaml_path, metadata)
+    temporary_yaml = _temporary_path(yaml_path)
+    try:
+        pyd_yaml.to_yaml_file(temporary_yaml, metadata)
+        temporary_yaml.replace(yaml_path)
+    finally:
+        temporary_yaml.unlink(missing_ok=True)
     return metadata
+
+
+def _temporary_path(path: Path) -> Path:
+    """A name beside ``path`` no other writer uses, with the same suffix."""
+    return path.with_name(f".{path.stem}.{os.getpid()}.{uuid.uuid4().hex}{path.suffix}")
 
 
 def read_metadata(
@@ -249,3 +262,124 @@ def embeddings_aligned_to(
             f"not the {dataset_structure_ids.size} structures of {dataset_dir}"
         )
     return embeddings.embedding[order[positions]]
+
+
+@dataclass(frozen=True)
+class EnsuredEmbeddings:
+    """One dataset's embedding matrix in zarr order, and whether it was computed now."""
+
+    embedding: np.ndarray
+    computed: bool
+
+
+@contextmanager
+def _pair_lock(
+    embeddings_root: Path, dataset_id: str, descriptor_name: str
+) -> Generator[None]:
+    """Hold an exclusive ``flock`` on the pair's lock file.
+
+    The lock file stays on disk: removing it would let a waiting job lock an
+    unlinked file while a third one locks a new one.
+    """
+    npz_path, _ = embeddings_paths(embeddings_root, dataset_id, descriptor_name)
+    npz_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(npz_path.with_name(f".{descriptor_name}.lock"), "a") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+
+def _up_to_date_embeddings(
+    embeddings_root: Path,
+    dataset_id: str,
+    descriptor_name: str,
+    descriptor_identity: str,
+    structures_sha256: str,
+    dataset_dir: Path,
+    structure_ids: np.ndarray,
+) -> np.ndarray | None:
+    """The stored matrix in zarr order if the pair matches the request, else ``None``.
+
+    A pair for other structures or another identity, and a pair that cannot be
+    read or does not match its own metadata, are reported and not used.
+    """
+    try:
+        metadata = read_metadata(embeddings_root, dataset_id, descriptor_name)
+        if metadata is None:
+            return None
+        if (metadata.structures_sha256, metadata.descriptor_identity) != (
+            structures_sha256,
+            descriptor_identity,
+        ):
+            logger.info(
+                "recomputing %s/%s: the stored pair is for other data or settings",
+                dataset_id,
+                descriptor_name,
+            )
+            return None
+        stored = read_embeddings(embeddings_root, dataset_id, descriptor_name)
+        return embeddings_aligned_to(stored, dataset_dir, structure_ids)
+    except (OSError, ValueError) as error:
+        logger.warning(
+            "recomputing %s/%s: the stored pair cannot be used (%s)",
+            dataset_id,
+            descriptor_name,
+            error,
+        )
+        return None
+
+
+def ensure_embeddings(
+    embeddings_root: Path,
+    dataset: MoleculeDataset,
+    *,
+    dataset_id: str,
+    descriptor_name: str,
+    descriptor_identity: str,
+    compute: Callable[[], np.ndarray],
+    producer: ProducerRecord,
+) -> EnsuredEmbeddings:
+    """The pair of ``dataset`` under ``embeddings_root``, computed only if needed.
+
+    Reuses the stored pair when it was made from the dataset's current
+    structures (``structures_sha256``) by ``descriptor_identity`` and reads back
+    intact; otherwise calls ``compute`` (the matrix in zarr order) and writes the
+    pair. Both happen under the pair's file lock, so a second job asking for the
+    same pair waits for the first and then reuses its result.
+
+    Raises:
+        FileNotFoundError: if the dataset has no ``provenance.yaml`` to identify
+            its structures by.
+        EmbeddingsFileError: if the computed matrix cannot be written (wrong
+            shape, non-finite values).
+    """
+    dataset_dir = Path(dataset.path)
+    structures_sha256 = structures_identity(dataset_dir)
+    structure_ids = np.asarray(dataset.structure_ids[:], dtype=np.int64)
+    with _pair_lock(embeddings_root, dataset_id, descriptor_name):
+        stored = _up_to_date_embeddings(
+            embeddings_root,
+            dataset_id,
+            descriptor_name,
+            descriptor_identity,
+            structures_sha256,
+            dataset_dir,
+            structure_ids,
+        )
+        if stored is not None:
+            logger.info("%s/%s is up to date", dataset_id, descriptor_name)
+            return EnsuredEmbeddings(embedding=stored, computed=False)
+        embedding = np.asarray(compute(), dtype=np.float32)
+        write_embeddings(
+            embeddings_root,
+            dataset_id=dataset_id,
+            descriptor_name=descriptor_name,
+            descriptor_identity=descriptor_identity,
+            structures_sha256=structures_sha256,
+            structure_id=structure_ids,
+            embedding=embedding,
+            producer=producer,
+        )
+        return EnsuredEmbeddings(embedding=embedding, computed=True)

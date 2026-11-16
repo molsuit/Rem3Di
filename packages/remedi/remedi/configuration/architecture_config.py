@@ -11,6 +11,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from remedi.configuration.config_utils import IrrepType, StrictBaseModel
 from remedi.configuration.mace_config import MaceConfig
+from remedi.model.checkpoint import ARCHITECTURE_FILENAME
 from remedi.model.pooling import AttnPool, MeanPool, PMAAggregator
 from remedi.model.preprocessing.radial_basis_functions import (
     BesselBasisFunctions,
@@ -687,11 +688,7 @@ class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):
         device and (absolute, machine-specific) model path before validation,
         which already loads MACE to read its irreps.
         """
-        filename = (
-            "post_training_architecture_config.yaml"
-            if trained
-            else "architecture_config.yaml"
-        )
+        filename = ARCHITECTURE_FILENAME if trained else "architecture_config.yaml"
         with open(Path(directory) / filename) as fh:
             data = yaml.safe_load(fh)
         data.pop("decoder_config", None)

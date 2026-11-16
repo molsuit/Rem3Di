@@ -34,6 +34,7 @@ from torch.utils.data import Subset
 
 from remedi.configuration.architecture_config import ArchitectureConfig
 from remedi.configuration.training_config import ClassifierTrainingConfig
+from remedi.model.checkpoint import ARCHITECTURE_FILENAME, load_checkpoint
 from remedi.training.data.sample import yield_molecules_supervised_collate_fn
 from remedi.training.data.samplers import lengths_from_ptr
 from remedi.training.data.training_dataset import (
@@ -66,20 +67,10 @@ def _find_run_dir(ablation_dir: Path, suffix: str) -> Path:
 
 
 def _load_model(run_dir: Path):
-    arch = pyaml.parse_yaml_file_as(
-        ArchitectureConfig, run_dir / "post_training_architecture_config.yaml"
-    )
+    arch = pyaml.parse_yaml_file_as(ArchitectureConfig, run_dir / ARCHITECTURE_FILENAME)
     model = arch.build()
     model.to(device)
-    ld = lambda f: torch.load(run_dir / f, map_location=device)  # noqa: E731
-    model.encoder.load_state_dict(ld("encoder.pth"))
-    model.preprocessor.atomic_preprocessor.load_state_dict(
-        ld("atomic_preprocessor.pth")
-    )
-    model.preprocessor.geometric_preprocessor.load_state_dict(
-        ld("geometric_preprocessor.pth")
-    )
-    model.multitask_heads.load_state_dict(ld("classification_head.pth"))
+    load_checkpoint(model, run_dir, map_location=device)
     model.eval()
     return model
 

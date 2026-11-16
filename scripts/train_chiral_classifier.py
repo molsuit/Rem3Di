@@ -17,10 +17,10 @@ through :func:`remedi_eval.protocol.load_benchmark`; the test fold is held out
 for the eval framework's ``benchmark_panel``, whose multiclass cells carry the
 per-class report.
 
-Best-by-balanced-accuracy checkpoints are written in the REM3DI layout
-(``encoder.pth`` / ``atomic_preprocessor.pth`` / ``geometric_preprocessor.pth``)
-so the trained model drops straight into the eval framework as a ``remedi``
-descriptor, plus ``classification_head.pth`` for reuse.
+Best-by-balanced-accuracy checkpoints are written in the checkpoint layout
+(:mod:`remedi.model.checkpoint`: encoder, preprocessors and the classification
+head) so the trained model drops straight into the eval framework as a
+``remedi`` descriptor.
 
 Run with:
     uv run python scripts/train_chiral_classifier.py \\
@@ -44,6 +44,7 @@ from remedi.configuration.architecture_config import (
     RegressionArchitectureConfig,
 )
 from remedi.configuration.training_config import ClassifierTrainingConfig
+from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
 from remedi.training.classification_training import (
     FocalLoss,
     inverse_frequency_alpha,
@@ -90,21 +91,6 @@ def _trainable_parameters(model) -> list[torch.nn.Parameter]:
         + list(model.preprocessor.atomic_preprocessor.parameters())
         + list(model.preprocessor.geometric_preprocessor.parameters())
     )
-
-
-def _save_checkpoint(model, out_base: Path) -> None:
-    """Write the best model in the REM3DI layout (so it loads as a ``remedi``
-    descriptor in the eval framework) plus the classification head."""
-    torch.save(model.encoder.state_dict(), out_base / "encoder.pth")
-    torch.save(
-        model.preprocessor.atomic_preprocessor.state_dict(),
-        out_base / "atomic_preprocessor.pth",
-    )
-    torch.save(
-        model.preprocessor.geometric_preprocessor.state_dict(),
-        out_base / "geometric_preprocessor.pth",
-    )
-    torch.save(model.multitask_heads.state_dict(), out_base / "classification_head.pth")
 
 
 @torch.no_grad()
@@ -220,9 +206,7 @@ def main() -> None:
         total_steps=training_config.epochs * max(1, len(train_loader)),
     )
 
-    pyaml.to_yaml_file(
-        out_base / "post_training_architecture_config.yaml", architecture_config
-    )
+    pyaml.to_yaml_file(out_base / ARCHITECTURE_FILENAME, architecture_config)
 
     best_score = -np.inf
     with TrainingTelemetry(
@@ -277,7 +261,7 @@ def main() -> None:
             score = metrics["val_balanced_accuracy"]
             if score > best_score:
                 best_score = score
-                _save_checkpoint(model, out_base)
+                save_checkpoint(model, out_base)
                 logger.info(
                     "  new best val balanced accuracy %.4f -> checkpointed", score
                 )

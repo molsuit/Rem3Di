@@ -21,6 +21,7 @@ from remedi.embedding import (
     embed_and_evaluate,
     embed_datasets,
 )
+from remedi.model.checkpoint import ARCHITECTURE_FILENAME, ENCODER_WEIGHT_FILES
 from remedi_data.bundle import EvalMetric, LabelColumn
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import TaskType
@@ -43,8 +44,7 @@ class _EcfpStandIn(DescriptorCalculator):
 
     calls: list[str] = []  # noqa: RUF012 - shared on purpose, reset per test
 
-    def calculate(self, dataset: MoleculeDataset, *, train_indices=None) -> np.ndarray:
-        del train_indices
+    def calculate(self, dataset: MoleculeDataset) -> np.ndarray:
         _EcfpStandIn.calls.append(Path(dataset.path).name)
         return EcfpConfig(name="ecfp_128", length=128).build().calculate(dataset)
 
@@ -56,10 +56,18 @@ def stub_encoder(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return _EcfpStandIn.calls
 
 
-def _checkpoint(tmp_path: Path, weights: bytes = b"weights-v1") -> Path:
-    model_dir = tmp_path / "checkpoint"
+def _checkpoint(
+    tmp_path: Path,
+    weights: bytes = b"weights-v1",
+    architecture: str = "mace_config: {model_path: null}\n",
+    name: str = "checkpoint",
+) -> Path:
+    """A checkpoint directory with stand-in files; only their bytes are hashed."""
+    model_dir = tmp_path / name
     model_dir.mkdir(exist_ok=True)
-    (model_dir / "encoder.pth").write_bytes(weights)
+    (model_dir / ARCHITECTURE_FILENAME).write_text(architecture)
+    for filename in ENCODER_WEIGHT_FILES:
+        (model_dir / filename).write_bytes(weights + filename.encode())
     return model_dir
 
 
@@ -196,9 +204,7 @@ def test_the_pipeline_embeds_only_the_selected_datasets(tmp_path: Path) -> None:
 def test_the_remedi_identity_is_the_checkpoint_hash_and_is_memoised(
     tmp_path: Path,
 ) -> None:
-    model_dir = tmp_path / "checkpoint"
-    model_dir.mkdir()
-    (model_dir / "encoder.pth").write_bytes(b"weights-v1")
+    model_dir = _checkpoint(tmp_path)
     cfg = RemediConfig(name="remedi", model_dir=model_dir)
 
     identity = cfg.identity()
@@ -212,15 +218,52 @@ def test_the_remedi_identity_is_the_checkpoint_hash_and_is_memoised(
         == identity
     )
     # Different weights under the same name do.
-    other_dir = tmp_path / "other"
-    other_dir.mkdir()
-    (other_dir / "encoder.pth").write_bytes(b"weights-v2")
+    other_dir = _checkpoint(tmp_path, b"weights-v2", name="other")
     assert RemediConfig(name="remedi", model_dir=other_dir).identity() != identity
-    (other_dir / "empty").mkdir()
 
-    # A model directory without weights names the problem.
-    with pytest.raises(FileNotFoundError, match=r"no \.pth checkpoint"):
-        RemediConfig(name="remedi", model_dir=other_dir / "empty").identity()
+    # A model directory without one of its files names the problem.
+    (other_dir / ENCODER_WEIGHT_FILES[1]).unlink()
+    with pytest.raises(FileNotFoundError, match=ENCODER_WEIGHT_FILES[1]):
+        RemediConfig(name="remedi", model_dir=other_dir).identity()
+
+
+def test_the_remedi_identity_covers_the_architecture_and_the_mace_model(
+    tmp_path: Path,
+) -> None:
+    """The same weights under another architecture yaml, or with another MACE
+    model file, compute other descriptors and must not share embeddings."""
+    baseline = RemediConfig(name="remedi", model_dir=_checkpoint(tmp_path)).identity()
+
+    other_architecture = _checkpoint(
+        tmp_path,
+        architecture="mace_config: {model_path: null}\nn_layers: 3\n",
+        name="other_architecture",
+    )
+    assert RemediConfig(name="remedi", model_dir=other_architecture).identity() != (
+        baseline
+    )
+
+    first_mace, second_mace = tmp_path / "first.model", tmp_path / "second.model"
+    first_mace.write_bytes(b"mace-a")
+    second_mace.write_bytes(b"mace-b")
+    with_first = RemediConfig(
+        name="remedi", model_dir=_checkpoint(tmp_path), mace_model_path=first_mace
+    ).identity()
+    with_second = RemediConfig(
+        name="remedi", model_dir=_checkpoint(tmp_path), mace_model_path=second_mace
+    ).identity()
+    assert len({baseline, with_first, with_second}) == 3
+
+    # The MACE file the yaml names counts too, and a missing one is an error.
+    named_in_yaml = _checkpoint(
+        tmp_path,
+        architecture=f"mace_config: {{model_path: {first_mace}}}\n",
+        name="named_in_yaml",
+    )
+    assert RemediConfig(name="remedi", model_dir=named_in_yaml).identity() != baseline
+    first_mace.unlink()
+    with pytest.raises(FileNotFoundError, match=r"first\.model"):
+        RemediConfig(name="remedi", model_dir=named_in_yaml).identity()
 
 
 def test_embed_and_evaluate_runs_descriptor_analyses_on_the_embeddings(
