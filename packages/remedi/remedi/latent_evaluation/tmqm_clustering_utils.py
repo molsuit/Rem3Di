@@ -2,141 +2,52 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 from ase import Atoms
-from ase.data import atomic_numbers, chemical_symbols
+from ase.data import chemical_symbols
 from ase.data.colors import jmol_colors
 
-TM = {
-    # transition metals (d-block)
-    "Sc",
-    "Ti",
-    "V",
-    "Cr",
-    "Mn",
-    "Fe",
-    "Co",
-    "Ni",
-    "Cu",
-    "Y",
-    "Zr",
-    "Nb",
-    "Mo",
-    "Tc",
-    "Ru",
-    "Rh",
-    "Pd",
-    "Ag",
-    "Lu",  # sometimes considered d-block as well
-    "Hf",
-    "Ta",
-    "W",
-    "Re",
-    "Os",
-    "Ir",
-    "Pt",
-    "Au",
-    "Lr",  # 103, sometimes placed with d-block
-    "Rf",
-    "Db",
-    "Sg",
-    "Bh",
-    "Hs",
-    "Mt",
-    "Ds",
-    "Rg",
-    "Cn",
-    "Zn",
-    "Cd",
-    "Hg",
-    # lanthanides (f-block)
-    "La",
-    "Ce",
-    "Pr",
-    "Nd",
-    "Pm",
-    "Sm",
-    "Eu",
-    "Gd",
-    "Tb",
-    "Dy",
-    "Ho",
-    "Er",
-    "Tm",
-    "Yb",
-    # actinides (f-block)
-    "Ac",
-    "Th",
-    "Pa",
-    "U",
-    "Np",
-    "Pu",
-    "Am",
-    "Cm",
-    "Bk",
-    "Cf",
-    "Es",
-    "Fm",
-    "Md",
-    "No",
-}
+from remedi_data.chemistry.elements import (
+    D_BLOCK_ATOMIC_NUMBERS,
+    F_BLOCK_ATOMIC_NUMBERS,
+    element_block,
+)
 
-TM_numbers = set([atomic_numbers[sym] for sym in TM])
+#: The metals a tmQM complex is centred on: the d block (groups 3-12) and the
+#: f block (lanthanides and actinides).
+METAL_CENTRE_ATOMIC_NUMBERS = D_BLOCK_ATOMIC_NUMBERS | F_BLOCK_ATOMIC_NUMBERS
+
+#: The colour index of each block in :func:`get_block_colors`.
+_BLOCK_COLOUR_INDEX = {"3d": 0, "4d": 1, "5d": 2, "6d": 3, "4f": 4, "5f": 5}
+
+#: Colour ramp per d-block row in :func:`get_tm_colormap`; other elements grey.
+_BLOCK_COLOUR_RAMP = {"3d": plt.cm.Greens, "4d": plt.cm.Blues, "5d": plt.cm.Reds}
+
+#: Atomic numbers the atomic-number colormap covers.
+_COLORMAP_MAX_ATOMIC_NUMBER = 100
 
 
 def get_tm_colormap():
-    # 1. Define your “zones”
-    Z_green = np.arange(21, 31)  # 21-30
-    Z_blue = np.arange(39, 49)  # 29 only
-    Z_red = np.r_[57, np.arange(72, 81)]  # 57 and 72-80
-
-    # 2. Sample each gradient from a built-in cmap
-    nG = len(Z_green)
-    nB = len(Z_blue)
-    nR = len(Z_red)
-
-    # pick a nice slice of each
-    greens = plt.cm.Greens(np.linspace(0.4, 0.8, nG))
-    blues = plt.cm.Blues(np.linspace(0.4, 0.8, nB))
-    reds = plt.cm.Reds(np.linspace(0.4, 0.8, nR))
-
-    # 3. Build a “palette” array indexed by Z up to max you need
-    maxZ = 100  # or np.max(your_dataset)
-    palette = np.ones((maxZ + 1, 4)) * 0.8  # default light gray for all Z
-
-    # 4. Fill in the three zones
-    for i, Z in enumerate(Z_green):
-        palette[Z] = greens[i]
-
-    for i, Z in enumerate(Z_blue):
-        palette[Z] = blues[i]
-
-    for i, Z in enumerate(Z_red):
-        palette[Z] = reds[i]
-
+    """A colormap over atomic numbers: one ramp per 3d, 4d and 5d row."""
+    palette = np.ones((_COLORMAP_MAX_ATOMIC_NUMBER + 1, 4)) * 0.8
+    for block, ramp in _BLOCK_COLOUR_RAMP.items():
+        row = [
+            number
+            for number in range(_COLORMAP_MAX_ATOMIC_NUMBER + 1)
+            if element_block(number) == block
+        ]
+        palette[row] = ramp(np.linspace(0.4, 0.8, len(row)))
     custom_cmap = mcolors.ListedColormap(palette, name="Z_map")
-
-    bounds = np.arange(100 + 1) - 0.5
+    bounds = np.arange(_COLORMAP_MAX_ATOMIC_NUMBER + 1) - 0.5
     norm = mcolors.BoundaryNorm(bounds, custom_cmap.N)
-
     return custom_cmap, norm
 
 
 def get_block_colors(atomic_nums):
-    blocks = {
-        "3d": ["Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn"],
-        "4d": ["Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd"],
-        "5d": ["Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg"],
-        "f": ["La"],
-    }
+    """The colour index of each metal's d or f block row.
 
-    back_map = {}
-
-    for i, (_key, val) in enumerate(blocks.items()):
-        for v in val:
-            back_map[v] = i
-
-    colors = [back_map[chemical_symbols[num]] for num in atomic_nums]
-
-    return colors
+    Raises:
+        KeyError: for an element outside the d and f blocks.
+    """
+    return [_BLOCK_COLOUR_INDEX[element_block(int(number))] for number in atomic_nums]
 
 
 def get_metal_center_type(molecules: list[Atoms]) -> list[int]:
@@ -144,7 +55,7 @@ def get_metal_center_type(molecules: list[Atoms]) -> list[int]:
     for m in molecules:
         nums = m.get_atomic_numbers()
         # find all in the transition-metal set
-        metals = [num for num in nums if num in TM_numbers]
+        metals = [num for num in nums if num in METAL_CENTRE_ATOMIC_NUMBERS]
         if len(metals) != 1:
             raise ValueError(
                 f"Expected exactly one TM center in molecule {m}, but found: {metals}"

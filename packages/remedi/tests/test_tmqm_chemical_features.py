@@ -28,7 +28,6 @@ from remedi.latent_evaluation.context import (
 from remedi.latent_evaluation.tmqm_chemical_features import (
     MetalEnvironmentFeatures,
     compute_metal_environment_features,
-    metal_block,
 )
 from remedi_data.runs.results import ChemiscopeResult, PydanticResult
 
@@ -66,15 +65,6 @@ def _carborane() -> Atoms:
     return Atoms(
         numbers=[77] + [6, 6] + [5] * 10, positions=pos, info={"total_charge": 0.0}
     )
-
-
-def test_metal_block_rows():
-    assert metal_block(26) == "3d"  # Fe
-    assert metal_block(46) == "4d"  # Pd
-    assert metal_block(77) == "5d"  # Ir
-    assert metal_block(57) == "5d"  # La (grouped with 5d here)
-    assert metal_block(60) == "4f"  # Nd
-    assert metal_block(6) == "other"
 
 
 def test_ferrocene_is_sandwich():

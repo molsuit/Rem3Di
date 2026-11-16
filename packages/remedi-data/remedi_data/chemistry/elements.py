@@ -1,8 +1,10 @@
-"""The element sets the filters and geometry limits gate on."""
+"""Element sets: the presets the filters and geometry limits gate on, and the
+d- and f-block metals (:func:`element_block`)."""
 
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 
 class ElementSet(StrEnum):
@@ -51,3 +53,47 @@ def allowed_element_symbols(
     if isinstance(elements, ElementSet):
         return _ELEMENTS_BY_SET[elements]
     return frozenset(elements)
+
+
+#: The d- and f-block rows :func:`element_block` names; everything else is
+#: ``other``.
+ElementBlock = Literal["3d", "4d", "5d", "6d", "4f", "5f", "other"]
+
+_LAST_ATOMIC_NUMBER = 118
+
+
+def element_block(atomic_number: int) -> ElementBlock:
+    """The d or f sub-shell row of an element, ``other`` for the s and p blocks.
+
+    Group 3 is Sc, Y, La, Ac (La and Ac are d-block), so the f-block rows are
+    Ce-Lu (``4f``) and Th-Lr (``5f``).
+    """
+    if 21 <= atomic_number <= 30:
+        return "3d"
+    if 39 <= atomic_number <= 48:
+        return "4d"
+    if atomic_number == 57 or 72 <= atomic_number <= 80:
+        return "5d"
+    if atomic_number == 89 or 104 <= atomic_number <= 112:
+        return "6d"
+    if 58 <= atomic_number <= 71:
+        return "4f"
+    if 90 <= atomic_number <= 103:
+        return "5f"
+    return "other"
+
+
+#: Transition metals: the d block, groups 3-12 (Sc-Zn, Y-Cd, La and Hf-Hg, Ac
+#: and Rf-Cn).
+D_BLOCK_ATOMIC_NUMBERS: frozenset[int] = frozenset(
+    number
+    for number in range(1, _LAST_ATOMIC_NUMBER + 1)
+    if element_block(number) in ("3d", "4d", "5d", "6d")
+)
+
+#: Lanthanides and actinides without La and Ac: Ce-Lu and Th-Lr.
+F_BLOCK_ATOMIC_NUMBERS: frozenset[int] = frozenset(
+    number
+    for number in range(1, _LAST_ATOMIC_NUMBER + 1)
+    if element_block(number) in ("4f", "5f")
+)

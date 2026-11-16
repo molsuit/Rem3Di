@@ -23,9 +23,8 @@ from pydantic import BaseModel
 from pymatgen.core import Molecule
 from pymatgen.core.local_env import MinimumDistanceNN
 
-from remedi.latent_evaluation.tmqm_clustering_utils import (
-    TM_numbers,
-)
+from remedi.latent_evaluation.tmqm_clustering_utils import METAL_CENTRE_ATOMIC_NUMBERS
+from remedi_data.chemistry.elements import element_block
 
 HALOGENS = {"F", "Cl", "Br", "I", "At"}
 
@@ -49,21 +48,6 @@ _CHELATE_RING_MAX = 6
 # n_B at/above this is taken as a carborane / borane-cage signature rather than
 # an incidental boryl/borane ligand.
 _CARBORANE_MIN_B = 4
-
-
-def metal_block(z: int) -> str:
-    """Map an atomic number to its d/f sub-shell row label."""
-    if 21 <= z <= 30:
-        return "3d"
-    if 39 <= z <= 48:
-        return "4d"
-    if z == 57 or 72 <= z <= 80:
-        return "5d"
-    if 58 <= z <= 71:
-        return "4f"
-    if 89 <= z <= 103:
-        return "5f"
-    return "other"
 
 
 class MetalEnvironmentFeatures(BaseModel):
@@ -112,7 +96,9 @@ class MetalEnvironmentFeatures(BaseModel):
 
 
 def _find_metal_index(numbers: np.ndarray) -> int | None:
-    metal_positions = [i for i, z in enumerate(numbers) if int(z) in TM_numbers]
+    metal_positions = [
+        i for i, z in enumerate(numbers) if int(z) in METAL_CENTRE_ATOMIC_NUMBERS
+    ]
     if len(metal_positions) != 1:
         return None
     return metal_positions[0]
@@ -338,7 +324,7 @@ def _features_for_atoms(atoms: Atoms) -> MetalEnvironmentFeatures:
     if metal_idx is not None:
         z = int(numbers[metal_idx])
         metal_symbol = chemical_symbols[z]
-        block = metal_block(z)
+        block = element_block(z)
 
     cn = -1
     donor_set = ""

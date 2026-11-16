@@ -40,7 +40,7 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
 )
 from remedi_data.bundle import read_spec
-from remedi_data.chemistry.elements import MACE_OFF_ELEMENTS
+from remedi_data.chemistry.elements import D_BLOCK_ATOMIC_NUMBERS, MACE_OFF_ELEMENTS
 from remedi_data.dataset.molecule_dataset import MoleculeDataset, StructureArrays
 from remedi_data.selection import (
     SelectionError,
@@ -59,10 +59,6 @@ Domain = Literal["drug_like", "transition_metal_complex"]
 #: The random-key stream of the validation split; the selection streams are 0-2.
 VALIDATION_STREAM = 10
 
-#: Groups 3-12: Sc-Zn, Y-Cd, La and Hf-Hg, Ac and Rf-Cn.
-TRANSITION_METAL_ATOMIC_NUMBERS = frozenset(
-    [*range(21, 31), *range(39, 49), 57, *range(72, 81), 89, *range(104, 113)]
-)
 _MACE_OFF_ATOMIC_NUMBERS = frozenset(
     atomic_number_of_symbol[symbol] for symbol in MACE_OFF_ELEMENTS
 )
@@ -378,7 +374,9 @@ def _check_domain(
                 "(MACE-OFF) elements; is it a transition-metal corpus?"
             )
         return
-    is_metal = np.isin(atomic_numbers, list(TRANSITION_METAL_ATOMIC_NUMBERS))
+    # A transition-metal complex holds a d-block metal (groups 3-12); a
+    # lanthanide or actinide on its own does not count.
+    is_metal = np.isin(atomic_numbers, list(D_BLOCK_ATOMIC_NUMBERS))
     starts = np.concatenate([[0], np.cumsum(atom_counts)[:-1]])
     metals_per_structure = np.add.reduceat(is_metal.astype(np.int64), starts)
     without = int(np.sum(metals_per_structure == 0))
