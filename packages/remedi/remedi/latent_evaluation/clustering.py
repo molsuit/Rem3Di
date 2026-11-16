@@ -41,7 +41,7 @@ class UMAPCalculator(ClusteringCalculator):
 
         Stock ``umap.UMAP()`` defaults (euclidean, n_neighbors=15, min_dist=0.1,
         random_state=None) produce projections that don't match the tuned
-        descriptor visualizations under ``umap_grid_sweep/`` (cosine, nn=30,
+        descriptor visualizations (cosine, nn=30,
         min_dist=0.0). We default to that tuned recipe — and pin
         ``random_state=0`` so successive runs / the chemiscope viewer / the
         analysis-dir PNGs share the same layout — while letting callers

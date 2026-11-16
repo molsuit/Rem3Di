@@ -1,9 +1,8 @@
 """Tests for the ablation job-submission helpers.
 
 Covers config snapshotting and one-job-per-config submission in
-``scripts/submit_job.py`` and the node-local staging resolution/idempotency in
-``scripts/setup_gpu_job.py``. No SLURM, no GPU: submission is exercised with
-``--no-submit`` and the dataset is a throwaway temp directory.
+``scripts/submit_job.py``. No SLURM, no GPU: submission is exercised with
+``--no-submit`` or a recorded ``subprocess.run``.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ import importlib.util
 from pathlib import Path
 
 import pydantic_yaml as pyaml
-import pytest
 
 from remedi.configuration.dataloader_config import (
     BucketBatchSamplingConfig,
@@ -38,7 +36,6 @@ def _load_script(name: str):
 
 
 submit_job = _load_script("submit_job.py")
-setup_gpu_job = _load_script("setup_gpu_job.py")
 
 
 def _write_training_config(
@@ -140,31 +137,3 @@ def test_one_job_is_submitted_per_config(tmp_path: Path, monkeypatch) -> None:
     ]
     assert all(command[2] == "--time=02:00:00" for command in commands)
     assert all(command[3] == "scripts/pretrain.slurm" for command in commands)
-
-
-def test_default_stage_dir_prefers_localdir(monkeypatch) -> None:
-    monkeypatch.setenv("LOCALDIR", "/local/user/42")
-    assert setup_gpu_job.default_stage_dir() == Path("/local/user/42")
-
-    monkeypatch.delenv("LOCALDIR", raising=False)
-    assert setup_gpu_job.default_stage_dir() == Path("/dev/shm")
-
-
-def test_stage_dataset_is_idempotent(tmp_path: Path) -> None:
-    source = tmp_path / "dataset"
-    source.mkdir()
-    (source / "manifest.txt").write_text("data")
-    stage_dir = tmp_path / "stage"
-
-    first = setup_gpu_job.stage_dataset(source, stage_dir)
-    assert first == stage_dir / "dataset"
-    assert (first / "manifest.txt").read_text() == "data"
-
-    # Second call reuses the staged copy rather than re-copying / erroring.
-    second = setup_gpu_job.stage_dataset(source, stage_dir)
-    assert second == first
-
-
-def test_stage_dataset_missing_source_raises(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError):
-        setup_gpu_job.stage_dataset(tmp_path / "nope", tmp_path / "stage")
