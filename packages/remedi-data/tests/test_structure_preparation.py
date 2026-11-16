@@ -33,7 +33,10 @@ from remedi_data.bundle import (
 )
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits
-from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
+from remedi_data.chemistry.smiles_filter import (
+    SmilesFilterConfig,
+    molecule_passes_filter,
+)
 from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.structures import (
     DroppedRecord,
@@ -542,3 +545,11 @@ def test_the_production_config_parses() -> None:
         "pcqm4mv2",
         "geom_drugs",
     ]
+
+
+@pytest.mark.parametrize("source", [Pcqm4mv2Source, GeomDrugsSource])
+def test_the_drug_like_corpora_drop_radicals(source) -> None:
+    """PCQM4Mv2 and GEOM keep closed-shell molecules only (their DFT is closed-shell)."""
+    smiles_filter = source.model_fields["smiles_filter"].default_factory()
+    assert molecule_passes_filter(Chem.MolFromSmiles("CCN"), smiles_filter)
+    assert not molecule_passes_filter(Chem.MolFromSmiles("CC[NH]"), smiles_filter)

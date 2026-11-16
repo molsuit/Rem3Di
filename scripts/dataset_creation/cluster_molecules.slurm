@@ -4,7 +4,7 @@
 #SBATCH --partition=gpu1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:h200:1
+#SBATCH --gres=gpu:1
 #SBATCH --exclude=daisg301,daisg302
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=200G

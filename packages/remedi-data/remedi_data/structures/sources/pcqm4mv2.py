@@ -55,9 +55,13 @@ def sdf_record_offsets(path: Path) -> np.ndarray:
 def _pcqm_smiles_filter() -> SmilesFilterConfig:
     # Neutralising would move hydrogens the geometry does not move; a charged
     # molecule keeps its charge instead (total_charge is stored per structure).
+    # Radicals are dropped: ~7.7% of PCQM4Mv2 SMILES carry radical centres from
+    # PCQM's own bond perception, while the DFT was closed-shell, so the
+    # multiplicity derived from them (3-19) would be wrong (user, 2026-11-16).
     return SmilesFilterConfig(
         max_atoms=100,
         element_set=ElementSet.mace_off,
+        allow_radicals=False,
         strip_salts=True,
         neutralize=False,
         dedupe=False,
