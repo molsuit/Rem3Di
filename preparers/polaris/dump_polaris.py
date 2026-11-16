@@ -59,6 +59,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import write_yaml
 
 logger = logging.getLogger("dump_polaris")
@@ -225,10 +226,7 @@ def dump(dataset: PolarisDataset, out_root: Path) -> None:
 
 
 def main() -> int:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    setup_logging()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--out-root",

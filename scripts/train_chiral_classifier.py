@@ -55,6 +55,7 @@ from remedi.training.data.training_dataset import (
     make_supervised_getitem,
 )
 from remedi.training.telemetry import TrainingTelemetry
+from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import read_model, write_model
 from remedi_eval.benchmark.metrics import (
     balanced_accuracy,
@@ -115,9 +116,7 @@ def _evaluate(model, loader, n_classes: int, max_batches: int | None):
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-    )
+    setup_logging()
     args = parse_args()
     global device
     if args.device is not None:

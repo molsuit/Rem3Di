@@ -46,6 +46,7 @@ from remedi_data.bundle.spec import (
 )
 from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
 from remedi_data.dataset.tasks import TaskType
+from remedi_data.logging_setup import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -365,9 +366,7 @@ def preparer_main[SettingsT: PreparerSettings](
     ``add_arguments`` adds a preparer's own flags and ``extra_settings`` turns
     them into settings fields. Prints the run report; returns the exit code.
     """
-    logging.basicConfig(
-        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
-    )
+    setup_logging()
     parser = argparse.ArgumentParser(description=description)
     fields = settings_type.model_fields
     parser.add_argument("--raw-root", type=Path, default=fields["raw_root"].default)

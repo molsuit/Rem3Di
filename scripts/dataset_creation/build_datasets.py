@@ -12,11 +12,11 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from pathlib import Path
 
 from remedi_data.build import DatasetBuildConfig, build_datasets
+from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import read_model
 
 
@@ -24,9 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     arguments = parser.parse_args(argv)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    setup_logging()
     config = read_model(arguments.config, DatasetBuildConfig)
     report = build_datasets(config)
     return 1 if report.n_failed else 0

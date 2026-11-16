@@ -66,6 +66,7 @@ from remedi_data.bundle.bundle import normalize_table
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import Split, split_codes_from_names
+from remedi_data.logging_setup import setup_logging
 from remedi_data.parallel import default_workers
 from remedi_data.yaml_io import read_yaml, write_model, write_yaml
 
@@ -404,9 +405,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--report", type=Path, help="also write the report as yaml")
     arguments = parser.parse_args(argv)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    setup_logging()
     report = migrate(
         arguments.paths,
         dry_run=arguments.dry_run,

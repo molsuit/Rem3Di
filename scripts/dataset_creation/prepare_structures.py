@@ -13,10 +13,10 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from pathlib import Path
 
+from remedi_data.logging_setup import setup_logging
 from remedi_data.structures import (
     StructurePreparationConfig,
     prepare_structure_datasets,
@@ -29,9 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--only", nargs="+", default=None, metavar="DATASET_ID")
     arguments = parser.parse_args(argv)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    setup_logging()
     config = read_model(arguments.config, StructurePreparationConfig)
     report = prepare_structure_datasets(config, only=arguments.only)
     return 1 if report.n_failed else 0

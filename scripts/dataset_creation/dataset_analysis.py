@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import read_model
 from remedi_eval.dataset_analysis.analysis import MoleculeDatasetAnalysis
 from remedi_eval.dataset_analysis.config import (
@@ -46,9 +47,7 @@ def load_config(path: Path | None) -> MoleculeDatasetAnalysisConfig:
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
-    )
+    setup_logging()
     args = parse_args()
 
     config = load_config(args.config)

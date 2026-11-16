@@ -18,6 +18,7 @@ import argparse
 import logging
 from pathlib import Path
 
+from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import read_model
 from remedi_eval.framework import EvalManifest, run_manifest
 
@@ -25,10 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    setup_logging()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()

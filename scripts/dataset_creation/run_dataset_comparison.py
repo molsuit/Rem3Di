@@ -15,6 +15,7 @@ import argparse
 import logging
 from pathlib import Path
 
+from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import read_model
 from remedi_eval.dataset_analysis.comparison import DatasetComparison
 from remedi_eval.dataset_analysis.config import (
@@ -30,10 +31,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
-    )
+    setup_logging(args.log_level)
 
     config = read_model(args.config, DatasetComparisonConfig)
     comparison = DatasetComparison(config)

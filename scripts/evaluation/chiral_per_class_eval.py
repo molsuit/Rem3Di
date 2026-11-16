@@ -40,6 +40,7 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
 )
+from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import read_model
 from remedi_eval.benchmark.cells import multiclass_labelling
 from remedi_eval.benchmark.metrics import balanced_accuracy, multiclass_report
@@ -153,9 +154,7 @@ def _print_run(name: str, res: dict) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-    )
+    setup_logging()
     p = argparse.ArgumentParser()
     p.add_argument("--ablation_dir", type=Path, required=True)
     p.add_argument("--configs_dir", type=Path, required=True)

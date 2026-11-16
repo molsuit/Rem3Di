@@ -22,6 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
+from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import read_model
 from remedi_eval.dataset_analysis.comparison import DatasetComparison
 from remedi_eval.dataset_analysis.config import (
@@ -55,10 +56,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(message)s",
-    )
+    setup_logging()
 
     config = read_model(args.config, DatasetComparisonConfig)
     n_features = config.bitbirch.fingerprint_size

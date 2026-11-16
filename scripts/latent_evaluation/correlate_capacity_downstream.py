@@ -37,6 +37,7 @@ from scipy.stats import spearmanr
 from remedi.latent_evaluation.capacity_diagnostic import (
     run_latent_space_capacity_diagnostic,
 )
+from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import read_yaml, write_model
 
 logger = logging.getLogger(__name__)
@@ -193,7 +194,7 @@ def run(
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    setup_logging()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--eval-root",
