@@ -44,10 +44,6 @@ from remedi.configuration.architecture_config import (
 )
 from remedi.configuration.training_config import ClassifierTrainingConfig
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
-from remedi.training.classification_training import (
-    FocalLoss,
-    inverse_frequency_alpha,
-)
 from remedi.training.data.sample import yield_molecules_supervised_collate_fn
 from remedi.training.data.samplers import lengths_from_ptr
 from remedi.training.data.training_dataset import (
@@ -57,6 +53,10 @@ from remedi.training.data.training_dataset import (
 from remedi.training.telemetry import TrainingTelemetry
 from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import read_model, write_model
+from remedi_eval.benchmark.losses import (
+    FocalLoss,
+    inverse_frequency_alpha,
+)
 from remedi_eval.benchmark.metrics import (
     balanced_accuracy,
     macro_auroc_ovr,

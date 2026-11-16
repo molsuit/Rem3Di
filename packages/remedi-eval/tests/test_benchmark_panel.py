@@ -23,7 +23,7 @@ from remedi_data.testing import (
     TEN_ROW_SPLIT,
     write_small_dataset,
 )
-from remedi_eval.benchmark.learners import LearnerConfig, LinearLearnerConfig
+from remedi_eval.benchmark.learners import Learner, LinearLearner
 from remedi_eval.descriptors import DescriptorConfig, EcfpConfig
 from remedi_eval.framework import (
     BenchmarkPanelConfig,
@@ -68,7 +68,7 @@ def run_panel(
     tmp_path: Path,
     *,
     descriptors: list[DescriptorConfig] | None = None,
-    learners: list[LearnerConfig] | None = None,
+    learners: list[Learner] | None = None,
     split_column: str | None = None,
     seed: int = 0,
 ) -> pd.DataFrame:
@@ -87,7 +87,7 @@ def run_panel(
             tasks=[
                 BenchmarkPanelConfig(
                     eval_root=tmp_path / "datasets",
-                    learners=learners or [LinearLearnerConfig(ridge_alpha=1.0)],
+                    learners=learners or [LinearLearner(ridge_alpha=1.0)],
                     baseline_descriptors=baselines,
                     split_column=split_column,
                 )
@@ -126,8 +126,8 @@ def test_panel_cross_product_and_cell_identity(tmp_path: Path) -> None:
             EcfpConfig(name="ecfp_512", fingerprint_size=512),
         ],
         learners=[
-            LinearLearnerConfig(name="ridge_weak", ridge_alpha=0.1),
-            LinearLearnerConfig(name="ridge_strong", ridge_alpha=10.0),
+            LinearLearner(name="ridge_weak", ridge_alpha=0.1),
+            LinearLearner(name="ridge_strong", ridge_alpha=10.0),
         ],
     )
 
@@ -247,8 +247,8 @@ def test_learners_of_one_kind_are_told_apart_by_name(tmp_path: Path) -> None:
     rows = run_panel(
         tmp_path,
         learners=[
-            LinearLearnerConfig(name="ridge_weak", ridge_alpha=0.1),
-            LinearLearnerConfig(name="ridge_strong", ridge_alpha=10.0),
+            LinearLearner(name="ridge_weak", ridge_alpha=0.1),
+            LinearLearner(name="ridge_strong", ridge_alpha=10.0),
         ],
     )
 
@@ -260,7 +260,7 @@ def test_learner_names_must_be_unique_across_the_panel(tmp_path: Path) -> None:
     with pytest.raises(pydantic.ValidationError, match="linear"):
         BenchmarkPanelConfig(
             eval_root=tmp_path,
-            learners=[LinearLearnerConfig(), LinearLearnerConfig(ridge_alpha=2.0)],
+            learners=[LinearLearner(), LinearLearner(ridge_alpha=2.0)],
         )
 
 
@@ -302,8 +302,8 @@ def test_a_failing_cell_does_not_lose_the_other_cells_of_its_dataset(
 
     def fail_for_one_learner(*args, **kwargs):
         arguments = inspect.signature(original).bind(*args, **kwargs).arguments
-        learner_config = arguments["learner_config"]
-        if learner_config.name == "broken":
+        learner = arguments["learner"]
+        if learner.name == "broken":
             raise ValueError("this learner broke")
         return original(*args, **kwargs)
 
@@ -311,8 +311,8 @@ def test_a_failing_cell_does_not_lose_the_other_cells_of_its_dataset(
     rows = run_panel(
         tmp_path,
         learners=[
-            LinearLearnerConfig(name="broken"),
-            LinearLearnerConfig(name="fine"),
+            LinearLearner(name="broken"),
+            LinearLearner(name="fine"),
         ],
     )
 
@@ -358,7 +358,7 @@ def test_without_keep_going_the_first_failure_is_recorded_and_raised(
         tasks=[
             BenchmarkPanelConfig(
                 eval_root=tmp_path / "datasets",
-                learners=[LinearLearnerConfig()],
+                learners=[LinearLearner()],
                 split_column="split__nope",
             )
         ],

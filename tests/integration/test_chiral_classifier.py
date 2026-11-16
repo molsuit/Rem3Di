@@ -23,15 +23,15 @@ from remedi.configuration.architecture_config import (
     RegressionHeadConfig,
 )
 from remedi.model.regression_models import RegressionHead
-from remedi.training.classification_training import (
-    FocalLoss,
-    inverse_frequency_alpha,
-)
 from remedi.training.data.sample import (
     Sample,
     yield_molecules_supervised_collate_fn,
 )
 from remedi_data.yaml_io import read_model
+from remedi_eval.benchmark.losses import (
+    FocalLoss,
+    inverse_frequency_alpha,
+)
 
 
 def test_head_classification_shapes_and_no_scaling() -> None:

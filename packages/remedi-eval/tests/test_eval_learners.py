@@ -15,13 +15,11 @@ import pytest
 
 from remedi_data.yaml_io import read_model, write_model
 from remedi_eval.benchmark.learners import (
-    LearnerConfig,
+    Learner,
     LightGBMLearner,
-    LightGBMLearnerConfig,
     LinearLearner,
-    LinearLearnerConfig,
     MlpLearner,
-    MlpLearnerConfig,
+    NullLearner,
     ScalerKind,
 )
 
@@ -42,19 +40,17 @@ def _synthetic_binary(n: int, d: int, seed: int = 0):
 
 
 def test_config_yaml_roundtrip(tmp_path) -> None:
-    cfg = LinearLearnerConfig(ridge_alpha=2.0, logreg_C=0.5, scaler=ScalerKind.standard)
+    cfg = LinearLearner(ridge_alpha=2.0, logreg_C=0.5, scaler=ScalerKind.standard)
     path = tmp_path / "learner.yaml"
     write_model(path, cfg)
-    loaded = read_model(path, LinearLearnerConfig)
+    loaded = read_model(path, LinearLearner)
     assert loaded == cfg
     assert loaded.learner_kind == "linear"
 
 
-def test_build_returns_linear_learner() -> None:
-    cfg = LinearLearnerConfig(ridge_alpha=3.0)
-    learner = cfg.build()
-    assert isinstance(learner, LinearLearner)
-    assert learner.ridge_alpha == 3.0
+def test_an_unknown_parameter_is_refused() -> None:
+    with pytest.raises(pydantic.ValidationError, match="ridge_alfa"):
+        LinearLearner.model_validate({"ridge_alfa": 3.0})
 
 
 def test_regression_recovers_signal() -> None:
@@ -92,14 +88,13 @@ def test_binary_degenerate_single_class_returns_constant() -> None:
     assert np.allclose(pred, 0.0)
 
 
-def test_lightgbm_config_roundtrip_and_build(tmp_path) -> None:
-    cfg = LightGBMLearnerConfig(n_estimators=300, early_stopping_rounds=10)
+def test_lightgbm_config_roundtrip(tmp_path) -> None:
+    cfg = LightGBMLearner(n_estimators=300, early_stopping_rounds=10)
 
     path = tmp_path / "lgbm.yaml"
     write_model(path, cfg)
-    loaded = read_model(path, LightGBMLearnerConfig)
+    loaded = read_model(path, LightGBMLearner)
     assert loaded == cfg
-    assert isinstance(cfg.build(), LightGBMLearner)
 
 
 def test_lightgbm_regression_smoke() -> None:
@@ -141,13 +136,13 @@ def test_lightgbm_early_stopping_watches_only_eval_metric() -> None:
 
 
 def test_mlp_config_roundtrip_defaults() -> None:
-    cfg = MlpLearnerConfig()
+    cfg = MlpLearner()
     assert cfg.hidden_dims == [256, 128]
     assert cfg.device == "cuda"
     assert cfg.allow_cpu_mlp is False
-    assert MlpLearnerConfig.model_validate_json(cfg.model_dump_json()) == cfg
-    # build() with the default CUDA device raises on CPU-only hosts, so only the
-    # config is checked here.
+    assert MlpLearner.model_validate_json(cfg.model_dump_json()) == cfg
+    # Fitting with the default CUDA device raises on CPU-only hosts, so only
+    # the config is checked here.
 
 
 def test_mlp_cpu_smoke_regression() -> None:
@@ -156,7 +151,7 @@ def test_mlp_cpu_smoke_regression() -> None:
     X, y = _synthetic_regression(100, 4)
     Xtr, Xv, Xte = X[:60], X[60:80], X[80:]
     ytr, yv = y[:60], y[60:80]
-    cfg = MlpLearnerConfig(
+    cfg = MlpLearner(
         hidden_dims=[16, 8],
         max_epochs=20,
         patience=5,
@@ -164,7 +159,7 @@ def test_mlp_cpu_smoke_regression() -> None:
         device="cpu",
         allow_cpu_mlp=True,
     )
-    pred = cfg.build().fit_predict_regression(Xtr, ytr, Xv, yv, Xte)
+    pred = cfg.fit_predict_regression(Xtr, ytr, Xv, yv, Xte)
     assert pred.shape == (len(Xte),)
     # The MLP should fit *something* on a clean linear signal even with tiny
     # capacity; we just check the output isn't constant / NaN.
@@ -184,13 +179,13 @@ def test_mlp_cpu_gate_raises_without_allow_flag() -> None:
 
 
 def test_discriminated_union_picks_concrete_kind() -> None:
-    adapter = pydantic.TypeAdapter(LearnerConfig)
+    adapter = pydantic.TypeAdapter(Learner)
     linear = adapter.validate_python({"learner_kind": "linear"})
     lgbm = adapter.validate_python({"learner_kind": "lightgbm"})
     mlp = adapter.validate_python({"learner_kind": "mlp"})
-    assert isinstance(linear, LinearLearnerConfig)
-    assert isinstance(lgbm, LightGBMLearnerConfig)
-    assert isinstance(mlp, MlpLearnerConfig)
+    assert isinstance(linear, LinearLearner)
+    assert isinstance(lgbm, LightGBMLearner)
+    assert isinstance(mlp, MlpLearner)
 
 
 def test_multilabel_runs_per_column() -> None:
@@ -208,11 +203,6 @@ def test_multilabel_runs_per_column() -> None:
 
 
 def test_null_learner_predicts_train_constant_and_parses():
-    from remedi_eval.benchmark.learners import (
-        NullLearner,
-        NullLearnerConfig,
-    )
-
     learner = NullLearner()
     # regression: constant train mean (NaN labels ignored)
     y_train = np.array([1.0, 3.0, np.nan, 5.0])
@@ -241,10 +231,10 @@ def test_null_learner_predicts_train_constant_and_parses():
     assert np.allclose(pm[:, 0], 2 / 3) and np.allclose(pm[:, 1], 1.0)
 
     # discriminated-union round-trip on the string value (not bare ``null``)
-    parsed = pydantic.TypeAdapter(LearnerConfig).validate_python(
+    parsed = pydantic.TypeAdapter(Learner).validate_python(
         {"learner_kind": "null_baseline"}
     )
-    assert isinstance(parsed, NullLearnerConfig)
+    assert isinstance(parsed, NullLearner)
 
 
 @pytest.mark.parametrize("task", ["regression", "multiclass"])
@@ -278,8 +268,36 @@ def test_mlp_fits_with_one_seed_are_identical_whatever_the_global_rng(
 
 
 def test_learner_name_defaults_to_the_kind_and_can_be_set() -> None:
-    adapter = pydantic.TypeAdapter(LearnerConfig)
+    adapter = pydantic.TypeAdapter(Learner)
     assert adapter.validate_python({"learner_kind": "mlp"}).name == "mlp"
-    assert LightGBMLearnerConfig().name == "lightgbm"
+    assert LightGBMLearner().name == "lightgbm"
     named = adapter.validate_python({"learner_kind": "mlp", "name": "mlp_focal"})
     assert named.name == "mlp_focal"
+
+
+def test_the_learner_drops_nan_labels_from_the_fit_folds() -> None:
+    """NaN filtering lives in the learner: a NaN label row changes nothing."""
+    X, y = _synthetic_regression(60, 4)
+    learner = LinearLearner(ridge_alpha=0.1)
+    clean = learner.fit_predict_regression(X[:30], y[:30], X[30:45], y[30:45], X[45:])
+    padded_X = np.concatenate([X[:30], np.full((3, 4), 1e6)])
+    padded_y = np.concatenate([y[:30], np.full(3, np.nan)])
+    np.testing.assert_allclose(
+        learner.fit_predict_regression(padded_X, padded_y, X[30:45], y[30:45], X[45:]),
+        clean,
+    )
+
+
+def test_lightgbm_multiclass_with_two_train_classes_aligns_its_columns() -> None:
+    """A multiclass train fold with exactly two classes is fitted as binary by
+    LightGBM's wrapper; the probabilities still land in the declared columns."""
+    rng = np.random.default_rng(0)
+    X = rng.standard_normal((120, 4))
+    y = np.where(X[:, 0] > 0, 3, 1).astype(float)
+    probabilities = LightGBMLearner(n_estimators=50).fit_predict_multiclass(
+        X[:80], y[:80], X[80:100], y[80:100], X[100:], n_classes=5
+    )
+    assert probabilities.shape == (20, 5)
+    np.testing.assert_allclose(probabilities[:, [0, 2, 4]], 0.0)
+    np.testing.assert_allclose(probabilities.sum(axis=1), 1.0)
+    assert (probabilities[:, 3].round() == (X[100:, 0] > 0)).mean() > 0.8

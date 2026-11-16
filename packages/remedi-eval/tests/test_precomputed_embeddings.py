@@ -19,7 +19,7 @@ from remedi_data.bundle import EvalMetric, LabelColumn, structures_identity
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import TaskType
 from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
-from remedi_eval.benchmark.learners import LinearLearnerConfig
+from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.descriptors import (
     EcfpConfig,
     EmbeddingsFileError,
@@ -187,7 +187,7 @@ def _panel(
             tasks=[
                 BenchmarkPanelConfig(
                     eval_root=tmp_path / "datasets",
-                    learners=[LinearLearnerConfig(ridge_alpha=1.0)],
+                    learners=[LinearLearner(ridge_alpha=1.0)],
                 )
             ],
         )
@@ -233,7 +233,7 @@ def test_a_panel_without_embeddings_for_a_dataset_records_the_failure(
             tasks=[
                 BenchmarkPanelConfig(
                     eval_root=tmp_path / "datasets",
-                    learners=[LinearLearnerConfig(ridge_alpha=1.0)],
+                    learners=[LinearLearner(ridge_alpha=1.0)],
                 )
             ],
         )
@@ -258,7 +258,7 @@ def test_missing_embeddings_for_the_model_keep_the_baseline_rows(
             tasks=[
                 BenchmarkPanelConfig(
                     eval_root=tmp_path / "datasets",
-                    learners=[LinearLearnerConfig(ridge_alpha=1.0)],
+                    learners=[LinearLearner(ridge_alpha=1.0)],
                     baseline_descriptors=[
                         EcfpConfig(name="ecfp_128", fingerprint_size=128)
                     ],

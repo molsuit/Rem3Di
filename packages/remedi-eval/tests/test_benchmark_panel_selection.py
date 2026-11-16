@@ -14,7 +14,7 @@ from remedi_data.bundle import (
     LabelColumn,
 )
 from remedi_data.dataset.tasks import TaskType
-from remedi_eval.benchmark.learners import LinearLearnerConfig
+from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.framework.tasks.benchmark import BenchmarkPanelConfig
 
 
@@ -43,7 +43,7 @@ def three_benchmarks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 def _panel(eval_root: Path, dataset_ids: list[str] | None) -> BenchmarkPanelConfig:
     return BenchmarkPanelConfig(
         eval_root=eval_root,
-        learners=[LinearLearnerConfig(ridge_alpha=1.0)],
+        learners=[LinearLearner(ridge_alpha=1.0)],
         dataset_ids=dataset_ids,
     )
 

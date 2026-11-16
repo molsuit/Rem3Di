@@ -53,7 +53,7 @@ from remedi_eval.benchmark.cells import (
     evaluate_pairwise_cell,
     multiclass_labelling,
 )
-from remedi_eval.benchmark.learners import LearnerConfig
+from remedi_eval.benchmark.learners import Learner
 from remedi_eval.benchmark.metrics import MulticlassReport
 from remedi_eval.descriptors import DescriptorConfig
 from remedi_eval.framework.context import EvalContext
@@ -77,7 +77,7 @@ class BenchmarkPanelConfig(BaseModel):
     eval_root: Path
     # Each learner's ``name`` (default: its ``learner_kind``) must be unique:
     # it is what tells two learners apart in results.csv and artifact paths.
-    learners: list[LearnerConfig] = Field(default_factory=list, min_length=1)
+    learners: list[Learner] = Field(default_factory=list, min_length=1)
     # Descriptors evaluated in addition to the run's model (e.g. an ECFP
     # baseline). The run's model (``ctx.model``) is always evaluated first.
     baseline_descriptors: list[DescriptorConfig] = Field(default_factory=list)
@@ -91,9 +91,7 @@ class BenchmarkPanelConfig(BaseModel):
 
     @field_validator("learners")
     @classmethod
-    def _learner_names_are_unique(
-        cls, learners: list[LearnerConfig]
-    ) -> list[LearnerConfig]:
+    def _learner_names_are_unique(cls, learners: list[Learner]) -> list[Learner]:
         names = [learner.name for learner in learners]
         duplicates = sorted({name for name in names if names.count(name) > 1})
         if duplicates:
@@ -155,17 +153,17 @@ class BenchmarkPanelConfig(BaseModel):
                         error,
                     )
                     continue
-                for learner_config in self.learners:
+                for learner in self.learners:
                     try:
                         rows, results = _evaluate_one_cell(
-                            opened, features, descriptor.name, learner_config
+                            opened, features, descriptor.name, learner
                         )
                     except Exception as error:
                         record.fail(
                             BenchmarkFailure(
                                 dataset_id=spec.dataset_id,
                                 descriptor_name=descriptor.name,
-                                learner_name=learner_config.name,
+                                learner_name=learner.name,
                                 error=repr(error),
                             ),
                             error,
@@ -265,13 +263,13 @@ def _evaluate_one_cell(
     opened: _OpenedBenchmark,
     features: np.ndarray,
     descriptor_name: str,
-    learner_config: LearnerConfig,
+    learner: Learner,
 ) -> tuple[list[BenchmarkResultRow], list[EvalResult]]:
     """One (descriptor x learner) cell: its result rows and its cell artifacts."""
     benchmark = opened.benchmark
     if opened.stereoisomers is not None:
         rows = evaluate_pairwise_cell(
-            learner_config=learner_config,
+            learner=learner,
             partition=opened.partition,
             X=features,
             Y=opened.targets,
@@ -282,7 +280,7 @@ def _evaluate_one_cell(
         )
         return rows, []
     evaluation = evaluate_cell(
-        learner_config=learner_config,
+        learner=learner,
         kind=opened.task_kind,
         partition=opened.partition,
         X=features,
@@ -294,7 +292,7 @@ def _evaluate_one_cell(
     if evaluation.report is None:
         return evaluation.rows, []
     return evaluation.rows, _multiclass_artifacts(
-        evaluation.report, benchmark.dataset_id, descriptor_name, learner_config.name
+        evaluation.report, benchmark.dataset_id, descriptor_name, learner.name
     )
 
 

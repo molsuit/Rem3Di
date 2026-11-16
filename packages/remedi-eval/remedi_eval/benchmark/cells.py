@@ -21,10 +21,7 @@ from pydantic import BaseModel
 
 from remedi_data.bundle import DatasetSpec, EvalMetric, discover_datasets
 from remedi_data.dataset.tasks import TaskType
-from remedi_eval.benchmark.learners import (
-    Learner,
-    LearnerConfig,
-)
+from remedi_eval.benchmark.learners import Learner
 from remedi_eval.benchmark.metrics import (
     MulticlassReport,
     metric_for,
@@ -115,22 +112,13 @@ def _fit_predict_single_column(
     y: np.ndarray,
     seed: int,
 ) -> np.ndarray:
-    """Fit one single-target column, dropping NaN-label rows from train/val.
-
-    Sparse multi-target regression (e.g. polaris_adme_fang) leaves NaN where a
-    molecule has no measurement for that target; Ridge / the MLP can't fit on
-    NaN labels, so the missing rows are filtered out of the fit folds. Test
-    predictions are still produced over the full test fold — ``_score`` masks
-    the NaN test rows when scoring.
-    """
+    """Fit one target column; the learner drops its NaN-label fit rows, and
+    ``_score`` masks the NaN test rows."""
     tr, va, te = partition.train, partition.valid, partition.test
-    ytr, yva = y[tr], y[va]
-    tr_keep, va_keep = ~np.isnan(ytr), ~np.isnan(yva)
-    Xtr, Xva, Xte = X[tr][tr_keep], X[va][va_keep], X[te]
-    ytr, yva = ytr[tr_keep], yva[va_keep]
-    if is_regression:
-        return learner.fit_predict_regression(Xtr, ytr, Xva, yva, Xte, seed)
-    return learner.fit_predict_binary(Xtr, ytr, Xva, yva, Xte, seed)
+    fit_predict = (
+        learner.fit_predict_regression if is_regression else learner.fit_predict_binary
+    )
+    return fit_predict(X[tr], y[tr], X[va], y[va], X[te], seed)
 
 
 def _score(y_test: np.ndarray, y_pred: np.ndarray, metric: EvalMetric) -> float:
@@ -144,7 +132,7 @@ def _score(y_test: np.ndarray, y_pred: np.ndarray, metric: EvalMetric) -> float:
 
 
 def evaluate_cell(
-    learner_config: LearnerConfig,
+    learner: Learner,
     kind: TaskKind,
     partition: Partition,
     X: np.ndarray,
@@ -167,8 +155,8 @@ def evaluate_cell(
         return BenchmarkResultRow(
             dataset_id=cell.dataset_id,
             descriptor_name=descriptor_name,
-            learner_name=learner_config.name,
-            learner_kind=learner_config.learner_kind,
+            learner_name=learner.name,
+            learner_kind=learner.learner_kind,
             target_col=target_col,
             metric_name=str(cell.metric.value),
             metric_value=float(metric_value),
@@ -179,9 +167,7 @@ def evaluate_cell(
 
     rows: list[BenchmarkResultRow] = []
     if kind == "multilabel":
-        preds = learner_config.build().fit_predict_multilabel(
-            X[tr], Y[tr], X[va], Y[va], X[te], seed
-        )
+        preds = learner.fit_predict_multilabel(X[tr], Y[tr], X[va], Y[va], X[te], seed)
         rows.append(make_row(_score(Y[te], preds, cell.metric), None))
         return CellEvaluation(rows=rows)
 
@@ -191,7 +177,7 @@ def evaluate_cell(
         # split guarantees every class is present).
         y = Y[:, 0]
         n_classes = cell.n_classes or int(np.nanmax(y)) + 1
-        preds = learner_config.build().fit_predict_multiclass(
+        preds = learner.fit_predict_multiclass(
             X[tr], y[tr], X[va], y[va], X[te], n_classes, seed
         )
         rows.append(make_row(_score(y[te], preds, cell.metric), None))
@@ -205,14 +191,14 @@ def evaluate_cell(
     # regression / binary: score each target column independently.
     for col, name in enumerate(col_names):
         preds = _fit_predict_single_column(
-            learner_config.build(), kind == "regression", partition, X, Y[:, col], seed
+            learner, kind == "regression", partition, X, Y[:, col], seed
         )
         rows.append(make_row(_score(Y[te, col], preds, cell.metric), name))
     return CellEvaluation(rows=rows)
 
 
 def evaluate_pairwise_cell(
-    learner_config: LearnerConfig,
+    learner: Learner,
     partition: Partition,
     X: np.ndarray,
     Y: np.ndarray,
@@ -233,9 +219,7 @@ def evaluate_pairwise_cell(
     """
     te = partition.test
     y = Y[:, 0]
-    preds = _fit_predict_single_column(
-        learner_config.build(), True, partition, X, y, cell.seed
-    )
+    preds = _fit_predict_single_column(learner, True, partition, X, y, cell.seed)
     test_stereoisomers = stereoisomers.iloc[te]
     acc, n_pairs = pair_ranking_accuracy(
         y[te],
@@ -247,8 +231,8 @@ def evaluate_pairwise_cell(
         BenchmarkResultRow(
             dataset_id=cell.dataset_id,
             descriptor_name=descriptor_name,
-            learner_name=learner_config.name,
-            learner_kind=learner_config.learner_kind,
+            learner_name=learner.name,
+            learner_kind=learner.learner_kind,
             target_col=col_name,
             metric_name=str(cell.metric.value),
             metric_value=float(acc),

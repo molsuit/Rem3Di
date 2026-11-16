@@ -26,7 +26,7 @@ from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import TaskType
 from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
 from remedi_data.yaml_io import read_model
-from remedi_eval.benchmark.learners import LinearLearnerConfig
+from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.descriptors import (
     DescriptorCalculator,
     EcfpConfig,
@@ -200,7 +200,7 @@ def test_the_pipeline_embeds_only_the_selected_datasets(tmp_path: Path) -> None:
     assert isinstance(config.manifest.model, PrecomputedEmbeddingsConfig)
     assert isinstance(config.manifest.tasks[0], BenchmarkPanelConfig)
     assert isinstance(config.manifest, EvalManifest)
-    assert config.manifest.tasks[0].learners == [LinearLearnerConfig(ridge_alpha=1.0)]
+    assert config.manifest.tasks[0].learners == [LinearLearner(ridge_alpha=1.0)]
 
 
 def test_the_remedi_identity_is_the_checkpoint_hash_and_is_memoised(

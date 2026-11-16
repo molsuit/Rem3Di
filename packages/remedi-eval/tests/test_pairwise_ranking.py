@@ -14,7 +14,7 @@ import pandas as pd
 
 from remedi_data.bundle import EvalMetric
 from remedi_eval.benchmark.cells import BenchmarkCell, evaluate_pairwise_cell
-from remedi_eval.benchmark.learners import LinearLearnerConfig
+from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.benchmark.pairwise import pair_ranking_accuracy
 from remedi_eval.protocol import Partition
 
@@ -142,7 +142,7 @@ def test_evaluate_pairwise_cell_end_to_end() -> None:
         seed=0,
     )
     rows = evaluate_pairwise_cell(
-        LinearLearnerConfig(ridge_alpha=0.01),
+        LinearLearner(ridge_alpha=0.01),
         partition,
         X,
         Y,

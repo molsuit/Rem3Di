@@ -1,4 +1,4 @@
-"""Losses for supervised single-label classification training.
+"""Losses for single-label classification: the chiral classifier and the MLP probe.
 
 Focal loss (Lin et al., 2017, *Focal Loss for Dense Object Detection*) is the
 objective of choice for the chiral-type task: it down-weights the easy, dominant

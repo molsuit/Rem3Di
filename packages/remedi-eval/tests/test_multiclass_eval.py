@@ -29,7 +29,6 @@ from remedi_data.testing import (
 from remedi_eval.benchmark.learners import (
     LightGBMLearner,
     LinearLearner,
-    LinearLearnerConfig,
     MlpLearner,
     NullLearner,
 )
@@ -175,7 +174,7 @@ def test_panel_task_scores_multiclass_and_writes_the_per_class_report(
         tasks=[
             BenchmarkPanelConfig(
                 eval_root=tmp_path / "datasets",
-                learners=[LinearLearnerConfig(ridge_alpha=1.0)],
+                learners=[LinearLearner(ridge_alpha=1.0)],
             )
         ],
     )
@@ -278,8 +277,8 @@ def test_two_learners_of_one_kind_write_separate_multiclass_reports(
             BenchmarkPanelConfig(
                 eval_root=tmp_path / "datasets",
                 learners=[
-                    LinearLearnerConfig(name="logreg_weak", logreg_C=0.01),
-                    LinearLearnerConfig(name="logreg_strong", logreg_C=100.0),
+                    LinearLearner(name="logreg_weak", logreg_C=0.01),
+                    LinearLearner(name="logreg_strong", logreg_C=100.0),
                 ],
             )
         ],

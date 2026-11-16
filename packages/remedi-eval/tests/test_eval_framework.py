@@ -19,7 +19,7 @@ from remedi_data.dataset.tasks import TaskType
 from remedi_data.runs.results import TableResult
 from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
 from remedi_data.yaml_io import read_model
-from remedi_eval.benchmark.learners import LinearLearnerConfig
+from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import (
     BenchmarkPanelConfig,
@@ -54,7 +54,7 @@ def _manifest(tmp_path: Path) -> EvalManifest:
         output_root=tmp_path / "eval_out" / "model_x",
         tasks=[
             BenchmarkPanelConfig(
-                eval_root=eval_root, learners=[LinearLearnerConfig(ridge_alpha=1.0)]
+                eval_root=eval_root, learners=[LinearLearner(ridge_alpha=1.0)]
             )
         ],
     )
@@ -69,7 +69,7 @@ def _failing_panel_task(tmp_path: Path) -> BenchmarkPanelConfig:
     (broken / "dataset.yaml").write_text("format_version: 99\n")
     (broken / "dataset_config.yaml").write_text("{}\n")
     return BenchmarkPanelConfig(
-        eval_root=broken_root, learners=[LinearLearnerConfig(ridge_alpha=1.0)]
+        eval_root=broken_root, learners=[LinearLearner(ridge_alpha=1.0)]
     )
 
 
