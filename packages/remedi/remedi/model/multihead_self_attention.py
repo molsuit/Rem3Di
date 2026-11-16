@@ -44,11 +44,12 @@ class MultiHeadSelfAttention(nn.Module):
         def heads(W: nn.Linear) -> Tensor:  # (B, N, d) -> (B, H, N, d_k)
             return W(S).view(B, N, self.n_heads, self.d_k).transpose(1, 2)
 
+        Q, K, V = heads(self.W_q), heads(self.W_k), heads(self.W_v)
         attended = F.scaled_dot_product_attention(
-            heads(self.W_q),
-            heads(self.W_k),
-            heads(self.W_v),
-            attn_mask=None if mask is None else key_padding_bias(mask, S.dtype),
+            Q,
+            K,
+            V,
+            attn_mask=None if mask is None else key_padding_bias(mask, Q.dtype),
             dropout_p=self.dropout.p if self.training else 0.0,
         )
         return self.W_o(attended.transpose(1, 2).reshape(B, N, self.d_model))

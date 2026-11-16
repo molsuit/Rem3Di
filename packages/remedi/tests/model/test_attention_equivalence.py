@@ -186,3 +186,23 @@ def test_self_attention_matches_the_reference() -> None:
         old = _reference_self_attention(module, S, mask)
     real = ~mask
     torch.testing.assert_close(new[real], old[real])
+
+
+@pytest.mark.parametrize("pool", ["attention_pool", "pma"])
+def test_pooling_stays_finite_under_bfloat16_autocast_with_a_fully_padded_row(
+    pool: str,
+) -> None:
+    """Under bfloat16 autocast a molecule without a real atom still pools to
+    finite values (every attention builds its key-padding mask in the query's
+    dtype)."""
+    module = (
+        AttnPool(D_MODEL, d_out=16, n_heads=HEADS)
+        if pool == "attention_pool"
+        else PMAAggregator(D_MODEL, 16, num_heads=HEADS, head_dim=8, k_seeds=3)
+    ).eval()
+    S = torch.randn(BATCH, ATOMS, D_MODEL)
+    mask = _padding()
+    mask[2] = True
+    with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
+        pooled = module(S, mask)
+    assert torch.isfinite(pooled).all()

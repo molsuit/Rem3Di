@@ -90,7 +90,9 @@ class AttnPool(nn.Module):
             query,
             keys,
             values,
-            attn_mask=None if pad_mask is None else key_padding_bias(pad_mask, x.dtype),
+            attn_mask=None
+            if pad_mask is None
+            else key_padding_bias(pad_mask, query.dtype),
             dropout_p=self.dropout.p if self.training else 0.0,
         )  # (B, H, 1, d_in)
         out = self.out_proj(pooled.squeeze(2).mean(dim=1))
