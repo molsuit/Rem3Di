@@ -1,12 +1,14 @@
 """Pairwise enantiomer-ranking metric for the Chiro docking benchmark.
 
 The descriptor probe regresses a per-conformer docking ``top_score``. Scoring is
-*relative*, not absolute: for each constitution the two enantiomers are ranked by
-their predicted score and the metric is the fraction of pairs whose predicted
-better-docker (lower score) matches the truth. This needs the molecule (the
-``molecule_id`` constitution group) and stereoisomer (``isomer_id`` enantiomer
-group) ids, so it lives here rather than in the uniform ``(y_true, y_pred)``
-metric registry in :mod:`metrics`.
+*relative*, not absolute: for each enantiomer pair the two mirror images are
+ranked by their predicted score and the metric is the fraction of pairs whose
+predicted better-docker (lower score) matches the truth. The pairs come from the
+dataset table's ``enantiomer_of`` column (invariant 4: symmetric, irreflexive,
+within one ``molecule_id``), so two diastereomers of one constitution are never
+scored as a pair. That needs the per-structure ``stereoisomer_id`` and
+``enantiomer_of``, so the metric lives here rather than in the uniform
+``(y_true, y_pred)`` registry in :mod:`metrics`.
 
 A chirality-*invariant* descriptor returns identical features for an enantiomer
 pair (same graph, mirror-image geometries share an interatomic-distance matrix),
@@ -18,74 +20,70 @@ benchmark is built to expose.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
-
-
-def _aggregate_per_isomer(
-    values: np.ndarray, isomer_ids: np.ndarray
-) -> dict[int, float]:
-    """Mean of ``values`` within each ``isomer_id`` group (pool conformers)."""
-    sums: dict[int, float] = {}
-    counts: dict[int, int] = {}
-    for v, iso in zip(values, isomer_ids, strict=True):
-        iso = int(iso)
-        sums[iso] = sums.get(iso, 0.0) + float(v)
-        counts[iso] = counts.get(iso, 0) + 1
-    return {iso: sums[iso] / counts[iso] for iso in sums}
+import pandas as pd
 
 
 def pair_ranking_accuracy(
     true_scores: np.ndarray,
-    pred_scores: np.ndarray,
-    molecule_ids: np.ndarray,
-    isomer_ids: np.ndarray,
+    predicted_scores: np.ndarray,
+    stereoisomer_ids: np.ndarray,
+    enantiomer_of: Sequence[object] | pd.api.extensions.ExtensionArray | np.ndarray,
 ) -> tuple[float, int]:
     """Fraction of enantiomer pairs ranked correctly by predicted ``top_score``.
 
-    All four arrays are per-conformer and aligned (the test fold). Conformer
-    scores are pooled per stereoisomer; stereoisomers are then grouped by their
-    constitution (``molecule_id``). Only constitutions with **exactly two**
-    enantiomers are scored (the dataset guarantees pairs; anything else is an
-    ingest anomaly and is skipped). A pair counts 1.0 when the predicted lower
-    score lands on the truly-lower-scoring enantiomer, 0.0 when reversed, and 0.5
-    on a predicted tie. Returns ``(accuracy, n_pairs)``; accuracy is NaN when no
-    scorable pair exists.
+    All four arrays are per-conformer and aligned (the scored fold).
+    ``enantiomer_of`` is the ``stereoisomer_id`` of each row's mirror image,
+    missing (``pd.NA`` / NaN) when it has none. Conformer scores are pooled
+    (mean) per stereoisomer; a pair is scored when both mirror images are in
+    the fold and their true pooled scores differ. A pair counts 1.0 when the
+    predicted lower score lands on the truly-lower-scoring enantiomer, 0.0 when
+    reversed, and 0.5 on a predicted tie. Returns ``(accuracy, n_pairs)``;
+    accuracy is NaN when no scorable pair exists.
     """
-    true_scores = np.asarray(true_scores, dtype=float)
-    pred_scores = np.asarray(pred_scores, dtype=float)
-    molecule_ids = np.asarray(molecule_ids)
-    isomer_ids = np.asarray(isomer_ids)
+    per_stereoisomer = (
+        pd.DataFrame(
+            {
+                "stereoisomer_id": np.asarray(stereoisomer_ids, dtype=np.int64),
+                "enantiomer_of": pd.array(enantiomer_of, dtype="Int64"),
+                "true": np.asarray(true_scores, dtype=float),
+                "predicted": np.asarray(predicted_scores, dtype=float),
+            }
+        )
+        .groupby("stereoisomer_id")
+        .agg(
+            enantiomer_of=("enantiomer_of", "first"),
+            true=("true", "mean"),
+            predicted=("predicted", "mean"),
+        )
+    )
+    partner = per_stereoisomer["enantiomer_of"]
+    # Each pair once (from its lower id), and only when the partner is in the fold.
+    first = per_stereoisomer[
+        partner.notna()
+        & (per_stereoisomer.index < partner)
+        & partner.isin(per_stereoisomer.index)
+    ]
+    second = per_stereoisomer.loc[first["enantiomer_of"].astype(np.int64)]
+    true_difference = first["true"].to_numpy() - second["true"].to_numpy()
+    predicted_difference = (
+        first["predicted"].to_numpy() - second["predicted"].to_numpy()
+    )
 
-    true_per_iso = _aggregate_per_isomer(true_scores, isomer_ids)
-    pred_per_iso = _aggregate_per_isomer(pred_scores, isomer_ids)
-
-    # One representative molecule_id per isomer (constant within an isomer group).
-    iso_to_mol: dict[int, int] = {}
-    for iso, mol in zip(isomer_ids, molecule_ids, strict=True):
-        iso_to_mol[int(iso)] = int(mol)
-
-    mol_to_isos: dict[int, list[int]] = {}
-    for iso, mol in iso_to_mol.items():
-        mol_to_isos.setdefault(mol, []).append(iso)
-
-    scores: list[float] = []
-    for isos in mol_to_isos.values():
-        if len(isos) != 2:
-            continue
-        a, b = isos
-        true_diff = true_per_iso[a] - true_per_iso[b]
-        if true_diff == 0.0:
-            # No ground-truth winner (margin filtering should prevent this).
-            continue
-        pred_diff = pred_per_iso[a] - pred_per_iso[b]
-        if pred_diff == 0.0:
-            scores.append(0.5)
-        else:
-            scores.append(1.0 if (pred_diff < 0) == (true_diff < 0) else 0.0)
-
-    if not scores:
+    # No ground-truth winner (margin filtering should prevent it): not scored.
+    decided = true_difference != 0.0
+    true_difference = true_difference[decided]
+    predicted_difference = predicted_difference[decided]
+    if true_difference.size == 0:
         return float("nan"), 0
-    return float(np.mean(scores)), len(scores)
+    scores = np.where(
+        predicted_difference == 0.0,
+        0.5,
+        (np.sign(predicted_difference) == np.sign(true_difference)).astype(float),
+    )
+    return float(scores.mean()), int(scores.size)
 
 
 __all__ = ["pair_ranking_accuracy"]

@@ -109,28 +109,48 @@ def macro_f1(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(f1_score(yt, pred, average="macro", zero_division=0))
 
 
+def auroc_one_vs_rest_per_class(
+    y_true: np.ndarray, probabilities: np.ndarray
+) -> np.ndarray:
+    """One-vs-rest AUROC of every class column of ``probabilities``.
+
+    Class ``c`` is scored as the binary problem "is class ``c``" on column
+    ``c``. A class with no positive or no negative in ``y_true`` (absent from
+    the fold, or the only class in it) has no AUROC and gets NaN, as does every
+    class when a prediction is non-finite (e.g. a diverged model).
+    """
+    true_labels = np.asarray(y_true).reshape(-1).astype(int)
+    probabilities = np.asarray(probabilities, dtype=float)
+    n_classes = probabilities.shape[1]
+    per_class = np.full(n_classes, np.nan)
+    if not np.isfinite(probabilities).all():
+        return per_class
+    for class_index in range(n_classes):
+        is_class = true_labels == class_index
+        if 0 < is_class.sum() < len(is_class):
+            per_class[class_index] = roc_auc_score(
+                is_class, probabilities[:, class_index]
+            )
+    return per_class
+
+
 def macro_auroc_ovr(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """One-vs-rest macro AUROC from the ``(n, n_classes)`` probability matrix.
 
-    Returns NaN when fewer than two distinct classes appear in the test fold
-    (AUROC is undefined). ``labels`` pins the class ordering to the probability
-    columns so a class missing from the test fold doesn't shift the columns.
+    The mean of :func:`auroc_one_vs_rest_per_class` over the classes that can
+    be scored, i.e. that have both positives and negatives in the fold; a
+    declared class absent from the test fold is skipped, like a single-class
+    column in :func:`macro_auroc`. NaN when no class is scorable (fewer than
+    two classes in the fold) or a prediction is non-finite. The per-class
+    values, and so which classes were scored, are in the ``auroc_ovr`` column
+    of :func:`multiclass_report`.
     """
-    yt = np.asarray(y_true).reshape(-1).astype(int)
-    yp = np.asarray(y_pred)
-    # Undefined with <2 classes; and never let non-finite predictions (e.g. a
-    # diverged model) raise inside roc_auc_score and sink the whole run.
-    if yp.ndim != 2 or len(np.unique(yt)) < 2 or not np.isfinite(yp).all():
+    probabilities = np.asarray(y_pred)
+    if probabilities.ndim != 2:
         return float("nan")
-    return float(
-        roc_auc_score(
-            yt,
-            yp,
-            multi_class="ovr",
-            average="macro",
-            labels=np.arange(yp.shape[1]),
-        )
-    )
+    per_class = auroc_one_vs_rest_per_class(y_true, probabilities)
+    scored = per_class[~np.isnan(per_class)]
+    return float(scored.mean()) if scored.size else float("nan")
 
 
 @dataclass(frozen=True)
@@ -138,8 +158,10 @@ class MulticlassReport:
     """The per-class picture a single balanced-accuracy number hides.
 
     ``per_class`` is one row per class in label order, with the columns
-    ``class_id``, ``class_name``, ``precision``, ``recall``, ``f1`` and
-    ``support``. ``confusion_matrix`` is the integer ``(n_classes, n_classes)``
+    ``class_id``, ``class_name``, ``precision``, ``recall``, ``f1``,
+    ``support`` and ``auroc_ovr`` (the one-vs-rest AUROC; NaN for a class
+    without positives or negatives in the fold, or when only labels were
+    given). ``confusion_matrix`` is the integer ``(n_classes, n_classes)``
     matrix, rows indexed by true class and columns by predicted class, over the
     fixed label order ``0 … n_classes - 1`` — so a class absent from the test
     fold keeps its row and column instead of shifting the others.
@@ -191,6 +213,12 @@ def multiclass_report(
     precision, recall, f1, support = precision_recall_fscore_support(
         true_labels, predicted_labels, labels=labels, zero_division=0
     )
+    probabilities = np.asarray(probabilities)
+    auroc_per_class = (
+        auroc_one_vs_rest_per_class(true_labels, probabilities)
+        if probabilities.ndim == 2
+        else np.full(n_classes, np.nan)
+    )
     per_class = pd.DataFrame(
         {
             "class_id": labels,
@@ -199,6 +227,7 @@ def multiclass_report(
             "recall": recall,
             "f1": f1,
             "support": support,
+            "auroc_ovr": auroc_per_class,
         }
     )
     matrix = confusion_matrix(true_labels, predicted_labels, labels=labels)
@@ -223,3 +252,25 @@ _METRIC_FNS: dict[EvalMetric, Callable[[np.ndarray, np.ndarray], float]] = {
 
 def metric_for(metric: EvalMetric) -> Callable[[np.ndarray, np.ndarray], float]:
     return _METRIC_FNS[metric]
+
+
+# ``EvalMetric`` lives in remedi_data, which knows nothing of how a metric is
+# read; the direction is an evaluation concern, so it is kept here.
+_HIGHER_IS_BETTER: dict[EvalMetric, bool] = {
+    EvalMetric.rmse: False,
+    EvalMetric.mae: False,
+    EvalMetric.r2: True,
+    EvalMetric.spearman: True,
+    EvalMetric.auroc: True,
+    EvalMetric.auprc: True,
+    EvalMetric.macro_auroc: True,
+    EvalMetric.balanced_accuracy: True,
+    EvalMetric.macro_f1: True,
+    EvalMetric.macro_auroc_ovr: True,
+    EvalMetric.pair_ranking_accuracy: True,
+}
+
+
+def higher_is_better(metric: EvalMetric) -> bool:
+    """Whether a larger value of ``metric`` is a better model."""
+    return _HIGHER_IS_BETTER[metric]

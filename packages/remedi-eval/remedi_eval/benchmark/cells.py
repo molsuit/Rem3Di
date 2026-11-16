@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from pydantic import BaseModel
 
 from remedi_data.bundle import DatasetSpec, EvalMetric, discover_datasets
@@ -38,6 +39,9 @@ class BenchmarkResultRow(BaseModel):
 
     dataset_id: str
     descriptor_name: str
+    # The learner config's unique ``name`` (two configs of one kind differ
+    # here) and its model family.
+    learner_name: str
     learner_kind: str
     # Which target column this row scores. Set per-column for regression
     # benchmarks (single- or multi-target); ``None`` for the macro-averaged
@@ -89,14 +93,18 @@ class CellEvaluation:
 
 
 class BenchmarkFailure(BaseModel):
-    """One benchmark that raised during the panel (recorded, not fatal)."""
+    """One part of the panel that raised (recorded, not fatal).
+
+    The scope is as narrow as what failed: ``descriptor_name`` and
+    ``learner_name`` are both ``None`` when the benchmark itself could not be
+    opened, ``learner_name`` alone is ``None`` when the descriptor matrix could
+    not be loaded, and both are set for one failed (descriptor x learner) cell.
+    """
 
     dataset_id: str
+    descriptor_name: str | None = None
+    learner_name: str | None = None
     error: str
-
-
-def learner_kind(cfg: LearnerConfig) -> str:
-    return cfg.learner_kind  # type: ignore[union-attr]
 
 
 def _fit_predict_single_column(
@@ -136,7 +144,7 @@ def _score(y_test: np.ndarray, y_pred: np.ndarray, metric: EvalMetric) -> float:
 
 
 def evaluate_cell(
-    learner_cfg: LearnerConfig,
+    learner_config: LearnerConfig,
     kind: TaskKind,
     partition: Partition,
     X: np.ndarray,
@@ -159,7 +167,8 @@ def evaluate_cell(
         return BenchmarkResultRow(
             dataset_id=cell.dataset_id,
             descriptor_name=descriptor_name,
-            learner_kind=learner_kind(learner_cfg),
+            learner_name=learner_config.name,
+            learner_kind=learner_config.learner_kind,
             target_col=target_col,
             metric_name=str(cell.metric.value),
             metric_value=float(metric_value),
@@ -170,7 +179,7 @@ def evaluate_cell(
 
     rows: list[BenchmarkResultRow] = []
     if kind == "multilabel":
-        preds = learner_cfg.build().fit_predict_multilabel(
+        preds = learner_config.build().fit_predict_multilabel(
             X[tr], Y[tr], X[va], Y[va], X[te], seed
         )
         rows.append(make_row(_score(Y[te], preds, cell.metric), None))
@@ -182,7 +191,7 @@ def evaluate_cell(
         # split guarantees every class is present).
         y = Y[:, 0]
         n_classes = cell.n_classes or int(np.nanmax(y)) + 1
-        preds = learner_cfg.build().fit_predict_multiclass(
+        preds = learner_config.build().fit_predict_multiclass(
             X[tr], y[tr], X[va], y[va], X[te], n_classes, seed
         )
         rows.append(make_row(_score(y[te], preds, cell.metric), None))
@@ -196,19 +205,18 @@ def evaluate_cell(
     # regression / binary: score each target column independently.
     for col, name in enumerate(col_names):
         preds = _fit_predict_single_column(
-            learner_cfg.build(), kind == "regression", partition, X, Y[:, col], seed
+            learner_config.build(), kind == "regression", partition, X, Y[:, col], seed
         )
         rows.append(make_row(_score(Y[te, col], preds, cell.metric), name))
     return CellEvaluation(rows=rows)
 
 
 def evaluate_pairwise_cell(
-    learner_cfg: LearnerConfig,
+    learner_config: LearnerConfig,
     partition: Partition,
     X: np.ndarray,
     Y: np.ndarray,
-    molecule_ids: np.ndarray,
-    isomer_ids: np.ndarray,
+    stereoisomers: pd.DataFrame,
     col_name: str,
     cell: BenchmarkCell,
     descriptor_name: str,
@@ -218,20 +226,29 @@ def evaluate_pairwise_cell(
     The single regression column (the docking ``top_score``) is fit as an
     ordinary regression; the test-fold predictions are then handed to
     :func:`pair_ranking_accuracy`, which pools conformers per stereoisomer and
-    ranks each enantiomer pair. One result row, with ``n_test`` carrying the
-    number of enantiomer pairs scored (not conformers).
+    ranks each enantiomer pair. ``stereoisomers`` is the per-structure
+    ``stereoisomer_id`` / ``enantiomer_of`` frame in zarr order
+    (:meth:`Benchmark.stereoisomers`). One result row, with ``n_test`` carrying
+    the number of enantiomer pairs scored (not conformers).
     """
     te = partition.test
     y = Y[:, 0]
     preds = _fit_predict_single_column(
-        learner_cfg.build(), True, partition, X, y, cell.seed
+        learner_config.build(), True, partition, X, y, cell.seed
     )
-    acc, n_pairs = pair_ranking_accuracy(y[te], preds, molecule_ids[te], isomer_ids[te])
+    test_stereoisomers = stereoisomers.iloc[te]
+    acc, n_pairs = pair_ranking_accuracy(
+        y[te],
+        preds,
+        test_stereoisomers["stereoisomer_id"].to_numpy(),
+        test_stereoisomers["enantiomer_of"].array,
+    )
     return [
         BenchmarkResultRow(
             dataset_id=cell.dataset_id,
             descriptor_name=descriptor_name,
-            learner_kind=learner_kind(learner_cfg),
+            learner_name=learner_config.name,
+            learner_kind=learner_config.learner_kind,
             target_col=col_name,
             metric_name=str(cell.metric.value),
             metric_value=float(acc),

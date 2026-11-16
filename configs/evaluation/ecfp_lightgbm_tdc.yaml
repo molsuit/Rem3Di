@@ -37,4 +37,5 @@ tasks:
       - DILI
     learners:
       - learner_kind: lightgbm
+        name: lightgbm  # unique per panel; tells two configs of one kind apart
 seed: 0

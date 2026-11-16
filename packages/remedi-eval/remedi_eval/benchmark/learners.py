@@ -9,14 +9,17 @@ ever fitting parameters on it — the user-requested invariant is that training
 only happens on the train split.
 
 Learner configs are a pydantic ``Annotated`` discriminated union on
-``learner_kind`` so the eval yaml lists learners as one block per kind:
+``learner_kind``. Each config carries a ``name`` (defaulting to its kind) that
+identifies it in result rows and artifact paths, so two configs of one kind can
+sit side by side in a panel:
 
     learners:
       - learner_kind: linear
       - learner_kind: lightgbm
         early_stopping_rounds: 50
       - learner_kind: mlp
-        hidden_dims: [256, 128]
+        name: mlp_focal
+        loss: focal
 
 Ships ``LinearLearner`` (ignores val), ``LightGBMLearner`` (val drives early
 stopping via ``eval_set``), and ``MlpLearner`` (val drives early stopping on
@@ -33,6 +36,7 @@ import numpy as np
 import torch
 from lightgbm import LGBMClassifier, LGBMRegressor, early_stopping, log_evaluation
 from pydantic import BaseModel, Field
+from scipy.special import expit
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -242,9 +246,6 @@ class LinearLearner(Learner):
         )
 
 
-# -- Pydantic configs -------------------------------------------------------
-
-
 # -- LightGBMLearner --------------------------------------------------------
 # Uses (X_val, y_val) as `eval_set` for early stopping. We do NOT refit on
 # train+val with the best_iteration: per the user policy, train-only fitting.
@@ -366,8 +367,12 @@ class LightGBMLearner(Learner):
             rates = np.bincount(ytr_i, minlength=n_classes).astype(float)
             rates = rates / rates.sum() if rates.sum() else rates
             return np.tile(rates, (len(X_test), 1))
-        Xv = X_val[mv]
-        yv_i = yv[mv].astype(int)
+        # A valid row whose class the train fold lacks cannot be scored by the
+        # fitted label encoder (LightGBM raises "previously unseen labels"), and
+        # carries no early-stopping signal for a class the model cannot predict.
+        valid_keep = mv & np.isin(yv, np.unique(ytr_i))
+        Xv = X_val[valid_keep]
+        yv_i = yv[valid_keep].astype(int)
         model = LGBMClassifier(
             **self.params,
             objective="multiclass",
@@ -505,7 +510,7 @@ class MlpLearner(Learner):
 
     def _train(
         self,
-        model: _Mlp,
+        output_dim: int,
         X_train: np.ndarray,
         y_train: np.ndarray,
         X_val: np.ndarray,
@@ -517,9 +522,18 @@ class MlpLearner(Learner):
         train_mask: np.ndarray | None = None,
         val_mask: np.ndarray | None = None,
     ) -> _Mlp:
+        """Seed, build and train a fresh network; return it at its best epoch.
+
+        The network is built *after* seeding so its initial weights (and the
+        dropout masks) depend on ``seed`` alone, not on whatever drew from the
+        global torch RNG before this fit.
+        """
         torch.manual_seed(seed)
         if device.type == "cuda":
             torch.cuda.manual_seed_all(seed)
+        model = _Mlp(X_train.shape[1], output_dim, self.hidden_dims, self.dropout).to(
+            device
+        )
         opt = torch.optim.Adam(
             model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
@@ -590,8 +604,7 @@ class MlpLearner(Learner):
         ystd = float(np.std(y_train) or 1.0)
         ytr = ((y_train - ymean) / ystd).astype(np.float32).reshape(-1, 1)
         yv = ((y_val - ymean) / ystd).astype(np.float32).reshape(-1, 1)
-        model = _Mlp(Xtr.shape[1], 1, self.hidden_dims, self.dropout).to(device)
-        model = self._train(model, Xtr, ytr, Xv, yv, "regression", device, seed)
+        model = self._train(1, Xtr, ytr, Xv, yv, "regression", device, seed)
         with torch.no_grad():
             xte = torch.from_numpy(Xte).to(device)
             raw = model(xte).cpu().numpy().reshape(-1)
@@ -611,12 +624,11 @@ class MlpLearner(Learner):
         Xtr, Xv, Xte = self._standardize(X_train[mtr], X_val[mv], X_test)
         y_tr = ytr[mtr].astype(np.float32).reshape(-1, 1)
         y_v = yv[mv].astype(np.float32).reshape(-1, 1)
-        model = _Mlp(Xtr.shape[1], 1, self.hidden_dims, self.dropout).to(device)
-        model = self._train(model, Xtr, y_tr, Xv, y_v, "binary", device, seed)
+        model = self._train(1, Xtr, y_tr, Xv, y_v, "binary", device, seed)
         with torch.no_grad():
             xte = torch.from_numpy(Xte).to(device)
             logits = model(xte).cpu().numpy().reshape(-1)
-        return 1.0 / (1.0 + np.exp(-logits))
+        return expit(logits)
 
     def fit_predict_multilabel(
         self, X_train, y_train, X_val, y_val, X_test, seed: int = 0
@@ -629,11 +641,8 @@ class MlpLearner(Learner):
         yv = np.nan_to_num(Y_val, nan=0.0).astype(np.float32)
         mask_tr = (~np.isnan(Y_train)).astype(np.float32)
         mask_v = (~np.isnan(Y_val)).astype(np.float32)
-        model = _Mlp(Xtr.shape[1], Y_train.shape[1], self.hidden_dims, self.dropout).to(
-            device
-        )
         model = self._train(
-            model,
+            Y_train.shape[1],
             Xtr,
             ytr,
             Xv,
@@ -647,7 +656,7 @@ class MlpLearner(Learner):
         with torch.no_grad():
             xte = torch.from_numpy(Xte).to(device)
             logits = model(xte).cpu().numpy()
-        return 1.0 / (1.0 + np.exp(-logits))
+        return expit(logits)
 
     def fit_predict_multiclass(
         self, X_train, y_train, X_val, y_val, X_test, n_classes: int, seed: int = 0
@@ -664,8 +673,7 @@ class MlpLearner(Learner):
         Xtr, Xv, Xte = self._standardize(X_train[mtr], X_val[mv], X_test)
         y_tr = ytr[mtr].astype(np.int64)
         y_v = yv[mv].astype(np.int64)
-        model = _Mlp(Xtr.shape[1], n_classes, self.hidden_dims, self.dropout).to(device)
-        model = self._train(model, Xtr, y_tr, Xv, y_v, "multiclass", device, seed)
+        model = self._train(n_classes, Xtr, y_tr, Xv, y_v, "multiclass", device, seed)
         with torch.no_grad():
             xte = torch.from_numpy(Xte).to(device)
             probs = torch.softmax(model(xte), dim=-1).cpu().numpy()
@@ -721,8 +729,21 @@ class NullLearner(Learner):
 # -- Pydantic configs -------------------------------------------------------
 
 
-class LinearLearnerConfig(BaseModel):
+class _LearnerConfigBase(BaseModel):
+    """What every learner config shares: the ``name`` that identifies it.
+
+    ``name`` labels the learner in ``results.csv`` (``learner_name``) and in
+    the per-cell artifact directory ``<descriptor>__<name>``. Each config's
+    default is its ``learner_kind``; give two configs of one kind distinct
+    names. The panel validates that the names are unique.
+    """
+
+    name: str
+
+
+class LinearLearnerConfig(_LearnerConfigBase):
     learner_kind: Literal["linear"] = "linear"
+    name: str = "linear"
     ridge_alpha: float = 1.0
     logreg_C: float = 1.0
     logreg_max_iter: int = 2000
@@ -737,8 +758,9 @@ class LinearLearnerConfig(BaseModel):
         )
 
 
-class LightGBMLearnerConfig(BaseModel):
+class LightGBMLearnerConfig(_LearnerConfigBase):
     learner_kind: Literal["lightgbm"] = "lightgbm"
+    name: str = "lightgbm"
     n_estimators: int = 2000
     learning_rate: float = 0.03
     num_leaves: int = 31
@@ -762,8 +784,9 @@ class LightGBMLearnerConfig(BaseModel):
         )
 
 
-class MlpLearnerConfig(BaseModel):
+class MlpLearnerConfig(_LearnerConfigBase):
     learner_kind: Literal["mlp"] = "mlp"
+    name: str = "mlp"
     hidden_dims: list[int] = [256, 128]
     dropout: float = 0.2
     lr: float = 1e-3
@@ -795,10 +818,11 @@ class MlpLearnerConfig(BaseModel):
         )
 
 
-class NullLearnerConfig(BaseModel):
+class NullLearnerConfig(_LearnerConfigBase):
     # "null_baseline" not "null": a bare ``null`` in yaml parses to None and
     # would break discriminated-union resolution.
     learner_kind: Literal["null_baseline"] = "null_baseline"
+    name: str = "null_baseline"
 
     def build(self) -> NullLearner:
         return NullLearner()

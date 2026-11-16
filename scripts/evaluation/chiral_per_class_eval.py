@@ -6,6 +6,12 @@ classification head, not a re-fit probe) and runs it over the stored validation
 split to recover the per-class precision / recall / F1 / support and the
 confusion matrix that the headline numbers hide.
 
+The per-class table and the confusion matrix come from
+:func:`remedi_eval.benchmark.metrics.multiclass_report`, headed with the class
+names the dataset spec declares (``LabelColumn.class_names``); the scored rows
+are a fold of one split column of the dataset table
+(:func:`remedi_eval.protocol.read_partition`).
+
 Run on a GPU node (MACE featurizes on the fly):
     uv run python scripts/evaluation/chiral_per_class_eval.py \
         --ablation_dir /path/to/training_runs/chiral_cat_ablation \
@@ -19,15 +25,11 @@ import argparse
 import json
 import logging
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pydantic_yaml as pyaml
 import torch
-from sklearn.metrics import (
-    balanced_accuracy_score,
-    confusion_matrix,
-    precision_recall_fscore_support,
-)
 from torch.utils.data import Subset
 
 from remedi.configuration.architecture_config import ArchitectureConfig
@@ -38,13 +40,14 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
 )
+from remedi_data.bundle import read_spec
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.tasks import Split
+from remedi_eval.benchmark.cells import multiclass_labelling
+from remedi_eval.benchmark.metrics import balanced_accuracy, multiclass_report
+from remedi_eval.protocol import read_partition
 
 logger = logging.getLogger("remedi.chiral.per_class")
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
-CLASS_NAMES = ["achiral", "central", "axial", "helical", "planar"]
 
 # checkpoint-dir suffix -> config-dir name
 RUNS = {
@@ -94,19 +97,23 @@ def _predict(model, loader) -> tuple[np.ndarray, np.ndarray]:
     return np.concatenate(y_true).astype(int), np.concatenate(y_pred).astype(int)
 
 
-def _split_indices(ds: MoleculeDataset, split: Split) -> np.ndarray:
-    codes = np.asarray(ds.split[:], dtype=np.uint8)
-    return np.nonzero(codes == split.value)[0]
-
-
-def evaluate_run(run_dir: Path, cfg_dir: Path, split: Split, n_classes: int) -> dict:
+def evaluate_run(
+    run_dir: Path,
+    cfg_dir: Path,
+    split_column: str,
+    fold: Literal["valid", "test"],
+) -> dict:
     training_config = pyaml.parse_yaml_file_as(
         ClassifierTrainingConfig, cfg_dir / "training_config.yaml"
     )
     dataset_path = training_config.dataset_path
+    n_classes, class_names = multiclass_labelling(read_spec(dataset_path))
+    if n_classes is None:
+        raise ValueError(f"{dataset_path} declares no single multiclass label column")
     full = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
     labels = np.asarray(full.targets_system[:, 0]).astype(np.int64)
-    idx = _split_indices(full, split)
+    partition = read_partition(dataset_path, full, split_column)
+    idx = partition.valid if fold == "valid" else partition.test
 
     ds = TrainingMoleculeDataset(
         dataset_path, get_item=make_supervised_getitem(labels), in_memory=True
@@ -122,24 +129,22 @@ def evaluate_run(run_dir: Path, cfg_dir: Path, split: Split, n_classes: int) -> 
     model = _load_model(run_dir)
     y_true, y_pred = _predict(model, loader)
 
-    labels_arr = np.arange(n_classes)
-    prec, rec, f1, support = precision_recall_fscore_support(
-        y_true, y_pred, labels=labels_arr, zero_division=0
-    )
-    cm = confusion_matrix(y_true, y_pred, labels=labels_arr)
-    bal_acc = balanced_accuracy_score(y_true, y_pred)
+    # ``y_pred`` holds argmax labels, which multiclass_report takes as-is.
+    report = multiclass_report(y_true, y_pred, n_classes, class_names)
+    per_class = report.per_class.set_index("class_name")
     return {
-        "balanced_accuracy": float(bal_acc),
+        "balanced_accuracy": balanced_accuracy(y_true, y_pred),
+        "class_names": report.class_names,
         "per_class": {
-            CLASS_NAMES[i]: {
-                "precision": float(prec[i]),
-                "recall": float(rec[i]),
-                "f1": float(f1[i]),
-                "support": int(support[i]),
+            str(name): {
+                "precision": float(row["precision"]),
+                "recall": float(row["recall"]),
+                "f1": float(row["f1"]),
+                "support": int(row["support"]),
             }
-            for i in range(n_classes)
+            for name, row in per_class.iterrows()
         },
-        "confusion_matrix": cm.tolist(),
+        "confusion_matrix": report.confusion_matrix.tolist(),
     }
 
 
@@ -153,8 +158,8 @@ def _print_run(name: str, res: dict) -> None:
             f"{cname:9s} {m['precision']:6.3f} {m['recall']:7.3f} "
             f"{m['f1']:6.3f} {m['support']:8d}"
         )
-    print("confusion matrix (rows=true, cols=pred), order:", CLASS_NAMES)
-    for cname, row in zip(CLASS_NAMES, res["confusion_matrix"], strict=True):
+    print("confusion matrix (rows=true, cols=pred), order:", res["class_names"])
+    for cname, row in zip(res["class_names"], res["confusion_matrix"], strict=True):
         print(f"  {cname:9s} {row}")
 
 
@@ -166,17 +171,21 @@ def main() -> None:
     p.add_argument("--ablation_dir", type=Path, required=True)
     p.add_argument("--configs_dir", type=Path, required=True)
     p.add_argument("--split", type=str, default="valid", choices=["valid", "test"])
+    p.add_argument(
+        "--split_column",
+        type=str,
+        default="split",
+        help="split column of the dataset table the fold is taken from",
+    )
     p.add_argument("--out", type=Path, default=None, help="optional JSON dump")
-    p.add_argument("--n_classes", type=int, default=5)
     args = p.parse_args()
 
-    split = Split.valid if args.split == "valid" else Split.test
     all_res: dict[str, dict] = {}
     for suffix, cfg_name in RUNS.items():
         run_dir = _find_run_dir(args.ablation_dir, suffix)
         cfg_dir = args.configs_dir / cfg_name
         logger.info("evaluating %s (ckpt=%s)", cfg_name, run_dir.name)
-        res = evaluate_run(run_dir, cfg_dir, split, args.n_classes)
+        res = evaluate_run(run_dir, cfg_dir, args.split_column, args.split)
         all_res[cfg_name] = res
         _print_run(cfg_name, res)
 

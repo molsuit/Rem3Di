@@ -245,3 +245,41 @@ def test_null_learner_predicts_train_constant_and_parses():
         {"learner_kind": "null_baseline"}
     )
     assert isinstance(parsed, NullLearnerConfig)
+
+
+@pytest.mark.parametrize("task", ["regression", "multiclass"])
+def test_mlp_fits_with_one_seed_are_identical_whatever_the_global_rng(
+    task: str,
+) -> None:
+    """The network is initialised after seeding, so the global torch RNG state
+    left behind by earlier work does not leak into the fit."""
+    import torch
+
+    features, targets = _synthetic_regression(80, 5)
+    if task == "multiclass":
+        targets = np.digitize(targets, np.quantile(targets, [1 / 3, 2 / 3]))
+    folds = (features[:50], targets[:50], features[50:65], targets[50:65])
+    learner = MlpLearner(
+        hidden_dims=(16,), max_epochs=5, device="cpu", allow_cpu_mlp=True
+    )
+
+    def fit() -> np.ndarray:
+        if task == "multiclass":
+            return learner.fit_predict_multiclass(
+                *folds, features[65:], n_classes=3, seed=0
+            )
+        return learner.fit_predict_regression(*folds, features[65:], seed=0)
+
+    torch.manual_seed(123)
+    first = fit()
+    torch.rand(1000)  # advance the global RNG between the two fits
+    second = fit()
+    np.testing.assert_array_equal(first, second)
+
+
+def test_learner_name_defaults_to_the_kind_and_can_be_set() -> None:
+    adapter = pydantic.TypeAdapter(LearnerConfig)
+    assert adapter.validate_python({"learner_kind": "mlp"}).name == "mlp"
+    assert LightGBMLearnerConfig().name == "lightgbm"
+    named = adapter.validate_python({"learner_kind": "mlp", "name": "mlp_focal"})
+    assert named.name == "mlp_focal"

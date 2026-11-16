@@ -22,6 +22,9 @@ class EvalContext:
     resources: ResourceCache
     model: DescriptorConfig
     seed: int = 0
+    # The manifest's ``keep_going``: False makes a task re-raise the first
+    # failure it would otherwise record and step over (fail fast).
+    keep_going: bool = True
 
     def task_dir(self, name: str) -> Path:
         """Create + return ``output_root/<name>`` for a task's artifacts."""

@@ -8,6 +8,7 @@ from remedi_data.bundle import EvalMetric
 from remedi_eval.benchmark.metrics import (
     auprc,
     auroc,
+    higher_is_better,
     macro_auroc,
     mae,
     metric_for,
@@ -51,3 +52,11 @@ def test_metric_for_dispatches_to_correct_fn() -> None:
     assert metric_for(EvalMetric.rmse) is rmse
     assert metric_for(EvalMetric.macro_auroc) is macro_auroc
     assert metric_for(EvalMetric.auroc) is auroc
+
+
+def test_every_metric_has_a_direction() -> None:
+    directions = {metric: higher_is_better(metric) for metric in EvalMetric}
+    assert directions[EvalMetric.rmse] is False
+    assert directions[EvalMetric.mae] is False
+    assert directions[EvalMetric.auroc] is True
+    assert directions[EvalMetric.pair_ranking_accuracy] is True

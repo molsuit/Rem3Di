@@ -17,39 +17,47 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from remedi_data.bundle import EvalMetric
+from remedi_eval.benchmark.metrics import higher_is_better
 from remedi_eval.framework.plotting import register_plotter
 from remedi_eval.results import FigureResult
-
-# Lower-is-better metrics, so bar charts can be oriented / read correctly.
-_LOWER_IS_BETTER = {"RMSE", "MAE", "MSE"}
 
 
 @register_plotter("benchmark_results")
 def plot_benchmark_results(df: pd.DataFrame, out_dir: Path) -> list[FigureResult]:
-    """One horizontal grouped bar chart per metric: value by dataset x learner.
+    """One horizontal grouped bar chart per metric: value by dataset, one bar
+    per (descriptor, learner name).
 
-    Multi-target datasets are averaged over their target columns so each
-    (dataset, learner) is one bar.
+    The model and each baseline descriptor get their own bars, as do two
+    learners of one kind. Multi-target datasets are averaged over their target
+    columns so each (dataset, descriptor, learner) is one bar.
     """
     del out_dir  # paths are assigned via FigureResult.file_name
     figures: list[FigureResult] = []
     for metric, df_m in df.groupby("metric_name"):
+        series = df_m.assign(
+            series=df_m["descriptor_name"] + " / " + df_m["learner_name"]
+        )
         agg = (
-            df_m.groupby(["dataset_id", "learner_kind"])["metric_value"]
+            series.groupby(["dataset_id", "series"])["metric_value"]
             .mean()
-            .unstack("learner_kind")
+            .unstack("series")
             .sort_index()
         )
         n = len(agg)
-        fig, ax = plt.subplots(figsize=(8, max(3.0, 0.4 * n + 1.5)))
+        fig, ax = plt.subplots(
+            figsize=(8, max(3.0, 0.4 * n * max(1, agg.shape[1] / 2) + 1.5))
+        )
         agg.plot.barh(ax=ax)
         direction = (
-            "lower is better" if metric in _LOWER_IS_BETTER else "higher is better"
+            "higher is better"
+            if higher_is_better(EvalMetric(str(metric)))
+            else "lower is better"
         )
         ax.set_xlabel(f"{metric}  ({direction})")
         ax.set_ylabel("")
         ax.set_title(f"Benchmark: {metric}")
-        ax.legend(title="learner", fontsize="small")
+        ax.legend(title="descriptor / learner", fontsize="small")
         fig.tight_layout()
         figures.append(
             FigureResult(file_name=Path(f"benchmark_{metric}.png"), figure=fig)

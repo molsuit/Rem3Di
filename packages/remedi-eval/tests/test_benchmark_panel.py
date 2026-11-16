@@ -7,11 +7,14 @@ corpus is not scored, and one failing benchmark does not sink the panel.
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pydantic
 import pytest
+import yaml
 
 from remedi_data.bundle import EvalMetric, LabelColumn
 from remedi_data.dataset.tasks import TaskType
@@ -121,8 +124,8 @@ def test_panel_cross_product_and_cell_identity(tmp_path: Path) -> None:
             EcfpConfig(name="ecfp_512", length=512),
         ],
         learners=[
-            LinearLearnerConfig(ridge_alpha=0.1),
-            LinearLearnerConfig(ridge_alpha=10.0),
+            LinearLearnerConfig(name="ridge_weak", ridge_alpha=0.1),
+            LinearLearnerConfig(name="ridge_strong", ridge_alpha=10.0),
         ],
     )
 
@@ -231,3 +234,134 @@ def test_discovery_scores_only_benchmarks(tmp_path: Path) -> None:
 
     assert set(rows["dataset_id"]) == {"toy_reg"}
     assert failures_text(tmp_path) == ""
+
+
+# ------------------------------------------------------------ learner names
+
+
+def test_learners_of_one_kind_are_told_apart_by_name(tmp_path: Path) -> None:
+    build_zarr(tmp_path)
+
+    rows = run_panel(
+        tmp_path,
+        learners=[
+            LinearLearnerConfig(name="ridge_weak", ridge_alpha=0.1),
+            LinearLearnerConfig(name="ridge_strong", ridge_alpha=10.0),
+        ],
+    )
+
+    assert sorted(rows["learner_name"]) == ["ridge_strong", "ridge_weak"]
+    assert set(rows["learner_kind"]) == {"linear"}
+
+
+def test_learner_names_must_be_unique_across_the_panel(tmp_path: Path) -> None:
+    with pytest.raises(pydantic.ValidationError, match="linear"):
+        BenchmarkPanelConfig(
+            eval_root=tmp_path,
+            learners=[LinearLearnerConfig(), LinearLearnerConfig(ridge_alpha=2.0)],
+        )
+
+
+# ----------------------------------------------------- failures, incrementally
+
+
+def test_failures_are_written_before_the_panel_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A job killed mid-panel still leaves the failures recorded so far."""
+    import remedi_eval.framework.tasks.benchmark as benchmark_task
+
+    build_zarr(tmp_path, "toy_a", splits={"split": list(TEN_ROW_SPLIT)})
+    build_zarr(tmp_path, "toy_b")
+    original = benchmark_task.evaluate_cell
+
+    def fail_then_get_killed(*args, **kwargs):
+        cell = inspect.signature(original).bind(*args, **kwargs).arguments["cell"]
+        if cell.dataset_id == "toy_a":
+            raise ValueError("toy_a cell broke")
+        if cell.dataset_id == "toy_b":
+            raise SystemExit("wall-clock limit")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(benchmark_task, "evaluate_cell", fail_then_get_killed)
+    with pytest.raises(SystemExit):
+        run_panel(tmp_path)
+
+    assert "toy_a cell broke" in failures_text(tmp_path)
+
+
+def test_a_failing_cell_does_not_lose_the_other_cells_of_its_dataset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import remedi_eval.framework.tasks.benchmark as benchmark_task
+
+    build_zarr(tmp_path)
+    original = benchmark_task.evaluate_cell
+
+    def fail_for_one_learner(*args, **kwargs):
+        arguments = inspect.signature(original).bind(*args, **kwargs).arguments
+        learner_config = arguments["learner_config"]
+        if learner_config.name == "broken":
+            raise ValueError("this learner broke")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(benchmark_task, "evaluate_cell", fail_for_one_learner)
+    rows = run_panel(
+        tmp_path,
+        learners=[
+            LinearLearnerConfig(name="broken"),
+            LinearLearnerConfig(name="fine"),
+        ],
+    )
+
+    assert list(rows["learner_name"]) == ["fine"]
+    failures = yaml.safe_load(failures_text(tmp_path))["failures"]
+    assert [
+        (failure["dataset_id"], failure["descriptor_name"], failure["learner_name"])
+        for failure in failures
+    ] == [("toy_reg", "ecfp_128", "broken")]
+
+
+# --------------------------------------------------------------- the protocol
+
+
+def test_a_table_read_error_is_not_reported_as_a_missing_split_column(
+    tmp_path: Path,
+) -> None:
+    from remedi_data.bundle import TABLE_FILENAME
+    from remedi_data.dataset.molecule_dataset import MoleculeDataset
+    from remedi_eval.protocol import read_partition
+
+    dataset_dir = build_zarr(tmp_path)
+    table_path = dataset_dir / TABLE_FILENAME
+    pd.read_parquet(table_path).drop(columns=["structure_id"]).to_parquet(table_path)
+    dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
+
+    with pytest.raises(ValueError, match="structure_id") as error:
+        read_partition(dataset_dir, dataset, "split")
+    assert "split column" not in str(error.value)
+
+    with pytest.raises(ValueError, match="'split__nope' is not in"):
+        read_partition(dataset_dir, dataset, "split__nope")
+
+
+def test_without_keep_going_the_first_failure_is_recorded_and_raised(
+    tmp_path: Path,
+) -> None:
+    build_zarr(tmp_path)
+    manifest = EvalManifest(
+        model=EcfpConfig(name="ecfp_128", length=128),
+        output_root=tmp_path / "eval_out",
+        keep_going=False,
+        tasks=[
+            BenchmarkPanelConfig(
+                eval_root=tmp_path / "datasets",
+                learners=[LinearLearnerConfig()],
+                split_column="split__nope",
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="split__nope"):
+        run_manifest(manifest)
+    assert "split__nope" in failures_text(tmp_path)

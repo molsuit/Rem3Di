@@ -41,6 +41,7 @@ def run_manifest(manifest: EvalManifest) -> RunReport:
         resources=ResourceCache(),
         model=manifest.model,
         seed=manifest.seed,
+        keep_going=manifest.keep_going,
     )
 
     # ``run_tasks`` re-raises on ``keep_going=False``; mirroring its statuses

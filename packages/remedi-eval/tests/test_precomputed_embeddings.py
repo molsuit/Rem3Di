@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+import yaml
 
 from remedi_data.bundle import EvalMetric, LabelColumn, structures_identity
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
@@ -213,7 +214,7 @@ def test_a_panel_on_precomputed_embeddings_matches_the_in_process_descriptor(
         "precomputed",
     )
 
-    columns = ["dataset_id", "learner_kind", "metric_name", "metric_value", "n_test"]
+    columns = ["dataset_id", "learner_name", "metric_name", "metric_value", "n_test"]
     pd.testing.assert_frame_equal(in_process[columns], precomputed[columns])
     assert set(precomputed.descriptor_name) == {"frozen"}
 
@@ -239,3 +240,36 @@ def test_a_panel_without_embeddings_for_a_dataset_records_the_failure(
     )
     failures = (output_root / "benchmark" / "failures.yaml").read_text()
     assert "toy" in failures and "frozen.yaml" in failures
+
+
+def test_missing_embeddings_for_the_model_keep_the_baseline_rows(
+    tmp_path: Path,
+) -> None:
+    """The model's embeddings missing for a dataset fails only the model's
+    cells; the ECFP baseline of that dataset is still scored."""
+    _dataset(tmp_path)
+    output_root = tmp_path / "eval_out" / "missing"
+    run_manifest(
+        EvalManifest(
+            model=PrecomputedEmbeddingsConfig(
+                name="frozen", embeddings_root=tmp_path / "emb"
+            ),
+            output_root=output_root,
+            tasks=[
+                BenchmarkPanelConfig(
+                    eval_root=tmp_path / "datasets",
+                    learners=[LinearLearnerConfig(ridge_alpha=1.0)],
+                    baseline_descriptors=[EcfpConfig(name="ecfp_128", length=128)],
+                )
+            ],
+        )
+    )
+    rows = pd.read_csv(output_root / "benchmark" / "results.csv")
+    assert list(rows["descriptor_name"]) == ["ecfp_128"]
+    failures = yaml.safe_load(
+        (output_root / "benchmark" / "failures.yaml").read_text()
+    )["failures"]
+    assert [
+        (failure["dataset_id"], failure["descriptor_name"], failure["learner_name"])
+        for failure in failures
+    ] == [("toy", "frozen", None)]

@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import pandas as pd
+import pyarrow.parquet as parquet
 
 from remedi_data.bundle import (
     TABLE_FILENAME,
@@ -147,28 +149,33 @@ def read_partition(
     columns can be scored, not just the one materialised into ``tasks/split``.
 
     Raises:
-        ValueError: if the dataset carries no table, if ``split_column`` is not
-            one of its columns, if its ``structure_id`` column is not the row
-            index or does not match the zarr, or if a split value is not a known
-            split name.
+        ValueError: if the dataset carries no table, if ``split_column`` or
+            ``structure_id`` is not one of its columns, if its ``structure_id``
+            column is not the row index or does not match the zarr, or if a
+            split value is not a known split name. A table that cannot be read
+            at all raises pyarrow's own error.
     """
     dataset_dir = Path(dataset_dir)
     n_structures = dataset.N_structures
-    try:
-        table = read_table(dataset_dir, columns=["structure_id", split_column])
-    except FileNotFoundError as error:
+    table_path = dataset_dir / TABLE_FILENAME
+    if not table_path.is_file():
         raise ValueError(
             f"{dataset_dir} has no {TABLE_FILENAME}; rebuild it with build_datasets, "
             "which writes the table beside the zarr"
-        ) from error
-    except Exception as error:  # pyarrow raises its own type for a missing column
-        available = [
-            name for name in read_table(dataset_dir).columns if name.startswith("split")
-        ]
+        )
+    column_names = parquet.read_schema(table_path).names
+    if split_column not in column_names:
+        available = [name for name in column_names if name.startswith("split")]
         raise ValueError(
-            f"split column {split_column!r} is not in {dataset_dir / TABLE_FILENAME}; "
+            f"split column {split_column!r} is not in {table_path}; "
             f"its split columns are {available}"
-        ) from error
+        )
+    if "structure_id" not in column_names:
+        raise ValueError(
+            f"{table_path} has no structure_id column, so its rows cannot be "
+            "joined to the zarr's structures"
+        )
+    table = read_table(dataset_dir, columns=["structure_id", split_column])
 
     structure_ids = table["structure_id"].to_numpy(dtype=np.int64)
     if not np.array_equal(structure_ids, np.arange(len(table), dtype=np.int64)):
@@ -246,12 +253,14 @@ class Benchmark:
             self.path, self.dataset, split_column or self.default_split
         )
 
-    def structure_group_ids(self) -> tuple[np.ndarray, np.ndarray]:
-        """Per-structure (constitution id, stereoisomer id), in zarr order."""
-        return (
-            np.asarray(self.dataset.molecule_ids[:]),
-            np.asarray(self.dataset.isomer_ids[:]),
-        )
+    def stereoisomers(self) -> pd.DataFrame:
+        """Per-structure ``stereoisomer_id`` and ``enantiomer_of``, in zarr order.
+
+        Read from the table (row ``i`` is structure ``i``, invariant 1).
+        ``enantiomer_of`` is the nullable ``Int64`` id of the mirror-image
+        stereoisomer (invariant 4), missing for a structure without one.
+        """
+        return read_table(self.path, columns=["stereoisomer_id", "enantiomer_of"])
 
 
 def load_benchmark(dataset_dir: Path) -> Benchmark:

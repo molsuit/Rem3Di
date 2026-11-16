@@ -131,7 +131,8 @@ def test_benchmark_plotter_renders_from_a_loaded_results_table(tmp_path: Path) -
     frame = pd.DataFrame(
         {
             "dataset_id": ["esol", "esol", "bace", "bace"],
-            "learner_kind": ["linear", "mlp", "linear", "mlp"],
+            "descriptor_name": ["ecfp", "ecfp", "ecfp", "ecfp"],
+            "learner_name": ["linear", "mlp", "linear", "mlp"],
             "metric_name": ["RMSE", "RMSE", "AUROC", "AUROC"],
             "metric_value": [1.1, 0.9, 0.82, 0.85],
         }
@@ -145,3 +146,39 @@ def test_benchmark_plotter_renders_from_a_loaded_results_table(tmp_path: Path) -
     assert len(figures) == 2
     assert (tmp_path / "plots" / "benchmark_RMSE.png").exists()
     assert (tmp_path / "plots" / "benchmark_AUROC.png").exists()
+
+
+def test_benchmark_plotter_gives_each_descriptor_and_learner_its_own_bar() -> None:
+    """The model is not averaged with the baselines, nor two learners of one
+    kind with each other."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from matplotlib.patches import Rectangle
+
+    from remedi_eval.framework.builtin_plotters import plot_benchmark_results
+
+    frame = pd.DataFrame(
+        {
+            "dataset_id": ["esol"] * 4,
+            "descriptor_name": ["model", "model", "ecfp", "ecfp"],
+            "learner_name": ["ridge_weak", "ridge_strong"] * 2,
+            "metric_name": ["RMSE"] * 4,
+            "metric_value": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+    (figure,) = plot_benchmark_results(frame, Path("unused"))
+    axes = figure.figure.axes[0]
+    legend = axes.get_legend()
+    assert legend is not None
+    labels = sorted(text.get_text() for text in legend.get_texts())
+    assert labels == sorted(
+        f"{descriptor} / {learner}"
+        for descriptor in ("model", "ecfp")
+        for learner in ("ridge_weak", "ridge_strong")
+    )
+    assert "lower is better" in axes.get_xlabel()
+    bar_widths = sorted(
+        patch.get_width() for patch in axes.patches if isinstance(patch, Rectangle)
+    )
+    assert bar_widths == [1.0, 2.0, 3.0, 4.0]
