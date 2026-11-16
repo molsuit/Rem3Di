@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
+import polars as pl
 
 from remedi_data.bundle.provenance import (
     BundleOutputs,
@@ -313,16 +314,41 @@ def _check_recorded_table_hash(
     return problems
 
 
+def _table_path(directory: Path) -> Path:
+    table_path = Path(directory) / TABLE_FILENAME
+    if not table_path.is_file():
+        raise FileNotFoundError(f"{directory} has no {TABLE_FILENAME}")
+    return table_path
+
+
 def read_table(directory: Path, columns: list[str] | None = None) -> pd.DataFrame:
     """Read ``table.parquet`` alone, optionally only ``columns``, without validating.
 
     Raises:
         FileNotFoundError: if the directory holds no ``table.parquet``.
     """
-    table_path = Path(directory) / TABLE_FILENAME
-    if not table_path.is_file():
-        raise FileNotFoundError(f"{directory} has no {TABLE_FILENAME}")
-    return pd.read_parquet(table_path, columns=columns)
+    return pd.read_parquet(_table_path(directory), columns=columns)
+
+
+def read_table_polars(
+    directory: Path, columns: list[str] | None = None
+) -> pl.DataFrame:
+    """:func:`read_table` as a polars frame.
+
+    Raises:
+        FileNotFoundError: if the directory holds no ``table.parquet``.
+        polars.exceptions.ColumnNotFoundError: if a column is not in the table.
+    """
+    return pl.read_parquet(_table_path(directory), columns=columns)
+
+
+def table_columns(directory: Path) -> list[str]:
+    """The column names of ``table.parquet``, read from its schema alone.
+
+    Raises:
+        FileNotFoundError: if the directory holds no ``table.parquet``.
+    """
+    return list(pl.read_parquet_schema(_table_path(directory)))
 
 
 def read_spec(directory: Path) -> DatasetSpec:

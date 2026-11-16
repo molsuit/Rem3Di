@@ -20,6 +20,7 @@ import polars as pl
 import torch
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from remedi_data.bundle import read_table_polars
 from remedi_data.chemistry.fingerprints import morgan_fingerprints
 from remedi_data.selection import (
     ClusterRecord,
@@ -170,11 +171,8 @@ def molecule_smiles(dataset: Path) -> pl.DataFrame:
     Raises:
         SelectionError: if the dataset has no SMILES.
     """
-    table_path = Path(dataset) / "table.parquet"
     try:
-        rows = pl.read_parquet(
-            table_path, columns=["molecule_id", "nonisomeric_smiles"]
-        )
+        rows = read_table_polars(dataset, columns=["molecule_id", "nonisomeric_smiles"])
     except pl.exceptions.ColumnNotFoundError as error:
         raise SelectionError(
             f"{dataset} has no nonisomeric_smiles, so it cannot be clustered"

@@ -24,7 +24,6 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as parquet
 
 from remedi_data.bundle import (
     TABLE_FILENAME,
@@ -33,6 +32,7 @@ from remedi_data.bundle import (
     EvaluationSpec,
     read_spec,
     read_table,
+    table_columns,
 )
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import Split, TaskType, split_codes_from_names
@@ -151,17 +151,18 @@ def read_partition(
             ``structure_id`` is not one of its columns, if its ``structure_id``
             column is not the row index or does not match the zarr, or if a
             split value is not a known split name. A table that cannot be read
-            at all raises pyarrow's own error.
+            at all raises the parquet reader's own error.
     """
     dataset_dir = Path(dataset_dir)
     n_structures = dataset.N_structures
     table_path = dataset_dir / TABLE_FILENAME
-    if not table_path.is_file():
+    try:
+        column_names = table_columns(dataset_dir)
+    except FileNotFoundError as error:
         raise ValueError(
             f"{dataset_dir} has no {TABLE_FILENAME}; rebuild it with build_datasets, "
             "which writes the table beside the zarr"
-        )
-    column_names = parquet.read_schema(table_path).names
+        ) from error
     if split_column not in column_names:
         available = [name for name in column_names if name.startswith("split")]
         raise ValueError(

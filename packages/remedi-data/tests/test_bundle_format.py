@@ -51,9 +51,11 @@ from remedi_data.bundle import (
     read_bundle,
     read_provenance,
     read_table,
+    read_table_polars,
     stereochemistry_from_frame,
     structure_problems,
     structures_identity,
+    table_columns,
     tetrahedral_stereo_smiles,
     validate_table,
     write_bundle,
@@ -513,6 +515,23 @@ def test_single_file_readers_do_not_validate(tmp_path: Path) -> None:
     subset = read_table(directory, columns=["stereoisomer_id", "split"])
     assert list(subset.columns) == ["stereoisomer_id", "split"]
     assert read_provenance(directory).dataset_id == "synthetic6"
+
+
+def test_the_polars_reader_and_the_schema_match_the_pandas_reader(
+    tmp_path: Path,
+) -> None:
+    directory = write_smiles_bundle(tmp_path)
+    assert table_columns(directory) == list(read_table(directory).columns)
+    columns = ["stereoisomer_id", "split"]
+    pd.testing.assert_frame_equal(
+        read_table_polars(directory, columns=columns).to_pandas(),
+        read_table(directory, columns=columns),
+        check_dtype=False,
+    )
+    (directory / TABLE_FILENAME).unlink()
+    for reader in (read_table, read_table_polars, table_columns):
+        with pytest.raises(FileNotFoundError, match=TABLE_FILENAME):
+            reader(directory)
 
 
 # ------------------------------------------------------------ atomic writes

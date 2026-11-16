@@ -9,6 +9,7 @@ from zarr import Array
 from zarr.codecs import BloscCodec
 from zarr.storage import LocalStore
 
+from remedi_data.bundle import read_table_polars, table_columns
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.yaml_io import read_model, write_model
 
@@ -297,11 +298,11 @@ class MoleculeDataset:
             KeyError: if the table has no ``isomeric_smiles`` (a corpus without
                 SMILES, such as tmQM).
         """
-        import polars as pl
-
-        table = pl.read_parquet(self.path / "table.parquet")
-        if "isomeric_smiles" not in table.columns:
+        if "isomeric_smiles" not in table_columns(self.path):
             raise KeyError(f"{self.path} has no isomeric_smiles")
+        table = read_table_polars(
+            self.path, columns=["structure_id", "isomeric_smiles"]
+        )
         return table.sort("structure_id")["isomeric_smiles"].to_list()
 
     def unique_smiles(self) -> list[str]:
@@ -311,10 +312,9 @@ class MoleculeDataset:
         """
         import polars as pl
 
-        table_path = self.path / "table.parquet"
-        if "isomeric_smiles" not in pl.read_parquet_schema(table_path):
+        if "isomeric_smiles" not in table_columns(self.path):
             return []
-        smiles = pl.read_parquet(table_path, columns=["isomeric_smiles"])
+        smiles = read_table_polars(self.path, columns=["isomeric_smiles"])
         present = pl.col("isomeric_smiles").is_not_null() & (
             pl.col("isomeric_smiles") != ""
         )

@@ -30,6 +30,7 @@ from remedi_data.bundle import (
     is_dataset_directory,
     read_provenance,
     read_spec,
+    read_table_polars,
     sha256_of_file,
 )
 from remedi_data.chemistry.splits import murcko_scaffold
@@ -215,7 +216,7 @@ def _exclude_overlap(
         if not read_spec(dataset).smiles:
             raise SelectionError(f"pool dataset {dataset} has no SMILES")
         pool_smiles.update(
-            pl.read_parquet(dataset / "table.parquet", columns=["nonisomeric_smiles"])[
+            read_table_polars(dataset, columns=["nonisomeric_smiles"])[
                 "nonisomeric_smiles"
             ].to_list()
         )
@@ -325,7 +326,7 @@ def _apply_step(
 
 def _read_rows(dataset: Path) -> pl.DataFrame:
     """The table with an ``atom_count`` column from the zarr's atom pointer."""
-    rows = pl.read_parquet(Path(dataset) / "table.parquet")
+    rows = read_table_polars(dataset)
     pointer = np.asarray(
         MoleculeDataset.open_structure_arrays(Path(dataset)).molecule_ptr[:],
         dtype=np.int64,

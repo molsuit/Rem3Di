@@ -38,7 +38,7 @@ from remedi.training.data.training_dataset import (
     GetItemFn,
     TrainingMoleculeDataset,
 )
-from remedi_data.bundle import read_spec
+from remedi_data.bundle import read_spec, read_table_polars, table_columns
 from remedi_data.chemistry.elements import D_BLOCK_ATOMIC_NUMBERS, MACE_OFF_ELEMENTS
 from remedi_data.dataset.molecule_dataset import MoleculeDataset, StructureArrays
 from remedi_data.selection import (
@@ -261,7 +261,7 @@ class MixtureDatasets:
         )
         chosen_ids = validation_ids[chosen]
         rows = (
-            pl.read_parquet(dataset / "table.parquet", columns=["structure_id", *names])
+            read_table_polars(dataset, columns=["structure_id", *names])
             .filter(pl.col("structure_id").is_in(pl.Series(chosen_ids).implode()))
             .sort("structure_id")
         )
@@ -399,8 +399,7 @@ def _select_rows(
     dataset: Path, selection: str | None, config: PretrainingDataConfig, name: str
 ) -> _SelectedRows:
     """Read the needed table columns for the selection and check them."""
-    table_path = Path(dataset) / "table.parquet"
-    present = set(pl.read_parquet_schema(table_path))
+    present = set(table_columns(dataset))
     for column in ("total_charge", "multiplicity"):
         if column not in present:
             raise MixtureError(f"{name} has structures without {column}")
@@ -411,7 +410,7 @@ def _select_rows(
     columns = ["structure_id", "molecule_id", "total_charge", "multiplicity"]
     if deduplicate:
         columns.append("nonisomeric_smiles")
-    table = pl.read_parquet(table_path, columns=columns)
+    table = read_table_polars(dataset, columns=columns)
     if selection is None:
         structure_ids = table["structure_id"].to_numpy().astype(np.int64)
         selection_sha256 = None
