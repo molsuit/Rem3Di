@@ -20,7 +20,7 @@ manifest:
         z_score: false
         l2_normalize: true
       projection:
-        method: umap
+        kind: umap
       tasks:
         - kind: capacity_diagnostic
         - kind: capacity_diagnostic

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
+import pydantic
 
 from remedi_data.bundle import EvalMetric, LabelColumn
 from remedi_data.dataset.tasks import TaskType
@@ -16,6 +17,7 @@ from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
 from remedi_data.yaml_io import read_model
 from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import EvalContext
+from remedi_eval.projection import PcaConfig, ProjectionConfig, UmapConfig
 
 
 def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
@@ -118,7 +120,6 @@ def test_max_structures_cuts_every_per_structure_analysis(
         ChemiscopeProjectionTask,
         DescriptorStructureBenchmarkTask,
         NumAtomsColor,
-        ProjectionConfig,
         ProjectionPlotTask,
         RegressionTargetColor,
         TopNormDescriptorsTask,
@@ -143,7 +144,7 @@ def test_max_structures_cuts_every_per_structure_analysis(
     task = DescriptorAnalysisConfig(
         dataset_path=dataset_path,
         max_structures=6,
-        projection=ProjectionConfig(method="pca"),
+        projection=PcaConfig(),
         tasks=[
             ProjectionPlotTask(file_name="atoms.png", color_provider=NumAtomsColor()),
             ProjectionPlotTask(
@@ -152,10 +153,10 @@ def test_max_structures_cuts_every_per_structure_analysis(
             ChemiscopeProjectionTask(),
             TopNormDescriptorsTask(n_top=3),
             ChemiscopeClusterTask(
-                cluster_reducer="none", min_cluster_sizes=[2], default_color_mcs=2
+                cluster_projection=None, min_cluster_sizes=[2], default_color_mcs=2
             ),
             DescriptorStructureBenchmarkTask(
-                cluster_reducer="none",
+                cluster_projection=None,
                 canonical_min_cluster_size=2,
                 sweep_min_cluster_sizes=[2],
                 pure_island_min_size=2,
@@ -212,17 +213,21 @@ def test_a_failed_analysis_fails_the_task(tmp_path: Path) -> None:
 
 
 def test_pca_projection_has_the_requested_components_and_is_deterministic() -> None:
-    from remedi.latent_evaluation import ProjectionConfig
-
     rng = np.random.default_rng(0)
     descriptors = rng.normal(size=(50, 20)) + 3.0
-    config = ProjectionConfig(method="pca", n_components=10)
-    first = config.compute(descriptors)
+    config = PcaConfig(n_components=10)
+    first = config.project(descriptors)
     assert first.shape == (50, 10)
-    np.testing.assert_allclose(first, config.compute(descriptors))
+    np.testing.assert_allclose(first, config.project(descriptors))
     np.testing.assert_allclose(first.mean(axis=0), 0.0, atol=1e-10)
-    uncentered = ProjectionConfig(method="pca", n_components=10, center=False)
-    assert np.abs(uncentered.compute(descriptors).mean(axis=0)).max() > 1e-3
+
+
+def test_the_projection_union_reads_its_kind() -> None:
+    adapter = pydantic.TypeAdapter(ProjectionConfig)
+    assert adapter.validate_python({"kind": "pca"}) == PcaConfig()
+    umap_config = adapter.validate_python({"kind": "umap", "n_components": 15})
+    assert umap_config == UmapConfig(n_components=15)
+    assert umap_config.metric == "cosine" and umap_config.min_dist == 0.0
 
 
 def test_capacity_plot_draws_the_configured_dead_threshold() -> None:

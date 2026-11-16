@@ -32,9 +32,12 @@ bitbirch:
     enabled: true
     sample_size: null
     sampling: uniform
-    n_neighbors: 30
-    min_dist: 0.1
-    metric: jaccard
+    projection:
+      kind: umap
+      n_neighbors: 30
+      min_dist: 0.1
+      metric: jaccard
+      random_state: 42
     top_clusters_colored: 10
     plot_size: 1200
 

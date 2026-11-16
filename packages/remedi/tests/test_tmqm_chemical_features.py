@@ -30,6 +30,7 @@ from remedi.latent_evaluation.tmqm_chemical_features import (
     compute_metal_environment_features,
 )
 from remedi_data.runs.results import ChemiscopeResult, PydanticResult
+from remedi_eval.projection import UmapConfig
 
 
 def _ring(z: float, radius: float = 1.21, n: int = 5) -> np.ndarray:
@@ -307,7 +308,7 @@ def test_granularity_sweep_recommends_highest_purity(monkeypatch):
     report = result.obj
 
     rows = {r.min_cluster_size: r for r in report.rows}
-    assert report.reducer == "umap"
+    assert report.cluster_projection == UmapConfig(n_components=15)
     assert report.recommended_min_cluster_size == 25
     assert rows[25].recommended is True
     assert rows[25].mean_donor_set_purity == 1.0
@@ -334,12 +335,7 @@ def test_compute_hdbscan_labels_no_umap_runs_on_raw_descriptors():
     )
     labels = compute_hdbscan_labels(
         ctx,
-        reducer="none",
-        cluster_n_components=15,
-        cluster_n_neighbors=30,
-        cluster_min_dist=0.0,
-        cluster_metric="cosine",
-        random_state=0,
+        projection=None,
         min_cluster_size=5,
         min_samples=None,
         cluster_selection_epsilon=0.0,
@@ -433,7 +429,7 @@ def test_descriptor_structure_benchmark_scorecard(monkeypatch):
     # Protocol is fully recorded for reproducibility / cross-model comparison.
     assert report.protocol.version != ""
     assert report.protocol.canonical_min_cluster_size == 2
-    assert report.protocol.random_state == 0
+    assert report.protocol.cluster_projection == UmapConfig(n_components=15)
     assert set(report.protocol.chemistry_axes) == {
         "donor_set",
         "ligand_motif",
@@ -467,7 +463,7 @@ def test_descriptor_structure_benchmark_records_raw_variant(monkeypatch):
     )
     ctx = _make_ctx(mols)
     (result,) = DescriptorStructureBenchmarkTask(
-        cluster_metric="euclidean",
+        cluster_projection=UmapConfig(n_components=15, metric="euclidean"),
         use_raw_descriptors=True,
         canonical_min_cluster_size=2,
         sweep_min_cluster_sizes=[2],
@@ -475,7 +471,8 @@ def test_descriptor_structure_benchmark_records_raw_variant(monkeypatch):
     ).run(ctx)
     report = result.obj
     assert report.protocol.use_raw_descriptors is True
-    assert report.protocol.cluster_metric == "euclidean"
+    projection = report.protocol.cluster_projection
+    assert isinstance(projection, UmapConfig) and projection.metric == "euclidean"
 
 
 def test_descriptor_structure_benchmark_rejects_unknown_axis(monkeypatch):
@@ -507,7 +504,7 @@ def test_axis_analysis_identifies_best_explaining_axis(monkeypatch):
     (result,) = ClusterAxisAnalysisTask(min_cluster_size=2).run(ctx)
     report = result.obj
 
-    assert report.reducer == "umap"
+    assert report.cluster_projection == UmapConfig(n_components=15)
     assert report.n_clusters == 2
     axes_by_name = {a.name: a for a in report.axes}
     # Top-ranked axis must hit perfect purity on these synthetic groups.
@@ -537,11 +534,13 @@ def test_coordination_number_color_finds_the_metal_anywhere():
 
 
 def test_every_cluster_task_uses_the_benchmark_seed():
-    """One seed for all cluster tasks, so they share one cached UMAP partition."""
+    """One projection (seed included) for all cluster tasks, so they share one
+    cached UMAP partition."""
     from remedi.latent_evaluation.analysis_tasks import HDBSCANClusterTask
 
-    benchmark_seed = DescriptorStructureBenchmarkTask().random_state
-    assert benchmark_seed == 0
+    benchmark_projection = DescriptorStructureBenchmarkTask().cluster_projection
+    assert benchmark_projection is not None
+    assert benchmark_projection.random_state == 0
     for task in (
         ChemiscopeClusterTask(),
         ClusterAxisAnalysisTask(),
@@ -549,7 +548,7 @@ def test_every_cluster_task_uses_the_benchmark_seed():
         ClusterGranularitySweepTask(),
         HDBSCANClusterTask(),
     ):
-        assert task.random_state == benchmark_seed
+        assert task.cluster_projection == benchmark_projection
 
 
 def test_benchmark_scores_non_noise_points_and_reports_the_noise(monkeypatch):
@@ -604,12 +603,7 @@ def test_hdbscan_labels_raise_no_future_warning():
     )
     compute_hdbscan_labels(
         ctx,
-        reducer="none",
-        cluster_n_components=2,
-        cluster_n_neighbors=5,
-        cluster_min_dist=0.0,
-        cluster_metric="euclidean",
-        random_state=0,
+        projection=None,
         min_cluster_size=5,
         min_samples=None,
         cluster_selection_epsilon=0.0,

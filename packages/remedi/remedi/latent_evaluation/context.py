@@ -3,13 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_eval.projection import ProjectionConfig
 
 if TYPE_CHECKING:
     from ase import Atoms
@@ -53,57 +54,6 @@ class DescriptorNormalizationConfig(BaseModel):
         return out
 
 
-class ProjectionConfig(BaseModel):
-    """Configures the 2D projection cached on the context.
-
-    UMAP defaults match the settled descriptor-visualization recipe
-    (``cosine`` / ``n_neighbors=30`` / ``min_dist=0``, seed 0) so the chemiscope
-    viewer, the analysis-dir PNGs, and any cross-model comparison share one
-    deterministic layout. ``metric``, ``n_neighbors`` and ``min_dist`` only
-    apply to UMAP. ``center`` shifts the projection to zero mean (for PCA:
-    ``False`` projects the uncentred descriptors onto the principal axes).
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    method: Literal["umap", "pca"] = "umap"
-    n_components: int = Field(default=2, gt=0)
-    center: bool = True
-    metric: str = "cosine"
-    n_neighbors: int = 30
-    min_dist: float = 0.0
-    random_state: int | None = Field(default=0)
-
-    def compute(self, descriptors: np.ndarray) -> np.ndarray:
-        """Project ``descriptors`` (rows are samples) to ``n_components`` columns.
-
-        Raises:
-            ValueError: if ``n_components`` exceeds what the data supports.
-        """
-        if self.method == "pca":
-            from sklearn.decomposition import PCA
-
-            pca = PCA(n_components=self.n_components, random_state=self.random_state)
-            pca.fit(descriptors)
-            offset = pca.mean_ if self.center else 0.0
-            return (descriptors - offset) @ pca.components_.T
-
-        import umap
-
-        projection = np.asarray(
-            umap.UMAP(
-                n_components=self.n_components,
-                metric=self.metric,
-                n_neighbors=self.n_neighbors,
-                min_dist=self.min_dist,
-                random_state=self.random_state,
-            ).fit_transform(descriptors)
-        )
-        if self.center:
-            projection = projection - projection.mean(axis=0, keepdims=True)
-        return projection
-
-
 @dataclass
 class DescriptorAnalysisContext:
     """Bundles the inputs every descriptor analysis task needs.
@@ -138,7 +88,7 @@ class DescriptorAnalysisContext:
 
         projection = None
         if projection_config is not None:
-            projection = projection_config.compute(normalized)
+            projection = projection_config.project(normalized)
 
         return cls(
             dataset=dataset,

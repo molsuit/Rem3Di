@@ -22,12 +22,12 @@ from remedi.latent_evaluation import (
     DescriptorAnalysisContext,
     DescriptorAnalysisTask,
     DescriptorNormalizationConfig,
-    ProjectionConfig,
 )
 from remedi_data.bundle.bundle import read_spec
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import EvalResult
 from remedi_eval.framework.context import EvalContext
+from remedi_eval.projection import ProjectionConfig
 
 logger = logging.getLogger(__name__)
 

@@ -37,7 +37,6 @@ from .coloring import (
 from .context import (
     DescriptorAnalysisContext,
     DescriptorNormalizationConfig,
-    ProjectionConfig,
 )
 
 __all__ = [
@@ -59,7 +58,6 @@ __all__ = [
     "MetalCenterAtomicNumberColor",
     "MetalCenterElementColor",
     "NumAtomsColor",
-    "ProjectionConfig",
     "ProjectionPlotTask",
     "RegressionTargetColor",
     "TopNormDescriptorsTask",

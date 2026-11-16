@@ -14,6 +14,7 @@ from remedi_eval.dataset_analysis.config import (
     BitBirchUmapConfig,
     MoleculeDatasetAnalysisConfig,
 )
+from remedi_eval.projection import UmapConfig
 
 
 def test_compute_descriptors_valid_and_invalid():
@@ -227,12 +228,11 @@ def test_bitbirch_umap_projection_runs(tmp_path: Path):
             umap=BitBirchUmapConfig(
                 enabled=True,
                 sample_size=None,
-                n_neighbors=5,
-                min_dist=0.1,
-                metric="jaccard",
+                projection=UmapConfig(
+                    n_neighbors=5, min_dist=0.1, metric="jaccard", random_state=0
+                ),
                 top_clusters_colored=5,
                 plot_size=300,
-                random_state=0,
             ),
         ),
     )
@@ -242,7 +242,8 @@ def test_bitbirch_umap_projection_runs(tmp_path: Path):
     assert summary.bitbirch.umap is not None
     assert summary.bitbirch.umap.enabled is True
     assert summary.bitbirch.umap.n_points > 0
-    assert summary.bitbirch.umap.metric == "jaccard"
+    projection = summary.bitbirch.umap.projection
+    assert projection is not None and projection.metric == "jaccard"
 
     out_dir = tmp_path / "out"
     analysis.output(out_dir)

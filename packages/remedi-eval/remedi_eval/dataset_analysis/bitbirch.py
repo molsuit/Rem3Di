@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_eval.dataset_analysis.config import BitBirchConfig, BitBirchUmapConfig
 from remedi_eval.dataset_analysis.statistics import DistributionStats
+from remedi_eval.projection import UmapConfig
 
 log = logging.getLogger(__name__)
 
@@ -30,9 +31,7 @@ class BitBirchUmapSummary(BaseModel):
 
     enabled: bool
     n_points: int = 0
-    n_neighbors: int = 0
-    min_dist: float = 0.0
-    metric: str = ""
+    projection: UmapConfig | None = None
     top_clusters_colored: int = 0
     fit_seconds: float | None = None
     notes: str | None = None
@@ -236,36 +235,25 @@ def fit_umap(
     rows = umap_sample_rows(clusters, config, rng)
     bits = np.unpackbits(fingerprints_packed[rows], axis=1, count=fingerprint_size)
     log.info(
-        "BitBIRCH UMAP: fitting %d points (n_neighbors=%d, metric=%s, sampling=%s)",
+        "BitBIRCH UMAP: fitting %d points (%s, sampling=%s)",
         rows.size,
-        config.n_neighbors,
-        config.metric,
+        config.projection.label(),
         config.sampling,
     )
     started = time.perf_counter()
     try:
-        import umap
-
-        coordinates = umap.UMAP(
-            n_components=2,
-            n_neighbors=config.n_neighbors,
-            min_dist=config.min_dist,
-            metric=config.metric,
-            random_state=config.random_state,
-        ).fit_transform(bits.astype(np.float32))
+        coordinates = config.projection.project(bits.astype(np.float32))
     except Exception as exc:
         return None, BitBirchUmapSummary(
             enabled=True, n_points=int(rows.size), notes=f"UMAP fit failed: {exc!r}"
         )
     top = clusters.largest(config.top_clusters_colored)
     return UmapFit(
-        rows=rows, coordinates=np.asarray(coordinates), top_cluster_ids=top
+        rows=rows, coordinates=coordinates, top_cluster_ids=top
     ), BitBirchUmapSummary(
         enabled=True,
         n_points=int(rows.size),
-        n_neighbors=config.n_neighbors,
-        min_dist=config.min_dist,
-        metric=config.metric,
+        projection=config.projection,
         top_clusters_colored=int(top.size),
         fit_seconds=time.perf_counter() - started,
     )

@@ -28,6 +28,7 @@ from remedi_data.runs.results import (
     EvalResult,
     PydanticResult,
 )
+from remedi_eval.projection import ProjectionConfig, UmapConfig
 from remedi_eval.results import FigureResult
 
 
@@ -41,12 +42,7 @@ class _BaseAnalysisTask(BaseModel):
 def compute_hdbscan_labels(
     ctx: DescriptorAnalysisContext,
     *,
-    reducer: Literal["umap", "none"],
-    cluster_n_components: int,
-    cluster_n_neighbors: int,
-    cluster_min_dist: float,
-    cluster_metric: str,
-    random_state: int | None,
+    projection: ProjectionConfig | None,
     min_cluster_size: int,
     min_samples: int | None,
     cluster_selection_epsilon: float,
@@ -54,14 +50,14 @@ def compute_hdbscan_labels(
 ) -> np.ndarray:
     """HDBSCAN cluster labels (-1 = noise) on the descriptors.
 
-    ``reducer="umap"`` clusters a higher-dimensional clustering UMAP (cached on
-    the context by its parameters, so the figures / chemiscope / fingerprints
-    share one embedding). ``reducer="none"`` runs HDBSCAN directly on the
-    descriptors with the Euclidean metric.
+    ``projection`` (typically a higher-dimensional UMAP) is what HDBSCAN
+    clusters; it is cached on the context by its parameters, so the figures /
+    chemiscope / fingerprints share one embedding. ``None`` runs HDBSCAN
+    directly on the descriptors with the Euclidean metric.
 
     ``use_raw_descriptors=True`` clusters the *unnormalized* descriptors so the
-    vector norms carry signal — meaningful only with ``cluster_metric=
-    "euclidean"`` (cosine and L2-normalized euclidean would both ignore the
+    vector norms carry signal — meaningful only with a euclidean projection
+    metric (cosine and L2-normalized euclidean would both ignore the
     norm, making them equivalent to the canonical cosine path). The default
     ``False`` uses the runner's normalized descriptors so the canonical
     cosine-on-unit-vectors protocol is unchanged.
@@ -75,16 +71,16 @@ def compute_hdbscan_labels(
     # the no-UMAP cost and burned the slurm time budget on the previous run.
     # ``use_raw_descriptors`` is in the key so the canonical and the
     # euclidean-on-raw variants don't collide.
+    projection_key = "none" if projection is None else projection.model_dump_json()
     labels_key = (
-        f"hdbscan_labels:{reducer}:{cluster_n_components}:{cluster_n_neighbors}:"
-        f"{cluster_min_dist}:{cluster_metric}:{random_state}:{min_cluster_size}:"
+        f"hdbscan_labels:{projection_key}:{min_cluster_size}:"
         f"{min_samples}:{cluster_selection_epsilon}:raw={use_raw_descriptors}"
     )
     cached_labels = ctx.cache.get(labels_key)
     if cached_labels is not None:
         return cast("np.ndarray", cached_labels)
 
-    if reducer == "none":
+    if projection is None:
         # 108k x 64 floats → ball_tree handles this near O(n log n);
         # auto-selection at D=64 can fall back to brute O(n^2).
         labels = HDBSCAN(
@@ -98,21 +94,10 @@ def compute_hdbscan_labels(
         ctx.cache[labels_key] = labels
         return labels
 
-    import umap
-
-    cache_key = (
-        f"hdbscan_cluster_umap:{cluster_n_components}:{cluster_n_neighbors}:"
-        f"{cluster_min_dist}:{cluster_metric}:{random_state}:raw={use_raw_descriptors}"
-    )
+    cache_key = f"hdbscan_projection:{projection_key}:raw={use_raw_descriptors}"
     cluster_embedding = ctx.cache.get(cache_key)
     if cluster_embedding is None:
-        cluster_embedding = umap.UMAP(
-            n_components=cluster_n_components,
-            n_neighbors=cluster_n_neighbors,
-            min_dist=cluster_min_dist,
-            metric=cluster_metric,
-            random_state=random_state,
-        ).fit_transform(descriptors)
+        cluster_embedding = projection.project(descriptors)
         ctx.cache[cache_key] = cluster_embedding
 
     labels = HDBSCAN(
@@ -126,41 +111,39 @@ def compute_hdbscan_labels(
 
 
 class _ClusterTaskBase(_BaseAnalysisTask):
-    """Shared UMAP→HDBSCAN parameters for clustering-derived tasks."""
+    """Shared projection→HDBSCAN parameters for clustering-derived tasks."""
 
-    cluster_reducer: Literal["umap", "none"] = "umap"
-    cluster_n_components: int = 15
-    cluster_n_neighbors: int = 30
-    cluster_min_dist: float = 0.0
-    cluster_metric: str = "cosine"
+    cluster_projection: ProjectionConfig | None = Field(
+        default_factory=lambda: UmapConfig(n_components=15)
+    )
+    """What HDBSCAN clusters: by default a 15-D cosine UMAP (seed 0); ``null``
+    clusters the descriptors themselves. The whole config (seed included) keys
+    the cached embedding: tasks share one fit (and one partition) only with
+    identical settings."""
     use_raw_descriptors: bool = False
     """Cluster on ``ctx.descriptors_raw`` (pre-normalization) so the vector
-    norm carries signal. Only meaningful when paired with
-    ``cluster_metric="euclidean"`` — cosine and L2-normalized Euclidean both
-    discard the norm, making them equivalent to the canonical path."""
+    norm carries signal. Only meaningful with a euclidean projection metric —
+    cosine and L2-normalized Euclidean both discard the norm, making them
+    equivalent to the canonical path."""
 
     min_samples: int | None = None
     cluster_selection_epsilon: float = 0.0
-    random_state: int | None = 0
-    """UMAP seed. Part of the cached embedding's key: tasks with the same
-    parameters share one fit (and one partition) only with the same seed."""
 
     def _labels(
         self, ctx: DescriptorAnalysisContext, min_cluster_size: int
     ) -> np.ndarray:
         return compute_hdbscan_labels(
             ctx,
-            reducer=self.cluster_reducer,
-            cluster_n_components=self.cluster_n_components,
-            cluster_n_neighbors=self.cluster_n_neighbors,
-            cluster_min_dist=self.cluster_min_dist,
-            cluster_metric=self.cluster_metric,
-            random_state=self.random_state,
+            projection=self.cluster_projection,
             min_cluster_size=min_cluster_size,
             min_samples=self.min_samples,
             cluster_selection_epsilon=self.cluster_selection_epsilon,
             use_raw_descriptors=self.use_raw_descriptors,
         )
+
+
+def _projection_label(projection: ProjectionConfig | None) -> str:
+    return "the descriptors" if projection is None else projection.label()
 
 
 def _cluster_label_str(label: int) -> str:
@@ -503,7 +486,7 @@ class HDBSCANClusterTask(_ClusterTaskBase):
         ax.set_xlabel("Component 1")
         ax.set_ylabel("Component 2")
         ax.set_title(
-            f"HDBSCAN on {self.cluster_n_components}D UMAP: "
+            f"HDBSCAN on {_projection_label(self.cluster_projection)}: "
             f"{n_clusters} clusters, {n_noise}/{n_points} noise"
         )
         if 1 <= n_clusters <= 20:
@@ -518,10 +501,7 @@ class HDBSCANClusterTask(_ClusterTaskBase):
             cluster_sizes={
                 int(cid): int(np.sum(labels == cid)) for cid in cluster_ids.tolist()
             },
-            cluster_n_components=self.cluster_n_components,
-            cluster_n_neighbors=self.cluster_n_neighbors,
-            cluster_min_dist=self.cluster_min_dist,
-            cluster_metric=self.cluster_metric,
+            cluster_projection=self.cluster_projection,
             min_cluster_size=self.min_cluster_size,
             min_samples=self.min_samples,
             cluster_selection_epsilon=self.cluster_selection_epsilon,
@@ -708,7 +688,7 @@ class ClusterChemicalFingerprintTask(_ClusterTaskBase):
 
         mean_purity, mean_entropy, n_clusters, _ = _purity_for_labels(labels, feats)
         report = _ClusterFingerprintReport(
-            reducer=self.cluster_reducer,
+            cluster_projection=self.cluster_projection,
             min_cluster_size=self.min_cluster_size,
             n_points=int(labels.shape[0]),
             n_clusters=n_clusters,
@@ -770,7 +750,7 @@ class ClusterGranularitySweepTask(_ClusterTaskBase):
         best.recommended = True
 
         report = _ClusterGranularitySweepReport(
-            reducer=self.cluster_reducer,
+            cluster_projection=self.cluster_projection,
             n_points=n_points,
             recommended_min_cluster_size=best.min_cluster_size,
             rows=rows,
@@ -854,7 +834,7 @@ class ClusterAxisAnalysisTask(_ClusterTaskBase):
         )
 
         report = _ClusterAxisAnalysisReport(
-            reducer=self.cluster_reducer,
+            cluster_projection=self.cluster_projection,
             min_cluster_size=self.min_cluster_size,
             n_points=int(labels.shape[0]),
             n_clusters=len(cluster_ids),
@@ -994,13 +974,8 @@ class DescriptorStructureBenchmarkTask(_ClusterTaskBase):
             protocol=_BenchmarkProtocol(
                 version=_BENCHMARK_PROTOCOL_VERSION,
                 dataset_path=dataset_path,
-                reducer=self.cluster_reducer,
-                cluster_n_components=self.cluster_n_components,
-                cluster_n_neighbors=self.cluster_n_neighbors,
-                cluster_min_dist=self.cluster_min_dist,
-                cluster_metric=self.cluster_metric,
+                cluster_projection=self.cluster_projection,
                 use_raw_descriptors=self.use_raw_descriptors,
-                random_state=self.random_state,
                 canonical_min_cluster_size=self.canonical_min_cluster_size,
                 chemistry_axes=list(self.chemistry_axes),
                 pure_island_min_size=self.pure_island_min_size,
@@ -1273,7 +1248,7 @@ class _ClusterFingerprint(BaseModel):
 
 
 class _ClusterFingerprintReport(BaseModel):
-    reducer: str
+    cluster_projection: ProjectionConfig | None
     min_cluster_size: int
     n_points: int
     n_clusters: int
@@ -1293,7 +1268,7 @@ class _GranularityRow(BaseModel):
 
 
 class _ClusterGranularitySweepReport(BaseModel):
-    reducer: str
+    cluster_projection: ProjectionConfig | None
     n_points: int
     recommended_min_cluster_size: int
     rows: list[_GranularityRow]
@@ -1316,7 +1291,7 @@ class _ClusterAxisRow(BaseModel):
 
 
 class _ClusterAxisAnalysisReport(BaseModel):
-    reducer: str
+    cluster_projection: ProjectionConfig | None
     min_cluster_size: int
     n_points: int
     n_clusters: int
@@ -1330,13 +1305,8 @@ class _BenchmarkProtocol(BaseModel):
 
     version: str
     dataset_path: str
-    reducer: str
-    cluster_n_components: int
-    cluster_n_neighbors: int
-    cluster_min_dist: float
-    cluster_metric: str
+    cluster_projection: ProjectionConfig | None
     use_raw_descriptors: bool = False
-    random_state: int | None
     canonical_min_cluster_size: int
     chemistry_axes: list[str]
     pure_island_min_size: int
@@ -1401,10 +1371,7 @@ class _HDBSCANClusterSummary(BaseModel):
     n_noise: int
     noise_fraction: float
     cluster_sizes: dict[int, int]
-    cluster_n_components: int
-    cluster_n_neighbors: int
-    cluster_min_dist: float
-    cluster_metric: str
+    cluster_projection: ProjectionConfig | None
     min_cluster_size: int
     min_samples: int | None
     cluster_selection_epsilon: float

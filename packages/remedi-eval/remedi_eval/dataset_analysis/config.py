@@ -7,6 +7,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from remedi_eval.projection import UmapConfig
+
 #: How the UMAP sample is drawn: ``uniform`` over all fingerprints (the
 #: dataset comparison's default, so the origin plot shows the datasets in
 #: proportion), or ``largest_clusters_first``: members of the
@@ -24,15 +26,25 @@ class BitBirchUmapConfig(BaseModel):
     sample_size: int | None = 200_000
     """Cap on fingerprints fed to UMAP. UMAP scales poorly past a few 100k."""
     sampling: UmapSampling = "uniform"
-    n_neighbors: int = Field(50, ge=2)
-    min_dist: float = Field(0.1, ge=0.0, le=1.0)
-    metric: Literal["jaccard", "hamming", "euclidean", "cosine"] = "jaccard"
-    random_state: int = 42
+    projection: UmapConfig = Field(
+        default_factory=lambda: UmapConfig(
+            n_neighbors=50, min_dist=0.1, metric="jaccard", random_state=42
+        )
+    )
+    """The UMAP of the unpacked fingerprint bits; it must be two-dimensional."""
     top_clusters_colored: int = Field(20, ge=1)
     """How many largest clusters get distinct colors. Smaller ones go grey."""
     plot_size: int = Field(1600, ge=100)
     """Size of the square UMAP image in pixels (the datashader canvas, or the
     matplotlib scatter of the dataset comparison)."""
+
+    @model_validator(mode="after")
+    def _the_projection_is_planar(self) -> BitBirchUmapConfig:
+        if self.projection.n_components != 2:
+            raise ValueError(
+                "bitbirch.umap.projection.n_components must be 2 (the UMAP is plotted)"
+            )
+        return self
 
 
 class BitBirchConfig(BaseModel):
