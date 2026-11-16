@@ -5,7 +5,6 @@ import os
 import time
 from collections import Counter
 from collections.abc import Generator
-from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
@@ -23,6 +22,7 @@ from remedi_data.chemistry.fingerprints import morgan_fingerprints
 from remedi_data.chemistry.physchem import DESCRIPTORS_2D
 from remedi_data.chemistry.splits import murcko_scaffold
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.parallel import process_map
 from remedi_data.runs.results import (
     ArrayResult,
     EvalResult,
@@ -38,6 +38,9 @@ from remedi_eval.results import FigureResult
 #: (:func:`remedi_data.chemistry.splits.murcko_scaffold`, chirality kept), so a
 #: scaffold count here means what a scaffold split would see.
 SCAFFOLD_INCLUDE_CHIRALITY = True
+
+#: SMILES per process-pool task for the per-molecule RDKit work.
+RDKIT_CHUNK_SIZE = 1_000
 
 
 class _DatashaderImageResult(EvalResult):
@@ -376,15 +379,12 @@ class MoleculeDatasetAnalysis:
         return [smiles[int(i)] for i in idx]
 
     def compute_rdkit_descriptors(self, smiles: list[str]) -> list[_MolDescriptors]:
-        if not smiles:
-            return []
-        workers = max(1, self.config.rdkit_n_workers)
-        if workers == 1 or len(smiles) < 1000:
-            return [_compute_descriptors(s) for s in smiles]
-        # chunksize tuned to keep IPC overhead low for many small jobs
-        chunksize = max(64, len(smiles) // (workers * 32) or 1)
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            return list(pool.map(_compute_descriptors, smiles, chunksize=chunksize))
+        return process_map(
+            _compute_descriptors,
+            smiles,
+            workers=self.config.rdkit_n_workers,
+            chunk_size=RDKIT_CHUNK_SIZE,
+        )
 
     # ----- Plots -----
 

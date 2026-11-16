@@ -14,7 +14,6 @@ failed row in ``status.yaml``; the rest still finish.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -52,6 +51,7 @@ from remedi_data.chemistry.conformers import (
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits, frame_geometry_violations
 from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.parallel import default_workers
 from remedi_data.runs.results import EvalResult, PydanticResult
 from remedi_data.runs.task import TaskStatus
 from remedi_data.runs.task_runner import (
@@ -119,7 +119,7 @@ class DatasetBuildConfig(BaseModel):
 
     def worker_count(self) -> int:
         """``n_workers``, with ``None`` resolved to the CPUs this process may use."""
-        return self.n_workers or max(1, len(os.sched_getaffinity(0)))
+        return self.n_workers or default_workers()
 
     def resolve_dataset_ids(self) -> list[str]:
         if self.dataset_ids is not None:

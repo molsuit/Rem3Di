@@ -19,13 +19,15 @@ Tanimoto similarity counts set bits, so it is the same in every packed layout.
 
 from __future__ import annotations
 
-import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
+from collections.abc import Sequence
+from functools import partial
 from typing import Literal
 
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
+
+from remedi_data.parallel import process_map_chunks
 
 FingerprintLayout = Literal["dense", "packed_bytes", "packed_words"]
 
@@ -49,7 +51,7 @@ def _stored(bits: np.ndarray, layout: FingerprintLayout) -> np.ndarray:
 
 
 def _fingerprint_chunk(
-    smiles: list[str], radius: int, size: int, layout: FingerprintLayout
+    smiles: Sequence[str], *, radius: int, size: int, layout: FingerprintLayout
 ) -> np.ndarray:
     generator = rdFingerprintGenerator.GetMorganGenerator(radius=radius, fpSize=size)
     bits = np.zeros((len(smiles), size), dtype=np.uint8)
@@ -83,22 +85,13 @@ def morgan_fingerprints(
         )
     if not smiles:
         return _stored(np.zeros((0, size), dtype=np.uint8), layout)
-    chunks = [smiles[start : start + _CHUNK] for start in range(0, len(smiles), _CHUNK)]
-    if workers <= 1 or len(chunks) == 1:
-        return np.concatenate(
-            [_fingerprint_chunk(chunk, radius, size, layout) for chunk in chunks]
-        )
-    with ProcessPoolExecutor(
-        max_workers=workers, mp_context=multiprocessing.get_context("forkserver")
-    ) as executor:
-        results = executor.map(
-            _fingerprint_chunk,
-            chunks,
-            [radius] * len(chunks),
-            [size] * len(chunks),
-            [layout] * len(chunks),
-        )
-        return np.concatenate(list(results))
+    chunks = process_map_chunks(
+        partial(_fingerprint_chunk, radius=radius, size=size, layout=layout),
+        smiles,
+        workers=workers,
+        chunk_size=_CHUNK,
+    )
+    return np.concatenate(chunks)
 
 
 def tanimoto_similarity(left: np.ndarray, right: np.ndarray) -> float:

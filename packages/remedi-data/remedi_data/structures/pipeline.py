@@ -18,7 +18,6 @@ import hashlib
 import json
 import logging
 import multiprocessing
-import os
 import time
 from collections.abc import Sequence
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
@@ -44,6 +43,7 @@ from remedi_data.bundle import (
 )
 from remedi_data.bundle.provenance import git_head_sha
 from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.parallel import default_workers
 from remedi_data.structures.records import (
     DroppedRecord,
     PreparedFrame,
@@ -62,14 +62,6 @@ PIPELINE_VERSION = 3
 PLAN_FILENAME = "plan.yaml"
 SHARD_DIRECTORY = "shards"
 RAW_HASHES_FILENAME = "raw_sha256.yaml"
-
-
-def default_workers() -> int:
-    """``SLURM_CPUS_PER_TASK`` inside a Slurm job, else the CPUs this process may use."""
-    from_slurm = os.environ.get("SLURM_CPUS_PER_TASK")
-    if from_slurm:
-        return max(1, int(from_slurm))
-    return max(1, len(os.sched_getaffinity(0)))
 
 
 class StructurePreparationSettings(BaseModel):

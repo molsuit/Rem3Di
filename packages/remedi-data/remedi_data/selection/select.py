@@ -15,13 +15,12 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import multiprocessing
 import os
 import time
 from collections.abc import Iterable
-from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -36,6 +35,7 @@ from remedi_data.bundle import (
 )
 from remedi_data.chemistry.splits import murcko_scaffold
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.parallel import process_map
 from remedi_data.selection.config import (
     ConformersPerMolecule,
     ExcludeOverlap,
@@ -120,21 +120,12 @@ def _require_columns(rows: pl.DataFrame, step: SelectionStep, columns: Iterable[
 
 
 def _scaffolds(smiles: list[str], workers: int) -> list[str | None]:
-    if workers <= 1 or len(smiles) < 2 * _SCAFFOLD_CHUNK:
-        return [murcko_scaffold(text, include_chirality=False) for text in smiles]
-    chunks = [
-        smiles[start : start + _SCAFFOLD_CHUNK]
-        for start in range(0, len(smiles), _SCAFFOLD_CHUNK)
-    ]
-    with ProcessPoolExecutor(
-        max_workers=workers, mp_context=multiprocessing.get_context("forkserver")
-    ) as executor:
-        results = executor.map(_scaffolds_of_chunk, chunks)
-        return [scaffold for chunk in results for scaffold in chunk]
-
-
-def _scaffolds_of_chunk(smiles: list[str]) -> list[str | None]:
-    return [murcko_scaffold(text, include_chirality=False) for text in smiles]
+    return process_map(
+        partial(murcko_scaffold, include_chirality=False),
+        smiles,
+        workers=workers,
+        chunk_size=_SCAFFOLD_CHUNK,
+    )
 
 
 def _overlap_keys(smiles: list[str], match_on: str, workers: int) -> list[str]:

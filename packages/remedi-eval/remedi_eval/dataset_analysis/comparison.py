@@ -5,7 +5,6 @@ import os
 import time
 from collections import Counter, defaultdict
 from collections.abc import Sequence
-from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,12 +18,14 @@ from rdkit import RDLogger
 from remedi_data.chemistry.fingerprints import morgan_fingerprints
 from remedi_data.chemistry.splits import murcko_scaffold
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.parallel import process_map
 from remedi_data.runs.results import (
     ArrayResult,
     EvalResult,
     PydanticResult,
 )
 from remedi_eval.dataset_analysis.analysis import (
+    RDKIT_CHUNK_SIZE,
     SCAFFOLD_INCLUDE_CHIRALITY,
     BitBirchSummary,
     BitBirchUmapSummary,
@@ -172,19 +173,8 @@ def _murcko_generic(smiles: str) -> str | None:
     )
 
 
-def _parallel_map(
-    fn,
-    items: Sequence[str],
-    n_workers: int,
-    chunksize_div: int = 32,
-) -> list:
-    if not items:
-        return []
-    if n_workers <= 1 or len(items) < 1000:
-        return [fn(s) for s in items]
-    chunksize = max(64, len(items) // (n_workers * chunksize_div) or 1)
-    with ProcessPoolExecutor(max_workers=n_workers) as pool:
-        return list(pool.map(fn, items, chunksize=chunksize))
+def _parallel_map(function, items: Sequence[str], workers: int) -> list:
+    return process_map(function, items, workers=workers, chunk_size=RDKIT_CHUNK_SIZE)
 
 
 # ---------- Dataset loading ----------

@@ -16,7 +16,6 @@ as ``worker_crashed``.
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Hashable, Iterator, Mapping
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
@@ -29,6 +28,8 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 from rdkit import Chem
 from rdkit.Chem import AllChem
+
+from remedi_data.parallel import default_workers
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +298,7 @@ def embed_many[Key: Hashable](
 ) -> Iterator[tuple[Key, EmbedResult]]:
     """Yield ``(key, EmbedResult)`` for every molecule, in completion order.
 
-    ``n_workers=None`` uses every CPU this process may run on (a Slurm job's
+    ``n_workers=None`` uses :func:`~remedi_data.parallel.default_workers` (a Slurm job's
     allocation, not the whole node); ``1`` runs in-process with no pool, which
     keeps a debug run (and tests that monkeypatch :func:`embed_one_smiles`) out
     of the pickling boundary.
@@ -309,7 +310,7 @@ def embed_many[Key: Hashable](
     worker, it is yielded as a ``worker_crashed`` failure. Every key is yielded
     exactly once.
     """
-    worker_count = n_workers or len(os.sched_getaffinity(0)) or 1
+    worker_count = n_workers or default_workers()
     if worker_count == 1:
         for key, isomeric_smiles in smiles_by_key.items():
             yield key, embed_one_smiles(isomeric_smiles, config)

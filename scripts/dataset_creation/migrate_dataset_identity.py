@@ -69,6 +69,7 @@ from remedi_data.bundle.bundle import normalize_table
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import Split, split_codes_from_names
+from remedi_data.parallel import default_workers
 
 logger = logging.getLogger("migrate_dataset_identity")
 
@@ -409,8 +410,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--workers",
         type=int,
-        default=len(os.sched_getaffinity(0)),
-        help="processes for verify's geometry checks (default: every CPU)",
+        default=default_workers(),
+        help="processes for verify's geometry checks (default: the job's CPUs)",
     )
     parser.add_argument(
         "--shadow-root",

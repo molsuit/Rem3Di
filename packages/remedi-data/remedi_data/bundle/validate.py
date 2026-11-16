@@ -9,9 +9,7 @@ message is prefixed with its invariant number; an empty list means valid.
 
 from __future__ import annotations
 
-import multiprocessing
 from collections.abc import Sequence
-from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -31,6 +29,7 @@ from remedi_data.chemistry.geometry import (
 )
 from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.dataset.tasks import TaskType
+from remedi_data.parallel import process_map
 
 #: How many offending rows a single message names before it summarises.
 _MAX_REPORTED_ROWS = 5
@@ -458,6 +457,14 @@ def _frame_problems(
     return mismatched, offenders
 
 
+def _frame_problems_of_chunk(
+    arguments: tuple[
+        Sequence[str | None] | None, PackedStructures, GeometryLimits, int
+    ],
+) -> tuple[list[int], dict[str, list[int]]]:
+    return _frame_problems(*arguments)
+
+
 def structure_problems(
     spec: DatasetSpec,
     table: pd.DataFrame,
@@ -497,13 +504,9 @@ def structure_problems(
         )
         for start, stop in bounds
     ]
-    if workers > 1 and len(arguments) > 1:
-        with ProcessPoolExecutor(
-            max_workers=workers, mp_context=multiprocessing.get_context("forkserver")
-        ) as pool:
-            results = list(pool.map(_frame_problems, *zip(*arguments, strict=True)))
-    else:
-        results = [_frame_problems(*argument) for argument in arguments]
+    results = process_map(
+        _frame_problems_of_chunk, arguments, workers=workers, chunk_size=1
+    )
     mismatched = [row for chunk_mismatched, _ in results for row in chunk_mismatched]
     problems: list[str] = []
     if mismatched:
