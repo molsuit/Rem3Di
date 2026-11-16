@@ -50,7 +50,7 @@ def _manifest(tmp_path: Path) -> EvalManifest:
     _build_reg_zarr(tmp_path, "toy_a", np.linspace(0, 1, _N_ROWS))
     _build_reg_zarr(tmp_path, "toy_b", np.linspace(1, 0, _N_ROWS))
     return EvalManifest(
-        model=EcfpConfig(name="ecfp_256", length=256),
+        model=EcfpConfig(name="ecfp_256", fingerprint_size=256),
         output_root=tmp_path / "eval_out" / "model_x",
         tasks=[
             BenchmarkPanelConfig(
@@ -110,7 +110,7 @@ def test_shared_resource_built_once(tmp_path: Path) -> None:
     ds = MoleculeDataset.open_existing_dataset_from_dir(zarr_path)
     spec = EmbeddingSpec(
         dataset_id="toy_a",
-        descriptor=EcfpConfig(name="ecfp_256", length=256),
+        descriptor=EcfpConfig(name="ecfp_256", fingerprint_size=256),
         dataset=ds,
         cache_dir=tmp_path / "cache",
     )

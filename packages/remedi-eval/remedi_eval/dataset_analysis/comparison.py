@@ -14,9 +14,9 @@ import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from pydantic import BaseModel, ConfigDict, Field
-from rdkit import Chem, RDLogger
-from rdkit.Chem.Scaffolds import MurckoScaffold
+from rdkit import RDLogger
 
+from remedi_data.chemistry.fingerprints import morgan_fingerprints
 from remedi_data.chemistry.splits import murcko_scaffold
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import (
@@ -33,7 +33,6 @@ from remedi_eval.dataset_analysis.analysis import (
     timed,
 )
 from remedi_eval.dataset_analysis.config import (
-    MORGAN_RADIUS,
     CpuNnTanimotoBackend,
     DatasetComparisonConfig,
     DatasetEntry,
@@ -58,7 +57,6 @@ class PerDatasetCounts(BaseModel):
     name: str
     role: str
     n_smiles_unique: int
-    n_fingerprints: int
     n_in_union: int
 
 
@@ -166,16 +164,12 @@ def _murcko_specific(smiles: str) -> str | None:
 def _murcko_generic(smiles: str) -> str | None:
     """The framework-only scaffold (atom and bond types stripped); ``None`` for
     an unparseable or an acyclic molecule."""
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    try:
-        scaffold = MurckoScaffold.MakeScaffoldGeneric(
-            MurckoScaffold.GetScaffoldForMol(mol)
+    return (
+        murcko_scaffold(
+            smiles, include_chirality=SCAFFOLD_INCLUDE_CHIRALITY, generic=True
         )
-        return Chem.MolToSmiles(scaffold) or None
-    except Exception:
-        return None
+        or None
+    )
 
 
 def _parallel_map(
@@ -200,8 +194,7 @@ def _parallel_map(
 class _LoadedDataset:
     entry: DatasetEntry
     smiles: list[str]
-    fps_packed: np.ndarray  # (n, n_features // 8), uint8
-    kept_smiles: list[str]  # one per row of fps_packed (post skip_invalid)
+    fps_packed: np.ndarray  # (n, fingerprint_size // 8), uint8, one row per SMILES
 
 
 # ---------- NN Tanimoto backends ----------
@@ -225,49 +218,23 @@ def _nn_tanimoto_cpu(query_packed: np.ndarray, ref_packed: np.ndarray) -> np.nda
     return out
 
 
-def _nvmolkit_radius(fingerprint_kind: str) -> int:
-    radius = MORGAN_RADIUS.get(fingerprint_kind)
-    if radius is None:
-        raise ValueError(
-            f"nvmolkit backend requires Morgan FPs (ecfp4/ecfp6); got {fingerprint_kind}."
-        )
-    return radius
+def _as_gpu_words(fps_packed: np.ndarray):
+    """Packed-byte fingerprints as the ``int32`` word tensor nvMolKit scores.
+
+    The bytes reinterpreted as words hold the same bits in another order; a
+    Tanimoto similarity counts set bits, so it is unchanged.
+    """
+    import torch
+
+    return torch.from_numpy(np.ascontiguousarray(fps_packed).view(np.int32)).cuda()
 
 
-def _nvmolkit_compute_ref_fps(
-    ref_smiles: list[str],
-    fingerprint_kind: str,
-    n_features: int,
-):
-    """Parse SMILES → RDKit Mols → Morgan FPs on GPU. Returns (n_ref, fpSize/32)
-    torch tensor on cuda:0. Skips SMILES that fail to parse."""
+def _nn_tanimoto_nvmolkit(query_packed: np.ndarray, ref_fps, chunk_size: int):
+    """GPU NN Tanimoto against a reference already on the GPU
+    (:func:`_as_gpu_words`). Returns ``(n_query,)`` float64 numpy array. Queries
+    are scored in ``chunk_size`` slices so the full (Q, R) similarity matrix
+    never has to fit on the GPU at once."""
     try:
-        from nvmolkit.fingerprints import MorganFingerprintGenerator
-    except ImportError as exc:  # pragma: no cover - optional dep
-        raise RuntimeError(
-            "backend='nvmolkit' selected but nvmolkit is not importable. "
-            "Install per https://nvidia-digital-bio.github.io/nvMolKit/."
-        ) from exc
-
-    radius = _nvmolkit_radius(fingerprint_kind)
-    fpgen = MorganFingerprintGenerator(radius=radius, fpSize=n_features)
-    mols = [m for m in (Chem.MolFromSmiles(s) for s in ref_smiles) if m is not None]
-    return fpgen.GetFingerprints(mols).torch()
-
-
-def _nn_tanimoto_nvmolkit(
-    query_smiles: list[str],
-    ref_fps,
-    fingerprint_kind: str,
-    n_features: int,
-    chunk_size: int,
-):
-    """GPU NN Tanimoto against a pre-fingerprinted reference (a torch tensor on
-    the GPU). Returns ``(n_query,)`` float64 numpy array. Query SMILES are
-    parsed + fingerprinted here, then scored in ``chunk_size`` slices so the
-    full (Q, R) similarity matrix never has to fit on the GPU at once."""
-    try:
-        from nvmolkit.fingerprints import MorganFingerprintGenerator
         from nvmolkit.similarity import crossTanimotoSimilarity
     except ImportError as exc:  # pragma: no cover - optional dep
         raise RuntimeError(
@@ -277,12 +244,9 @@ def _nn_tanimoto_nvmolkit(
 
     import torch
 
-    radius = _nvmolkit_radius(fingerprint_kind)
-    fpgen = MorganFingerprintGenerator(radius=radius, fpSize=n_features)
-    q_mols = [m for m in (Chem.MolFromSmiles(s) for s in query_smiles) if m is not None]
-    if not q_mols or ref_fps.shape[0] == 0:
-        return np.zeros(len(q_mols), dtype=np.float64)
-    q_fps = fpgen.GetFingerprints(q_mols).torch()
+    if query_packed.shape[0] == 0 or ref_fps.shape[0] == 0:
+        return np.zeros(query_packed.shape[0], dtype=np.float64)
+    q_fps = _as_gpu_words(query_packed)
     n_q = int(q_fps.shape[0])
     n_r = int(ref_fps.shape[0])
     out = np.zeros(n_q, dtype=np.float64)
@@ -365,47 +329,22 @@ class DatasetComparison:
                 )
                 idx.sort()
                 smiles = [smiles[int(i)] for i in idx]
-            fps_packed, kept_smiles = self._fps_for(smiles)
+            fps_packed = morgan_fingerprints(
+                smiles,
+                layout="packed_bytes",
+                radius=self.config.bitbirch.radius,
+                size=self.config.bitbirch.fingerprint_size,
+                workers=self.config.rdkit_n_workers,
+            )
             log.info(
-                "Loaded %s (%s): %d unique SMILES, %d fingerprints",
+                "Loaded %s (%s): %d unique SMILES",
                 entry.name,
                 entry.role,
                 len(smiles),
-                fps_packed.shape[0],
             )
             self._loaded.append(
-                _LoadedDataset(
-                    entry=entry,
-                    smiles=smiles,
-                    fps_packed=fps_packed,
-                    kept_smiles=kept_smiles,
-                )
+                _LoadedDataset(entry=entry, smiles=smiles, fps_packed=fps_packed)
             )
-
-    def _fps_for(self, smiles: list[str]) -> tuple[np.ndarray, list[str]]:
-        import bblean
-
-        if not smiles:
-            return np.zeros((0, 0), dtype=np.uint8), []
-        result = bblean.fps_from_smiles(
-            smiles,
-            kind=self.config.bitbirch.fingerprint_kind,
-            n_features=self.config.bitbirch.n_features,
-            pack=True,
-            skip_invalid=True,
-        )
-        if isinstance(result, tuple):
-            # bblean returns (fps, dropped_indices) -- the second element is
-            # the indices of SMILES that failed fingerprinting, not the kept
-            # ones (the public docs are misleading; verified empirically).
-            fps, dropped_idx = result
-            dropped = {int(i) for i in dropped_idx}
-            kept_smiles = [s for i, s in enumerate(smiles) if i not in dropped]
-            assert len(kept_smiles) == int(fps.shape[0])
-        else:
-            fps = result
-            kept_smiles = list(smiles)
-        return fps, kept_smiles
 
     def _build_union(self) -> _UnionFps:
         """Every dataset's fingerprints stacked, capped at ``bitbirch.max_molecules``
@@ -421,7 +360,7 @@ class DatasetComparison:
             if n == 0:
                 continue
             idx_list.append(np.full(n, di, dtype=np.int64))
-            smiles.extend(ld.kept_smiles)
+            smiles.extend(ld.smiles)
         dataset_index = np.concatenate(idx_list)
         cap = self.config.bitbirch.max_molecules
         if cap is not None and len(dataset_index) > cap:
@@ -488,7 +427,7 @@ class DatasetComparison:
         ax.set_ylabel("Cluster count (log)")
         ax.set_title(
             f"BitBIRCH union clusters (n={sizes.size},"
-            f" threshold={threshold:.2f} [{source}], kind={cfg.fingerprint_kind})"
+            f" threshold={threshold:.2f} [{source}], Morgan radius {cfg.radius})"
         )
         fig.tight_layout()
         self.results.append(
@@ -536,7 +475,8 @@ class DatasetComparison:
         import umap
 
         unpacked = bblean.unpack_fingerprints(
-            union.fps_packed[sample_rows], n_features=self.config.bitbirch.n_features
+            union.fps_packed[sample_rows],
+            n_features=self.config.bitbirch.fingerprint_size,
         )
         t0 = time.perf_counter()
         try:
@@ -841,7 +781,6 @@ class DatasetComparison:
         if not cfg.enabled:
             return None
         backend = cfg.backend
-        fingerprint = self.config.bitbirch
         pretrain_loaded = [ld for ld in self._loaded if ld.entry.role == "pretrain"]
         eval_loaded = [ld for ld in self._loaded if ld.entry.role == "eval"]
         if not pretrain_loaded or not eval_loaded:
@@ -849,9 +788,6 @@ class DatasetComparison:
             return NnTanimotoSummary(backend=backend.kind, n_pretrain_reference=0)
 
         ref_packed = np.vstack([ld.fps_packed for ld in pretrain_loaded])
-        ref_smiles: list[str] = []
-        for ld in pretrain_loaded:
-            ref_smiles.extend(ld.kept_smiles)
         log.info(
             "NN Tanimoto: %d eval datasets vs %d pretrain molecules (backend=%s)",
             len(eval_loaded),
@@ -859,17 +795,11 @@ class DatasetComparison:
             backend.kind,
         )
 
-        # GPU backend amortizes ref fingerprinting across eval datasets --
-        # parsing 3.5M pretrain SMILES once is the difference between the
-        # NN-Tanimoto step finishing in minutes vs. dominating the run.
+        # The GPU backend moves the reference to the device once for all eval
+        # datasets.
         ref_gpu_fps = None
         if isinstance(backend, NvmolkitNnTanimotoBackend):
-            with timed("nn_tanimoto_ref_fps", self._timings):
-                ref_gpu_fps = _nvmolkit_compute_ref_fps(
-                    ref_smiles,
-                    fingerprint_kind=fingerprint.fingerprint_kind,
-                    n_features=fingerprint.n_features,
-                )
+            ref_gpu_fps = _as_gpu_words(ref_packed)
             log.info(
                 "nvmolkit: ref FPs on %s, shape=%s",
                 ref_gpu_fps.device,
@@ -884,11 +814,7 @@ class DatasetComparison:
                 values = _nn_tanimoto_cpu(ld.fps_packed, ref_packed)
             else:
                 values = _nn_tanimoto_nvmolkit(
-                    ld.kept_smiles,
-                    ref_gpu_fps,
-                    fingerprint_kind=fingerprint.fingerprint_kind,
-                    n_features=fingerprint.n_features,
-                    chunk_size=backend.chunk_size,
+                    ld.fps_packed, ref_gpu_fps, chunk_size=backend.chunk_size
                 )
             per_dataset_values[ld.entry.name] = values
             per_dataset.append(
@@ -986,19 +912,19 @@ class DatasetComparison:
         per_dataset: list[ScaffoldOverlapPerDataset] = []
         for ld in self._loaded:
             with timed(f"scaffolds_specific[{ld.entry.name}]", self._timings):
-                spec = _parallel_map(_murcko_specific, ld.kept_smiles, n_workers)
+                spec = _parallel_map(_murcko_specific, ld.smiles, n_workers)
             specific_sets[ld.entry.name] = {s for s in spec if s is not None}
             generic_set: set[str] | None = None
             if include_generic:
                 with timed(f"scaffolds_generic[{ld.entry.name}]", self._timings):
-                    gen = _parallel_map(_murcko_generic, ld.kept_smiles, n_workers)
+                    gen = _parallel_map(_murcko_generic, ld.smiles, n_workers)
                 generic_set = {s for s in gen if s is not None}
                 generic_sets[ld.entry.name] = generic_set
             per_dataset.append(
                 ScaffoldOverlapPerDataset(
                     name=ld.entry.name,
                     role=ld.entry.role,
-                    n_molecules=len(ld.kept_smiles),
+                    n_molecules=len(ld.smiles),
                     n_scaffolds_specific=len(specific_sets[ld.entry.name]),
                     n_scaffolds_generic=(
                         len(generic_set) if generic_set is not None else None
@@ -1130,7 +1056,6 @@ class DatasetComparison:
                 name=ld.entry.name,
                 role=ld.entry.role,
                 n_smiles_unique=len(ld.smiles),
-                n_fingerprints=int(ld.fps_packed.shape[0]),
                 n_in_union=int(n_in_union[dataset_position]),
             )
             for dataset_position, ld in enumerate(self._loaded)

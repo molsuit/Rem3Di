@@ -46,7 +46,9 @@ class _EcfpStandIn(DescriptorCalculator):
 
     def calculate(self, dataset: MoleculeDataset) -> np.ndarray:
         _EcfpStandIn.calls.append(Path(dataset.path).name)
-        return EcfpConfig(name="ecfp_128", length=128).build().calculate(dataset)
+        return (
+            EcfpConfig(name="ecfp_128", fingerprint_size=128).build().calculate(dataset)
+        )
 
 
 @pytest.fixture

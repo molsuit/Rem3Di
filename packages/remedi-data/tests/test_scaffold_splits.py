@@ -124,18 +124,57 @@ def test_fixed_test_columns_reject_bad_inputs() -> None:
 def test_an_rdkit_error_in_the_scaffold_is_an_invalid_scaffold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """RDKit can raise inside ``MurckoScaffoldSmiles`` on a SMILES that parses."""
-    real_scaffold = MurckoScaffold.MurckoScaffoldSmiles
+    """RDKit can raise inside ``GetScaffoldForMol`` on a SMILES that parses."""
+    real_scaffold = MurckoScaffold.GetScaffoldForMol
 
-    def raising_on_toluene(*, mol, includeChirality):
+    def raising_on_toluene(mol):
         if mol.GetNumAtoms() == 7:
             raise RuntimeError("Pre-condition Violation")
-        return real_scaffold(mol=mol, includeChirality=includeChirality)
+        return real_scaffold(mol)
 
-    monkeypatch.setattr(MurckoScaffold, "MurckoScaffoldSmiles", raising_on_toluene)
+    monkeypatch.setattr(MurckoScaffold, "GetScaffoldForMol", raising_on_toluene)
     assert murcko_scaffold("Cc1ccccc1") is None
     assert murcko_scaffold("CCc1ccccc1") == "c1ccccc1"
     assert scaffold_groups(["Cc1ccccc1", "CCc1ccccc1"]) == {
         "INVALID:Cc1ccccc1": [0],
         "c1ccccc1": [1],
     }
+
+
+@pytest.mark.parametrize(
+    ("smiles", "specific_chiral", "specific", "generic"),
+    [
+        (
+            "C1CC[C@H]2CCCC[C@@H]2C1",
+            "C1CC[C@H]2CCCC[C@@H]2C1",
+            "C1CCC2CCCCC2C1",
+            "C1CCC2CCCCC2C1",
+        ),
+        (
+            "O=C(Nc1ccccc1)c1ccncc1",
+            "O=C(Nc1ccccc1)c1ccncc1",
+            "O=C(Nc1ccccc1)c1ccncc1",
+            "CC(CC1CCCCC1)C1CCCCC1",
+        ),
+        (
+            "c1ccc(-c2ccccn2)cc1",
+            "c1ccc(-c2ccccn2)cc1",
+            "c1ccc(-c2ccccn2)cc1",
+            "C1CCC(C2CCCCC2)CC1",
+        ),
+        ("CCO", "", "", ""),
+    ],
+)
+def test_murcko_scaffold_strings_are_pinned(
+    smiles: str, specific_chiral: str, specific: str, generic: str
+) -> None:
+    """The scaffold strings splits, selection and the dataset analyses group by."""
+    assert murcko_scaffold(smiles, include_chirality=True) == specific_chiral
+    assert murcko_scaffold(smiles, include_chirality=False) == specific
+    assert murcko_scaffold(smiles, include_chirality=True, generic=True) == generic
+    assert murcko_scaffold(smiles, include_chirality=False, generic=True) == generic
+
+
+def test_an_unparsable_smiles_has_no_scaffold() -> None:
+    assert murcko_scaffold("C1CC") is None
+    assert murcko_scaffold("C1CC", generic=True) is None

@@ -61,7 +61,7 @@ def main() -> None:
     )
 
     config = pyd_yaml.parse_yaml_file_as(DatasetComparisonConfig, file=args.config)
-    n_features = config.bitbirch.n_features
+    n_features = config.bitbirch.fingerprint_size
     comparison = DatasetComparison(config)
     comparison.load_datasets()
     union = comparison._build_union()

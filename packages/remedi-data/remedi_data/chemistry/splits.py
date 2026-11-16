@@ -21,21 +21,25 @@ from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 
-def murcko_scaffold(smiles: str, include_chirality: bool = True) -> str | None:
+def murcko_scaffold(
+    smiles: str, include_chirality: bool = True, generic: bool = False
+) -> str | None:
     """The Bemis-Murcko scaffold SMILES; ``""`` for an acyclic molecule.
 
-    ``None`` if the SMILES does not parse or RDKit fails on the scaffold (it
-    raises ``RuntimeError`` or ``ValueError`` from its C++ layer on some
-    molecules that parse); callers treat both as a molecule without a usable
-    scaffold.
+    ``generic`` strips the scaffold to its framework (every atom carbon, every
+    bond single). ``None`` if the SMILES does not parse or RDKit fails on the
+    scaffold (it raises ``RuntimeError`` or ``ValueError`` from its C++ layer on
+    some molecules that parse); callers treat both as a molecule without a
+    usable scaffold.
     """
     molecule = Chem.MolFromSmiles(smiles)
     if molecule is None:
         return None
     try:
-        return MurckoScaffold.MurckoScaffoldSmiles(
-            mol=molecule, includeChirality=include_chirality
-        )
+        scaffold = MurckoScaffold.GetScaffoldForMol(molecule)
+        if generic:
+            scaffold = MurckoScaffold.MakeScaffoldGeneric(scaffold)
+        return Chem.MolToSmiles(scaffold, isomericSmiles=include_chirality)
     except (RuntimeError, ValueError):
         return None
 

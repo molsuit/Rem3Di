@@ -199,7 +199,7 @@ def test_a_panel_on_precomputed_embeddings_matches_the_in_process_descriptor(
     tmp_path: Path,
 ) -> None:
     dataset_dir = _dataset(tmp_path)
-    ecfp = EcfpConfig(name="ecfp_128", length=128)
+    ecfp = EcfpConfig(name="ecfp_128", fingerprint_size=128)
     in_process = _panel(tmp_path, ecfp, "in_process")
 
     # The same matrix, written by "another package" in shuffled order.
@@ -259,7 +259,9 @@ def test_missing_embeddings_for_the_model_keep_the_baseline_rows(
                 BenchmarkPanelConfig(
                     eval_root=tmp_path / "datasets",
                     learners=[LinearLearnerConfig(ridge_alpha=1.0)],
-                    baseline_descriptors=[EcfpConfig(name="ecfp_128", length=128)],
+                    baseline_descriptors=[
+                        EcfpConfig(name="ecfp_128", fingerprint_size=128)
+                    ],
                 )
             ],
         )

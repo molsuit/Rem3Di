@@ -19,6 +19,7 @@ from rdkit import Chem, RDLogger
 from rdkit.Chem import rdMolDescriptors as rdMD
 
 from remedi_data.bundle import SPEC_FILENAME, read_spec, read_table
+from remedi_data.chemistry.fingerprints import morgan_fingerprints
 from remedi_data.chemistry.physchem import DESCRIPTORS_2D
 from remedi_data.chemistry.splits import murcko_scaffold
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
@@ -222,7 +223,7 @@ def resolve_bitbirch_threshold(
     threshold, mean, std = bb.guess_threshold(
         fps_packed,
         input_is_packed=True,
-        n_features=cfg.n_features,
+        n_features=cfg.fingerprint_size,
         factor=cfg.auto_threshold_factor,
         return_mean_std=True,
     )
@@ -564,35 +565,19 @@ class MoleculeDatasetAnalysis:
             smi_subset = smiles
 
         log.info(
-            "BitBIRCH: fingerprinting %d SMILES (kind=%s, n_features=%d)",
+            "BitBIRCH: fingerprinting %d SMILES (Morgan radius %d, %d bits)",
             len(smi_subset),
-            cfg.fingerprint_kind,
-            cfg.n_features,
+            cfg.radius,
+            cfg.fingerprint_size,
         )
-        result = bblean.fps_from_smiles(
+        fps = morgan_fingerprints(
             smi_subset,
-            kind=cfg.fingerprint_kind,
-            n_features=cfg.n_features,
-            pack=True,
-            skip_invalid=True,
+            layout="packed_bytes",
+            radius=cfg.radius,
+            size=cfg.fingerprint_size,
+            workers=self.config.rdkit_n_workers,
         )
-        # `skip_invalid=True` returns a tuple (fps, indices); else just fps.
-        if isinstance(result, tuple):
-            fps, _kept_idx = result
-            n_fps = int(fps.shape[0]) if fps is not None else 0
-            log.info(
-                "BitBIRCH: %d/%d SMILES survived fingerprinting", n_fps, len(smi_subset)
-            )
-        else:
-            fps = result
-            n_fps = int(fps.shape[0]) if fps is not None else 0
-
-        if fps is None or n_fps == 0:
-            return BitBirchSummary(
-                enabled=True,
-                n_input_smiles=len(smi_subset),
-                notes="no valid fingerprints produced",
-            )
+        n_fps = int(fps.shape[0])
 
         threshold, source, mean_isim, std_isim = resolve_bitbirch_threshold(cfg, fps)
         log.info(
@@ -628,7 +613,7 @@ class MoleculeDatasetAnalysis:
         ax.set_ylabel("Cluster count (log)")
         ax.set_title(
             f"BitBIRCH clusters (n={sizes.size}, threshold={threshold:.2f}"
-            f" [{source}], kind={cfg.fingerprint_kind})"
+            f" [{source}], Morgan radius {cfg.radius})"
         )
         fig.tight_layout()
         self.results.append(
@@ -704,7 +689,7 @@ class MoleculeDatasetAnalysis:
         import bblean
         import umap
 
-        n_features = self.config.bitbirch.n_features
+        n_features = self.config.bitbirch.fingerprint_size
         unpacked = bblean.unpack_fingerprints(fps[sample_rows], n_features=n_features)
 
         log.info(

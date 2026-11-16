@@ -7,14 +7,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-#: The bblean fingerprint kinds. ``ecfp4`` / ``ecfp6`` are RDKit Morgan
-#: fingerprints of radius 2 / 3 folded to ``n_features`` bits, the definition
-#: the nvMolKit nearest-neighbour backend reproduces on the GPU.
-FingerprintKind = Literal["ecfp4", "ecfp6", "rdkit", "topological", "ap"]
-
-#: Morgan radius of each fingerprint kind the nvMolKit backend can compute.
-MORGAN_RADIUS: dict[str, int] = {"ecfp4": 2, "ecfp6": 3}
-
 
 class BitBirchUmapConfig(BaseModel):
     """UMAP projection of BitBIRCH fingerprints, colored by cluster id."""
@@ -38,16 +30,17 @@ class BitBirchUmapConfig(BaseModel):
 class BitBirchConfig(BaseModel):
     """BitBIRCH clustering configuration.
 
-    The fingerprint (``fingerprint_kind``, ``n_features``) is also the one the
-    dataset comparison scores nearest-neighbour Tanimoto on, with either
-    backend.
+    The fingerprint is the Morgan fingerprint of
+    :func:`remedi_data.chemistry.fingerprints.morgan_fingerprints` (``radius``
+    2 is ECFP4); it is also the one the dataset comparison scores
+    nearest-neighbour Tanimoto on, with either backend.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    fingerprint_kind: FingerprintKind = "ecfp4"
-    n_features: int = 2048
+    radius: int = Field(2, ge=0)
+    fingerprint_size: int = Field(2048, gt=0, multiple_of=8)
     threshold: float = Field(0.65, ge=0.0, le=1.0)
     """Hard-coded threshold. Ignored when ``auto_threshold`` is true."""
     auto_threshold: bool = False
@@ -129,8 +122,8 @@ class CpuNnTanimotoBackend(BaseModel):
 class NvmolkitNnTanimotoBackend(BaseModel):
     """``nvmolkit.similarity.crossTanimotoSimilarity`` on the GPU.
 
-    Requires nvMolKit and a CUDA PyTorch, and a Morgan fingerprint
-    (``bitbirch.fingerprint_kind`` ``ecfp4`` or ``ecfp6``).
+    Requires nvMolKit and a CUDA PyTorch, and a ``bitbirch.fingerprint_size``
+    that is a multiple of 32 (nvMolKit takes 32-bit words).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -198,16 +191,16 @@ class DatasetComparisonConfig(BaseModel):
     colours ``bitbirch.umap.top_clusters_colored`` clusters."""
 
     @model_validator(mode="after")
-    def _nvmolkit_needs_a_morgan_fingerprint(self) -> DatasetComparisonConfig:
+    def _nvmolkit_needs_whole_words(self) -> DatasetComparisonConfig:
         backend = self.nn_tanimoto.backend
         if (
             self.nn_tanimoto.enabled
             and isinstance(backend, NvmolkitNnTanimotoBackend)
-            and self.bitbirch.fingerprint_kind not in MORGAN_RADIUS
+            and self.bitbirch.fingerprint_size % 32
         ):
             raise ValueError(
-                "nn_tanimoto backend nvmolkit computes Morgan fingerprints only: "
-                f"set bitbirch.fingerprint_kind to one of {sorted(MORGAN_RADIUS)} "
-                f"(got {self.bitbirch.fingerprint_kind!r})"
+                "nn_tanimoto backend nvmolkit takes 32-bit fingerprint words: "
+                "bitbirch.fingerprint_size must be a multiple of 32 "
+                f"(got {self.bitbirch.fingerprint_size})"
             )
         return self

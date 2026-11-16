@@ -20,7 +20,7 @@ import polars as pl
 import torch
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from remedi_data.chemistry.fingerprints import packed_morgan_fingerprints
+from remedi_data.chemistry.fingerprints import morgan_fingerprints
 from remedi_data.selection import (
     ClusterRecord,
     SelectionError,
@@ -203,8 +203,9 @@ def cluster_molecules(config: MoleculeClusteringConfig) -> ClusterRecord:
 
     molecules = molecule_smiles(config.dataset)
     fingerprint_started = time.monotonic()
-    fingerprints = packed_morgan_fingerprints(
+    fingerprints = morgan_fingerprints(
         molecules["nonisomeric_smiles"].to_list(),
+        layout="packed_words",
         radius=config.radius,
         size=config.fingerprint_size,
         workers=config.workers,

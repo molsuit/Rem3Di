@@ -16,7 +16,7 @@ from remedi.training.data.molecule_clustering import (
     two_level_butina,
 )
 from remedi_data.chemistry.fingerprints import (
-    packed_morgan_fingerprints,
+    morgan_fingerprints,
     tanimoto_similarity,
 )
 from remedi_data.selection import (
@@ -55,7 +55,7 @@ def test_cluster_size_summary() -> None:
 @needs_gpu
 def test_two_level_butina_nests_and_respects_the_cutoffs() -> None:
     smiles = [text for family in FAMILIES for text in family]
-    fingerprints = packed_morgan_fingerprints(smiles)
+    fingerprints = morgan_fingerprints(smiles, layout="packed_words")
     clusters = two_level_butina(fingerprints, coarse_cutoff=0.8, fine_cutoff=0.4)
     for fine_id in np.unique(clusters.fine):
         assert len(np.unique(clusters.coarse[clusters.fine == fine_id])) == 1

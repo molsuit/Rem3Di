@@ -78,8 +78,8 @@ def _make_config(
         ],
         bitbirch=BitBirchConfig(
             enabled=True,
-            fingerprint_kind="ecfp4",
-            n_features=1024,
+            radius=2,
+            fingerprint_size=1024,
             threshold=0.65,
             branching_factor=50,
             merge_criterion="diameter",
@@ -104,8 +104,8 @@ def test_dataset_comparison_runs_end_to_end(
     # Per-dataset accounting
     assert {d.name for d in summary.datasets} == {"pretrain_aliph", "eval_arom"}
     name_to = {d.name: d for d in summary.datasets}
-    assert name_to["pretrain_aliph"].n_fingerprints == len(PRETRAIN_SMILES)
-    assert name_to["eval_arom"].n_fingerprints == len(EVAL_SMILES)
+    assert name_to["pretrain_aliph"].n_smiles_unique == len(PRETRAIN_SMILES)
+    assert name_to["eval_arom"].n_smiles_unique == len(EVAL_SMILES)
 
     # BitBIRCH ran and produced clusters
     assert summary.bitbirch.enabled
@@ -231,16 +231,15 @@ def test_bitbirch_max_molecules_caps_the_union(
     )
 
 
-def test_nvmolkit_backend_needs_morgan_fingerprints(tmp_path: Path) -> None:
+def test_nvmolkit_backend_needs_whole_fingerprint_words(tmp_path: Path) -> None:
     from remedi_eval.dataset_analysis.config import NvmolkitNnTanimotoBackend
 
     config = _make_config(tmp_path / "a", tmp_path / "b", tmp_path / "out")
-    with pytest.raises(ValueError, match="ecfp4"):
+    with pytest.raises(ValueError, match="multiple of 32"):
         DatasetComparisonConfig.model_validate(
             config.model_dump()
             | {
-                "bitbirch": config.bitbirch.model_dump()
-                | {"fingerprint_kind": "rdkit"},
+                "bitbirch": config.bitbirch.model_dump() | {"fingerprint_size": 1000},
                 "nn_tanimoto": {"backend": NvmolkitNnTanimotoBackend().model_dump()},
             }
         )

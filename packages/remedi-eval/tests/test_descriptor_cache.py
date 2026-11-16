@@ -83,7 +83,7 @@ def write_stub_dataset(
 def test_compute_and_cache_writes_then_short_circuits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cfg = EcfpConfig(length=128, name="ecfp_128")
+    cfg = EcfpConfig(fingerprint_size=128, name="ecfp_128")
     ds = write_stub_dataset(tmp_path / "toy", "a" * 64)
     cache_dir = tmp_path / "cache"
 
@@ -131,9 +131,11 @@ def test_a_mismatched_cache_entry_is_recomputed_and_overwritten(
     second = write_stub_dataset(
         tmp_path / "second" / "HIA_Hou", second_structures_sha256
     )
-    compute_and_cache(EcfpConfig(length=64, name="ecfp"), first, cache_dir, "HIA_Hou")
+    compute_and_cache(
+        EcfpConfig(fingerprint_size=64, name="ecfp"), first, cache_dir, "HIA_Hou"
+    )
 
-    second_cfg = EcfpConfig(length=length, name="ecfp")
+    second_cfg = EcfpConfig(fingerprint_size=length, name="ecfp")
     X = compute_and_cache(second_cfg, second, cache_dir, "HIA_Hou")
 
     assert X.shape == (len(_SMILES), length)
@@ -145,7 +147,7 @@ def test_a_mismatched_cache_entry_is_recomputed_and_overwritten(
 
 def test_dataset_ids_do_not_share_a_cache_entry(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
-    cfg = EcfpConfig(length=64, name="ecfp")
+    cfg = EcfpConfig(fingerprint_size=64, name="ecfp")
     for dataset_id in ["lipo", "HIA_Hou"]:
         compute_and_cache(
             cfg,
@@ -157,7 +159,7 @@ def test_dataset_ids_do_not_share_a_cache_entry(tmp_path: Path) -> None:
 
 
 def test_a_dataset_without_provenance_names_the_problem(tmp_path: Path) -> None:
-    cfg = EcfpConfig(length=64, name="ecfp")
+    cfg = EcfpConfig(fingerprint_size=64, name="ecfp")
     ds = stub_dataset(tmp_path / "no_provenance")
     ds.path.mkdir()
 
@@ -227,7 +229,7 @@ def test_two_jobs_computing_one_pair_compute_it_once(tmp_path: Path) -> None:
 
 
 def test_a_broken_cached_pair_is_recomputed(tmp_path: Path) -> None:
-    cfg = EcfpConfig(length=64, name="ecfp")
+    cfg = EcfpConfig(fingerprint_size=64, name="ecfp")
     dataset = write_stub_dataset(tmp_path / "toy", "a" * 64)
     cache_dir = tmp_path / "cache"
     expected = compute_and_cache(cfg, dataset, cache_dir, "toy")

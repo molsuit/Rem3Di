@@ -76,7 +76,9 @@ def run_panel(
 
     The first descriptor is the run's model, the rest the panel's baselines.
     """
-    model, *baselines = descriptors or [EcfpConfig(name="ecfp_128", length=128)]
+    model, *baselines = descriptors or [
+        EcfpConfig(name="ecfp_128", fingerprint_size=128)
+    ]
     run_manifest(
         EvalManifest(
             model=model,
@@ -120,8 +122,8 @@ def test_panel_cross_product_and_cell_identity(tmp_path: Path) -> None:
         tmp_path,
         seed=7,
         descriptors=[
-            EcfpConfig(name="ecfp_128", length=128),
-            EcfpConfig(name="ecfp_512", length=512),
+            EcfpConfig(name="ecfp_128", fingerprint_size=128),
+            EcfpConfig(name="ecfp_512", fingerprint_size=512),
         ],
         learners=[
             LinearLearnerConfig(name="ridge_weak", ridge_alpha=0.1),
@@ -350,7 +352,7 @@ def test_without_keep_going_the_first_failure_is_recorded_and_raised(
 ) -> None:
     build_zarr(tmp_path)
     manifest = EvalManifest(
-        model=EcfpConfig(name="ecfp_128", length=128),
+        model=EcfpConfig(name="ecfp_128", fingerprint_size=128),
         output_root=tmp_path / "eval_out",
         keep_going=False,
         tasks=[

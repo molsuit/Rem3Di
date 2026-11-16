@@ -160,8 +160,8 @@ def test_bitbirch_runs_when_available(tmp_path: Path):
         max_example_molecules=2,
         bitbirch=BitBirchConfig(
             enabled=True,
-            fingerprint_kind="ecfp4",
-            n_features=512,
+            radius=2,
+            fingerprint_size=512,
             threshold=0.65,
             branching_factor=10,
             merge_criterion="diameter",
@@ -218,8 +218,8 @@ def test_bitbirch_umap_projection_runs(tmp_path: Path):
         max_example_molecules=2,
         bitbirch=BitBirchConfig(
             enabled=True,
-            fingerprint_kind="ecfp4",
-            n_features=512,
+            radius=2,
+            fingerprint_size=512,
             threshold=0.65,
             branching_factor=10,
             merge_criterion="diameter",

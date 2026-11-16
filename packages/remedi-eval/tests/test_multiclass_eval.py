@@ -170,7 +170,7 @@ def test_panel_task_scores_multiclass_and_writes_the_per_class_report(
         targets=(np.arange(n_rows) % n_classes).astype(float),
     )
     manifest = EvalManifest(
-        model=EcfpConfig(name="ecfp_256", length=256),
+        model=EcfpConfig(name="ecfp_256", fingerprint_size=256),
         output_root=tmp_path / "eval_out" / "model_x",
         tasks=[
             BenchmarkPanelConfig(
@@ -272,7 +272,7 @@ def test_two_learners_of_one_kind_write_separate_multiclass_reports(
         targets=(np.arange(n_rows) % 3).astype(float),
     )
     manifest = EvalManifest(
-        model=EcfpConfig(name="ecfp_256", length=256),
+        model=EcfpConfig(name="ecfp_256", fingerprint_size=256),
         output_root=tmp_path / "eval_out",
         tasks=[
             BenchmarkPanelConfig(

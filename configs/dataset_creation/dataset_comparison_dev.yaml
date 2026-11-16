@@ -22,8 +22,8 @@ datasets:
 
 bitbirch:
   enabled: true
-  fingerprint_kind: ecfp4
-  n_features: 2048
+  radius: 2
+  fingerprint_size: 2048
   threshold: 0.65
   branching_factor: 50
   merge_criterion: diameter

@@ -37,7 +37,7 @@ def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
         output_root=out,
         resource_cache_dir=tmp_path / "cache",
         resources=ResourceCache(),
-        model=EcfpConfig(name="ecfp_256", length=256),
+        model=EcfpConfig(name="ecfp_256", fingerprint_size=256),
     )
     task = DescriptorAnalysisConfig(
         dataset_path=tmp_path / "datasets" / "corpus",
@@ -103,7 +103,7 @@ def _context(tmp_path: Path) -> tuple[EvalContext, Path]:
             output_root=out,
             resource_cache_dir=tmp_path / "cache",
             resources=ResourceCache(),
-            model=EcfpConfig(name="ecfp_256", length=256),
+            model=EcfpConfig(name="ecfp_256", fingerprint_size=256),
         ),
         out,
     )
