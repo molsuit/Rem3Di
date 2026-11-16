@@ -1,10 +1,9 @@
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi.configuration.dataloader_config import DataLoaderConfig
+from remedi.training.data.mixture import PretrainingDataConfig
 
 
 class CompileConfig(BaseModel):
@@ -17,23 +16,6 @@ class CompileConfig(BaseModel):
     # pad_multiple quantizing the max, inductor sees only a handful of shapes.
     pad_multiple: int = Field(default=1, gt=0)
     dynamo_cache_size_limit: int = Field(default=16, gt=0)
-
-
-class SplitStrategy(str, Enum):
-    SINGLE = "single"  # hold-out / train-val split
-    REPEATED_CV = "repeated_cv"  # repeated k-fold CV
-    SCAFFOLD = "scaffold"  # Bemis murcko scaffold split
-
-
-@dataclass
-class SplitConfig:
-    """Configure one of the supported splitting strategies."""
-
-    strategy: SplitStrategy
-    train_val_ratios: tuple[float, float] = (0.8, 0.2)
-    N_folds: int | None = None
-    N_repeats: int | None = None
-    shuffle: bool = True
 
 
 class VICRegConfig(BaseModel):
@@ -53,10 +35,11 @@ class ProbeConfig(BaseModel):
     """Frozen diagnostic linear probes on the molecular descriptor.
 
     Every ``every_n_steps`` training steps, a fixed set of ``n_probe_molecules``
-    held-out validation molecules is re-embedded (eval / no_grad) and a
-    closed-form ridge is fit on a fixed fit/score split to measure how
-    linearly-decodable the physicochemical ``targets_system`` columns are. The
-    probe never backprops into the encoder.
+    validation structures of the first mixture component is re-embedded (eval /
+    no_grad) and a closed-form ridge is fit on a fixed fit/score split to measure
+    how linearly decodable that dataset's labels (``dataset.yaml`` ``labels``,
+    e.g. the PCQM4Mv2 HOMO-LUMO gap) are. The probe never backprops into the
+    encoder.
     """
 
     enabled: bool = False
@@ -64,7 +47,7 @@ class ProbeConfig(BaseModel):
     n_probe_molecules: int = Field(default=2048, gt=0)
     ridge_alpha: float = Field(default=1.0, gt=0)
     val_fraction: float = Field(default=0.3, gt=0.0, lt=1.0)
-    # None = probe every system target column; else restrict to these names.
+    # None = probe every label of the dataset; else restrict to these names.
     properties: list[str] | None = None
     # Also log a rounded exact-match accuracy for integer-valued columns.
     report_count_accuracy: bool = False
@@ -86,8 +69,10 @@ class ClassificationConfig(BaseModel):
     class_balanced_alpha: bool = True
 
 
-class TrainingConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+class TrainingRunConfig(BaseModel):
+    """What every training run shares: optimisation, loading and outputs."""
+
+    model_config = ConfigDict(extra="forbid")
 
     training_name: str
     run_group: str | None = None
@@ -96,15 +81,25 @@ class TrainingConfig(BaseModel):
     learning_rate: float
     weight_decay: float
     max_grad_norm: float | None = None
-    noise_level: float | None = None
-    split_config: SplitConfig
-    dataset_path: Path
     model_config_path: Path
     output_base: Path
     training_directory: Path | None = None
     total_steps: int | None = None
     wandb_active: bool = False
-    vicreg: VICRegConfig = VICRegConfig()
     compile: CompileConfig = CompileConfig()
+
+
+class PretrainingConfig(TrainingRunConfig):
+    """Self-supervised denoising pretraining on a mixture of corpora."""
+
+    data: PretrainingDataConfig
+    noise_level: float
+    vicreg: VICRegConfig = VICRegConfig()
     probe: ProbeConfig = ProbeConfig()
+
+
+class ClassifierTrainingConfig(TrainingRunConfig):
+    """Supervised training on one dataset's stored train / valid split."""
+
+    dataset_path: Path
     classification: ClassificationConfig = ClassificationConfig()

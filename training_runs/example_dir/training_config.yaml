@@ -16,16 +16,15 @@ weight_decay: 0.001
 max_grad_norm: 1.0
 noise_level: 0.3
 total_steps: null
-split_config:
-  N_folds: null
-  N_repeats: null
-  shuffle: true
-  strategy: single
-  train_val_ratios:
-  - 0.8
-  - 0.2
-dataset_path:
-  /path/to/datasets/tmqm
+data:
+  domain: transition_metal_complex
+  components:
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/tmqm
+  validation:
+    kind: molecule_fraction
+    fraction: 0.2
+    seed: 0
+  deduplicate_across_components: nonisomeric_smiles
 model_config_path: /path/to/3DMolecularDescriptors/training_runs/example_dir/architecture_config.yaml
 output_base: /path/to/training_runs
 training_directory: null

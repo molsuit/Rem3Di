@@ -31,7 +31,7 @@ from sklearn.metrics import (
 from torch.utils.data import Subset
 
 from remedi.configuration.architecture_config import ArchitectureConfig
-from remedi.configuration.training_config import TrainingConfig
+from remedi.configuration.training_config import ClassifierTrainingConfig
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
@@ -101,7 +101,7 @@ def _split_indices(ds: MoleculeDataset, split: Split) -> np.ndarray:
 
 def evaluate_run(run_dir: Path, cfg_dir: Path, split: Split, n_classes: int) -> dict:
     training_config = pyaml.parse_yaml_file_as(
-        TrainingConfig, cfg_dir / "training_config.yaml"
+        ClassifierTrainingConfig, cfg_dir / "training_config.yaml"
     )
     dataset_path = training_config.dataset_path
     full = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)

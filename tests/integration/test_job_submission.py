@@ -1,7 +1,7 @@
 """Tests for the ablation job-submission helpers.
 
-Covers config snapshotting + 4-per-node batching in ``scripts/submit_job.py``
-and the node-local staging resolution/idempotency in
+Covers config snapshotting and one-job-per-config submission in
+``scripts/submit_job.py`` and the node-local staging resolution/idempotency in
 ``scripts/setup_gpu_job.py``. No SLURM, no GPU: submission is exercised with
 ``--no-submit`` and the dataset is a throwaway temp directory.
 """
@@ -18,10 +18,11 @@ from remedi.configuration.dataloader_config import (
     BucketBatchSamplingConfig,
     DataLoaderConfig,
 )
-from remedi.configuration.training_config import (
-    SplitConfig,
-    SplitStrategy,
-    TrainingConfig,
+from remedi.configuration.training_config import PretrainingConfig
+from remedi.training.data.mixture import (
+    DatasetComponent,
+    MoleculeFractionValidation,
+    PretrainingDataConfig,
 )
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
@@ -43,11 +44,11 @@ setup_gpu_job = _load_script("setup_gpu_job.py")
 def _write_training_config(
     tmp_path: Path, name: str, *, output_base: Path, dataset_path: Path
 ) -> Path:
-    """Write a minimal-but-valid TrainingConfig yaml plus a dummy arch file."""
+    """Write a minimal-but-valid PretrainingConfig yaml plus a dummy arch file."""
     arch = tmp_path / f"{name}_arch.yaml"
     arch.write_text("# dummy architecture config (only copied, not parsed here)\n")
 
-    config = TrainingConfig(
+    config = PretrainingConfig(
         training_name=name,
         dataloader=DataLoaderConfig(
             batch_sampling=BucketBatchSamplingConfig(max_atoms_per_batch=10500),
@@ -56,8 +57,12 @@ def _write_training_config(
         epochs=1,
         learning_rate=3e-4,
         weight_decay=1e-3,
-        split_config=SplitConfig(strategy=SplitStrategy.SINGLE),
-        dataset_path=dataset_path,
+        data=PretrainingDataConfig(
+            domain="drug_like",
+            components=[DatasetComponent(dataset=dataset_path)],
+            validation=MoleculeFractionValidation(fraction=0.02),
+        ),
+        noise_level=0.3,
         model_config_path=arch,
         output_base=output_base,
     )
@@ -76,7 +81,7 @@ def test_snapshot_freezes_config_and_arch(tmp_path: Path) -> None:
 
     assert name == "run_a"
     assert snapshot.exists()
-    snap_cfg = pyaml.parse_yaml_file_as(TrainingConfig, snapshot)
+    snap_cfg = pyaml.parse_yaml_file_as(PretrainingConfig, snapshot)
     # Snapshot is frozen inside its own training directory...
     assert snap_cfg.training_directory == snapshot.parent
     # ...and the architecture config travels with it.
@@ -84,9 +89,7 @@ def test_snapshot_freezes_config_and_arch(tmp_path: Path) -> None:
     assert snap_cfg.model_config_path.exists()
 
 
-def test_no_submit_packs_configs_four_per_node(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_no_submit_snapshots_every_config(tmp_path: Path, monkeypatch, capsys) -> None:
     output_base = tmp_path / "runs"
     configs = [
         _write_training_config(
@@ -112,6 +115,28 @@ def test_no_submit_packs_configs_four_per_node(
     printed = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
     assert len(printed) == 5
     assert all(Path(p).exists() for p in printed)
+
+
+def test_one_job_is_submitted_per_config(tmp_path: Path, monkeypatch) -> None:
+    output_base = tmp_path / "runs"
+    configs = [
+        _write_training_config(
+            tmp_path, f"run_{i}", output_base=output_base, dataset_path=tmp_path / "ds"
+        )
+        for i in range(3)
+    ]
+    commands = []
+    monkeypatch.setattr(
+        submit_job.subprocess, "run", lambda command, check: commands.append(command)
+    )
+    monkeypatch.setattr(
+        submit_job.sys, "argv", ["submit_job.py", *map(str, configs), "--group", "g"]
+    )
+    submit_job.main()
+    assert [command[1] for command in commands] == [
+        f"--job-name=g_run_{i}" for i in range(3)
+    ]
+    assert all(command[2] == "scripts/pretrain.slurm" for command in commands)
 
 
 def test_default_stage_dir_prefers_localdir(monkeypatch) -> None:

@@ -18,7 +18,8 @@ single-GPU runs packed onto a Booster node that share a ``dataset_path`` only
 copy it once.
 
 The input yaml only needs a top-level ``dataset_path`` field. Both
-``TrainingConfig`` and ``ProfileBenchmarkConfig`` satisfy that — no pydantic
+``ClassifierTrainingConfig`` and ``ProfileBenchmarkConfig`` satisfy that (a
+pretraining config names a mixture instead and is not staged) — no pydantic
 validation is performed here so this stager is config-shape-agnostic.
 
 Usage from sbatch::

@@ -43,7 +43,7 @@ from remedi.configuration.architecture_config import (
     ArchitectureConfig,
     RegressionArchitectureConfig,
 )
-from remedi.configuration.training_config import TrainingConfig
+from remedi.configuration.training_config import ClassifierTrainingConfig
 from remedi.data_handling.dataset.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
@@ -106,7 +106,7 @@ def _trainable_parameters(model) -> list[torch.nn.Parameter]:
     )
 
 
-def _resolve_output_dir(training_config: TrainingConfig) -> Path:
+def _resolve_output_dir(training_config: ClassifierTrainingConfig) -> Path:
     """The explicit ``training_directory`` or a fresh timestamped run dir under
     ``output_base`` (mirrors the pretraining run layout)."""
     out_base = training_config.training_directory
@@ -167,7 +167,9 @@ def main() -> None:
     torch.manual_seed(0)
     np.random.seed(0)
 
-    training_config = pyaml.parse_yaml_file_as(TrainingConfig, args.training_config)
+    training_config = pyaml.parse_yaml_file_as(
+        ClassifierTrainingConfig, args.training_config
+    )
     if args.max_epochs is not None:
         training_config.epochs = args.max_epochs
     architecture_config = pyaml.parse_yaml_file_as(

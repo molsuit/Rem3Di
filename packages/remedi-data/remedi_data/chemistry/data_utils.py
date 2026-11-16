@@ -1,6 +1,3 @@
-from collections.abc import Sequence
-
-import numpy as np
 import rdkit.Chem as Chem
 from ase import Atoms
 from rdkit.Chem import AllChem
@@ -48,18 +45,3 @@ def get_functional_group_label(smiles: list[str]):
                 raise ValueError("Non matching smiles in functional group dataset")
 
     return functional_group_indices
-
-
-def compute_splits(size: int, ratios: Sequence[float]) -> list[slice]:
-    """Return slice objects for each split boundary."""
-    raw_counts = (np.asarray(ratios) * size).astype(int)
-
-    leftover = size - raw_counts.sum()
-
-    raw_counts[0] += leftover
-
-    # Fix any rounding drift so the slices cover the full length
-
-    offsets = np.cumsum(np.insert(raw_counts, 0, 0))
-
-    return [slice(offsets[i], offsets[i + 1]) for i in range(len(ratios))]

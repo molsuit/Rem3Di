@@ -8,26 +8,18 @@ import numpy as np
 import pydantic_yaml as pyaml
 import torch
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import Subset
+from torch.utils.data import Dataset, Subset
 
 from remedi.configuration.architecture_config import (
     ArchitectureConfig,
 )
-from remedi.configuration.training_config import (
-    TrainingConfig,
-)
-from remedi.data_handling.dataset.training_dataset import (
-    TrainingMoleculeDataset,
-    atoms_getitem,
-)
+from remedi.configuration.training_config import PretrainingConfig, ProbeConfig
+from remedi.data_handling.dataset.training_dataset import atoms_getitem
 from remedi.data_handling.sample import (
     PreprocessedSample,
     yield_molecules_collate_fn,
 )
-from remedi.training.data import (
-    DatasetSplitting,
-)
-from remedi.training.data.samplers import lengths_from_ptr
+from remedi.training.data.mixture import MixtureDatasets, resolve_mixture
 from remedi.training.linear_probe import LinearProbeMonitor
 from remedi.training.noise_scheduler import ConstantSchedule, NoiseModule
 from remedi.training.pretraining import (
@@ -35,7 +27,6 @@ from remedi.training.pretraining import (
     vicreg_descriptor_loss,
 )
 from remedi.training.telemetry import TrainingTelemetry
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -66,12 +57,6 @@ def parse_args():
         help="Path to the training_config.yaml file.",
     )
     parser.add_argument(
-        "--dataset_path",
-        type=Path,
-        default=None,
-        help="Optional override for the dataset path (e.g. compute-node-staged data).",
-    )
-    parser.add_argument(
         "--max_train",
         type=int,
         default=None,
@@ -81,7 +66,7 @@ def parse_args():
         "--max_val",
         type=int,
         default=None,
-        help="Optional cap on the number of validation structures for smoke runs.",
+        help="Optional cap on the validation structures per component for smoke runs.",
     )
     parser.add_argument(
         "--max_epochs",
@@ -105,71 +90,62 @@ def parse_args():
 
 
 def build_probe_monitor(
-    probe_cfg, full_dataset, ds, val_idx, collate_fn, device, logger
+    probe_config: ProbeConfig,
+    datasets: MixtureDatasets,
+    collate_fn,
+    device,
+    logger,
 ) -> LinearProbeMonitor | None:
-    """Build the frozen linear-probe monitor from a fixed validation subset.
+    """Build the frozen linear-probe monitor on labelled validation structures.
 
-    Returns None (with a warning) when probing is disabled or the dataset lacks
-    the physicochemical ``targets_system`` columns the probe scores against.
+    Returns None (with a warning) when probing is disabled or the first mixture
+    component has no labels to probe.
     """
-    if not probe_cfg.enabled:
+    if not probe_config.enabled:
         return None
-
-    tasks = full_dataset.config.tasks
-    if tasks is None or not tasks.system_cols or full_dataset.targets_system is None:
-        logger.warning("Probe enabled but dataset has no system targets; skipping.")
+    probe_set = datasets.probe_set(
+        structures=probe_config.n_probe_molecules,
+        seed=probe_config.seed,
+        properties=probe_config.properties,
+    )
+    if probe_set is None:
+        logger.warning(
+            "Probe enabled but the first mixture component has no labels to probe "
+            "(or none of %s); skipping.",
+            probe_config.properties,
+        )
         return None
-
-    if probe_cfg.properties is None:
-        names = [c.name for c in tasks.system_cols]
-    else:
-        names = [p for p in probe_cfg.properties if p in tasks.system_map]
-        missing = [p for p in probe_cfg.properties if p not in tasks.system_map]
-        if missing:
-            logger.warning("Probe properties not in dataset (ignored): %s", missing)
-    if not names:
-        logger.warning("No valid probe properties; skipping probe.")
+    count = len(probe_set.dataset)
+    if count < 4:
+        logger.warning("Validation split too small for probe (%d); skipping.", count)
         return None
-    cols = [tasks.system_map[n] for n in names]
-
-    val_idx = np.asarray(val_idx, dtype=np.int64)
-    n_probe = min(probe_cfg.n_probe_molecules, val_idx.shape[0])
-    if n_probe < 4:
-        logger.warning("Validation split too small for probe (%d); skipping.", n_probe)
-        return None
-    rng = np.random.default_rng(probe_cfg.seed)
-    probe_idx = np.sort(rng.choice(val_idx, size=n_probe, replace=False))
-
-    targets = np.asarray(full_dataset.targets_system[:], dtype=np.float64)
-    if full_dataset.mask_system is not None:
-        masks = np.asarray(full_dataset.mask_system[:]).astype(bool)
-    else:
-        masks = np.ones_like(targets, dtype=bool)
-    labels = targets[probe_idx][:, cols]
-    label_masks = masks[probe_idx][:, cols]
-
-    probe_samples = [ds[int(i)] for i in probe_idx]
-
     logger.info(
         "Linear probe enabled: M=%d cols=%s every_n_steps=%d",
-        n_probe,
-        names,
-        probe_cfg.every_n_steps,
+        count,
+        probe_set.names,
+        probe_config.every_n_steps,
     )
     return LinearProbeMonitor(
-        probe_samples=probe_samples,
-        labels=labels,
-        masks=label_masks,
-        property_names=names,
+        probe_samples=[probe_set.dataset[i] for i in range(count)],
+        labels=probe_set.labels,
+        masks=probe_set.masks,
+        property_names=probe_set.names,
         collate_fn=collate_fn,
         device=device,
-        every_n_steps=probe_cfg.every_n_steps,
-        ridge_alpha=probe_cfg.ridge_alpha,
-        val_fraction=probe_cfg.val_fraction,
-        batch_size=min(256, n_probe),
-        report_count_accuracy=probe_cfg.report_count_accuracy,
-        seed=probe_cfg.seed,
+        every_n_steps=probe_config.every_n_steps,
+        ridge_alpha=probe_config.ridge_alpha,
+        val_fraction=probe_config.val_fraction,
+        batch_size=min(256, count),
+        report_count_accuracy=probe_config.report_count_accuracy,
+        seed=probe_config.seed,
     )
+
+
+def first(dataset: Dataset, lengths: np.ndarray, count: int | None):
+    """The first ``count`` structures (all when ``count`` is None)."""
+    if count is None or count >= len(lengths):
+        return dataset, lengths
+    return Subset(dataset, range(count)), lengths[:count]
 
 
 def setup_logging(filename, level: int = logging.INFO) -> logging.Logger:
@@ -190,36 +166,12 @@ def main():  # noqa: C901 - one training loop; splitting it is a separate refact
     torch.manual_seed(0)
     np.random.seed(0)
 
-    training_config = pyaml.parse_yaml_file_as(TrainingConfig, args.training_config)
+    training_config = pyaml.parse_yaml_file_as(PretrainingConfig, args.training_config)
     if args.max_epochs is not None:
         training_config.epochs = args.max_epochs
     architecture_config = pyaml.parse_yaml_file_as(
         ArchitectureConfig, training_config.model_config_path
     )
-
-    dataset_path = (
-        args.dataset_path
-        if args.dataset_path is not None
-        else training_config.dataset_path
-    )
-
-    full_dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
-    ds = TrainingMoleculeDataset(dataset_path, get_item=atoms_getitem, in_memory=True)
-
-    splitting = DatasetSplitting(full_dataset)
-    train_idx, val_idx, split_name = next(
-        splitting.get_split(training_config.split_config)
-    )
-    if args.max_train is not None:
-        train_idx = train_idx[: args.max_train]
-    if args.max_val is not None:
-        val_idx = val_idx[: args.max_val]
-    train_dataset = Subset(ds, train_idx)
-    valid_dataset = Subset(ds, val_idx)
-
-    all_lengths = lengths_from_ptr(np.asarray(full_dataset.ptr[:]))
-    train_lengths = all_lengths[np.asarray(train_idx, dtype=np.int64)]
-    val_lengths = all_lengths[np.asarray(val_idx, dtype=np.int64)]
 
     if training_config.training_directory is not None:
         training_data_dir = training_config.training_directory
@@ -230,13 +182,13 @@ def main():  # noqa: C901 - one training loop; splitting it is a separate refact
         training_idx = len(list(output_base.glob("*/")))
         now = datetime.now()
         training_identifier = (
-            f"{training_idx}-{now.strftime('%Y_%m_%d_%H_%M_%S')}-{split_name}"
+            f"{training_idx}-{now.strftime('%Y_%m_%d_%H_%M_%S')}-"
+            f"{training_config.training_name}"
         )
         training_data_dir = output_base / training_identifier
         training_data_dir.mkdir()
 
     logger = setup_logging(filename=training_data_dir / "logfile.info")
-    logger.info("Loaded Dataset")
     logger.info(
         "Smoke caps: max_train=%s max_val=%s max_epochs=%s "
         "max_train_batches=%s max_val_batches=%s",
@@ -245,6 +197,23 @@ def main():  # noqa: C901 - one training loop; splitting it is a separate refact
         args.max_epochs,
         args.max_train_batches,
         args.max_val_batches,
+    )
+
+    data = resolve_mixture(training_config.data)
+    data.write_record(training_data_dir)
+    datasets = data.open_datasets(atoms_getitem)
+    train_dataset, train_lengths = first(
+        datasets.training, datasets.training_atom_counts, args.max_train
+    )
+    validation_sets = {
+        name: first(dataset, lengths, args.max_val)
+        for name, (dataset, lengths) in datasets.validation.items()
+    }
+    logger.info(
+        "Mixture (%s): %d training structures; validation %s",
+        training_config.data.domain,
+        len(train_lengths),
+        {name: len(lengths) for name, (_, lengths) in validation_sets.items()},
     )
 
     noise_scheduler = ConstantSchedule(training_config.noise_level)
@@ -256,23 +225,20 @@ def main():  # noqa: C901 - one training loop; splitting it is a separate refact
         collate_fn=yield_molecules_collate_fn,
         shuffle=True,
     )
-    validation_loader = training_config.dataloader.build(
-        valid_dataset,
-        lengths=val_lengths,
-        collate_fn=yield_molecules_collate_fn,
-        shuffle=False,
-    )
+    validation_loaders = {
+        name: training_config.dataloader.build(
+            dataset,
+            lengths=lengths,
+            collate_fn=yield_molecules_collate_fn,
+            shuffle=False,
+        )
+        for name, (dataset, lengths) in validation_sets.items()
+    }
 
     logger.info("Data Loaders Prepared")
 
     probe_monitor = build_probe_monitor(
-        training_config.probe,
-        full_dataset,
-        ds,
-        val_idx,
-        yield_molecules_collate_fn,
-        device,
-        logger,
+        training_config.probe, datasets, yield_molecules_collate_fn, device, logger
     )
 
     bundle = architecture_config.build()
@@ -482,76 +448,86 @@ def main():  # noqa: C901 - one training loop; splitting it is a separate refact
                 )
             ).item()
 
-            running = torch.zeros((), device=device)
+            normaliser = (
+                architecture_config.embedding_preprocess_config.output_irreps_dim
+            )
+            validation_loss_sum = torch.zeros((), device=device)
+            validation_batches = 0
             running_var_val = torch.zeros((), device=device)
             running_cov_val = torch.zeros((), device=device)
+            per_component_metrics: dict[str, float] = {}
             encoder.eval()
             decoder.eval()
             preprocessor.eval()
 
             with torch.no_grad():
-                for batch_idx, val_samples in enumerate(validation_loader):
-                    if (
-                        args.max_val_batches is not None
-                        and batch_idx >= args.max_val_batches
-                    ):
-                        break
-                    val_samples.to_(device)
-                    preprocessed_val_samples: PreprocessedSample = preprocessor(
-                        val_samples
-                    )
-
-                    input_atomic_embeddings = (
-                        preprocessed_val_samples.preprocessed_atomic_embeddings.clone()
-                    )
-
-                    noised_embeddings = noise_module(
-                        preprocessed_val_samples.preprocessed_atomic_embeddings,
-                        preprocessed_val_samples.padding_mask,
-                    )
-
-                    molecular_descriptor = encoder(preprocessed_val_samples)
-
-                    if vicreg_cfg.enabled:
-                        var_loss_val, cov_loss_val = vicreg_descriptor_loss(
-                            molecular_descriptor.flat,
-                            target_std=vicreg_cfg.target_std,
+                for component_name, validation_loader in validation_loaders.items():
+                    component_loss = torch.zeros((), device=device)
+                    component_batches = 0
+                    for val_samples in validation_loader:
+                        if (
+                            args.max_val_batches is not None
+                            and component_batches >= args.max_val_batches
+                        ):
+                            break
+                        val_samples.to_(device)
+                        preprocessed_val_samples: PreprocessedSample = preprocessor(
+                            val_samples
                         )
-                        running_var_val += var_loss_val
-                        running_cov_val += cov_loss_val
 
-                    noised_preprocessing_sample = PreprocessedSample(
-                        preprocessed_atomic_embeddings=noised_embeddings,
-                        initial_pair_representation=preprocessed_val_samples.initial_pair_representation.detach(),
-                        geometrical_encoding=preprocessed_val_samples.geometrical_encoding.detach(),
-                        padding_mask=preprocessed_val_samples.padding_mask,
-                        pair_mask=preprocessed_val_samples.pair_mask,
-                    )
+                        input_atomic_embeddings = preprocessed_val_samples.preprocessed_atomic_embeddings.clone()
 
-                    denoised_embeddings = decoder(
-                        noised_preprocessing_sample, molecular_descriptor
-                    )
+                        noised_embeddings = noise_module(
+                            preprocessed_val_samples.preprocessed_atomic_embeddings,
+                            preprocessed_val_samples.padding_mask,
+                        )
 
-                    noise_level = noise_scheduler.value
-                    denoising_loss = atom_denoising_loss(
-                        input_atomic_embeddings,
-                        denoised_embeddings,
-                        padding_mask=val_samples.padding_mask,
-                        noise_level=noise_level,
-                    )
+                        molecular_descriptor = encoder(preprocessed_val_samples)
 
-                    running += denoising_loss.detach()
+                        if vicreg_cfg.enabled:
+                            var_loss_val, cov_loss_val = vicreg_descriptor_loss(
+                                molecular_descriptor.flat,
+                                target_std=vicreg_cfg.target_std,
+                            )
+                            running_var_val += var_loss_val
+                            running_cov_val += cov_loss_val
 
+                        noised_preprocessing_sample = PreprocessedSample(
+                            preprocessed_atomic_embeddings=noised_embeddings,
+                            initial_pair_representation=preprocessed_val_samples.initial_pair_representation.detach(),
+                            geometrical_encoding=preprocessed_val_samples.geometrical_encoding.detach(),
+                            padding_mask=preprocessed_val_samples.padding_mask,
+                            pair_mask=preprocessed_val_samples.pair_mask,
+                        )
+
+                        denoised_embeddings = decoder(
+                            noised_preprocessing_sample, molecular_descriptor
+                        )
+
+                        denoising_loss = atom_denoising_loss(
+                            input_atomic_embeddings,
+                            denoised_embeddings,
+                            padding_mask=val_samples.padding_mask,
+                            noise_level=noise_scheduler.value,
+                        )
+                        component_loss += denoising_loss.detach()
+                        component_batches += 1
+
+                    validation_loss_sum += component_loss
+                    validation_batches += component_batches
+                    per_component_metrics[f"denoising_val_loss/{component_name}"] = (
+                        component_loss / (max(component_batches, 1) * normaliser)
+                    ).item()
+
+                # Every validation batch weighs the same, whichever component
+                # it comes from.
                 avg_validation_loss = (
-                    running
-                    / (
-                        (batch_idx + 1)
-                        * architecture_config.embedding_preprocess_config.output_irreps_dim
-                    )
+                    validation_loss_sum / (max(validation_batches, 1) * normaliser)
                 ).item()
 
                 extra_metrics: dict[str, float] = {
                     "descriptor_norm_max_train": float(running_zmax.item()),
+                    **per_component_metrics,
                 }
                 if vicreg_cfg.enabled:
                     extra_metrics["vicreg_variance_train"] = float(
@@ -561,10 +537,10 @@ def main():  # noqa: C901 - one training loop; splitting it is a separate refact
                         (running_cov / (batch_index + 1)).item()
                     )
                     extra_metrics["vicreg_variance_val"] = float(
-                        (running_var_val / (batch_idx + 1)).item()
+                        (running_var_val / max(validation_batches, 1)).item()
                     )
                     extra_metrics["vicreg_covariance_val"] = float(
-                        (running_cov_val / (batch_idx + 1)).item()
+                        (running_cov_val / max(validation_batches, 1)).item()
                     )
 
                 telemetry.log_pretraining_epoch(

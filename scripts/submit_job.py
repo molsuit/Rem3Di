@@ -1,17 +1,13 @@
-"""Snapshot training + architecture configs into per-submission directories and submit to SLURM.
+"""Snapshot pretraining configs into their run directories and submit one DAIS job each.
 
-Takes one or more training configs (one per ablation run). Each is frozen at
-submission time so queued jobs are not affected by later edits to the source
-YAML files, and its ``training_directory`` is pre-created so the running job
-writes its outputs alongside the snapshot.
-
-JUWELS Booster only allocates whole nodes (4x A100), so single-GPU runs are
-packed four-per-node: the snapshots are grouped into batches of ``--batch-size``
-(default 4) and one ``submit_ablation_node.sbatch`` job is submitted per batch.
+Each config is frozen at submission time (with its architecture config), so
+queued jobs are not affected by later edits to the source yaml files, and its
+``training_directory`` is created so the running job writes its outputs next to
+the snapshot. Every run is one ``scripts/pretrain.slurm`` job on one H200 or B200.
 
 Usage::
 
-    uv run python scripts/submit_job.py cfgA.yaml cfgB.yaml cfgC.yaml cfgD.yaml
+    uv run python scripts/submit_job.py cfgA.yaml cfgB.yaml --group scaling
 """
 
 from __future__ import annotations
@@ -25,7 +21,7 @@ from pathlib import Path
 
 import pydantic_yaml as pyaml
 
-from remedi.configuration.training_config import TrainingConfig
+from remedi.configuration.training_config import PretrainingConfig
 
 
 def log(msg: str) -> None:
@@ -33,7 +29,7 @@ def log(msg: str) -> None:
 
 
 def snapshot_configs(training_config_path: Path) -> tuple[Path, str]:
-    training_config = pyaml.parse_yaml_file_as(TrainingConfig, training_config_path)
+    training_config = pyaml.parse_yaml_file_as(PretrainingConfig, training_config_path)
 
     output_base = training_config.output_base
     output_base.mkdir(parents=True, exist_ok=True)
@@ -59,32 +55,26 @@ def snapshot_configs(training_config_path: Path) -> tuple[Path, str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Snapshot ablation configs into frozen training directories "
-        "and submit them packed N-per-node to SLURM."
+        description="Snapshot pretraining configs into frozen training directories "
+        "and submit one SLURM job per config."
     )
     parser.add_argument(
         "training_configs",
         type=Path,
         nargs="+",
-        help="One or more training_config.yaml files (one per ablation run).",
+        help="One or more training_config.yaml files (one per run).",
     )
     parser.add_argument(
         "--sbatch-script",
         type=Path,
-        default=Path("scripts/submit_ablation_node.sbatch"),
-        help="sbatch script to invoke (default: scripts/submit_ablation_node.sbatch)",
+        default=Path("scripts/pretrain.slurm"),
+        help="sbatch script to invoke (default: scripts/pretrain.slurm)",
     )
     parser.add_argument(
         "--group",
         type=str,
-        default="ablation",
-        help="SLURM job-name prefix; each batch becomes <group>_b<N>.",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=4,
-        help="Runs (GPUs) per node. JUWELS Booster nodes have 4 (default: 4).",
+        default="pretrain",
+        help="SLURM job-name prefix; each run becomes <group>_<training_name>.",
     )
     parser.add_argument(
         "--no-submit",
@@ -93,33 +83,21 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # Snapshot every config up front so the whole ablation is frozen together.
-    snapshots = [snapshot_configs(cfg)[0] for cfg in args.training_configs]
+    # Snapshot every config up front so the whole set is frozen together.
+    snapshots = [snapshot_configs(config) for config in args.training_configs]
 
-    # Pack into batches -> one sbatch job (one node) per batch.
-    batches = [
-        snapshots[i : i + args.batch_size]
-        for i in range(0, len(snapshots), args.batch_size)
-    ]
-    log(
-        f"{len(snapshots)} run(s) -> {len(batches)} node job(s) "
-        f"of up to {args.batch_size}."
-    )
-
-    for b_idx, batch in enumerate(batches):
+    for snapshot, name in snapshots:
         if args.no_submit:
-            log(f"[batch {b_idx}] (no-submit) snapshots:")
-            for snapshot in batch:
-                print(snapshot)
+            print(snapshot)
             continue
-        cmd = [
+        command = [
             "sbatch",
-            f"--job-name={args.group}_b{b_idx}",
+            f"--job-name={args.group}_{name}",
             str(args.sbatch_script),
-            *[str(snapshot) for snapshot in batch],
+            str(snapshot),
         ]
-        log(" ".join(cmd))
-        subprocess.run(cmd, check=True)
+        log(" ".join(command))
+        subprocess.run(command, check=True)
 
 
 if __name__ == "__main__":

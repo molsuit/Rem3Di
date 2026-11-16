@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from pathlib import Path
 
@@ -11,7 +13,7 @@ from remedi_data.dataset.molecule_dataset import MoleculeDataset
 GetItemFn = Callable[["TrainingMoleculeDataset", int], Sample]
 
 
-def atoms_getitem(ds: "TrainingMoleculeDataset", i: int) -> Sample:
+def atoms_getitem(ds: TrainingMoleculeDataset, i: int) -> Sample:
     a0, a1 = ds._ptr[i : i + 2].tolist()
     pos = torch.from_numpy(np.asarray(ds._pos[a0:a1]))
     num = torch.from_numpy(np.asarray(ds._atom_num[a0:a1]))
@@ -39,7 +41,7 @@ def make_supervised_getitem(
     :func:`yield_molecules_supervised_collate_fn` stacks into a ``(B,)`` batch.
     """
 
-    def _getitem(ds: "TrainingMoleculeDataset", i: int) -> Sample:
+    def _getitem(ds: TrainingMoleculeDataset, i: int) -> Sample:
         sample = atoms_getitem(ds, i)
         sample.regression_targets = torch.tensor(labels[i], dtype=label_dtype)
         return sample
@@ -48,10 +50,27 @@ def make_supervised_getitem(
 
 
 class TrainingMoleculeDataset(Dataset):
-    def __init__(self, root: Path, get_item: GetItemFn, in_memory: bool = False):
+    """The structures of one dataset, or of a subset of it, as training samples.
+
+    ``structure_ids`` (sorted, unique) restricts the dataset to those structures,
+    gathered into compact in-memory arrays and indexed ``0..len - 1`` in that
+    order. Call :meth:`open` before handing the dataset to a forking data
+    loader, so the workers inherit the arrays instead of each reading them.
+    """
+
+    def __init__(
+        self,
+        root: Path,
+        get_item: GetItemFn,
+        in_memory: bool = False,
+        structure_ids: np.ndarray | None = None,
+    ):
         self.root = str(root)
         self._get_item = get_item
         self._in_memory = in_memory
+        self._structure_ids = (
+            None if structure_ids is None else np.asarray(structure_ids, np.int64)
+        )
 
         # process-local handles / arrays
         self._ptr = None
@@ -80,13 +99,25 @@ class TrainingMoleculeDataset(Dataset):
             return
 
         arrays = MoleculeDataset.open_structure_arrays(
-            Path(self.root), in_memory=self._in_memory
+            Path(self.root),
+            in_memory=self._in_memory,
+            structure_ids=self._structure_ids,
         )
         self._ptr = arrays.molecule_ptr
         self._pos = arrays.positions
         self._atom_num = arrays.atomic_numbers
         self._charge = arrays.total_charge
         self._multiplicity = arrays.multiplicity
+
+    def open(self) -> TrainingMoleculeDataset:
+        """Read the arrays now (in this process); returns the dataset."""
+        self._ensure_open()
+        return self
+
+    def atom_counts(self) -> np.ndarray:
+        """Atoms per structure, in dataset order."""
+        self._ensure_open()
+        return np.diff(np.asarray(self._ptr)).astype(np.int64)
 
     def __len__(self):
         self._ensure_open()
@@ -102,5 +133,5 @@ class TrainingMoleculeDataset(Dataset):
         dataset: MoleculeDataset,
         *,
         get_item: GetItemFn = atoms_getitem,
-    ) -> "TrainingMoleculeDataset":
+    ) -> TrainingMoleculeDataset:
         return cls(Path(dataset.path), get_item=get_item)

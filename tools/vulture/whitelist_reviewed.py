@@ -62,10 +62,6 @@ _.inverse_transform
 _.get_atomic_embedding_normalization_constants
 _._compute_regression_stats
 _.get_pairwise_differences
-_._bemis_murcko_scaffold_splitting  # training/data/dataset_splitting.py
-_.visualise_splitting
-_.general_split
-_.materialise_dataset
 benchmark_loader  # training/data/util.py
 _.log_epoch  # training/telemetry.py
 _.get_track_grad_norm_fn
