@@ -5,7 +5,7 @@ import numcodecs.blosc as blosc
 import torch
 
 
-def worker_init_fn(worker_id: int) -> None:
+def worker_init_fn(_worker_id: int) -> None:
     # One Blosc thread per worker prevents CPU oversubscription on shared nodes.
     try:
         blosc.set_nthreads(1)

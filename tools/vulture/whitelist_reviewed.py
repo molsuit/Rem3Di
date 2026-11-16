@@ -22,7 +22,6 @@ _.pbc
 _._run
 
 # --- Language and library hooks called by name ------------------------------------------------
-_._missing_  # enum lookup fallback (configuration/data_config.py)
 
 # --- Record fields written for the reports, read by humans and serialization --------------------
 # Dataclass fields of the ChiralCat preparer's audit records and Sample.
