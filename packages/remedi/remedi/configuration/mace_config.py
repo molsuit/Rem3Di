@@ -8,6 +8,7 @@ from e3nn.o3 import Irreps
 from pydantic import PrivateAttr
 
 from remedi.configuration.config_utils import StrictBaseModel
+from remedi.utils.model_utils import concatenate_irreps, mace_per_layer_irreps
 
 if TYPE_CHECKING:
     from mace.calculators.mace import MACECalculator
@@ -32,7 +33,6 @@ class MaceConfig(StrictBaseModel):
     enable_cueq: bool = True
 
     _raw_model: Any | None = PrivateAttr(default=None)
-    _irrep_signature: Irreps | None = PrivateAttr(default=None)
 
     @property
     def torch_dtype(self) -> torch.dtype:
@@ -71,14 +71,8 @@ class MaceConfig(StrictBaseModel):
         return self._raw_model
 
     def get_irrep_signature(self) -> Irreps:
-        """Return the product-stack irrep signature of the configured MACE model."""
-        if self._irrep_signature is None:
-            from remedi.utils.model_utils import get_mace_model_irrep_signature
-
-            self._irrep_signature = get_mace_model_irrep_signature(
-                self._load_raw_model()
-            )
-        return self._irrep_signature
+        """The irreps of the full node features: every layer's, concatenated."""
+        return concatenate_irreps(self.get_per_layer_irreps())
 
     def get_per_layer_irreps(self) -> list[Irreps]:
         """Return the irreps emitted by each MACE message-passing layer (product
@@ -87,8 +81,7 @@ class MaceConfig(StrictBaseModel):
         that want to operate on a subset of layers (e.g. only the first or second
         message passing layer).
         """
-        raw = self._load_raw_model()
-        return [Irreps(str(p.linear.__dict__["irreps_out"])) for p in raw.products]
+        return mace_per_layer_irreps(self._load_raw_model())
 
     def build_ase_calculator(self) -> MACECalculator:
         from mace.calculators import MACECalculator

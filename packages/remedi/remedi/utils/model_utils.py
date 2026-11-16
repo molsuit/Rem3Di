@@ -1,17 +1,23 @@
+from collections.abc import Iterable
+
 import torch
 from e3nn.o3 import Irreps
 
 
-def get_mace_model_irrep_signature(mace_model: torch.nn.Module) -> Irreps:
-    signature = None
+def mace_per_layer_irreps(mace_model: torch.nn.Module) -> list[Irreps]:
+    """The irreps each MACE message-passing layer (product stack) emits, in order."""
+    return [
+        Irreps(str(product.linear.__dict__["irreps_out"]))
+        for product in mace_model.products  # type: ignore[union-attr]
+    ]
 
-    for products in mace_model.products:  # type: ignore
-        if signature is None:
-            signature = Irreps(str(products.linear.__dict__["irreps_out"]))
-        else:
-            signature = signature + Irreps(str(products.linear.__dict__["irreps_out"]))
 
-    return signature
+def concatenate_irreps(irreps: Iterable[Irreps]) -> Irreps:
+    """The irreps of the concatenated features (blocks kept in order, not merged)."""
+    concatenated = Irreps()
+    for block in irreps:
+        concatenated = concatenated + block
+    return concatenated
 
 
 def remove_equivariants(atomic_embeddings, invariant_indices):

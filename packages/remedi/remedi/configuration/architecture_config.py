@@ -16,7 +16,7 @@ from remedi.model.preprocessing.radial_basis_functions import (
     BesselBasisFunctions,
     GaussianBasisFunctions,
 )
-from remedi.utils.model_utils import get_invariant_indices
+from remedi.utils.model_utils import concatenate_irreps, get_invariant_indices
 from remedi_data.yaml_io import read_yaml
 
 if TYPE_CHECKING:
@@ -280,10 +280,7 @@ class EmbeddingPreprocessConfig(StrictBaseModel):
     @property
     def input_irreps(self) -> Irreps:
         """Irreps of the full MACE node features (all layers concatenated)."""
-        irreps = Irreps()
-        for layer_irreps in self.per_layer_irreps:
-            irreps = irreps + layer_irreps
-        return irreps
+        return concatenate_irreps(self.per_layer_irreps)
 
     @property
     def selected_layer_indices(self) -> list[int]:
@@ -294,10 +291,21 @@ class EmbeddingPreprocessConfig(StrictBaseModel):
     @property
     def selected_input_irreps(self) -> Irreps:
         """Concatenation of the per-layer irreps for the selected layers."""
-        irreps = Irreps()
-        for index in self.selected_layer_indices:
-            irreps = irreps + self.per_layer_irreps[index]
-        return irreps
+        return concatenate_irreps(
+            self.per_layer_irreps[index] for index in self.selected_layer_indices
+        )
+
+    def _selected_channels(self, layer_dimensions: list[int]) -> list[int]:
+        """The positions of the selected layers' channels in a feature vector
+        whose layers occupy ``layer_dimensions`` channels each, in order."""
+        starts = [0]
+        for dimension in layer_dimensions:
+            starts.append(starts[-1] + dimension)
+        return [
+            channel
+            for index in self.selected_layer_indices
+            for channel in range(starts[index], starts[index + 1])
+        ]
 
     @property
     def selected_invariant_irreps(self) -> Irreps:
@@ -313,15 +321,11 @@ class EmbeddingPreprocessConfig(StrictBaseModel):
         """Channel positions in `input_irreps` that correspond to the selected
         layers. Returns None when no slicing is needed (selection covers all
         layers contiguously from the start)."""
-        indices = self.selected_layer_indices
-        if indices == list(range(len(self.per_layer_irreps))):
+        if self.selected_layer_indices == list(range(len(self.per_layer_irreps))):
             return None
-        cursor = 0
-        ranges: list[tuple[int, int]] = []
-        for layer_irreps in self.per_layer_irreps:
-            ranges.append((cursor, cursor + layer_irreps.dim))
-            cursor += layer_irreps.dim
-        return [channel for index in indices for channel in range(*ranges[index])]
+        return self._selected_channels(
+            [layer_irreps.dim for layer_irreps in self.per_layer_irreps]
+        )
 
     @property
     def projected_invariant_dimension(self) -> int:
@@ -371,18 +375,13 @@ class EmbeddingPreprocessConfig(StrictBaseModel):
                 f"invariant dim ({full_dimension})."
             )
 
-        # Build the slice indices in *invariant-only* coordinates.
-        cursor = 0
-        layer_invariant_ranges: list[tuple[int, int]] = []
-        for layer_irreps in self.per_layer_irreps:
-            _, layer_invariants = get_invariant_indices(layer_irreps)
-            layer_invariant_ranges.append((cursor, cursor + layer_invariants.dim))
-            cursor += layer_invariants.dim
-        selected = [
-            channel
-            for index in self.selected_layer_indices
-            for channel in range(*layer_invariant_ranges[index])
-        ]
+        # The slice indices in *invariant-only* coordinates.
+        selected = self._selected_channels(
+            [
+                get_invariant_indices(layer_irreps)[1].dim
+                for layer_irreps in self.per_layer_irreps
+            ]
+        )
         index_tensor = torch.tensor(selected, dtype=torch.long, device=stats.device)
         return stats.index_select(-1, index_tensor)
 
@@ -665,6 +664,25 @@ class _BaseArchitectureConfig(StrictBaseModel):
         aggregator = self.global_aggregator_config.build(dimensions)
         return self.encoder_config.build(aggregator, dimensions).float()
 
+    def _build_preprocessor_and_encoder(
+        self,
+        mean_atomic_embedding: torch.Tensor | None,
+        std_atomic_embedding: torch.Tensor | None,
+        *,
+        requires_mace: bool,
+    ) -> tuple["Preprocessor", nn.Module]:
+        """What every architecture builds: the preprocessor and the encoder.
+
+        Raises:
+            ValueError: if ``requires_mace`` and there is no ``mace_config``.
+        """
+        if requires_mace and self.mace_config is None:
+            raise ValueError(f"{type(self).__name__}.build requires mace_config")
+        return (
+            self._build_preprocessor(mean_atomic_embedding, std_atomic_embedding),
+            self._build_encoder(),
+        )
+
 
 class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):
     kind: Literal["encoder_only"] = "encoder_only"
@@ -712,14 +730,10 @@ class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):
     ) -> "REM3DIModel":
         from remedi.model.remedi_model import REM3DIModel
 
-        if self.mace_config is None:
-            raise ValueError("EncoderOnlyArchitectureConfig.build requires mace_config")
-        return REM3DIModel(
-            preprocessor=self._build_preprocessor(
-                mean_atomic_embedding, std_atomic_embedding
-            ),
-            encoder=self._build_encoder(),
+        preprocessor, encoder = self._build_preprocessor_and_encoder(
+            mean_atomic_embedding, std_atomic_embedding, requires_mace=True
         )
+        return REM3DIModel(preprocessor=preprocessor, encoder=encoder)
 
 
 class EncoderDecoderArchitectureConfig(_BaseArchitectureConfig):
@@ -731,15 +745,12 @@ class EncoderDecoderArchitectureConfig(_BaseArchitectureConfig):
         mean_atomic_embedding: torch.Tensor | None = None,
         std_atomic_embedding: torch.Tensor | None = None,
     ) -> EncoderDecoderBundle:
-        if self.mace_config is None:
-            raise ValueError(
-                "EncoderDecoderArchitectureConfig.build requires mace_config"
-            )
+        preprocessor, encoder = self._build_preprocessor_and_encoder(
+            mean_atomic_embedding, std_atomic_embedding, requires_mace=True
+        )
         return EncoderDecoderBundle(
-            preprocessor=self._build_preprocessor(
-                mean_atomic_embedding, std_atomic_embedding
-            ),
-            encoder=self._build_encoder(),
+            preprocessor=preprocessor,
+            encoder=encoder,
             decoder=self.decoder_config.build(self.dimensions).float(),
         )
 
@@ -762,16 +773,15 @@ class RegressionArchitectureConfig(_BaseArchitectureConfig):
             MultiTaskRegressionModel,
         )
 
+        preprocessor, encoder = self._build_preprocessor_and_encoder(
+            mean_atomic_embedding, std_atomic_embedding, requires_mace=False
+        )
         heads = MultitaskHeads(
             regression_head_configs=self.regression_head_config,
             descriptor_flat_dimension=self.dimensions.descriptor_flat_dimension,
         ).float()
         return MultiTaskRegressionModel(
-            preprocessor=self._build_preprocessor(
-                mean_atomic_embedding, std_atomic_embedding
-            ),
-            encoder=self._build_encoder(),
-            regression_heads=heads,
+            preprocessor=preprocessor, encoder=encoder, regression_heads=heads
         )
 
 

@@ -48,3 +48,14 @@ def test_input_irreps_concatenates_the_layers():
     )
     assert cfg.input_irreps == Irreps("2x0e + 3x1o + 1x0e + 1x2e")
     assert cfg.invariant_irreps == Irreps("2x0e + 1x0e")
+
+
+def test_concatenated_irreps_keep_every_block_in_order() -> None:
+    from e3nn.o3 import Irreps
+
+    from remedi.utils.model_utils import concatenate_irreps
+
+    assert concatenate_irreps([Irreps("2x0e + 3x1o"), Irreps("1x0e")]) == Irreps(
+        "2x0e + 3x1o + 1x0e"
+    )
+    assert concatenate_irreps([]) == Irreps()
