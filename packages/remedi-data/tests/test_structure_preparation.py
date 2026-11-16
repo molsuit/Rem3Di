@@ -19,7 +19,6 @@ from typing import ClassVar
 import numpy as np
 import pandas as pd
 import pydantic
-import pydantic_yaml
 import pytest
 from rdkit import Chem
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
@@ -62,6 +61,7 @@ from remedi_data.structures.records import (
 from remedi_data.structures.sources.pcqm4mv2 import sdf_record_offsets
 from remedi_data.structures.sources.tmqm import iterate_xyz_entries, parse_comment
 from remedi_data.testing import SMALL_ZARR_LAYOUT
+from remedi_data.yaml_io import read_model
 
 SETTINGS = StructurePreparationSettings(shard_size=3, workers=1, zarr=SMALL_ZARR_LAYOUT)
 FILTER = SmilesFilterConfig(
@@ -512,7 +512,7 @@ sources:
     directory: {tmp_path / "raw"}
 """
     )
-    config = pydantic_yaml.parse_yaml_file_as(StructurePreparationConfig, config_path)
+    config = read_model(config_path, StructurePreparationConfig)
     config.settings.zarr = SMALL_ZARR_LAYOUT
     report = prepare_structure_datasets(config)
     assert report.n_failed == 0, report.statuses[0].traceback
@@ -584,7 +584,7 @@ def test_the_production_config_parses() -> None:
         / "dataset_creation"
         / "prepare_structures.yaml"
     )
-    config = pydantic_yaml.parse_yaml_file_as(StructurePreparationConfig, path)
+    config = read_model(path, StructurePreparationConfig)
     assert [source.kind for source in config.sources] == [
         "tmqm",
         "pcqm4mv2",

@@ -26,7 +26,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import pydantic_yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.build.write import ZarrLayout, write_dataset
@@ -50,6 +49,7 @@ from remedi_data.structures.records import (
     prepare_record,
 )
 from remedi_data.structures.sources import StructureSource
+from remedi_data.yaml_io import read_model, write_model
 
 logger = logging.getLogger(__name__)
 
@@ -217,9 +217,7 @@ def run_shard(
         dropped=dict(sorted(dropped.items())),
         elapsed_seconds=time.monotonic() - started,
     )
-    partial_summary = stem.with_suffix(".yaml.partial")
-    pydantic_yaml.to_yaml_file(partial_summary, summary)
-    partial_summary.replace(stem.with_suffix(".yaml"))
+    write_model(stem.with_suffix(".yaml"), summary)
     return summary
 
 
@@ -227,7 +225,7 @@ def _read_shard_summary(work_directory: Path, index: int) -> ShardSummary | None
     path = _shard_stem(work_directory, index).with_suffix(".yaml")
     if not path.exists():
         return None
-    return pydantic_yaml.parse_yaml_file_as(ShardSummary, path)
+    return read_model(path, ShardSummary)
 
 
 def _changed_raw_files(
@@ -255,7 +253,7 @@ def _plan(
     raw_files = _raw_file_hashes(source, work_directory)
     path = work_directory / PLAN_FILENAME
     if path.exists():
-        plan = pydantic_yaml.parse_yaml_file_as(PreparationPlan, path)
+        plan = read_model(path, PreparationPlan)
         if (
             plan.source_fingerprint != fingerprint
             or plan.shard_size != settings.shard_size
@@ -281,7 +279,7 @@ def _plan(
         record_count=record_count,
     )
     work_directory.mkdir(parents=True, exist_ok=True)
-    pydantic_yaml.to_yaml_file(path, plan)
+    write_model(path, plan)
     return plan
 
 

@@ -16,9 +16,8 @@ import logging
 import sys
 from pathlib import Path
 
-import pydantic_yaml
-
 from remedi_data.build import DatasetBuildConfig, build_datasets
+from remedi_data.yaml_io import read_model
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
-    config = pydantic_yaml.parse_yaml_file_as(DatasetBuildConfig, arguments.config)
+    config = read_model(arguments.config, DatasetBuildConfig)
     report = build_datasets(config)
     return 1 if report.n_failed else 0
 

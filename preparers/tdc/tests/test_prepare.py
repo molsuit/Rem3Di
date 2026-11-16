@@ -47,6 +47,7 @@ from remedi_data.bundle import (
 )
 from remedi_data.bundle.preparation import BundleReport
 from remedi_data.dataset.tasks import TaskType
+from remedi_data.yaml_io import read_model
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RAW_ROOT = REPOSITORY_ROOT / "benchmark_data" / "raw" / "tdc"
@@ -79,7 +80,7 @@ def test_the_catalog_lists_22_endpoints_in_run_order() -> None:
     dataset_ids = [endpoint.dataset_id for endpoint in TDC_ENDPOINTS]
     assert len(set(dataset_ids)) == 22
     assert len({endpoint.label_name for endpoint in TDC_ENDPOINTS}) == 22
-    assert TdcEndpointCatalog.from_yaml(ENDPOINTS_FILE).dataset_ids() == dataset_ids
+    assert read_model(ENDPOINTS_FILE, TdcEndpointCatalog).dataset_ids() == dataset_ids
     selected = TdcPreparerConfig(only=["DILI", "HIA_Hou"]).selected_endpoints()
     assert [endpoint.dataset_id for endpoint in selected] == ["HIA_Hou", "DILI"]
 

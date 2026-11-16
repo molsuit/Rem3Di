@@ -31,7 +31,6 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-import pydantic_yaml as pyd_yaml
 from pydantic import BaseModel, Field, field_validator
 
 from remedi_data.bundle import (
@@ -44,6 +43,7 @@ from remedi_data.runs.results import (
     PydanticResult,
     TableResult,
 )
+from remedi_data.yaml_io import write_model
 from remedi_eval.benchmark.cells import (
     BenchmarkCell,
     BenchmarkFailure,
@@ -254,7 +254,7 @@ class _PanelRecord:
             exc_info=error,
         )
         self.failures.append(failure)
-        pyd_yaml.to_yaml_file(
+        write_model(
             self.out_dir / FAILURES_FILE_NAME, _FailureBundle(failures=self.failures)
         )
         if not self.keep_going:

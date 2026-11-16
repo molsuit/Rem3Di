@@ -30,7 +30,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rdkit import rdBase
 
@@ -57,6 +56,7 @@ from remedi_data.bundle.preparation import (
     write_smiles_bundle,
 )
 from remedi_data.dataset.tasks import TaskType
+from remedi_data.yaml_io import read_model
 
 logger = logging.getLogger("preparers.tdc")
 
@@ -117,17 +117,13 @@ class TdcEndpointCatalog(BaseModel):
             )
         return self
 
-    @classmethod
-    def from_yaml(cls, path: Path) -> TdcEndpointCatalog:
-        return cls.model_validate(yaml.safe_load(Path(path).read_text()))
-
     def dataset_ids(self) -> list[str]:
         return [endpoint.dataset_id for endpoint in self.endpoints]
 
 
 #: All 22 endpoints of the TDC ADMET benchmark group (§5c).
 TDC_ENDPOINTS: tuple[TdcEndpoint, ...] = tuple(
-    TdcEndpointCatalog.from_yaml(ENDPOINTS_FILE).endpoints
+    read_model(ENDPOINTS_FILE, TdcEndpointCatalog).endpoints
 )
 
 

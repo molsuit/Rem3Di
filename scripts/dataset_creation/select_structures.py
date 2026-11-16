@@ -10,9 +10,8 @@ import argparse
 import logging
 from pathlib import Path
 
-import pydantic_yaml
-
 from remedi_data.selection import SelectionBatchConfig, select_batch
+from remedi_data.yaml_io import read_model
 
 
 def main() -> None:
@@ -22,7 +21,7 @@ def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
-    config = pydantic_yaml.parse_yaml_file_as(SelectionBatchConfig, arguments.config)
+    config = read_model(arguments.config, SelectionBatchConfig)
     for record in select_batch(config):
         print(
             f"{record.dataset_id}/{record.name}: {record.structures} structures, "

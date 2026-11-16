@@ -11,9 +11,8 @@ import argparse
 import logging
 from pathlib import Path
 
-import pydantic_yaml as pyd_yaml
-
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.yaml_io import read_model
 from remedi_eval.dataset_analysis.analysis import MoleculeDatasetAnalysis
 from remedi_eval.dataset_analysis.config import (
     MoleculeDatasetAnalysisConfig,
@@ -43,7 +42,7 @@ def parse_args() -> argparse.Namespace:
 def load_config(path: Path | None) -> MoleculeDatasetAnalysisConfig:
     if path is None:
         return MoleculeDatasetAnalysisConfig()
-    return pyd_yaml.parse_yaml_file_as(MoleculeDatasetAnalysisConfig, file=path)
+    return read_model(path, MoleculeDatasetAnalysisConfig)
 
 
 def main() -> None:

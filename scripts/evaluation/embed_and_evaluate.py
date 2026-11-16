@@ -16,9 +16,8 @@ import argparse
 import logging
 from pathlib import Path
 
-import pydantic_yaml as pyd_yaml
-
 from remedi.embedding import EmbedAndEvaluateConfig, embed_and_evaluate
+from remedi_data.yaml_io import read_model
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ def main() -> None:
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
 
-    config = pyd_yaml.parse_yaml_file_as(EmbedAndEvaluateConfig, args.config)
+    config = read_model(args.config, EmbedAndEvaluateConfig)
     embedding_report, run_report = embed_and_evaluate(config)
     logger.info(
         "embedded %d, up to date %d, failed %d; eval %d/%d task(s) ok -> %s",

@@ -1,7 +1,6 @@
 from typing import Annotated
 
 import numpy as np
-import pydantic_yaml as pyaml
 from e3nn.o3 import Irreps
 from pydantic import (
     BaseModel,
@@ -38,11 +37,3 @@ NumpyArrayType = Annotated[
     BeforeValidator(lambda v: np.array(v)),
     PlainSerializer(lambda v: v.tolist()),
 ]
-
-
-def to_yaml(filename, config):
-    pyaml.to_yaml_file(filename, config)
-
-
-def from_yaml(filename, config_class: BaseModel):
-    return pyaml.parse_yaml_file_as(config_class, filename)

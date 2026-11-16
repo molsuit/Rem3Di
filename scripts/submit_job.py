@@ -21,9 +21,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pydantic_yaml as pyaml
-
 from remedi.configuration.training_config import PretrainingConfig
+from remedi_data.yaml_io import read_model, write_model
 
 
 def log(msg: str) -> None:
@@ -31,7 +30,7 @@ def log(msg: str) -> None:
 
 
 def snapshot_configs(training_config_path: Path) -> tuple[Path, str]:
-    training_config = pyaml.parse_yaml_file_as(PretrainingConfig, training_config_path)
+    training_config = read_model(training_config_path, PretrainingConfig)
     # A fresh numbered run directory, also when the config names one.
     training_config.training_directory = None
     training_directory = training_config.create_run_directory()
@@ -42,7 +41,7 @@ def snapshot_configs(training_config_path: Path) -> tuple[Path, str]:
     training_config.model_config_path = architecture_snapshot
     training_config.training_directory = training_directory
     training_snapshot = training_directory / "training_config.yaml"
-    pyaml.to_yaml_file(training_snapshot, training_config)
+    write_model(training_snapshot, training_config)
 
     log(f"Snapshot training directory: {training_directory}")
     return training_snapshot, training_config.training_name

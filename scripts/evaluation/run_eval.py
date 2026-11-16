@@ -18,8 +18,7 @@ import argparse
 import logging
 from pathlib import Path
 
-import pydantic_yaml as pyd_yaml
-
+from remedi_data.yaml_io import read_model
 from remedi_eval.framework import EvalManifest, run_manifest
 
 logger = logging.getLogger(__name__)
@@ -34,7 +33,7 @@ def main() -> None:
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
 
-    manifest = pyd_yaml.parse_yaml_file_as(EvalManifest, args.config)
+    manifest = read_model(args.config, EvalManifest)
     report = run_manifest(manifest)
     logger.info(
         "eval done: %d/%d task(s) ok -> %s",

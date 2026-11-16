@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import numpy as np
 import pydantic
-import pydantic_yaml as pyd_yaml
 import pytest
 
+from remedi_data.yaml_io import read_model, write_model
 from remedi_eval.benchmark.learners import (
     LearnerConfig,
     LightGBMLearner,
@@ -44,8 +44,8 @@ def _synthetic_binary(n: int, d: int, seed: int = 0):
 def test_config_yaml_roundtrip(tmp_path) -> None:
     cfg = LinearLearnerConfig(ridge_alpha=2.0, logreg_C=0.5, scaler=ScalerKind.standard)
     path = tmp_path / "learner.yaml"
-    pyd_yaml.to_yaml_file(path, cfg)
-    loaded = pyd_yaml.parse_yaml_file_as(LinearLearnerConfig, path)
+    write_model(path, cfg)
+    loaded = read_model(path, LinearLearnerConfig)
     assert loaded == cfg
     assert loaded.learner_kind == "linear"
 
@@ -96,8 +96,8 @@ def test_lightgbm_config_roundtrip_and_build(tmp_path) -> None:
     cfg = LightGBMLearnerConfig(n_estimators=300, early_stopping_rounds=10)
 
     path = tmp_path / "lgbm.yaml"
-    pyd_yaml.to_yaml_file(path, cfg)
-    loaded = pyd_yaml.parse_yaml_file_as(LightGBMLearnerConfig, path)
+    write_model(path, cfg)
+    loaded = read_model(path, LightGBMLearnerConfig)
     assert loaded == cfg
     assert isinstance(cfg.build(), LightGBMLearner)
 

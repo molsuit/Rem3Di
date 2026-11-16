@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-import pydantic_yaml
 import rdkit
 from ase import Atoms
 from pydantic import BaseModel, ConfigDict, Field
@@ -59,6 +58,7 @@ from remedi_data.runs.task_runner import (
     make_run_report,
     run_tasks,
 )
+from remedi_data.yaml_io import write_model
 
 logger = logging.getLogger(__name__)
 
@@ -469,7 +469,5 @@ def _write_run_files(
     planned: int,
     statuses: list[TaskStatus],
 ) -> None:
-    pydantic_yaml.to_yaml_file(output_root / "manifest.yaml", config)
-    pydantic_yaml.to_yaml_file(
-        output_root / "status.yaml", make_run_report(planned, statuses)
-    )
+    write_model(output_root / "manifest.yaml", config)
+    write_model(output_root / "status.yaml", make_run_report(planned, statuses))

@@ -14,7 +14,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pydantic_yaml as pyaml
 import pytest
 import torch
 
@@ -32,6 +31,7 @@ from remedi.training.data.sample import (
     Sample,
     yield_molecules_supervised_collate_fn,
 )
+from remedi_data.yaml_io import read_model
 
 
 def test_head_classification_shapes_and_no_scaling() -> None:
@@ -120,7 +120,7 @@ CHIRAL_CAT_ARCHITECTURE = (
 )
 def test_chiral_architecture_yaml_is_single_head_classifier() -> None:
     path = CHIRAL_CAT_ARCHITECTURE
-    ac = pyaml.parse_yaml_file_as(ArchitectureConfig, path)
+    ac = read_model(path, ArchitectureConfig)
     assert isinstance(ac, RegressionArchitectureConfig)
     assert ac.embedding_preprocess_config.pseudoscalars is True
     assert ac.embedding_preprocess_config.output_irreps_dim == 384

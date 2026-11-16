@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pydantic_yaml as pyaml
 import pytest
 import torch
 import yaml
@@ -22,6 +21,7 @@ from remedi.configuration.architecture_config import EncoderOnlyArchitectureConf
 from remedi.embedding.calculator import RemediCalculator
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
 from remedi.training.data.sample import Sample, yield_molecules_collate_fn
+from remedi_data.yaml_io import yaml_text
 
 MACE_OFF_MEDIUM = Path.home() / ".cache" / "mace" / "MACE-OFF23_medium.model"
 
@@ -247,7 +247,7 @@ def test_calculator_runs_mace_on_the_requested_device(
 
 
 def test_architecture_yaml_roundtrip_is_loadable(architecture):
-    reloaded = pyaml.parse_yaml_raw_as(
-        EncoderOnlyArchitectureConfig, pyaml.to_yaml_str(architecture)
+    reloaded = EncoderOnlyArchitectureConfig.model_validate(
+        yaml.safe_load(yaml_text(architecture.model_dump(mode="json")))
     )
     assert reloaded.dimensions == architecture.dimensions

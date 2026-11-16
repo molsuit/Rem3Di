@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import pydantic_yaml as pyaml
 import pytest
 import torch
 import yaml
@@ -20,8 +19,8 @@ from remedi.configuration.architecture_config import (
     RegressionHeadConfig,
     RelativeDistancePositionalEncodingConfig,
 )
-from remedi.configuration.config_utils import from_yaml
 from remedi.configuration.mace_config import MaceConfig
+from remedi_data.yaml_io import read_model, yaml_text
 
 TESTS_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = TESTS_DIR.parents[2]
@@ -105,18 +104,20 @@ def _build_minimal_encoder_decoder_config() -> EncoderDecoderArchitectureConfig:
 
 def test_regression_yaml_roundtrip():
     cfg = _build_minimal_regression_config()
-    config_str = pyaml.to_yaml_str(cfg)
-    reconstructed = pyaml.parse_yaml_raw_as(RegressionArchitectureConfig, config_str)
-    assert pyaml.to_yaml_str(reconstructed) == config_str
+    config_str = yaml_text(cfg.model_dump(mode="json"))
+    reconstructed = RegressionArchitectureConfig.model_validate(
+        yaml.safe_load(config_str)
+    )
+    assert yaml_text(reconstructed.model_dump(mode="json")) == config_str
 
 
 def test_encoder_decoder_yaml_roundtrip():
     cfg = _build_minimal_encoder_decoder_config()
-    config_str = pyaml.to_yaml_str(cfg)
-    reconstructed = pyaml.parse_yaml_raw_as(
-        EncoderDecoderArchitectureConfig, config_str
+    config_str = yaml_text(cfg.model_dump(mode="json"))
+    reconstructed = EncoderDecoderArchitectureConfig.model_validate(
+        yaml.safe_load(config_str)
     )
-    assert pyaml.to_yaml_str(reconstructed) == config_str
+    assert yaml_text(reconstructed.model_dump(mode="json")) == config_str
 
 
 @pytest.mark.parametrize("activation", ["silu", "gelu", "relu", "tanh"])
@@ -124,8 +125,8 @@ def test_activation_yaml_roundtrip(activation):
     # Regression: "GELU" mapped to the missing torch.nn.gelu, and a callable
     # activation dumped as its class name and did not reload.
     head = RegressionHeadConfig(task_name="foo", activation=activation)
-    config_str = pyaml.to_yaml_str(head)
-    reconstructed = pyaml.parse_yaml_raw_as(RegressionHeadConfig, config_str)
+    config_str = yaml_text(head.model_dump(mode="json"))
+    reconstructed = RegressionHeadConfig.model_validate(yaml.safe_load(config_str))
     assert reconstructed == head
 
 
@@ -237,14 +238,14 @@ def test_mace_per_layer_irreps_checked_against_mace(monkeypatch):
 
 def test_regression_yaml_parses_against_current_schema():
     yaml_file = TESTS_DIR / "test_architecture_config.yaml"
-    cfg = from_yaml(yaml_file, RegressionArchitectureConfig)
+    cfg = read_model(yaml_file, RegressionArchitectureConfig)
     assert isinstance(cfg, RegressionArchitectureConfig)
     assert cfg.dimensions.embedding_dimension == 256
 
 
 def test_encoder_decoder_yaml_parses_against_current_schema():
     yaml_file = TESTS_DIR / "test_architecture_config_encoder_decoder.yaml"
-    cfg = from_yaml(yaml_file, EncoderDecoderArchitectureConfig)
+    cfg = read_model(yaml_file, EncoderDecoderArchitectureConfig)
     assert isinstance(cfg, EncoderDecoderArchitectureConfig)
     assert cfg.dimensions.embedding_dimension == 256
     assert cfg.dimensions.descriptor_dimension == 256
@@ -292,7 +293,7 @@ def test_shipped_architecture_configs_validate(path, monkeypatch):
 
 def test_model_reconstruction():
     yaml_file = TESTS_DIR / "test_architecture_config.yaml"
-    cfg = from_yaml(yaml_file, RegressionArchitectureConfig)
+    cfg = read_model(yaml_file, RegressionArchitectureConfig)
     model = cfg.build()
     assert isinstance(model, torch.nn.Module)
     assert sum(parameter.numel() for parameter in model.parameters()) > 0

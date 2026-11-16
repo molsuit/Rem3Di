@@ -12,7 +12,6 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
 
-import pydantic_yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.runs.results import EvalResult, PydanticResult
@@ -23,6 +22,7 @@ from remedi_data.structures.pipeline import (
     prepare_structures,
 )
 from remedi_data.structures.sources import StructureSource
+from remedi_data.yaml_io import write_model
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ def prepare_structure_datasets(
 
     def flush(current: list[TaskStatus]) -> None:
         statuses[:] = current
-        pydantic_yaml.to_yaml_file(
+        write_model(
             config.work_root / "status.yaml", make_run_report(len(tasks), current)
         )
 
@@ -94,7 +94,7 @@ def prepare_structure_datasets(
             tasks, None, config.work_root, keep_going=config.keep_going, flush=flush
         )
     finally:
-        pydantic_yaml.to_yaml_file(config.work_root / "manifest.yaml", config)
+        write_model(config.work_root / "manifest.yaml", config)
     report = make_run_report(len(tasks), statuses)
     if report.n_failed:
         logger.warning("%d/%d source(s) failed", report.n_failed, len(tasks))

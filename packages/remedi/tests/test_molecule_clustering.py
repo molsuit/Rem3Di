@@ -26,6 +26,7 @@ from remedi_data.selection import (
     select_structures,
 )
 from remedi_data.testing import write_small_dataset
+from remedi_data.yaml_io import read_model
 
 needs_gpu = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="Butina clustering runs on the GPU"
@@ -119,13 +120,12 @@ def test_cluster_molecules_writes_a_file_selections_can_draw_from(
 
 
 def test_the_production_clustering_config_parses() -> None:
-    import pydantic_yaml
 
     from remedi.training.data.molecule_clustering import MoleculeClusteringBatchConfig
 
-    config = pydantic_yaml.parse_yaml_file_as(
-        MoleculeClusteringBatchConfig,
+    config = read_model(
         Path(__file__).resolve().parents[3]
         / "configs/dataset_creation/cluster_molecules.yaml",
+        MoleculeClusteringBatchConfig,
     )
     assert {clustering.name for clustering in config.clusterings} == {"ecfp4_butina"}

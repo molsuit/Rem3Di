@@ -10,12 +10,11 @@ import argparse
 import logging
 from pathlib import Path
 
-import pydantic_yaml
-
 from remedi.training.data.molecule_clustering import (
     MoleculeClusteringBatchConfig,
     cluster_batch,
 )
+from remedi_data.yaml_io import read_model
 
 
 def main() -> None:
@@ -25,9 +24,7 @@ def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
-    config = pydantic_yaml.parse_yaml_file_as(
-        MoleculeClusteringBatchConfig, arguments.config
-    )
+    config = read_model(arguments.config, MoleculeClusteringBatchConfig)
     for record in cluster_batch(config):
         print(
             f"{record.dataset_id}/{record.name}: {record.molecules} molecules, "

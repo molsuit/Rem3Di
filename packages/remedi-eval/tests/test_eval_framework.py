@@ -11,7 +11,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pydantic_yaml as pyd_yaml
 import pytest
 
 from remedi_data.bundle import EvalMetric, LabelColumn
@@ -19,6 +18,7 @@ from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import TaskType
 from remedi_data.runs.results import TableResult
 from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
+from remedi_data.yaml_io import read_model
 from remedi_eval.benchmark.learners import LinearLearnerConfig
 from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import (
@@ -87,7 +87,7 @@ def test_keep_going_records_failed_task_but_finishes(tmp_path: Path) -> None:
 
     # status.yaml round-trips and records both tasks, the healthy one with its
     # artifact and the broken one with its error.
-    status = pyd_yaml.parse_yaml_file_as(RunReport, out / "status.yaml")
+    status = read_model(out / "status.yaml", RunReport)
     healthy, broken = status.statuses
     assert healthy.ok and healthy.kind == "benchmark_panel"
     assert any("results.csv" in a["file_name"] for a in healthy.artifacts)

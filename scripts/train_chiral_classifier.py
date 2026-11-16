@@ -34,7 +34,6 @@ import logging
 from pathlib import Path
 
 import numpy as np
-import pydantic_yaml as pyaml
 import torch
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import Subset
@@ -56,6 +55,7 @@ from remedi.training.data.training_dataset import (
     make_supervised_getitem,
 )
 from remedi.training.telemetry import TrainingTelemetry
+from remedi_data.yaml_io import read_model, write_model
 from remedi_eval.benchmark.metrics import (
     balanced_accuracy,
     macro_auroc_ovr,
@@ -122,15 +122,13 @@ def main() -> None:
     global device
     if args.device is not None:
         device = args.device
-    training_config = pyaml.parse_yaml_file_as(
-        ClassifierTrainingConfig, args.training_config
-    )
+    training_config = read_model(args.training_config, ClassifierTrainingConfig)
     torch.manual_seed(training_config.seed)
     np.random.seed(training_config.seed)
     if args.max_epochs is not None:
         training_config.epochs = args.max_epochs
-    architecture_config = pyaml.parse_yaml_file_as(
-        ArchitectureConfig, training_config.model_config_path
+    architecture_config = read_model(
+        training_config.model_config_path, ArchitectureConfig
     )
     if not isinstance(architecture_config, RegressionArchitectureConfig):
         raise ValueError(
@@ -206,7 +204,7 @@ def main() -> None:
         total_steps=training_config.epochs * max(1, len(train_loader)),
     )
 
-    pyaml.to_yaml_file(out_base / ARCHITECTURE_FILENAME, architecture_config)
+    write_model(out_base / ARCHITECTURE_FILENAME, architecture_config)
 
     best_score = -np.inf
     with TrainingTelemetry(

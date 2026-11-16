@@ -22,7 +22,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
-import yaml
 
 from remedi_data.bundle.provenance import (
     BundleOutputs,
@@ -34,6 +33,7 @@ from remedi_data.bundle.validate import (
     count_stereoisomer_straddling_constitutions,
     validate_table,
 )
+from remedi_data.yaml_io import read_model, read_yaml, write_model
 
 SPEC_FILENAME = "dataset.yaml"
 TABLE_FILENAME = "table.parquet"
@@ -201,16 +201,6 @@ def fill_derived_provenance(
 # ------------------------------------------------------------------------ io
 
 
-def _dump_yaml(model, path: Path, **dump_options) -> None:
-    path.write_text(
-        yaml.safe_dump(
-            model.model_dump(mode="json", exclude_none=True, **dump_options),
-            sort_keys=False,
-            allow_unicode=True,
-        )
-    )
-
-
 def write_table_files(
     directory: Path,
     spec: DatasetSpec,
@@ -233,7 +223,7 @@ def write_table_files(
     staged: list[tuple[Path, Path]] = []
     try:
         spec_staging = directory / f".{SPEC_FILENAME}.partial"
-        _dump_yaml(spec, spec_staging)
+        write_model(spec_staging, spec, exclude_none=True)
         staged.append((spec_staging, directory / SPEC_FILENAME))
         table_staging = directory / f".{TABLE_FILENAME}.partial"
         table.to_parquet(table_staging, index=False)
@@ -247,7 +237,7 @@ def write_table_files(
             structures_sha256=structures_sha256,
         )
         provenance_staging = directory / f".{PROVENANCE_FILENAME}.partial"
-        _dump_yaml(written, provenance_staging, by_alias=True)
+        write_model(provenance_staging, written, exclude_none=True, by_alias=True)
         staged.append((provenance_staging, directory / PROVENANCE_FILENAME))
         for staging_path, final_path in staged:
             os.replace(staging_path, final_path)
@@ -347,7 +337,7 @@ def read_spec(directory: Path) -> DatasetSpec:
     spec_path = directory / SPEC_FILENAME
     if not spec_path.is_file():
         raise FileNotFoundError(f"{directory} has no {SPEC_FILENAME}")
-    raw_spec = yaml.safe_load(spec_path.read_text())
+    raw_spec = read_yaml(spec_path)
     if not isinstance(raw_spec, dict):
         raise BundleValidationError(directory, [f"{SPEC_FILENAME} is not a mapping"])
     if raw_spec.get("format_version") != FORMAT_VERSION:
@@ -370,7 +360,7 @@ def read_provenance(directory: Path) -> BundleProvenance:
     provenance_path = Path(directory) / PROVENANCE_FILENAME
     if not provenance_path.is_file():
         raise FileNotFoundError(f"{directory} has no {PROVENANCE_FILENAME}")
-    return BundleProvenance.model_validate(yaml.safe_load(provenance_path.read_text()))
+    return read_model(provenance_path, BundleProvenance)
 
 
 def structures_identity(directory: Path) -> str:

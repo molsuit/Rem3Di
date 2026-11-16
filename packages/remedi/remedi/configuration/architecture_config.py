@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Annotated, Literal, Self
 
 import torch
 import torch.nn as nn
-import yaml
 from e3nn.o3 import Irreps
 from pydantic import ConfigDict, Field, model_validator
 
@@ -18,6 +17,7 @@ from remedi.model.preprocessing.radial_basis_functions import (
     GaussianBasisFunctions,
 )
 from remedi.utils.model_utils import get_invariant_indices
+from remedi_data.yaml_io import read_yaml
 
 if TYPE_CHECKING:
     from remedi.model.preprocessing.atomic_descriptor_preprocessor import (
@@ -689,8 +689,7 @@ class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):
         which already loads MACE to read its irreps.
         """
         filename = ARCHITECTURE_FILENAME if trained else "architecture_config.yaml"
-        with open(Path(directory) / filename) as fh:
-            data = yaml.safe_load(fh)
+        data = read_yaml(Path(directory) / filename)
         data.pop("decoder_config", None)
         data["kind"] = "encoder_only"
         if mace_device is not None or mace_model_path is not None:

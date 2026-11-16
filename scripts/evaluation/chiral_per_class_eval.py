@@ -28,7 +28,6 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-import pydantic_yaml as pyaml
 import torch
 from torch.utils.data import Subset
 
@@ -41,6 +40,7 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
 )
+from remedi_data.yaml_io import read_model
 from remedi_eval.benchmark.cells import multiclass_labelling
 from remedi_eval.benchmark.metrics import balanced_accuracy, multiclass_report
 from remedi_eval.protocol import load_benchmark
@@ -67,7 +67,7 @@ def _find_run_dir(ablation_dir: Path, suffix: str) -> Path:
 
 
 def _load_model(run_dir: Path):
-    arch = pyaml.parse_yaml_file_as(ArchitectureConfig, run_dir / ARCHITECTURE_FILENAME)
+    arch = read_model(run_dir / ARCHITECTURE_FILENAME, ArchitectureConfig)
     model = arch.build()
     model.to(device)
     load_checkpoint(model, run_dir, map_location=device)
@@ -92,8 +92,8 @@ def evaluate_run(
     split_column: str,
     fold: Literal["valid", "test"],
 ) -> dict:
-    training_config = pyaml.parse_yaml_file_as(
-        ClassifierTrainingConfig, cfg_dir / "training_config.yaml"
+    training_config = read_model(
+        cfg_dir / "training_config.yaml", ClassifierTrainingConfig
     )
     dataset_path = training_config.dataset_path
     benchmark = load_benchmark(dataset_path)

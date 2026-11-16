@@ -14,14 +14,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import pydantic_yaml as pyd_yaml
-
 from remedi_data.runs.task import TaskStatus
 from remedi_data.runs.task_runner import (
     RunReport,
     make_run_report,
     run_tasks,
 )
+from remedi_data.yaml_io import write_model
 from remedi_eval.framework.config import EvalManifest
 from remedi_eval.framework.context import EvalContext
 from remedi_eval.framework.resources import ResourceCache
@@ -73,7 +72,5 @@ def run_manifest(manifest: EvalManifest) -> RunReport:
 def _write_run_files(
     out: Path, manifest: EvalManifest, statuses: list[TaskStatus]
 ) -> None:
-    pyd_yaml.to_yaml_file(out / "manifest.yaml", manifest)
-    pyd_yaml.to_yaml_file(
-        out / "status.yaml", make_run_report(len(manifest.tasks), statuses)
-    )
+    write_model(out / "manifest.yaml", manifest)
+    write_model(out / "status.yaml", make_run_report(len(manifest.tasks), statuses))

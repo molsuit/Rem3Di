@@ -31,7 +31,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
-import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rdkit import rdBase
 
@@ -62,6 +61,7 @@ from remedi_data.chemistry.splits import (
     scaffold_test_mask,
 )
 from remedi_data.dataset.tasks import TaskType
+from remedi_data.yaml_io import read_model
 
 logger = logging.getLogger("preparers.moleculenet")
 
@@ -142,13 +142,9 @@ class MoleculeNetCatalog(BaseModel):
             raise ValueError(f"source files {unpinned} have no pinned sha256")
         return self
 
-    @classmethod
-    def from_yaml(cls, path: Path) -> MoleculeNetCatalog:
-        return cls.model_validate(yaml.safe_load(Path(path).read_text()))
-
 
 #: The ten MoleculeNet bundles (§5a).
-MOLECULENET_CATALOG = MoleculeNetCatalog.from_yaml(DATASETS_FILE)
+MOLECULENET_CATALOG = read_model(DATASETS_FILE, MoleculeNetCatalog)
 
 
 class MoleculeNetPreparerConfig(PreparerSettings):

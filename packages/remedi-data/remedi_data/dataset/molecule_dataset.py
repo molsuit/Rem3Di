@@ -3,7 +3,6 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 
 import numpy as np
-import pydantic_yaml as pyd_yaml
 import zarr
 from ase import Atoms
 from zarr import Array
@@ -11,6 +10,7 @@ from zarr.codecs import BloscCodec
 from zarr.storage import LocalStore
 
 from remedi_data.dataset.config import DatasetConfig
+from remedi_data.yaml_io import read_model, write_model
 
 
 @dataclass(frozen=True)
@@ -185,9 +185,7 @@ class MoleculeDataset:
         stereo_id = ids["stereoisomer_id"]
         struct_id = ids["structure_id"]
 
-        config = pyd_yaml.parse_yaml_file_as(
-            DatasetConfig, file=path / "dataset_config.yaml"
-        )
+        config = read_model(path / "dataset_config.yaml", DatasetConfig)
 
         return cls(
             positions,
@@ -256,7 +254,7 @@ class MoleculeDataset:
         )
         struct_id = _mk(ids, "structure_id", (0,), config.molecule_chunk, m_cps, "i8")
 
-        pyd_yaml.to_yaml_file(path / "dataset_config.yaml", config)
+        write_model(path / "dataset_config.yaml", config)
 
         return cls(
             positions,

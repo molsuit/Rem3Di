@@ -523,12 +523,12 @@ def test_a_failed_write_leaves_no_partial_files(
 ) -> None:
     """The table is staged, then the provenance dump fails: nothing lands."""
 
-    def failing_dump(model, path: Path, **dump_options) -> None:
+    def failing_write(path: Path, model, **options) -> None:
         if path.name.startswith(f".{PROVENANCE_FILENAME}"):
             raise OSError("disk full")
         path.write_text("staged")
 
-    monkeypatch.setattr(bundle_module, "_dump_yaml", failing_dump)
+    monkeypatch.setattr(bundle_module, "write_model", failing_write)
     with pytest.raises(OSError, match="disk full"):
         write_bundle(make_bundle(), tmp_path / "synthetic6")
     assert list((tmp_path / "synthetic6").iterdir()) == []

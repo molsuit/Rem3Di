@@ -32,11 +32,11 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-import pydantic_yaml as pyd_yaml
 from pydantic import BaseModel, ConfigDict
 
 from remedi_data.bundle import git_head_sha, sha256_of_file, structures_identity
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.yaml_io import read_model, write_model
 
 logger = logging.getLogger(__name__)
 
@@ -162,12 +162,7 @@ def write_embeddings(
         embedding_dimension=int(embedding.shape[1]),
         producer=producer,
     )
-    temporary_yaml = _temporary_path(yaml_path)
-    try:
-        pyd_yaml.to_yaml_file(temporary_yaml, metadata)
-        temporary_yaml.replace(yaml_path)
-    finally:
-        temporary_yaml.unlink(missing_ok=True)
+    write_model(yaml_path, metadata)
     return metadata
 
 
@@ -183,7 +178,7 @@ def read_metadata(
     _, yaml_path = embeddings_paths(embeddings_root, dataset_id, descriptor_name)
     if not yaml_path.exists():
         return None
-    return pyd_yaml.parse_yaml_file_as(EmbeddingsMetadata, yaml_path)
+    return read_model(yaml_path, EmbeddingsMetadata)
 
 
 def read_embeddings(

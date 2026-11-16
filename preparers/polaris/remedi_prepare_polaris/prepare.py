@@ -31,7 +31,6 @@ from typing import Annotated, Literal
 
 import numpy as np
 import pandas as pd
-import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from rdkit import rdBase
 
@@ -68,6 +67,7 @@ from remedi_data.chemistry.stereo_groups import (
     unspecify_relative_stereo,
 )
 from remedi_data.dataset.tasks import Split, TaskType
+from remedi_data.yaml_io import read_model
 
 logger = logging.getLogger("preparers.polaris")
 
@@ -184,14 +184,10 @@ class PolarisDatasetCatalog(BaseModel):
         )
         return self
 
-    @classmethod
-    def from_yaml(cls, path: Path) -> PolarisDatasetCatalog:
-        return cls.model_validate(yaml.safe_load(Path(path).read_text()))
-
 
 #: The five Polaris bundles (§5c).
 POLARIS_DATASETS: tuple[PolarisDataset, ...] = tuple(
-    PolarisDatasetCatalog.from_yaml(DATASETS_FILE).datasets
+    read_model(DATASETS_FILE, PolarisDatasetCatalog).datasets
 )
 
 
@@ -257,9 +253,7 @@ def read_source_table(raw_root: Path, dataset: PolarisDataset) -> SourceTable:
                 "first (this preparer never calls polaris)"
             )
     try:
-        record = PolarisSourceRecord.model_validate(
-            yaml.safe_load(record_path.read_text())
-        )
+        record = read_model(record_path, PolarisSourceRecord)
     except ValidationError as error:
         raise PolarisPreparationError(f"{record_path} is malformed: {error}") from error
     if record.slug != dataset.slug:

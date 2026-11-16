@@ -5,15 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import wandb
-import yaml
 
-
-def _write_yaml(path: Path, records: list[dict]) -> None:
-    """Write through a temporary file, so a kill mid-write leaves the old file."""
-    temporary = path.with_suffix(".yaml.tmp")
-    with open(temporary, "w") as f:
-        yaml.safe_dump(records, f)
-    temporary.replace(path)
+from remedi_data.yaml_io import write_yaml
 
 
 class TrainingTelemetry:
@@ -178,12 +171,12 @@ class TrainingTelemetry:
     def dump_loss_history(self):
         """Rewrite ``training_losses.yaml``; called after every epoch so a job
         killed by its time limit keeps the epochs it finished."""
-        _write_yaml(Path(self.out_dir) / "training_losses.yaml", self.loss_data)
+        write_yaml(Path(self.out_dir) / "training_losses.yaml", self.loss_data)
 
     def dump_probe_history(self):
         if not self.probe_data:
             return
-        _write_yaml(Path(self.out_dir) / "probe_history.yaml", self.probe_data)
+        write_yaml(Path(self.out_dir) / "probe_history.yaml", self.probe_data)
 
     def get_track_grad_norm_fn(self):
         def capture_grad(grad):  # grad has same shape as M

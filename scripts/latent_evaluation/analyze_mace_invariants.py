@@ -28,7 +28,6 @@ import logging
 from pathlib import Path
 
 import numpy as np
-import pydantic_yaml as pyaml
 import torch
 from pydantic import BaseModel, ConfigDict
 from torch.utils.data import DataLoader
@@ -54,6 +53,7 @@ from remedi.training.data.training_dataset import (
     atoms_getitem,
 )
 from remedi.utils.model_utils import get_invariant_indices
+from remedi_data.yaml_io import read_model, write_model
 
 logger = logging.getLogger("mace_invariant_analysis")
 
@@ -116,7 +116,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    cfg = pyaml.parse_yaml_file_as(MaceInvariantAnalysisConfig, args.config)
+    cfg = read_model(args.config, MaceInvariantAnalysisConfig)
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
     _setup_logging(cfg.output_dir)
 
@@ -146,7 +146,7 @@ def main() -> None:
     invariant_idx_t = torch.tensor(invariant_indices, dtype=torch.long, device=device)
 
     # Persist the analysis config alongside outputs for reproducibility.
-    pyaml.to_yaml_file(cfg.output_dir / "analysis_config.yaml", cfg)
+    write_model(cfg.output_dir / "analysis_config.yaml", cfg)
 
     logger.info("Opening dataset at %s", cfg.dataset_path)
     dataset = TrainingMoleculeDataset(
@@ -227,7 +227,7 @@ def main() -> None:
         total=total_summary,
         histogram_bins=cfg.histogram_bins,
     )
-    pyaml.to_yaml_file(cfg.output_dir / "mace_invariant_report.yaml", report)
+    write_model(cfg.output_dir / "mace_invariant_report.yaml", report)
 
     fig = plot_mean_std_per_dim(report)
     fig.savefig(cfg.output_dir / "mean_std_per_dim.png", dpi=150)

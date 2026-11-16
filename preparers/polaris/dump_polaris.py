@@ -58,7 +58,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yaml
+
+from remedi_data.yaml_io import write_yaml
 
 logger = logging.getLogger("dump_polaris")
 
@@ -205,7 +206,7 @@ def dump(dataset: PolarisDataset, out_root: Path) -> None:
         "dumped_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     source_path = out_root / f"{dataset.dataset_id}.source.yaml"
-    source_path.write_text(yaml.safe_dump(source_record, sort_keys=False))
+    write_yaml(source_path, source_record)
 
     counts = {
         "train": int((split_codes == SPLIT_TRAIN).sum()),

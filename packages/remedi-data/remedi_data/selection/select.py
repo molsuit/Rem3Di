@@ -25,7 +25,6 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
-import yaml
 
 from remedi_data.bundle import (
     is_dataset_directory,
@@ -56,6 +55,7 @@ from remedi_data.selection.order import (
     random_order,
     read_clusters,
 )
+from remedi_data.yaml_io import read_model, write_model
 
 logger = logging.getLogger(__name__)
 
@@ -350,7 +350,7 @@ def read_selection_record(dataset: Path, name: str) -> SelectionRecord:
     table_path, record_path = selection_paths(dataset, name)
     if not record_path.is_file() or not table_path.is_file():
         raise SelectionError(f"{dataset} has no complete selection {name!r}")
-    return SelectionRecord.model_validate(yaml.safe_load(record_path.read_text()))
+    return read_model(record_path, SelectionRecord)
 
 
 def _stale_reason(
@@ -503,9 +503,7 @@ def select_structures(
     temporary = table_path.with_suffix(f".parquet.{os.getpid()}.tmp")
     pl.DataFrame({"structure_id": structure_ids}).write_parquet(temporary)
     temporary.replace(table_path)
-    record_path.write_text(
-        yaml.safe_dump(record.model_dump(mode="json"), sort_keys=False)
-    )
+    write_model(record_path, record)
     return record
 
 

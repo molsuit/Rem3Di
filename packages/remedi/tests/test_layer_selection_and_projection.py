@@ -8,9 +8,9 @@ would populate from ``MaceConfig.get_per_layer_irreps()``.
 
 from __future__ import annotations
 
-import pydantic_yaml as pyaml
 import pytest
 import torch
+import yaml
 from e3nn.o3 import Irreps
 
 from remedi.configuration.architecture_config import (
@@ -20,6 +20,7 @@ from remedi.configuration.architecture_config import (
     MLPInvariantProjectionConfig,
     PrecomputedInvariantNormalizationConfig,
 )
+from remedi_data.yaml_io import yaml_text
 
 # Two-layer MACE-style stack: each layer emits 8 invariant + 4 vector channels.
 LAYER_IRREPS_STR = "8x0e+4x1o"
@@ -263,9 +264,9 @@ def test_yaml_roundtrip_with_projection():
             output_dim=6, hidden_dimensions=[16, 8], dropout=0.1
         ),
     )
-    config_str = pyaml.to_yaml_str(cfg)
-    reconstructed = pyaml.parse_yaml_raw_as(EmbeddingPreprocessConfig, config_str)
-    assert pyaml.to_yaml_str(reconstructed) == config_str
+    config_str = yaml_text(cfg.model_dump(mode="json"))
+    reconstructed = EmbeddingPreprocessConfig.model_validate(yaml.safe_load(config_str))
+    assert yaml_text(reconstructed.model_dump(mode="json")) == config_str
 
 
 # --------------------------------------------------------------------------- #

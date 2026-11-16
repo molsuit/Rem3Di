@@ -24,10 +24,10 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
-import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.selection.config import ClusterWeighting, SelectionError
+from remedi_data.yaml_io import read_model, write_model
 
 CLUSTERS_DIRECTORY = "clusters"
 CLUSTER_COLUMNS = ("molecule_id", "coarse_cluster", "fine_cluster")
@@ -103,9 +103,7 @@ def write_clusters(
         [pl.col(column).cast(pl.Int64) for column in CLUSTER_COLUMNS]
     ).sort("molecule_id").write_parquet(temporary)
     temporary.replace(table_path)
-    record_path.write_text(
-        yaml.safe_dump(record.model_dump(mode="json"), sort_keys=False)
-    )
+    write_model(record_path, record)
 
 
 def read_clusters(
@@ -122,7 +120,7 @@ def read_clusters(
             f"{dataset} has no complete cluster file {name!r} "
             f"(expected {table_path} and {record_path})"
         )
-    record = ClusterRecord.model_validate(yaml.safe_load(record_path.read_text()))
+    record = read_model(record_path, ClusterRecord)
     if record.table_content_sha256 != table_content_sha256:
         raise SelectionError(
             f"cluster file {name!r} was made for table {record.table_content_sha256[:12]}, "

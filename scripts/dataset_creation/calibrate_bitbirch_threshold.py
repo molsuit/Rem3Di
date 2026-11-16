@@ -21,8 +21,8 @@ import logging
 from pathlib import Path
 
 import numpy as np
-import pydantic_yaml as pyd_yaml
 
+from remedi_data.yaml_io import read_model
 from remedi_eval.dataset_analysis.comparison import DatasetComparison
 from remedi_eval.dataset_analysis.config import (
     DatasetComparisonConfig,
@@ -60,7 +60,7 @@ def main() -> None:
         format="%(asctime)s | %(levelname)s | %(message)s",
     )
 
-    config = pyd_yaml.parse_yaml_file_as(DatasetComparisonConfig, file=args.config)
+    config = read_model(args.config, DatasetComparisonConfig)
     n_features = config.bitbirch.fingerprint_size
     comparison = DatasetComparison(config)
     comparison.load_datasets()

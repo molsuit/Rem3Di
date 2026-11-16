@@ -34,19 +34,16 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import shutil
 import sys
 import tempfile
 import time
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 import pandas as pd
-import yaml
 import zarr
 from pydantic import BaseModel, ConfigDict, Field
 from zarr.storage import LocalStore
@@ -70,6 +67,7 @@ from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import Split, split_codes_from_names
 from remedi_data.parallel import default_workers
+from remedi_data.yaml_io import read_yaml, write_model, write_yaml
 
 logger = logging.getLogger("migrate_dataset_identity")
 
@@ -188,7 +186,7 @@ def inspect_layout(directory: Path) -> LayoutChanges:
             columns are not the spec's labels, or a value in ``tasks/`` differs
             from the table (deleting it would lose information).
     """
-    raw = yaml.safe_load((directory / DATASET_CONFIG_FILENAME).read_text()) or {}
+    raw = read_yaml(directory / DATASET_CONFIG_FILENAME) or {}
     known = DatasetConfig.model_fields
     config = DatasetConfig.model_validate(
         {key: value for key, value in raw.items() if key in known}
@@ -213,15 +211,6 @@ def inspect_layout(directory: Path) -> LayoutChanges:
     return LayoutChanges(config, removed, arrays)
 
 
-def _write_atomically(path: Path, text: str) -> None:
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.partial")
-    try:
-        temporary.write_text(text)
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
 def _remove_tasks_group(directory: Path) -> None:
     path = directory / TASKS_GROUP
     if path.is_symlink():  # a dry run's shadow: drop the link, not the target
@@ -239,15 +228,13 @@ def _rewrite_provenance_output(
     so every other line stays as it was.
     """
     path = directory / PROVENANCE_FILENAME
-    document = yaml.safe_load(path.read_text())
+    document = read_yaml(path)
     node = document["outputs"]
     for key in keys[:-1]:
         node = node[key]
     node[keys[-1]] = value
     BundleProvenance.model_validate(document)
-    _write_atomically(
-        path, yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
-    )
+    write_yaml(path, document)
 
 
 def rekey_table_content(directory: Path, report: DatasetMigrationReport) -> None:
@@ -257,7 +244,7 @@ def rekey_table_content(directory: Path, report: DatasetMigrationReport) -> None
         MigrationError: if the recorded hash differs and the table's bytes are
             not the recorded ones either (a changed table, not a changed hash).
     """
-    provenance = yaml.safe_load((directory / PROVENANCE_FILENAME).read_text())
+    provenance = read_yaml(directory / PROVENANCE_FILENAME)
     record = provenance["outputs"][TABLE_FILENAME]
     actual = content_hash_of_table(
         normalize_table(read_table(directory), read_spec(directory))
@@ -287,10 +274,7 @@ def migrate_layout(directory: Path, report: DatasetMigrationReport) -> None:
     rekey_table_content(directory, report)
     changes = inspect_layout(directory)
     if changes.removed_config_keys:
-        _write_atomically(
-            directory / DATASET_CONFIG_FILENAME,
-            yaml.safe_dump(changes.config.model_dump(mode="json"), sort_keys=False),
-        )
+        write_model(directory / DATASET_CONFIG_FILENAME, changes.config)
         report.changes.append(
             f"dataset_config.yaml: removed {', '.join(changes.removed_config_keys)}"
         )
@@ -300,7 +284,7 @@ def migrate_layout(directory: Path, report: DatasetMigrationReport) -> None:
             f"zarr: deleted the tasks group ({', '.join(changes.tasks_arrays)}), "
             "which matched the table"
         )
-    provenance = yaml.safe_load((directory / PROVENANCE_FILENAME).read_text())
+    provenance = read_yaml(directory / PROVENANCE_FILENAME)
     outputs = provenance.get("outputs") or {}
     report.recorded_structures_sha256 = outputs.get("structures_sha256")
     report.structures_sha256 = structures_sha256(
@@ -430,9 +414,7 @@ def main(argv: list[str] | None = None) -> int:
         shadow_root=arguments.shadow_root,
     )
     if arguments.report is not None:
-        arguments.report.write_text(
-            yaml.safe_dump(report.model_dump(mode="json"), sort_keys=False)
-        )
+        write_model(arguments.report, report)
     outcomes: list[Outcome] = ["unchanged", "migrated", "would_migrate", "failed"]
     print(", ".join(f"{report.count(outcome)} {outcome}" for outcome in outcomes))
     for dataset in report.datasets:

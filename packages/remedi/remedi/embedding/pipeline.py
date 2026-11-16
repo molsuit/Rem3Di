@@ -13,12 +13,12 @@ import logging
 from pathlib import Path
 from typing import Annotated
 
-import pydantic_yaml as pyd_yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from remedi.embedding.calculator import RemediConfig
 from remedi.embedding.writer import EmbeddingReport, embed_datasets
 from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
+from remedi_data.yaml_io import write_model
 from remedi_eval.descriptors import PrecomputedEmbeddingsConfig
 from remedi_eval.framework import BenchmarkPanelConfig, EvalManifest, run_manifest
 from remedi_eval.framework.runner import RunReport
@@ -90,7 +90,7 @@ def embed_and_evaluate(
     embedding_report = embed_datasets(
         config.embedding, config.dataset_dirs(), config.embeddings_root
     )
-    pyd_yaml.to_yaml_file(output_root / EMBEDDING_REPORT_FILENAME, embedding_report)
+    write_model(output_root / EMBEDDING_REPORT_FILENAME, embedding_report)
     if embedding_report.failed:
         logger.warning(
             "%d dataset(s) could not be embedded; the panel records them as failures",

@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
-import pydantic_yaml
 import pytest
 import torch
 import yaml
@@ -35,6 +34,7 @@ from remedi_data.bundle import LabelColumn
 from remedi_data.dataset.tasks import TaskType
 from remedi_data.selection import RandomMolecules, SelectionConfig, select_structures
 from remedi_data.testing import write_small_dataset
+from remedi_data.yaml_io import read_model
 
 FIRST = [
     "CCO",
@@ -292,7 +292,7 @@ REPOSITORY = Path(__file__).resolve().parents[3]
     ids=lambda path: path.parent.name,
 )
 def test_the_pretraining_configs_parse(path: Path) -> None:
-    config = pydantic_yaml.parse_yaml_file_as(PretrainingConfig, path)
+    config = read_model(path, PretrainingConfig)
     assert config.data.domain in ("drug_like", "transition_metal_complex")
 
 

@@ -13,6 +13,7 @@ import numpy as np
 from remedi_data.bundle import EvalMetric, LabelColumn
 from remedi_data.dataset.tasks import TaskType
 from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
+from remedi_data.yaml_io import read_model
 from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import EvalContext, ResourceCache
 
@@ -67,7 +68,6 @@ def test_unknown_analysis_fields_are_rejected() -> None:
 
 def test_shipped_descriptor_analysis_configs_parse() -> None:
     """Every config under ``configs/evaluation/descriptor_analysis/`` is a valid pipeline."""
-    import pydantic_yaml as pyd_yaml
 
     from remedi.embedding import EmbedAndEvaluateConfig
     from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
@@ -78,7 +78,7 @@ def test_shipped_descriptor_analysis_configs_parse() -> None:
     paths = sorted(config_dir.glob("*.yaml"))
     assert paths
     for path in paths:
-        config = pyd_yaml.parse_yaml_file_as(EmbedAndEvaluateConfig, path)
+        config = read_model(path, EmbedAndEvaluateConfig)
         assert all(
             isinstance(task, DescriptorAnalysisConfig) for task in config.manifest.tasks
         )

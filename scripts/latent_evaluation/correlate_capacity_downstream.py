@@ -31,14 +31,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pydantic_yaml as pyd_yaml
-import yaml
 from pydantic import BaseModel
 from scipy.stats import spearmanr
 
 from remedi.latent_evaluation.capacity_diagnostic import (
     run_latent_space_capacity_diagnostic,
 )
+from remedi_data.yaml_io import read_yaml, write_model
 
 logger = logging.getLogger(__name__)
 
@@ -132,9 +131,9 @@ def run(
     bdf = _benchmark_long(eval_root, models)
     mean_rank = bdf.groupby("model")["rank"].mean()
     retr = {
-        m: yaml.safe_load(
-            (eval_root / m / "retrieval" / "tanimoto_similarity.yaml").read_text()
-        )["spearman_emb_vs_tanimoto"]
+        m: read_yaml(eval_root / m / "retrieval" / "tanimoto_similarity.yaml")[
+            "spearman_emb_vs_tanimoto"
+        ]
         for m in models
     }
     retr_s = pd.Series(retr)
@@ -214,7 +213,7 @@ def main() -> None:
     report, pt = run(args.eval_root, args.dataset_id)
     out = args.output_dir or (args.eval_root / "capacity_correlation")
     out.mkdir(parents=True, exist_ok=True)
-    pyd_yaml.to_yaml_file(out / "capacity_correlation.yaml", report)
+    write_model(out / "capacity_correlation.yaml", report)
     pt.to_csv(out / "per_task_capacity.csv", index=False)
 
     logger.info("aggregate Spearman (capacity vs downstream):")

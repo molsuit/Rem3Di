@@ -37,6 +37,7 @@ from remedi_data.bundle import (
     sha256_of_file,
 )
 from remedi_data.chemistry.splits import scaffold_test_mask
+from remedi_data.yaml_io import read_model
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RAW_ROOT = REPOSITORY_ROOT / "benchmark_data" / "raw" / "moleculenet"
@@ -97,7 +98,7 @@ def _write_csv(raw_root: Path, file_name: str, frame: pd.DataFrame) -> str:
 
 
 def test_the_catalog_lists_ten_datasets_from_nine_files() -> None:
-    catalog = MoleculeNetCatalog.from_yaml(DATASETS_FILE)
+    catalog = read_model(DATASETS_FILE, MoleculeNetCatalog)
     assert catalog == MOLECULENET_CATALOG
     by_id = {dataset.dataset_id: dataset for dataset in catalog.datasets}
     assert list(by_id) == [*REGRESSION_IDS, *CLASSIFICATION_IDS, *MULTI_LABEL_IDS]

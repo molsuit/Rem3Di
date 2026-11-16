@@ -10,7 +10,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pydantic_yaml as pyd_yaml
 import pytest
 from pydantic import ValidationError
 
@@ -26,6 +25,7 @@ from remedi_data.bundle import EvalMetric, LabelColumn
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.tasks import TaskType
 from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
+from remedi_data.yaml_io import read_model
 from remedi_eval.benchmark.learners import LinearLearnerConfig
 from remedi_eval.descriptors import (
     DescriptorCalculator,
@@ -174,8 +174,8 @@ def test_embed_and_evaluate_scores_the_written_embeddings(
     results = pd.read_csv(tmp_path / "eval_out" / "benchmark" / "results.csv")
     assert set(results.dataset_id) == {"toy_a", "toy_b"}
     assert set(results.descriptor_name) == {"remedi_test"}
-    recorded = pyd_yaml.parse_yaml_file_as(
-        EmbeddingReport, tmp_path / "eval_out" / "embedding_status.yaml"
+    recorded = read_model(
+        tmp_path / "eval_out" / "embedding_status.yaml", EmbeddingReport
     )
     assert recorded.checkpoint_sha256 == config.embedding.identity()
 

@@ -30,7 +30,6 @@ from typing import Annotated, Any, Literal
 
 import numpy as np
 import polars as pl
-import yaml
 from ase.data import atomic_numbers as atomic_number_of_symbol
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag
 from torch.utils.data import ConcatDataset, Dataset, Subset
@@ -51,6 +50,7 @@ from remedi_data.selection import (
 )
 from remedi_data.selection.config import NAME_PATTERN
 from remedi_data.selection.order import keys_by_id
+from remedi_data.yaml_io import write_model
 
 logger = logging.getLogger(__name__)
 
@@ -345,9 +345,7 @@ class PretrainingData:
 
     def write_record(self, directory: Path) -> Path:
         path = Path(directory) / RECORD_NAME
-        path.write_text(
-            yaml.safe_dump(self.record.model_dump(mode="json"), sort_keys=False)
-        )
+        write_model(path, self.record)
         return path
 
 

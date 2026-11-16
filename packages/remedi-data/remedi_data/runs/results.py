@@ -14,8 +14,9 @@ from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
-import yaml
 from pydantic import BaseModel, ConfigDict
+
+from remedi_data.yaml_io import write_model
 
 
 class EvalResult(BaseModel, ABC):
@@ -74,17 +75,7 @@ class PydanticResult(EvalResult):
     obj: BaseModel
 
     def serialize_to(self, directory: Path) -> dict[str, Any]:
-        output_path = directory / self.file_name
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        data = self.obj.model_dump(mode="json")  # apply serializers → pure python types
-        yaml_text = yaml.safe_dump(
-            data,
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        )
-        output_path.write_text(yaml_text, encoding="utf-8")
+        write_model(directory / self.file_name, self.obj)
         return self._manifest_entry()
 
 

@@ -10,8 +10,6 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-import pydantic_yaml as pyaml
-
 from remedi.configuration.dataloader_config import (
     BucketBatchSamplingConfig,
     DataLoaderConfig,
@@ -22,6 +20,7 @@ from remedi.training.data.mixture import (
     MoleculeFractionValidation,
     PretrainingDataConfig,
 )
+from remedi_data.yaml_io import read_model, write_model
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 
@@ -64,7 +63,7 @@ def _write_training_config(
         output_base=output_base,
     )
     cfg_path = tmp_path / f"{name}.yaml"
-    pyaml.to_yaml_file(cfg_path, config)
+    write_model(cfg_path, config)
     return cfg_path
 
 
@@ -78,7 +77,7 @@ def test_snapshot_freezes_config_and_arch(tmp_path: Path) -> None:
 
     assert name == "run_a"
     assert snapshot.exists()
-    snap_cfg = pyaml.parse_yaml_file_as(PretrainingConfig, snapshot)
+    snap_cfg = read_model(snapshot, PretrainingConfig)
     # Snapshot is frozen inside its own training directory...
     assert snap_cfg.training_directory == snapshot.parent
     # ...and the architecture config travels with it.

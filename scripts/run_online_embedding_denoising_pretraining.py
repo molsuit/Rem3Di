@@ -4,7 +4,6 @@ from pathlib import Path
 from time import perf_counter
 
 import numpy as np
-import pydantic_yaml as pyaml
 import torch
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import Dataset, Subset
@@ -20,6 +19,7 @@ from remedi.training.data.training_dataset import atoms_getitem
 from remedi.training.linear_probe import LinearProbeMonitor
 from remedi.training.pretraining import denoising_step, vicreg_descriptor_loss
 from remedi.training.telemetry import TrainingTelemetry
+from remedi_data.yaml_io import read_model, write_model
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -156,13 +156,13 @@ def setup_logging(filename, level: int = logging.INFO) -> logging.Logger:
 def main():  # noqa: C901 - one training loop
     args = parse_args()
 
-    training_config = pyaml.parse_yaml_file_as(PretrainingConfig, args.training_config)
+    training_config = read_model(args.training_config, PretrainingConfig)
     torch.manual_seed(training_config.seed)
     np.random.seed(training_config.seed)
     if args.max_epochs is not None:
         training_config.epochs = args.max_epochs
-    architecture_config = pyaml.parse_yaml_file_as(
-        ArchitectureConfig, training_config.model_config_path
+    architecture_config = read_model(
+        training_config.model_config_path, ArchitectureConfig
     )
 
     training_data_dir = training_config.create_run_directory()
@@ -248,7 +248,7 @@ def main():  # noqa: C901 - one training loop
         total_steps=training_config.epochs * len(training_loader),
     )
 
-    pyaml.to_yaml_file(
+    write_model(
         training_data_dir / ARCHITECTURE_FILENAME,
         architecture_config,
     )
@@ -496,7 +496,7 @@ def main():  # noqa: C901 - one training loop
             window_atoms = 0
             window_t0 = perf_counter()
 
-    pyaml.to_yaml_file(
+    write_model(
         training_data_dir / ARCHITECTURE_FILENAME,
         architecture_config,
     )

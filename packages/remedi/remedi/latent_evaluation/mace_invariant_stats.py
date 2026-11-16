@@ -25,6 +25,7 @@ from remedi.latent_evaluation.capacity_diagnostic import (
     marginal_entropy_bits,
     participation_ratio,
 )
+from remedi_data.yaml_io import write_model
 
 
 class LayerSpec(BaseModel):
@@ -549,10 +550,9 @@ def plot_explained_variance(report: AnalysisReport):
 
 def write_report(report: AnalysisReport, output_dir: Path) -> None:
     """Persist plots + a YAML summary into ``output_dir``."""
-    import pydantic_yaml as pyaml
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    pyaml.to_yaml_file(
+    write_model(
         output_dir / "mace_invariant_report.yaml",
         report,
     )

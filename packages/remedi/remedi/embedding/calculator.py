@@ -17,7 +17,6 @@ from typing import Literal
 
 import numpy as np
 import torch
-import yaml
 from ase import Atoms
 from pydantic import BaseModel
 from torch.utils.data import DataLoader, Subset
@@ -34,6 +33,7 @@ from remedi.training.data.training_dataset import (
 )
 from remedi_data.bundle import sha256_of_file
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.yaml_io import read_yaml
 from remedi_eval.descriptors.base import DescriptorCalculator
 
 
@@ -251,9 +251,7 @@ class RemediConfig(BaseModel):
         """sha256 of the MACE model file the calculator will load."""
         mace_model_path = self.mace_model_path
         if mace_model_path is None:
-            architecture = yaml.safe_load(
-                (Path(self.model_dir) / ARCHITECTURE_FILENAME).read_text()
-            )
+            architecture = read_yaml(Path(self.model_dir) / ARCHITECTURE_FILENAME)
             named = ((architecture or {}).get("mace_config") or {}).get("model_path")
             mace_model_path = None if named is None else Path(named)
         if mace_model_path is None:

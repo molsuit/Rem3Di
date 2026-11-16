@@ -7,7 +7,6 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
-import pydantic_yaml
 import pytest
 import yaml
 
@@ -43,6 +42,7 @@ from remedi_data.testing import (
     make_provenance,
     write_small_dataset,
 )
+from remedi_data.yaml_io import read_model
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
@@ -534,9 +534,9 @@ def test_a_batch_reports_every_failure_after_trying_all(corpus: Path) -> None:
 
 
 def test_the_production_selection_config_parses() -> None:
-    pydantic_yaml.parse_yaml_file_as(
-        SelectionBatchConfig,
+    read_model(
         REPOSITORY_ROOT / "configs/dataset_creation/select_structures.yaml",
+        SelectionBatchConfig,
     )
 
 
