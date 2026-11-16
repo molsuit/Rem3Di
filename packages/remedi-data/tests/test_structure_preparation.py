@@ -383,6 +383,28 @@ def test_pcqm_source_end_to_end(tmp_path: Path, pcqm_files) -> None:
     assert prepare_structures(source, SETTINGS, output, tmp_path / "work").skipped
 
 
+def test_a_raw_file_replaced_at_the_same_path_rebuilds_the_dataset(
+    tmp_path: Path, pcqm_files
+) -> None:
+    sdf, labels = pcqm_files
+    source = Pcqm4mv2Source(sdf=sdf, labels_csv=labels, smiles_filter=FILTER)
+    output = tmp_path / "datasets" / "pcqm4mv2"
+    prepare_structures(source, SETTINGS, output, tmp_path / "work")
+
+    relabelled = pd.read_csv(labels)
+    relabelled["homolumogap"] += 10.0
+    relabelled.to_csv(labels, index=False)
+
+    # The shards of the old file are refused rather than mixed with the new one...
+    with pytest.raises(ValueError, match="raw files"):
+        prepare_structures(source, SETTINGS, output, tmp_path / "work")
+    # ...and a fresh work directory rebuilds the dataset from the new file.
+    summary = prepare_structures(source, SETTINGS, output, tmp_path / "fresh_work")
+    assert not summary.skipped
+    assert read_bundle(output).table["homo_lumo_gap"].tolist()[0] == 10.0
+    assert prepare_structures(source, SETTINGS, output, tmp_path / "fresh_work").skipped
+
+
 # ------------------------------------------------------------- restart, plan
 
 

@@ -68,16 +68,20 @@ def read_packed_structures(dataset: MoleculeDataset) -> PackedStructures:
 
 
 def structures_sha256(dataset: MoleculeDataset) -> str:
-    """sha256 over the zarr's ``atomic_numbers``, ``positions`` and ``ptr``.
+    """sha256 over everything the model reads from the zarr.
 
-    The data identity a descriptor cache keys on: it moves whenever any
-    structure, or the set of structures, changes.
+    ``atomic_numbers``, ``positions`` and ``molecule_ptr`` (the structures) and
+    the per-structure ``total_charge`` and ``multiplicity``. The data identity a
+    descriptor cache and a selection key on: it moves whenever any structure,
+    its charge or spin, or the set of structures changes.
     """
     digest = hashlib.sha256()
     for name, array in (
         ("atomic_numbers", dataset.atomic_numbers),
         ("positions", dataset.positions),
         ("molecule_ptr", dataset.ptr),
+        ("total_charge", dataset.total_charge),
+        ("multiplicity", dataset.multiplicity),
     ):
         values = np.ascontiguousarray(np.asarray(array[:]))
         digest.update(f"{name}:{values.dtype.str}:{values.shape}\n".encode())
@@ -155,8 +159,9 @@ def _write_zarr(
 def zarr_problems(path: Path, spec: DatasetSpec, table: pd.DataFrame) -> list[str]:
     """Invariant 8: the zarr at ``path`` against the table, row for row.
 
-    Structure count, the three id arrays, the default split's codes and the
-    label values must all equal what the table says.
+    Structure count, the three id arrays, ``total_charge``, ``multiplicity``,
+    the default split's codes and the label values must all equal what the
+    table says.
     """
     dataset = MoleculeDataset.open_existing_dataset_from_dir(path)
     rows = len(table)
@@ -172,6 +177,15 @@ def zarr_problems(path: Path, spec: DatasetSpec, table: pd.DataFrame) -> list[st
         if array is None or not np.array_equal(
             np.asarray(array[:rows], dtype=np.int64),
             column.to_numpy(dtype=np.int64),
+        ):
+            problems.append(f"8: {name} does not match the table")
+    for name, array in (
+        ("total_charge", dataset.total_charge),
+        ("multiplicity", dataset.multiplicity),
+    ):
+        if not np.array_equal(
+            np.asarray(array[:rows], dtype=np.float64),
+            table[name].to_numpy(dtype=np.float64),
         ):
             problems.append(f"8: {name} does not match the table")
     # A corpus without labels has no task arrays, so no tasks/split either.

@@ -1008,6 +1008,16 @@ def delete_an_array(directory: Path) -> None:
     shutil.rmtree(directory / "multiplicity")
 
 
+def overwrite_a_charge(directory: Path) -> None:
+    total_charge = zarr.open_array(directory / "total_charge", mode="r+")
+    total_charge[0] = 3.0
+
+
+def overwrite_a_multiplicity(directory: Path) -> None:
+    multiplicity = zarr.open_array(directory / "multiplicity", mode="r+")
+    multiplicity[0] = 2.0
+
+
 @pytest.mark.parametrize(
     ("tamper", "expected"),
     [
@@ -1017,6 +1027,8 @@ def delete_an_array(directory: Path) -> None:
         (tamper_provenance_structures_hash, ["structures_sha256"]),
         (delete_the_table, [TABLE_FILENAME]),
         (delete_an_array, ["multiplicity"]),
+        (overwrite_a_charge, ["structures_sha256", "8: total_charge"]),
+        (overwrite_a_multiplicity, ["structures_sha256", "8: multiplicity"]),
     ],
 )
 def test_verify_catches_tampering(

@@ -351,6 +351,71 @@ def test_a_hierarchical_draw_reads_the_cluster_file(corpus: Path) -> None:
         )
 
 
+def test_reclustering_under_the_same_name_makes_the_selection_stale(
+    corpus: Path,
+) -> None:
+    molecule_ids = np.arange(8)
+    first = pl.DataFrame(
+        {
+            "molecule_id": molecule_ids,
+            "coarse_cluster": molecule_ids // 4,
+            "fine_cluster": molecule_ids // 2,
+        }
+    )
+    write_clusters(corpus, first, _cluster_record(corpus, "regrouped"))
+    config = SelectionConfig(
+        name="from_regrouped",
+        steps=[
+            HierarchicalClusters(
+                clusters="regrouped", count=2, cluster_weighting="uniform"
+            )
+        ],
+    )
+    made = select_structures(corpus, config)
+    assert select_structures(corpus, config).created_at == made.created_at
+
+    second = first.with_columns(
+        coarse_cluster=pl.col("molecule_id") % 2, fine_cluster=pl.col("molecule_id")
+    )
+    write_clusters(corpus, second, _cluster_record(corpus, "regrouped"))
+    with pytest.raises(SelectionError, match="inputs"):
+        read_selection(corpus, "from_regrouped")
+    with pytest.raises(SelectionError, match="overwrite"):
+        select_structures(corpus, config)
+    remade = select_structures(corpus, config, overwrite=True)
+    assert remade.inputs != made.inputs
+    assert len(read_selection(corpus, "from_regrouped")) == remade.structures
+
+
+def test_a_rebuilt_overlap_pool_makes_the_selection_stale(
+    corpus: Path, tmp_path: Path
+) -> None:
+    def write_pool(smiles: list[str]) -> None:
+        write_small_dataset(
+            tmp_path,
+            dataset_id="pool",
+            labels=[],
+            metrics=None,
+            targets=None,
+            smiles=smiles,
+        )
+
+    write_pool(["CCO"])
+    config = SelectionConfig(
+        name="without_pool", steps=[ExcludeOverlap(datasets=[tmp_path / "pool"])]
+    )
+    made = select_structures(corpus, config)
+    assert select_structures(corpus, config).created_at == made.created_at
+
+    write_pool(["CCO", "CCC"])
+    with pytest.raises(SelectionError, match="inputs"):
+        read_selection(corpus, "without_pool")
+    with pytest.raises(SelectionError, match="overwrite"):
+        select_structures(corpus, config)
+    remade = select_structures(corpus, config, overwrite=True)
+    assert remade.molecules == made.molecules - 1
+
+
 def test_a_cluster_file_with_a_fine_cluster_across_coarse_ones_is_refused(
     corpus: Path,
 ) -> None:

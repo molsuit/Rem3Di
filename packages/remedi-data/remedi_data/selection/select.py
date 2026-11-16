@@ -5,8 +5,10 @@
 <dataset>/selections/<name>.yaml      SelectionRecord (written last: the completion marker)
 ```
 
-A selection records the dataset's table and structure hashes; reading it after
-the dataset was rebuilt fails, so a stale selection is never used.
+A selection records the dataset's table and structure hashes and the files its
+steps read (pool datasets' table hashes, cluster-file hashes); reading it after
+the dataset or one of those inputs changed fails, so a stale selection is never
+used.
 """
 
 from __future__ import annotations
@@ -169,19 +171,58 @@ def pool_datasets(paths: Iterable[Path]) -> list[Path]:
     return datasets
 
 
+def _pool_inputs(step: ExcludeOverlap) -> list[SelectionInput]:
+    """Every pool dataset of ``step`` with its table's ``content_sha256``."""
+    return [
+        SelectionInput(
+            path=dataset, content_sha256=dataset_identity(dataset).table_content_sha256
+        )
+        for dataset in pool_datasets(step.datasets)
+    ]
+
+
+def _cluster_input(dataset: Path, step: HierarchicalClusters) -> SelectionInput:
+    """The cluster table of ``step`` with its file sha256.
+
+    Raises:
+        SelectionError: if the cluster table does not exist.
+    """
+    table_path, _ = cluster_paths(dataset, step.clusters)
+    if not table_path.is_file():
+        raise SelectionError(f"{dataset} has no cluster table {table_path.name}")
+    return SelectionInput(path=table_path, content_sha256=sha256_of_file(table_path))
+
+
+def step_inputs(dataset: Path, config: SelectionConfig) -> list[SelectionInput]:
+    """The files the steps of ``config`` read besides ``dataset``, as they are now.
+
+    The same list :func:`select_structures` records in ``SelectionRecord.inputs``,
+    computed without running the steps: a selection whose recorded inputs
+    differ from these was made from other data.
+
+    Raises:
+        SelectionError: if a pool dataset or a cluster table is missing.
+    """
+    inputs: list[SelectionInput] = []
+    for step in config.steps:
+        match step:
+            case ExcludeOverlap():
+                inputs += _pool_inputs(step)
+            case HierarchicalClusters():
+                inputs.append(_cluster_input(Path(dataset), step))
+    return inputs
+
+
 def _exclude_overlap(
     rows: pl.DataFrame, step: ExcludeOverlap, workers: int
 ) -> tuple[pl.DataFrame, list[SelectionInput]]:
     _require_columns(rows, step, ["nonisomeric_smiles"])
-    inputs = []
+    inputs = _pool_inputs(step)
     pool_smiles: set[str] = set()
-    for dataset in pool_datasets(step.datasets):
+    for pool_input in inputs:
+        dataset = pool_input.path
         if not read_spec(dataset).smiles:
             raise SelectionError(f"pool dataset {dataset} has no SMILES")
-        identity = dataset_identity(dataset)
-        inputs.append(
-            SelectionInput(path=dataset, content_sha256=identity.table_content_sha256)
-        )
         pool_smiles.update(
             pl.read_parquet(dataset / "table.parquet", columns=["nonisomeric_smiles"])[
                 "nonisomeric_smiles"
@@ -250,7 +291,7 @@ def _hierarchical_clusters(
     dataset: Path,
     identity: DatasetIdentity,
 ) -> tuple[pl.DataFrame, list[SelectionInput]]:
-    assignments, record = read_clusters(
+    assignments, _ = read_clusters(
         dataset, step.clusters, identity.table_content_sha256
     )
     present = pl.DataFrame({"molecule_id": rows["molecule_id"].unique()})
@@ -267,11 +308,7 @@ def _hierarchical_clusters(
         seed=step.seed,
         weighting=step.cluster_weighting,
     )
-    table_path, _ = cluster_paths(dataset, record.name)
-    cluster_input = SelectionInput(
-        path=table_path, content_sha256=sha256_of_file(table_path)
-    )
-    return _draw(rows, order, step), [cluster_input]
+    return _draw(rows, order, step), [_cluster_input(dataset, step)]
 
 
 def _apply_step(
@@ -325,23 +362,51 @@ def read_selection_record(dataset: Path, name: str) -> SelectionRecord:
     return SelectionRecord.model_validate(yaml.safe_load(record_path.read_text()))
 
 
-def read_selection(dataset: Path, name: str) -> np.ndarray:
-    """The sorted ``structure_id``s of a selection, checked against the dataset.
+def _stale_reason(
+    dataset: Path, record: SelectionRecord, identity: DatasetIdentity
+) -> str | None:
+    """Why ``record`` no longer describes ``dataset``; ``None`` if it still does.
 
-    Raises:
-        SelectionError: if the selection is missing, incomplete, or was made from
-            other data than the dataset now holds.
+    Compares the dataset's table and structure hashes and the step inputs (pool
+    datasets' table hashes, cluster-file hashes) with what the record holds. A
+    missing input counts as changed.
     """
-    record = read_selection_record(dataset, name)
-    identity = dataset_identity(dataset)
     if (record.table_content_sha256, record.structures_sha256) != (
         identity.table_content_sha256,
         identity.structures_sha256,
     ):
-        raise SelectionError(
-            f"selection {name!r} was made from another build of {dataset} "
-            "(table or structure hash differs); make it again"
+        return (
+            f"it was made from another build of {dataset} "
+            "(table or structure hash differs)"
         )
+    try:
+        current = step_inputs(dataset, record.config)
+    except (SelectionError, OSError) as error:
+        return f"its inputs cannot be read any more ({error})"
+    if current != record.inputs:
+        changed = {
+            str(entry.path)
+            for entry in [*current, *record.inputs]
+            if entry not in current or entry not in record.inputs
+        }
+        return f"its inputs changed since it was made: {sorted(changed)}"
+    return None
+
+
+def read_selection(dataset: Path, name: str) -> np.ndarray:
+    """The sorted ``structure_id``s of a selection, checked against the dataset.
+
+    Checks the dataset's hashes and the step inputs (pool datasets' table hashes
+    and cluster-file hashes; re-hashing a cluster table costs one read of it).
+
+    Raises:
+        SelectionError: if the selection is missing, incomplete, or was made from
+            other data than the dataset and its inputs now hold.
+    """
+    record = read_selection_record(dataset, name)
+    reason = _stale_reason(Path(dataset), record, dataset_identity(dataset))
+    if reason is not None:
+        raise SelectionError(f"selection {name!r} is stale: {reason}; make it again")
     table_path, _ = selection_paths(dataset, name)
     structure_ids = (
         pl.read_parquet(table_path, columns=["structure_id"])["structure_id"]
@@ -371,8 +436,9 @@ def select_structures(
 ) -> SelectionRecord:
     """Make one selection of ``dataset`` and write it under ``selections/``.
 
-    An existing selection with the same config, made from the dataset as it is
-    now, is kept and its record returned.
+    An existing selection with the same config, made from the dataset and the
+    step inputs (pool datasets, cluster files) as they are now, is kept and its
+    record returned.
 
     Raises:
         SelectionError: if a step cannot be applied, the selection is empty, or
@@ -383,18 +449,18 @@ def select_structures(
     identity = dataset_identity(dataset)
     existing = _existing_record(dataset, config.name)
     if existing is not None:
-        unchanged = (
-            existing.config == config
-            and existing.table_content_sha256 == identity.table_content_sha256
-            and existing.structures_sha256 == identity.structures_sha256
+        reason = (
+            "it was made from another config"
+            if existing.config != config
+            else _stale_reason(dataset, existing, identity)
         )
-        if unchanged:
+        if reason is None:
             logger.info("%s/%s is up to date", identity.dataset_id, config.name)
             return existing
         if not overwrite:
             raise SelectionError(
-                f"{dataset} already has a selection {config.name!r} made from another "
-                "config or build; set overwrite to replace it"
+                f"{dataset} already has a selection {config.name!r}, but {reason}; "
+                "set overwrite to replace it"
             )
 
     rows = _read_rows(dataset)

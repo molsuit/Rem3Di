@@ -39,6 +39,7 @@ from remedi_data.bundle import (
     PreparerRecord,
     SourceRecord,
     identity_from_canonical,
+    read_provenance,
     sha256_of_file,
 )
 from remedi_data.bundle.provenance import git_head_sha
@@ -96,11 +97,13 @@ class ShardSummary(BaseModel):
 
 
 class PreparationPlan(BaseModel):
-    """``plan.yaml``: which source and shard size the shards in this directory belong to."""
+    """``plan.yaml``: which source, raw files and shard size the shards here belong to."""
 
     model_config = ConfigDict(extra="forbid")
 
     source_fingerprint: str
+    #: file name -> sha256 of every raw file the shards were read from.
+    raw_files: dict[str, str]
     shard_size: int
     record_count: int
 
@@ -128,7 +131,9 @@ class ShardFailures(RuntimeError):
 def source_fingerprint(source: StructureSource) -> str:
     """sha256 of the source config, its type and :data:`PIPELINE_VERSION`.
 
-    Shards from another config or pipeline version are refused.
+    Shards from another config or pipeline version are refused. The raw files'
+    contents are checked separately, against ``plan.yaml`` and the dataset's
+    ``provenance.yaml`` (:func:`_raw_file_hashes`).
     """
     document = {
         "pipeline_version": PIPELINE_VERSION,
@@ -233,13 +238,29 @@ def _read_shard_summary(work_directory: Path, index: int) -> ShardSummary | None
     return pydantic_yaml.parse_yaml_file_as(ShardSummary, path)
 
 
+def _changed_raw_files(
+    recorded: dict[str, str], current: dict[str, FileHash]
+) -> list[str]:
+    """Names of the raw files whose sha256 differs, or that appear on one side only."""
+    names = set(recorded) | set(current)
+    return sorted(
+        name
+        for name in names
+        if name not in recorded
+        or name not in current
+        or recorded[name] != current[name].sha256
+    )
+
+
 def _plan(
     source: StructureSource,
     settings: StructurePreparationSettings,
     work_directory: Path,
 ) -> PreparationPlan:
-    """Load ``plan.yaml``, or write it; refuse shards made from another config."""
+    """Load ``plan.yaml``, or write it; refuse shards made from another config
+    or from other raw files."""
     fingerprint = source_fingerprint(source)
+    raw_files = _raw_file_hashes(source, work_directory)
     path = work_directory / PLAN_FILENAME
     if path.exists():
         plan = pydantic_yaml.parse_yaml_file_as(PreparationPlan, path)
@@ -251,12 +272,19 @@ def _plan(
                 f"{work_directory} holds shards of another source config or shard "
                 "size; delete it to start over"
             )
+        changed = _changed_raw_files(plan.raw_files, raw_files)
+        if changed:
+            raise ValueError(
+                f"{work_directory} holds shards read from other raw files "
+                f"({', '.join(changed)} changed); delete it to start over"
+            )
         return plan
     record_count = source.record_count(work_directory)
     if source.limit is not None:
         record_count = min(record_count, source.limit)
     plan = PreparationPlan(
         source_fingerprint=fingerprint,
+        raw_files={name: entry.sha256 for name, entry in raw_files.items()},
         shard_size=settings.shard_size,
         record_count=record_count,
     )
@@ -342,7 +370,11 @@ def run_shards(
 def _raw_file_hashes(
     source: StructureSource, work_directory: Path
 ) -> dict[str, FileHash]:
-    """sha256 of every raw file, cached by path, size and modification time."""
+    """sha256 of every raw file, cached by path, size and modification time.
+
+    The cache lives in ``work_directory``, which is created if needed.
+    """
+    work_directory.mkdir(parents=True, exist_ok=True)
     cache_path = work_directory / RAW_HASHES_FILENAME
     cache: dict[str, dict[str, Any]] = {}
     if cache_path.exists():
@@ -421,22 +453,35 @@ def prepare_structures(
     """Prepare one source into the dataset at ``output_directory``.
 
     Skips the work when ``output_directory`` already holds a dataset made from
-    the same source config, unless ``overwrite``.
+    the same source config and the same raw files (their sha256 against the
+    dataset's ``provenance.yaml``), unless ``overwrite``.
 
     Raises:
         ShardFailures: if a shard failed (rerun to retry it).
         BundleValidationError: if the assembled dataset breaks an invariant.
+        ValueError: if ``work_directory`` holds shards of another config or of
+            other raw files.
     """
     started = time.monotonic()
     output_directory = Path(output_directory)
     work_directory = Path(work_directory)
     marker = output_directory / "source_fingerprint.txt"
     fingerprint = source_fingerprint(source)
+    raw_files = _raw_file_hashes(source, work_directory)
     if (
         not overwrite
         and marker.exists()
         and marker.read_text().strip() == fingerprint
         and (output_directory / "provenance.yaml").exists()
+        and not _changed_raw_files(
+            {
+                name: entry.sha256
+                for name, entry in read_provenance(
+                    output_directory
+                ).source.files.items()
+            },
+            raw_files,
+        )
     ):
         logger.info("%s: already prepared from this config", source.dataset_id)
         return PreparationSummary(
@@ -478,7 +523,7 @@ def prepare_structures(
             git_sha=git_head_sha(Path(__file__).parent),
         ),
         source=SourceRecord(
-            files=_raw_file_hashes(source, work_directory),
+            files=raw_files,
             geometry=source.geometry_description(),
         ),
         geometry_limits=source.geometry_limits,
