@@ -3,17 +3,22 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 import numpy as np
-from pydantic import BaseModel, Field
+import torch
+from pydantic import BaseModel, ConfigDict, Field
 from torch.utils.data import DataLoader, Dataset
 
 
 class RandomShuffleSamplingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     kind: Literal["random_shuffle"] = "random_shuffle"
     batch_size: int = Field(gt=0)
     drop_last: bool = False
 
 
 class BucketBatchSamplingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     kind: Literal["bucket_batch"] = "bucket_batch"
     max_atoms_per_batch: int = Field(gt=0)
     max_batch_size: int | None = Field(default=None, gt=0)
@@ -27,6 +32,8 @@ BatchSamplingConfig = Annotated[
 
 
 class DataLoaderConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     batch_sampling: BatchSamplingConfig
     num_workers: int = Field(default=12, ge=0)
     prefetch_factor: int | None = Field(default=4, ge=1)
@@ -40,13 +47,15 @@ class DataLoaderConfig(BaseModel):
         lengths: np.ndarray | None = None,
         collate_fn=None,
         shuffle: bool = True,
-        seed: int | None = None,
+        seed: int = 0,
     ) -> DataLoader:
         """Construct a DataLoader from this config.
 
         `lengths` is required when batch_sampling is bucket_batch; ignored
         otherwise. `shuffle` is honored by both sampling kinds (random shuffle
-        vs bucket-batch-order shuffle).
+        vs per-epoch bucket regrouping and batch-order shuffle). `seed` fixes
+        the order and grouping of every epoch; training passes
+        ``TrainingRunConfig.seed``.
         """
         from remedi.training.data.samplers import BucketBatchSampler
         from remedi.training.data.util import worker_init_fn
@@ -60,6 +69,7 @@ class DataLoaderConfig(BaseModel):
                 dataset,
                 batch_size=sampling.batch_size,
                 shuffle=shuffle,
+                generator=torch.Generator().manual_seed(seed),
                 drop_last=sampling.drop_last,
                 num_workers=self.num_workers,
                 pin_memory=self.pin_memory,
@@ -73,14 +83,13 @@ class DataLoaderConfig(BaseModel):
             raise ValueError(
                 "BucketBatchSampling requires per-sample lengths to be provided."
             )
-        rng = np.random.default_rng(seed) if seed is not None else None
         batch_sampler = BucketBatchSampler(
             lengths,
             max_atoms_per_batch=sampling.max_atoms_per_batch,
             max_batch_size=sampling.max_batch_size,
             bucket_size=sampling.bucket_size,
             shuffle=shuffle,
-            generator=rng,
+            seed=seed,
         )
         return DataLoader(
             dataset,

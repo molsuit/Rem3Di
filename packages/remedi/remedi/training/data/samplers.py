@@ -12,16 +12,19 @@ class BucketBatchSampler(Sampler[list[int]]):
     """Length-bucketed batch sampler with deterministic, torch.compile-friendly shapes.
 
     Pipeline per epoch:
-      1. Sort indices by length, split into contiguous buckets of `bucket_size`.
-      2. Pack each bucket independently into batches under
-         `max_atoms_per_batch` (sum-of-lengths cap) and optional `max_batch_size`.
-         Packing is deterministic per bucket, so `__len__` is exact.
-      3. Shuffle the order of all yielded batches.
+      1. With ``shuffle``, permute the indices with the epoch's generator, then
+         stable-sort them by length, and split the order into contiguous
+         buckets of ``bucket_size``. Structures of equal length land in a
+         different order (so in different batches) every epoch, while the
+         sorted lengths, and with them the bucket boundaries, never change.
+      2. Pack each bucket into batches under ``max_atoms_per_batch``
+         (sum-of-lengths cap) and optional ``max_batch_size``. The packing
+         depends only on the sorted lengths, so it is computed once and
+         ``__len__`` is exact.
+      3. With ``shuffle``, shuffle the order of the batches.
 
-    Determinism note: items in a bucket are tightly clustered by length, so the
-    composition of each batch is fixed across epochs; only the order in which
-    batches are visited varies. Across-bucket batch-order shuffle is what
-    provides epoch-level mixing.
+    Epoch ``e`` draws from ``numpy.random.default_rng([seed, e])``: a run is
+    reproducible from ``seed`` and every epoch differs.
     """
 
     def __init__(
@@ -31,7 +34,8 @@ class BucketBatchSampler(Sampler[list[int]]):
         max_batch_size: int | None = None,
         bucket_size: int = 512,
         shuffle: bool = True,
-        generator: np.random.Generator | None = None,
+        *,
+        seed: int,
     ):
         self.lengths = np.asarray(lengths, dtype=np.int64).reshape(-1)
         if (self.lengths <= 0).any():
@@ -51,7 +55,8 @@ class BucketBatchSampler(Sampler[list[int]]):
             raise ValueError("bucket_size must be positive.")
         self.bucket_size = int(bucket_size)
         self.shuffle = bool(shuffle)
-        self._rng = generator if generator is not None else np.random.default_rng()
+        self.seed = int(seed)
+        self.epoch = 0
 
         if self.lengths.size > 0:
             n_oversize = int((self.lengths > self.max_atoms_per_batch).sum())
@@ -63,70 +68,53 @@ class BucketBatchSampler(Sampler[list[int]]):
                     stacklevel=2,
                 )
 
-        self._sorted_buckets: list[np.ndarray] = self._build_sorted_buckets()
-        self._batch_count: int = self._compute_batch_count()
+        self._batch_bounds = self._pack(np.sort(self.lengths, kind="stable"))
 
-    def _build_sorted_buckets(self) -> list[np.ndarray]:
-        if self.lengths.size == 0:
-            return []
-        order = np.argsort(self.lengths, kind="stable")
-        return [
-            order[i : i + self.bucket_size]
-            for i in range(0, order.size, self.bucket_size)
-        ]
-
-    def _pack_bucket(self, indices: np.ndarray) -> list[list[int]]:
-        """Greedy-pack a single bucket of indices into batches."""
-        batches: list[list[int]] = []
-        current: list[int] = []
-        atoms = 0
-
-        for idx in indices:
-            i = int(idx)
-            length = int(self.lengths[i])
-
-            if length > self.max_atoms_per_batch:
-                if current:
-                    batches.append(current)
-                    current = []
+    def _pack(self, sorted_lengths: np.ndarray) -> list[tuple[int, int]]:
+        """Greedy-pack every bucket; ``(start, stop)`` positions in the sorted order."""
+        bounds: list[tuple[int, int]] = []
+        for bucket_start in range(0, sorted_lengths.size, self.bucket_size):
+            bucket_stop = min(bucket_start + self.bucket_size, sorted_lengths.size)
+            start = bucket_start
+            atoms = 0
+            for position in range(bucket_start, bucket_stop):
+                length = int(sorted_lengths[position])
+                if length > self.max_atoms_per_batch:
+                    if position > start:
+                        bounds.append((start, position))
+                    bounds.append((position, position + 1))
+                    start = position + 1
                     atoms = 0
-                batches.append([i])
-                continue
-
-            would_exceed_atoms = atoms + length > self.max_atoms_per_batch
-            would_exceed_count = (
-                self.max_batch_size is not None and len(current) >= self.max_batch_size
-            )
-            if current and (would_exceed_atoms or would_exceed_count):
-                batches.append(current)
-                current = []
-                atoms = 0
-
-            current.append(i)
-            atoms += length
-
-        if current:
-            batches.append(current)
-        return batches
-
-    def _compute_batch_count(self) -> int:
-        return sum(len(self._pack_bucket(b)) for b in self._sorted_buckets)
+                    continue
+                would_exceed_atoms = atoms + length > self.max_atoms_per_batch
+                would_exceed_count = (
+                    self.max_batch_size is not None
+                    and position - start >= self.max_batch_size
+                )
+                if position > start and (would_exceed_atoms or would_exceed_count):
+                    bounds.append((start, position))
+                    start = position
+                    atoms = 0
+                atoms += length
+            if bucket_stop > start:
+                bounds.append((start, bucket_stop))
+        return bounds
 
     def __iter__(self) -> Iterator[list[int]]:
-        if not self._sorted_buckets:
-            return
-
-        all_batches: list[list[int]] = []
-        for b in self._sorted_buckets:
-            all_batches.extend(self._pack_bucket(b))
-
+        generator = np.random.default_rng([self.seed, self.epoch])
+        self.epoch += 1
         if self.shuffle:
-            self._rng.shuffle(all_batches)
-
-        yield from all_batches
+            permutation = generator.permutation(self.lengths.size)
+            order = permutation[np.argsort(self.lengths[permutation], kind="stable")]
+        else:
+            order = np.argsort(self.lengths, kind="stable")
+        batches = [order[start:stop].tolist() for start, stop in self._batch_bounds]
+        if self.shuffle:
+            generator.shuffle(batches)
+        yield from batches
 
     def __len__(self) -> int:
-        return self._batch_count
+        return len(self._batch_bounds)
 
 
 def lengths_from_ptr(ptr) -> np.ndarray:

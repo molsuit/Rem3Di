@@ -77,11 +77,6 @@ def pretraining_padded_collate_fn(batch: list[Sample]) -> Sample:
     return Sample(padding_mask=mask, atomic_positions=P_pad)
 
 
-def normalization_collate_fn(batch: list[Sample]) -> Sample:
-    E = torch.cat(tensors=[s.embeddings for s in batch])
-    return Sample(embeddings=E)
-
-
 def sample_collate_fn(batch: list[Sample]) -> Sample:
     batched = {}
     for f in fields(Sample):

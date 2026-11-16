@@ -1,6 +1,5 @@
 import argparse
 import logging
-from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 
@@ -15,17 +14,10 @@ from remedi.configuration.architecture_config import (
 )
 from remedi.configuration.training_config import PretrainingConfig, ProbeConfig
 from remedi.training.data.mixture import MixtureDatasets, resolve_mixture
-from remedi.training.data.sample import (
-    PreprocessedSample,
-    yield_molecules_collate_fn,
-)
+from remedi.training.data.sample import yield_molecules_collate_fn
 from remedi.training.data.training_dataset import atoms_getitem
 from remedi.training.linear_probe import LinearProbeMonitor
-from remedi.training.noise_scheduler import ConstantSchedule, NoiseModule
-from remedi.training.pretraining import (
-    atom_denoising_loss,
-    vicreg_descriptor_loss,
-)
+from remedi.training.pretraining import denoising_step, vicreg_descriptor_loss
 from remedi.training.telemetry import TrainingTelemetry
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -160,33 +152,19 @@ def setup_logging(filename, level: int = logging.INFO) -> logging.Logger:
     return logger
 
 
-def main():  # noqa: C901 - one training loop; splitting it is a separate refactor
+def main():  # noqa: C901 - one training loop
     args = parse_args()
 
-    torch.manual_seed(0)
-    np.random.seed(0)
-
     training_config = pyaml.parse_yaml_file_as(PretrainingConfig, args.training_config)
+    torch.manual_seed(training_config.seed)
+    np.random.seed(training_config.seed)
     if args.max_epochs is not None:
         training_config.epochs = args.max_epochs
     architecture_config = pyaml.parse_yaml_file_as(
         ArchitectureConfig, training_config.model_config_path
     )
 
-    if training_config.training_directory is not None:
-        training_data_dir = training_config.training_directory
-        training_data_dir.mkdir(parents=True, exist_ok=True)
-    else:
-        output_base = training_config.output_base
-        output_base.mkdir(parents=True, exist_ok=True)
-        training_idx = len(list(output_base.glob("*/")))
-        now = datetime.now()
-        training_identifier = (
-            f"{training_idx}-{now.strftime('%Y_%m_%d_%H_%M_%S')}-"
-            f"{training_config.training_name}"
-        )
-        training_data_dir = output_base / training_identifier
-        training_data_dir.mkdir()
+    training_data_dir = training_config.create_run_directory()
 
     logger = setup_logging(filename=training_data_dir / "logfile.info")
     logger.info(
@@ -216,14 +194,13 @@ def main():  # noqa: C901 - one training loop; splitting it is a separate refact
         {name: len(lengths) for name, (_, lengths) in validation_sets.items()},
     )
 
-    noise_scheduler = ConstantSchedule(training_config.noise_level)
-    noise_module = NoiseModule(noise_scheduler)
-
+    noise_level = training_config.noise_level
     training_loader = training_config.dataloader.build(
         train_dataset,
         lengths=train_lengths,
         collate_fn=yield_molecules_collate_fn,
         shuffle=True,
+        seed=training_config.seed,
     )
     validation_loaders = {
         name: training_config.dataloader.build(
@@ -231,6 +208,7 @@ def main():  # noqa: C901 - one training loop; splitting it is a separate refact
             lengths=lengths,
             collate_fn=yield_molecules_collate_fn,
             shuffle=False,
+            seed=training_config.seed,
         )
         for name, (dataset, lengths) in validation_sets.items()
     }
@@ -332,43 +310,16 @@ def main():  # noqa: C901 - one training loop; splitting it is a separate refact
                 ):
                     break
                 samples.to_(device)
-                # Capture before preprocessor — it mutates atomic_positions from
-                # flat (total_atoms, 3) to padded (B, N_max, 3).
-                batch_atoms = int(samples.atomic_positions.shape[0])
-                preprocessed_samples: PreprocessedSample = preprocessor(samples)
-
-                input_atomic_embeddings = (
-                    preprocessed_samples.preprocessed_atomic_embeddings.clone()
-                )
-
-                noised_embeddings = noise_module(
-                    preprocessed_samples.preprocessed_atomic_embeddings,
-                    preprocessed_samples.padding_mask,
-                )
-
-                noise_module.step()
-
-                molecular_descriptor = encoder(preprocessed_samples)
-
-                noised_preprocessing_sample = PreprocessedSample(
-                    preprocessed_atomic_embeddings=noised_embeddings,
-                    initial_pair_representation=preprocessed_samples.initial_pair_representation.detach(),
-                    geometrical_encoding=preprocessed_samples.geometrical_encoding.detach(),
-                    padding_mask=preprocessed_samples.padding_mask,
-                    pair_mask=preprocessed_samples.pair_mask,
-                )
-
-                denoised_embeddings = decoder(
-                    noised_preprocessing_sample, molecular_descriptor
-                )
-
-                noise_level = noise_scheduler.value
-                denoising_loss = atom_denoising_loss(
-                    input_atomic_embeddings,
-                    denoised_embeddings,
-                    padding_mask=samples.padding_mask,
+                step = denoising_step(
+                    samples,
+                    preprocessor=preprocessor,
+                    encoder=encoder,
+                    decoder=decoder,
                     noise_level=noise_level,
                 )
+                batch_atoms = step.atom_count
+                molecular_descriptor = step.molecular_descriptor
+                denoising_loss = step.denoising_loss
 
                 if vicreg_cfg.enabled:
                     var_loss, cov_loss = vicreg_descriptor_loss(
@@ -460,6 +411,11 @@ def main():  # noqa: C901 - one training loop; splitting it is a separate refact
             decoder.eval()
             preprocessor.eval()
 
+            # The same noise every validation pass, so the epochs' validation
+            # losses (and the best-epoch checkpoint) compare like with like.
+            validation_generator = torch.Generator(device=device).manual_seed(
+                training_config.seed
+            )
             with torch.no_grad():
                 for component_name, validation_loader in validation_loaders.items():
                     component_loss = torch.zeros((), device=device)
@@ -471,46 +427,24 @@ def main():  # noqa: C901 - one training loop; splitting it is a separate refact
                         ):
                             break
                         val_samples.to_(device)
-                        preprocessed_val_samples: PreprocessedSample = preprocessor(
-                            val_samples
+                        validation_step = denoising_step(
+                            val_samples,
+                            preprocessor=preprocessor,
+                            encoder=encoder,
+                            decoder=decoder,
+                            noise_level=noise_level,
+                            generator=validation_generator,
                         )
-
-                        input_atomic_embeddings = preprocessed_val_samples.preprocessed_atomic_embeddings.clone()
-
-                        noised_embeddings = noise_module(
-                            preprocessed_val_samples.preprocessed_atomic_embeddings,
-                            preprocessed_val_samples.padding_mask,
-                        )
-
-                        molecular_descriptor = encoder(preprocessed_val_samples)
 
                         if vicreg_cfg.enabled:
                             var_loss_val, cov_loss_val = vicreg_descriptor_loss(
-                                molecular_descriptor.flat,
+                                validation_step.molecular_descriptor.flat,
                                 target_std=vicreg_cfg.target_std,
                             )
                             running_var_val += var_loss_val
                             running_cov_val += cov_loss_val
 
-                        noised_preprocessing_sample = PreprocessedSample(
-                            preprocessed_atomic_embeddings=noised_embeddings,
-                            initial_pair_representation=preprocessed_val_samples.initial_pair_representation.detach(),
-                            geometrical_encoding=preprocessed_val_samples.geometrical_encoding.detach(),
-                            padding_mask=preprocessed_val_samples.padding_mask,
-                            pair_mask=preprocessed_val_samples.pair_mask,
-                        )
-
-                        denoised_embeddings = decoder(
-                            noised_preprocessing_sample, molecular_descriptor
-                        )
-
-                        denoising_loss = atom_denoising_loss(
-                            input_atomic_embeddings,
-                            denoised_embeddings,
-                            padding_mask=val_samples.padding_mask,
-                            noise_level=noise_scheduler.value,
-                        )
-                        component_loss += denoising_loss.detach()
+                        component_loss += validation_step.denoising_loss.detach()
                         component_batches += 1
 
                     validation_loss_sum += component_loss

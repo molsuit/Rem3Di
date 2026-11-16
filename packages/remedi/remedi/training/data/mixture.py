@@ -8,13 +8,14 @@ selected structure is seen once per epoch. At start-up :func:`resolve_mixture`
    (``drug_like``: only MACE-OFF elements; ``transition_metal_complex``: a
    transition metal in every structure) and that charge and multiplicity are set,
 2. drops molecules whose ``nonisomeric_smiles`` an earlier component already
-   holds (components without SMILES are left alone),
+   holds (components without SMILES are left alone; a component with SMILES
+   missing for some structures is refused),
 3. splits each component into training and validation by ``molecule_id`` with a
    fixed key per molecule, so the validation molecules of a smaller nested
    selection are those of the larger one that it contains.
 
-:meth:`PretrainingData.open_datasets` reads each dataset's selected structures
-once and concatenates the training parts; validation stays per component so its
+The selected structures of each dataset are read once, in step 1, and
+:meth:`PretrainingData.open_datasets` concatenates the training parts of them; validation stays per component so its
 loss is reported per component. Ids are
 never rewritten: a structure is ``(dataset, structure_id)``.
 """
@@ -40,7 +41,7 @@ from remedi.training.data.training_dataset import (
 )
 from remedi_data.bundle import read_spec
 from remedi_data.chemistry.elements import MACE_OFF_ELEMENTS
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.molecule_dataset import MoleculeDataset, StructureArrays
 from remedi_data.selection import (
     SelectionError,
     dataset_identity,
@@ -183,9 +184,15 @@ class MixtureRecord(BaseModel):
 
 @dataclass(frozen=True)
 class MixturePart:
-    """One dataset of a component, with its training and validation structures."""
+    """One dataset of a component, with its training and validation structures.
+
+    ``structures`` holds the selected structures (``selected_structure_ids``,
+    sorted), read once; training and validation are subsets of them.
+    """
 
     dataset: Path
+    selected_structure_ids: np.ndarray
+    structures: StructureArrays
     train_structure_ids: np.ndarray
     validation_structure_ids: np.ndarray
     train_atom_counts: np.ndarray
@@ -281,20 +288,22 @@ class PretrainingData:
     record: MixtureRecord
 
     def open_datasets(self, get_item: GetItemFn) -> MixtureDatasets:
-        """Read every part's structures once (in this process, before workers fork)."""
+        """Training datasets over the structures read by :func:`resolve_mixture`
+        (in this process, so forked loader workers inherit them)."""
         opened: list[list[OpenedPart]] = []
         for component in self.components:
             opened_parts = []
             for part in component.parts:
-                structure_ids = np.union1d(
-                    part.train_structure_ids, part.validation_structure_ids
-                )
+                structure_ids = part.selected_structure_ids
                 opened_parts.append(
                     OpenedPart(
                         part=part,
                         dataset=TrainingMoleculeDataset(
-                            part.dataset, get_item, structure_ids=structure_ids
-                        ).open(),
+                            part.dataset,
+                            get_item,
+                            structure_ids=structure_ids,
+                            arrays=part.structures,
+                        ),
                         train_positions=np.searchsorted(
                             structure_ids, part.train_structure_ids
                         ),
@@ -380,17 +389,81 @@ def _check_domain(
         )
 
 
-def _selected_atoms(
-    dataset: Path, structure_ids: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
-    """Atomic numbers (concatenated) and atom counts of the given structures."""
-    arrays = MoleculeDataset.open_structure_arrays(dataset)
-    pointer = np.asarray(arrays.molecule_ptr[:], dtype=np.int64)
-    counts = np.diff(pointer)
-    selected = np.zeros(len(counts), dtype=bool)
-    selected[structure_ids] = True
-    numbers = np.asarray(arrays.atomic_numbers[:])
-    return numbers[np.repeat(selected, counts)], counts[structure_ids]
+@dataclass(frozen=True)
+class _SelectedRows:
+    """The table rows of a part's selected structures."""
+
+    rows: pl.DataFrame
+    structure_ids: np.ndarray
+    selection_sha256: str | None
+    deduplicate: bool
+
+
+def _select_rows(
+    dataset: Path, selection: str | None, config: PretrainingDataConfig, name: str
+) -> _SelectedRows:
+    """Read the needed table columns for the selection and check them."""
+    table_path = Path(dataset) / "table.parquet"
+    present = set(pl.read_parquet_schema(table_path))
+    for column in ("total_charge", "multiplicity"):
+        if column not in present:
+            raise MixtureError(f"{name} has structures without {column}")
+    deduplicate = (
+        config.deduplicate_across_components == "nonisomeric_smiles"
+        and "nonisomeric_smiles" in present
+    )
+    columns = ["structure_id", "molecule_id", "total_charge", "multiplicity"]
+    if deduplicate:
+        columns.append("nonisomeric_smiles")
+    table = pl.read_parquet(table_path, columns=columns)
+    if selection is None:
+        structure_ids = table["structure_id"].to_numpy().astype(np.int64)
+        selection_sha256 = None
+    else:
+        structure_ids = read_selection(dataset, selection)
+        selection_sha256 = read_selection_record(dataset, selection).selection_sha256
+    rows = table.filter(
+        pl.col("structure_id").is_in(pl.Series(structure_ids).implode())
+    )
+    _check_rows(rows, deduplicate, name)
+    return _SelectedRows(rows, structure_ids, selection_sha256, deduplicate)
+
+
+def _check_rows(rows: pl.DataFrame, deduplicate: bool, name: str) -> None:
+    """Raise unless every selected row has charge, multiplicity and, when
+    deduplicating, a SMILES."""
+    if len(rows) == 0:
+        raise MixtureError(f"{name} selects no structures")
+    for column in ("total_charge", "multiplicity"):
+        if rows[column].is_null().any():
+            raise MixtureError(f"{name} has structures without {column}")
+        if rows[column].is_nan().any():
+            raise MixtureError(f"{name} has structures with a NaN {column}")
+    missing = rows["nonisomeric_smiles"].null_count() if deduplicate else 0
+    if missing:
+        raise MixtureError(
+            f"{name}: {missing} structures have no nonisomeric_smiles, so they "
+            "cannot be deduplicated; fill them or set "
+            "deduplicate_across_components: none"
+        )
+
+
+def _read_structures(
+    dataset: Path, structure_ids: np.ndarray, domain: Domain, name: str
+) -> tuple[StructureArrays, np.ndarray]:
+    """Gather the selected structures once; check them against the domain.
+
+    Returns the structures and their atom counts.
+    """
+    try:
+        structures = MoleculeDataset.open_structure_arrays(
+            Path(dataset), structure_ids=structure_ids
+        )
+    except ValueError as error:
+        raise MixtureError(f"{name}: {error}") from error
+    atom_counts = np.diff(np.asarray(structures.molecule_ptr, dtype=np.int64))
+    _check_domain(domain, np.asarray(structures.atomic_numbers), atom_counts, name)
+    return structures, atom_counts
 
 
 def _resolve_part(
@@ -401,35 +474,17 @@ def _resolve_part(
     component_name: str,
 ) -> tuple[MixturePart, PartRecord]:
     identity = dataset_identity(dataset)
-    table = pl.read_parquet(Path(dataset) / "table.parquet")
-    if selection is None:
-        structure_ids = table["structure_id"].to_numpy().astype(np.int64)
-        selection_sha256 = None
-    else:
-        structure_ids = read_selection(dataset, selection)
-        selection_sha256 = read_selection_record(dataset, selection).selection_sha256
-    rows = table.filter(
-        pl.col("structure_id").is_in(pl.Series(structure_ids).implode())
-    )
     name = f"{component_name} ({identity.dataset_id})"
-    if len(rows) == 0:
-        raise MixtureError(f"{name} selects no structures")
-    for column in ("total_charge", "multiplicity"):
-        if column not in rows.columns or rows[column].is_null().any():
-            raise MixtureError(f"{name} has structures without {column}")
-        if rows[column].is_nan().any():
-            raise MixtureError(f"{name} has structures with a NaN {column}")
-
-    atomic_numbers, atom_counts = _selected_atoms(dataset, structure_ids)
-    _check_domain(config.domain, atomic_numbers, atom_counts, name)
+    selected = _select_rows(dataset, selection, config, name)
+    rows = selected.rows
+    structure_ids = selected.structure_ids
+    structure_arrays, atom_counts = _read_structures(
+        dataset, structure_ids, config.domain, name
+    )
 
     selected_molecules = rows["molecule_id"].n_unique()
     selected_structures = len(rows)
-    deduplicate = (
-        config.deduplicate_across_components == "nonisomeric_smiles"
-        and "nonisomeric_smiles" in rows.columns
-    )
-    if deduplicate:
+    if selected.deduplicate:
         repeated = rows["nonisomeric_smiles"].is_in(
             pl.Series(list(seen_smiles)).implode()
         )
@@ -454,6 +509,8 @@ def _resolve_part(
 
     part = MixturePart(
         dataset=Path(dataset),
+        selected_structure_ids=structure_ids,
+        structures=structure_arrays,
         train_structure_ids=train_ids,
         validation_structure_ids=validation_ids,
         train_atom_counts=counts(train_ids),
@@ -465,7 +522,7 @@ def _resolve_part(
         table_content_sha256=identity.table_content_sha256,
         structures_sha256=identity.structures_sha256,
         selection=selection,
-        selection_sha256=selection_sha256,
+        selection_sha256=selected.selection_sha256,
         selected_structures=selected_structures,
         selected_molecules=selected_molecules,
         duplicate_molecules_dropped=dropped["molecule_id"].n_unique(),

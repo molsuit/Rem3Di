@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -106,20 +105,6 @@ def _trainable_parameters(model) -> list[torch.nn.Parameter]:
     )
 
 
-def _resolve_output_dir(training_config: ClassifierTrainingConfig) -> Path:
-    """The explicit ``training_directory`` or a fresh timestamped run dir under
-    ``output_base`` (mirrors the pretraining run layout)."""
-    out_base = training_config.training_directory
-    if out_base is None:
-        base = training_config.output_base
-        base.mkdir(parents=True, exist_ok=True)
-        idx = len(list(base.glob("*/")))
-        stamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        out_base = base / f"{idx}-{stamp}-{training_config.training_name}"
-    out_base.mkdir(parents=True, exist_ok=True)
-    return out_base
-
-
 def _save_checkpoint(model, out_base: Path) -> None:
     """Write the best model in the REM3DI layout (so it loads as a ``remedi``
     descriptor in the eval framework) plus the classification head."""
@@ -164,12 +149,11 @@ def main() -> None:
     global device
     if args.device is not None:
         device = args.device
-    torch.manual_seed(0)
-    np.random.seed(0)
-
     training_config = pyaml.parse_yaml_file_as(
         ClassifierTrainingConfig, args.training_config
     )
+    torch.manual_seed(training_config.seed)
+    np.random.seed(training_config.seed)
     if args.max_epochs is not None:
         training_config.epochs = args.max_epochs
     architecture_config = pyaml.parse_yaml_file_as(
@@ -206,15 +190,17 @@ def main() -> None:
         lengths=all_lengths[train_idx],
         collate_fn=yield_molecules_supervised_collate_fn,
         shuffle=True,
+        seed=training_config.seed,
     )
     val_loader = training_config.dataloader.build(
         Subset(ds, val_idx),
         lengths=all_lengths[val_idx],
         collate_fn=yield_molecules_supervised_collate_fn,
         shuffle=False,
+        seed=training_config.seed,
     )
 
-    out_base = _resolve_output_dir(training_config)
+    out_base = training_config.create_run_directory()
     logger.info("training dir: %s", out_base)
 
     model = architecture_config.build()
@@ -273,10 +259,7 @@ def main() -> None:
                 loss = criterion(logits, targets)
                 optimizer.zero_grad()
                 loss.backward()
-                if training_config.max_grad_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(
-                        params, training_config.max_grad_norm
-                    )
+                torch.nn.utils.clip_grad_norm_(params, training_config.max_grad_norm)
                 optimizer.step()
                 scheduler.step()
                 running += float(loss.detach()) * targets.numel()
@@ -291,7 +274,7 @@ def main() -> None:
                     "lr": scheduler.get_last_lr()[0],
                 }
             )
-            telemetry.log_metrics(metrics)
+            telemetry.log_epoch_metrics(metrics)
             logger.info(
                 "epoch %d: train_focal=%.4f val_bal_acc=%.4f val_macro_f1=%.4f "
                 "val_macro_auroc=%.4f",

@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import Dataset
 
 from remedi.training.data.sample import Sample
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.molecule_dataset import MoleculeDataset, StructureArrays
 
 GetItemFn = Callable[["TrainingMoleculeDataset", int], Sample]
 
@@ -56,6 +56,8 @@ class TrainingMoleculeDataset(Dataset):
     gathered into compact in-memory arrays and indexed ``0..len - 1`` in that
     order. Call :meth:`open` before handing the dataset to a forking data
     loader, so the workers inherit the arrays instead of each reading them.
+    ``arrays`` hands over structures already gathered for ``structure_ids``
+    (they are re-gathered only after pickling).
     """
 
     def __init__(
@@ -64,6 +66,7 @@ class TrainingMoleculeDataset(Dataset):
         get_item: GetItemFn,
         in_memory: bool = False,
         structure_ids: np.ndarray | None = None,
+        arrays: StructureArrays | None = None,
     ):
         self.root = str(root)
         self._get_item = get_item
@@ -78,6 +81,10 @@ class TrainingMoleculeDataset(Dataset):
         self._atom_num = None
         self._charge = None
         self._multiplicity = None
+        if arrays is not None:
+            if self._structure_ids is None:
+                raise ValueError("arrays need the structure_ids they were gathered for")
+            self._set_arrays(arrays)
 
     def __getstate__(self):
         d = dict(self.__dict__)
@@ -98,11 +105,15 @@ class TrainingMoleculeDataset(Dataset):
         if self._ptr is not None:
             return
 
-        arrays = MoleculeDataset.open_structure_arrays(
-            Path(self.root),
-            in_memory=self._in_memory,
-            structure_ids=self._structure_ids,
+        self._set_arrays(
+            MoleculeDataset.open_structure_arrays(
+                Path(self.root),
+                in_memory=self._in_memory,
+                structure_ids=self._structure_ids,
+            )
         )
+
+    def _set_arrays(self, arrays: StructureArrays) -> None:
         self._ptr = arrays.molecule_ptr
         self._pos = arrays.positions
         self._atom_num = arrays.atomic_numbers

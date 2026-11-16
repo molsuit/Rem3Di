@@ -17,7 +17,7 @@ def _flatten(batches: list[list[int]]) -> list[int]:
 
 
 def _make_sampler(lengths, **kwargs):
-    kwargs.setdefault("generator", np.random.default_rng(0))
+    kwargs.setdefault("seed", 0)
     return BucketBatchSampler(lengths, **kwargs)
 
 
@@ -156,27 +156,27 @@ def test_accepts_ndarray_input():
 
 def test_rejects_zero_length():
     with pytest.raises(ValueError, match="positive"):
-        BucketBatchSampler([1, 0, 3], max_atoms_per_batch=10)
+        _make_sampler([1, 0, 3], max_atoms_per_batch=10)
 
 
 def test_rejects_negative_length():
     with pytest.raises(ValueError, match="positive"):
-        BucketBatchSampler([1, -1, 3], max_atoms_per_batch=10)
+        _make_sampler([1, -1, 3], max_atoms_per_batch=10)
 
 
 def test_rejects_zero_max_atoms():
     with pytest.raises(ValueError, match="positive"):
-        BucketBatchSampler([1, 2, 3], max_atoms_per_batch=0)
+        _make_sampler([1, 2, 3], max_atoms_per_batch=0)
 
 
 def test_rejects_zero_max_batch_size():
     with pytest.raises(ValueError, match="positive"):
-        BucketBatchSampler([1, 2, 3], max_atoms_per_batch=10, max_batch_size=0)
+        _make_sampler([1, 2, 3], max_atoms_per_batch=10, max_batch_size=0)
 
 
 def test_rejects_zero_bucket_size():
     with pytest.raises(ValueError, match="positive"):
-        BucketBatchSampler([1, 2, 3], max_atoms_per_batch=10, bucket_size=0)
+        _make_sampler([1, 2, 3], max_atoms_per_batch=10, bucket_size=0)
 
 
 # ----------------------------- determinism -----------------------------------
@@ -184,16 +184,8 @@ def test_rejects_zero_bucket_size():
 
 def test_distinct_seeds_produce_distinct_orderings():
     lengths = list(range(5, 105))
-    a = list(
-        BucketBatchSampler(
-            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(1)
-        )
-    )
-    b = list(
-        BucketBatchSampler(
-            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(2)
-        )
-    )
+    a = list(BucketBatchSampler(lengths, max_atoms_per_batch=200, seed=1))
+    b = list(BucketBatchSampler(lengths, max_atoms_per_batch=200, seed=2))
     assert a != b
 
 
@@ -201,26 +193,16 @@ def test_iteration_independent_of_global_numpy_seed():
     """The sampler must not be affected by global np.random state."""
     lengths = list(range(5, 105))
     np.random.seed(0)
-    a = list(
-        BucketBatchSampler(
-            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(99)
-        )
-    )
+    a = list(BucketBatchSampler(lengths, max_atoms_per_batch=200, seed=99))
     np.random.seed(1234)
-    b = list(
-        BucketBatchSampler(
-            lengths, max_atoms_per_batch=200, generator=np.random.default_rng(99)
-        )
-    )
+    b = list(BucketBatchSampler(lengths, max_atoms_per_batch=200, seed=99))
     assert a == b
 
 
 def test_two_iterations_differ_under_shuffle():
     """Calling __iter__ twice on the same sampler should yield different orderings."""
     lengths = list(range(5, 105))
-    sampler = BucketBatchSampler(
-        lengths, max_atoms_per_batch=200, generator=np.random.default_rng(7)
-    )
+    sampler = BucketBatchSampler(lengths, max_atoms_per_batch=200, seed=7)
     a = list(sampler)
     b = list(sampler)
     assert a != b
@@ -239,7 +221,7 @@ def test_first_batch_is_not_always_smallest():
             max_atoms_per_batch=50,
             bucket_size=10,
             shuffle=True,
-            generator=np.random.default_rng(seed),
+            seed=seed,
         )
         first = next(iter(sampler))
         first_batch_means.append(np.mean([lengths[i] for i in first]))
@@ -258,7 +240,7 @@ def test_batches_do_not_cross_bucket_boundaries():
         max_atoms_per_batch=80,
         bucket_size=bucket_size,
         shuffle=True,
-        generator=np.random.default_rng(0),
+        seed=0,
     )
     sorted_order = np.argsort(lengths, kind="stable")
     bucket_of = {}
@@ -292,7 +274,7 @@ def test_len_exactly_matches_iteration_with_shuffle():
         max_atoms_per_batch=120,
         bucket_size=64,
         shuffle=True,
-        generator=np.random.default_rng(42),
+        seed=42,
     )
     assert len(sampler) == len(list(sampler))
 
@@ -333,3 +315,58 @@ def test_quantize_pad_length_rounds_up():
 def test_quantize_pad_length_rejects_zero_multiple():
     with pytest.raises(ValueError, match="positive"):
         quantize_pad_length(10, 0)
+
+
+# ----------------------------- per-epoch composition -------------------------
+
+
+def test_batch_composition_changes_between_epochs():
+    """Equal-length structures are regrouped every epoch, not always batched
+    with the same neighbours."""
+    lengths = [10] * 100
+    sampler = _make_sampler(lengths, max_atoms_per_batch=50, bucket_size=100)
+    first = {frozenset(batch) for batch in sampler}
+    second = {frozenset(batch) for batch in sampler}
+    assert first != second
+    assert len(sampler) == len(first) == len(second) == 20
+
+
+def test_epochs_are_reproducible_from_the_seed():
+    lengths = np.random.default_rng(0).integers(2, 30, size=300).tolist()
+
+    def two_epochs(seed: int) -> list[list[list[int]]]:
+        sampler = _make_sampler(lengths, max_atoms_per_batch=90, seed=seed)
+        return [list(sampler), list(sampler)]
+
+    assert two_epochs(3) == two_epochs(3)
+    assert two_epochs(3) != two_epochs(4)
+
+
+def test_dataloader_bucket_batches_follow_the_seed():
+    from torch.utils.data import Dataset
+
+    from remedi.configuration.dataloader_config import (
+        BucketBatchSamplingConfig,
+        DataLoaderConfig,
+    )
+
+    class _Indices(Dataset):
+        def __len__(self) -> int:
+            return 200
+
+        def __getitem__(self, index: int) -> int:
+            return index
+
+    config = DataLoaderConfig(
+        batch_sampling=BucketBatchSamplingConfig(max_atoms_per_batch=40),
+        num_workers=0,
+        pin_memory=False,
+    )
+    lengths = np.full(200, 8)
+
+    def batches(seed: int) -> list[list[int]]:
+        loader = config.build(_Indices(), lengths=lengths, collate_fn=list, seed=seed)
+        return [batch for batch in loader]
+
+    assert batches(1) == batches(1)
+    assert batches(1) != batches(2)

@@ -93,3 +93,23 @@ def test_lazy_in_memory_and_worker_loaders_yield_identical_batches(
     )
     assert_same_batches(in_memory, lazy)
     assert_same_batches(in_memory, with_workers)
+
+
+def test_worker_init_leaves_the_random_streams_alone() -> None:
+    """torch seeds each worker; the init only limits threads and must not
+    reseed numpy or ``random`` (which made every run's workers identical)."""
+    import random
+
+    import numpy as np
+
+    from remedi.training.data.util import worker_init_fn
+
+    np.random.seed(123)
+    random.seed(123)
+    expected_numpy = np.random.random()
+    expected_random = random.random()
+    np.random.seed(123)
+    random.seed(123)
+    worker_init_fn(3)
+    assert np.random.random() == expected_numpy
+    assert random.random() == expected_random

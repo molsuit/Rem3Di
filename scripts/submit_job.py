@@ -19,7 +19,6 @@ import argparse
 import shutil
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import pydantic_yaml as pyaml
@@ -33,16 +32,9 @@ def log(msg: str) -> None:
 
 def snapshot_configs(training_config_path: Path) -> tuple[Path, str]:
     training_config = pyaml.parse_yaml_file_as(PretrainingConfig, training_config_path)
-
-    output_base = training_config.output_base
-    output_base.mkdir(parents=True, exist_ok=True)
-
-    training_idx = len(list(output_base.glob("*/")))
-    now = datetime.now()
-    training_directory = output_base / (
-        f"{training_idx}-{now.strftime('%Y_%m_%d_%H_%M_%S')}-{training_config.training_name}"
-    )
-    training_directory.mkdir()
+    # A fresh numbered run directory, also when the config names one.
+    training_config.training_directory = None
+    training_directory = training_config.create_run_directory()
 
     architecture_snapshot = training_directory / "architecture_config.yaml"
     shutil.copyfile(training_config.model_config_path, architecture_snapshot)

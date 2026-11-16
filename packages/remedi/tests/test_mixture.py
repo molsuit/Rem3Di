@@ -312,3 +312,70 @@ def test_a_pretraining_config_is_not_a_classifier_config() -> None:
                 "noise_level": 0.3,
             }
         )
+
+
+def test_a_molecule_without_smiles_is_refused_under_deduplication(
+    tmp_path: Path,
+) -> None:
+    """Deduplication cannot place a structure without ``nonisomeric_smiles``:
+    it must fail instead of silently dropping it."""
+    dataset = corpus(tmp_path, "first", FIRST)
+    table_path = dataset / "table.parquet"
+    table = pl.read_parquet(table_path)
+    table = table.with_columns(
+        pl.when(pl.col("structure_id") == 2)
+        .then(None)
+        .otherwise(pl.col("nonisomeric_smiles"))
+        .alias("nonisomeric_smiles")
+    )
+    table.write_parquet(table_path)
+    with pytest.raises(MixtureError, match="nonisomeric_smiles"):
+        resolve_mixture(mixture(DatasetComponent(dataset=dataset)))
+    kept = resolve_mixture(
+        mixture(DatasetComponent(dataset=dataset), deduplicate_across_components="none")
+    )
+    assert kept.record.train_structures + kept.record.validation_structures == len(
+        FIRST
+    )
+
+
+def test_each_part_reads_its_selected_structures_once(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The structures are gathered once per part, for the selection only, and
+    reused by the domain check, the atom counts and the training datasets; the
+    table is read with the needed columns only."""
+    from remedi_data.dataset.molecule_dataset import MoleculeDataset
+
+    dataset = corpus(tmp_path, "first", FIRST)
+    calls: list[np.ndarray | None] = []
+    original_open = MoleculeDataset.open_structure_arrays
+
+    def recording_open(path, in_memory=False, structure_ids=None):
+        calls.append(None if structure_ids is None else np.asarray(structure_ids))
+        return original_open(path, in_memory=in_memory, structure_ids=structure_ids)
+
+    monkeypatch.setattr(
+        MoleculeDataset, "open_structure_arrays", staticmethod(recording_open)
+    )
+    columns_read: list[object] = []
+    original_read_parquet = pl.read_parquet
+
+    def recording_read_parquet(source, *args, **kwargs):
+        if Path(source).name == "table.parquet":
+            columns_read.append(kwargs.get("columns"))
+        return original_read_parquet(source, *args, **kwargs)
+
+    monkeypatch.setattr(pl, "read_parquet", recording_read_parquet)
+
+    data = resolve_mixture(mixture(DatasetComponent(dataset=dataset), fraction=0.4))
+    datasets = data.open_datasets(atoms_getitem)
+
+    assert len(calls) == 1
+    assert calls[0] is not None and len(calls[0]) == len(FIRST)
+    assert columns_read and all(columns is not None for columns in columns_read)
+    samples = [datasets.training[i] for i in range(data.record.train_structures)]
+    assert len(datasets.training_atom_counts) == len(samples)
+    assert [len(sample.atomic_positions) for sample in samples] == (
+        datasets.training_atom_counts.tolist()
+    )

@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -8,6 +9,8 @@ from remedi.training.data.mixture import PretrainingDataConfig
 
 class CompileConfig(BaseModel):
     """torch.compile + shape-stability knobs."""
+
+    model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
     # Round padded atom count up to this multiple to bound the inductor graph
@@ -25,6 +28,8 @@ class VICRegConfig(BaseModel):
     target_std=1.0).
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = False
     variance_weight: float = 25.0
     covariance_weight: float = 1.0
@@ -41,6 +46,8 @@ class ProbeConfig(BaseModel):
     e.g. the PCQM4Mv2 HOMO-LUMO gap) are. The probe never backprops into the
     encoder.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
     every_n_steps: int = Field(default=500, gt=0)
@@ -61,6 +68,8 @@ class ClassificationConfig(BaseModel):
     head carries ``n_classes``); ignored by the self-supervised pretraining.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     # Focal-loss focusing parameter; 0.0 -> (optionally weighted) cross-entropy.
     focal_gamma: float = 2.0
     # Up-weight rare classes via inverse-frequency focal alpha (sklearn
@@ -80,13 +89,32 @@ class TrainingRunConfig(BaseModel):
     epochs: int
     learning_rate: float
     weight_decay: float
-    max_grad_norm: float | None = None
+    max_grad_norm: float = Field(default=1.0, gt=0)
+    """Gradients are clipped to this total norm every step."""
+    seed: int = 0
+    """Seeds torch, numpy and the data loaders (order and grouping of batches)."""
     model_config_path: Path
     output_base: Path
     training_directory: Path | None = None
-    total_steps: int | None = None
     wandb_active: bool = False
     compile: CompileConfig = CompileConfig()
+
+    def create_run_directory(self) -> Path:
+        """Create and return the run's directory.
+
+        ``training_directory`` when set (a snapshot made by ``submit_job``),
+        otherwise a new ``{index}-{timestamp}-{training_name}`` directory under
+        ``output_base``, numbered after the directories already there.
+        """
+        if self.training_directory is not None:
+            self.training_directory.mkdir(parents=True, exist_ok=True)
+            return self.training_directory
+        self.output_base.mkdir(parents=True, exist_ok=True)
+        index = len(list(self.output_base.glob("*/")))
+        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        directory = self.output_base / f"{index}-{timestamp}-{self.training_name}"
+        directory.mkdir()
+        return directory
 
 
 class PretrainingConfig(TrainingRunConfig):

@@ -30,7 +30,6 @@ noise_level: 0.3
 output_base: /path/to/training_runs/probe_smoke
 run_group: probe_smoke
 training_name: probe_smoke
-total_steps: null
 training_directory: null
 wandb_active: true
 weight_decay: 0.001

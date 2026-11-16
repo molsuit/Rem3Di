@@ -5,11 +5,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 import torch
 from torch import nn
 
 from remedi.training.data.sample import Sample, yield_molecules_collate_fn
-from remedi.training.linear_probe import LinearProbeMonitor, _ridge_predict
+from remedi.training.linear_probe import LinearProbeMonitor
 
 
 def _make_monitor(labels, masks, *, every_n_steps=1, val_fraction=0.3):
@@ -37,19 +38,6 @@ def _make_monitor(labels, masks, *, every_n_steps=1, val_fraction=0.3):
         batch_size=m,
         seed=0,
     )
-
-
-def test_ridge_primal_dual_agree():
-    rng = np.random.default_rng(0)
-    # n < d so _ridge_predict uses the dual form; compare against the primal.
-    x_fit = rng.standard_normal((20, 50))
-    y_fit = rng.standard_normal(20)
-    x_score = rng.standard_normal((7, 50))
-    alpha = 1.0
-    dual = _ridge_predict(x_fit, y_fit, x_score, alpha)
-    w = np.linalg.solve(x_fit.T @ x_fit + alpha * np.eye(50), x_fit.T @ y_fit)
-    primal = x_score @ w
-    np.testing.assert_allclose(dual, primal, rtol=1e-6, atol=1e-6)
 
 
 def test_probe_recovers_linear_signal():
@@ -114,3 +102,32 @@ def test_maybe_run_respects_cadence_and_restores_train_mode():
     assert "probe/macro_r2" in metrics
     # eval() during embed must be reverted.
     assert pre.training and enc.training
+
+
+def test_probe_scores_match_closed_form_ridge_on_standardised_features():
+    """The sklearn pipeline gives the scores of ridge regression on features
+    standardised over the fit rows, with an intercept."""
+    rng = np.random.default_rng(4)
+    m, d = 60, 12
+    x = rng.standard_normal((m, d)) * rng.uniform(0.5, 5.0, size=d) + 3.0
+    y = x @ rng.standard_normal(d) + rng.standard_normal(m)
+    labels = y[:, None]
+    monitor = _make_monitor(labels, np.ones((m, 1), dtype=bool))
+
+    fit, score = monitor.fit_idx, monitor.score_idx
+    mean, deviation = x[fit].mean(axis=0), x[fit].std(axis=0)
+    standardised = (x - mean) / deviation
+    weights = np.linalg.solve(
+        standardised[fit].T @ standardised[fit] + 1.0 * np.eye(d),
+        standardised[fit].T @ (y[fit] - y[fit].mean()),
+    )
+    prediction = standardised[score] @ weights + y[fit].mean()
+    expected_r2 = 1 - np.sum((y[score] - prediction) ** 2) / np.sum(
+        (y[score] - y[score].mean()) ** 2
+    )
+
+    result = monitor._fit_score(x)
+    assert result.r2["p0"] == pytest.approx(expected_r2, rel=1e-9)
+    assert result.mae["p0"] == pytest.approx(
+        np.mean(np.abs(y[score] - prediction)), rel=1e-9
+    )

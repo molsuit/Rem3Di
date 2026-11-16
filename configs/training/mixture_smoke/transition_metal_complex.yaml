@@ -29,7 +29,6 @@ noise_level: 0.3
 output_base: /dais/fs/scratch/wedigs/remedi/training_runs/mixture_smoke
 run_group: mixture_smoke
 training_name: mixture_smoke_transition_metal_complex
-total_steps: null
 training_directory: null
 wandb_active: false
 weight_decay: 0.001

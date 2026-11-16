@@ -1,8 +1,9 @@
 """Frozen diagnostic linear probes on the molecular descriptor.
 
 A fixed held-out probe set (M validation molecules) is re-embedded every N steps
-under ``eval`` / ``no_grad`` and a closed-form ridge is fit on a fixed fit/score
-split to measure how linearly-decodable the physicochemical target columns are.
+under ``eval`` / ``no_grad`` and a ridge regression on standardised features is
+fit on a fixed fit/score split to measure how linearly-decodable the
+physicochemical target columns are.
 The probe never touches gradients or the optimizer — it is pure measurement.
 """
 
@@ -13,26 +14,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import torch
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 from remedi.training.data.sample import Sample
-
-
-def _ridge_predict(
-    x_fit: np.ndarray, y_fit: np.ndarray, x_score: np.ndarray, alpha: float
-) -> np.ndarray:
-    """Closed-form ridge predictions. Primal when n>=d, dual otherwise.
-
-    Both forms are algebraically identical for ridge regression; we pick the
-    cheaper system to solve (``d x d`` primal vs ``n x n`` dual).
-    """
-    n, d = x_fit.shape
-    if n >= d:
-        a = x_fit.T @ x_fit + alpha * np.eye(d)
-        w = np.linalg.solve(a, x_fit.T @ y_fit)
-        return x_score @ w
-    g = x_fit @ x_fit.T + alpha * np.eye(n)
-    coeffs = np.linalg.solve(g, y_fit)
-    return (x_score @ x_fit.T) @ coeffs
 
 
 @dataclass
@@ -136,13 +123,12 @@ class LinearProbeMonitor:
         return np.concatenate(parts, axis=0)
 
     def _fit_score(self, x: np.ndarray) -> ProbeResult:
-        # Standardize features on the (full) fit set; reused for every column.
-        x_fit_all = x[self.fit_idx]
-        mu = x_fit_all.mean(axis=0)
-        sd = x_fit_all.std(axis=0)
-        sd[sd == 0.0] = 1.0
-        xs = (x - mu) / sd
+        """Fit and score one ridge per property on its labelled rows.
 
+        Features are standardised over the property's labelled fit rows (a
+        constant feature is left unscaled). Ridge predictions are linear in the
+        target, so the target needs no standardisation.
+        """
         result = ProbeResult()
         r2_values: list[float] = []
         for col, name in enumerate(self.property_names):
@@ -151,34 +137,22 @@ class LinearProbeMonitor:
             if fit_rows.size < 2 or score_rows.size < 2:
                 continue
 
-            y_fit = self.labels[fit_rows, col]
             y_true = self.labels[score_rows, col]
-            ss_tot = float(np.sum((y_true - y_true.mean()) ** 2))
-            if ss_tot == 0.0:
+            if np.all(y_true == y_true[0]):
                 continue  # constant target -> R^2 undefined
 
-            y_mu = y_fit.mean()
-            y_sd = y_fit.std() or 1.0
-            pred = (
-                _ridge_predict(
-                    xs[fit_rows],
-                    (y_fit - y_mu) / y_sd,
-                    xs[score_rows],
-                    self.ridge_alpha,
-                )
-                * y_sd
-                + y_mu
-            )
+            model = make_pipeline(StandardScaler(), Ridge(alpha=self.ridge_alpha))
+            model.fit(x[fit_rows], self.labels[fit_rows, col])
+            prediction = model.predict(x[score_rows])
 
-            ss_res = float(np.sum((y_true - pred) ** 2))
-            r2 = 1.0 - ss_res / ss_tot
+            r2 = float(r2_score(y_true, prediction))
             result.r2[name] = r2
-            result.mae[name] = float(np.mean(np.abs(y_true - pred)))
+            result.mae[name] = float(mean_absolute_error(y_true, prediction))
             r2_values.append(r2)
 
             if self.report_count_accuracy and np.allclose(y_true, np.round(y_true)):
                 result.accuracy[name] = float(
-                    np.mean(np.round(pred) == np.round(y_true))
+                    np.mean(np.round(prediction) == np.round(y_true))
                 )
 
         result.macro_r2 = float(np.mean(r2_values)) if r2_values else float("nan")

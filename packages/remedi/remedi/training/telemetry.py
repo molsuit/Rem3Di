@@ -8,6 +8,14 @@ import wandb
 import yaml
 
 
+def _write_yaml(path: Path, records: list[dict]) -> None:
+    """Write through a temporary file, so a kill mid-write leaves the old file."""
+    temporary = path.with_suffix(".yaml.tmp")
+    with open(temporary, "w") as f:
+        yaml.safe_dump(records, f)
+    temporary.replace(path)
+
+
 class TrainingTelemetry:
     def __init__(
         self, wandb_active: bool, run_name: str, group_name: str, out_dir: Path, config
@@ -99,6 +107,7 @@ class TrainingTelemetry:
         }
 
         self.loss_data.append(epoch_train_data)
+        self.dump_loss_history()
 
         print(
             f"Epoch {epoch} Training Loss: {avg_train_loss} Validation Loss: {avg_validation_loss}"
@@ -131,9 +140,18 @@ class TrainingTelemetry:
             epoch_data.update(extra_metrics)
 
         self.loss_data.append(epoch_data)
+        self.dump_loss_history()
 
         if self.wandb_active:
             wandb.log(data=epoch_data)
+
+    def log_epoch_metrics(self, metrics: dict[str, float]) -> None:
+        """Record one epoch's metrics: written to ``training_losses.yaml`` now
+        and logged to wandb."""
+        self.loss_data.append(dict(metrics))
+        self.dump_loss_history()
+        if self.wandb_active:
+            wandb.log(data=metrics)
 
     def log_metrics(self, metrics: dict[str, float]) -> None:
         """Mid-epoch metric flush (e.g. rolling throughput).
@@ -153,21 +171,19 @@ class TrainingTelemetry:
         """
         record = {"global_step": int(global_step), **metrics}
         self.probe_data.append(record)
+        self.dump_probe_history()
         if self.wandb_active:
             wandb.log(data=record)
 
     def dump_loss_history(self):
-        with open(
-            f"{self.out_dir}/training_losses.yaml",
-            "x",
-        ) as f:
-            yaml.safe_dump(self.loss_data, f)
+        """Rewrite ``training_losses.yaml``; called after every epoch so a job
+        killed by its time limit keeps the epochs it finished."""
+        _write_yaml(Path(self.out_dir) / "training_losses.yaml", self.loss_data)
 
     def dump_probe_history(self):
         if not self.probe_data:
             return
-        with open(f"{self.out_dir}/probe_history.yaml", "x") as f:
-            yaml.safe_dump(self.probe_data, f)
+        _write_yaml(Path(self.out_dir) / "probe_history.yaml", self.probe_data)
 
     def get_track_grad_norm_fn(self):
         def capture_grad(grad):  # grad has same shape as M

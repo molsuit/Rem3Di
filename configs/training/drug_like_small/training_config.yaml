@@ -37,7 +37,6 @@ noise_level: 0.3
 output_base: /dais/fs/scratch/wedigs/remedi/training_runs/drug_like_small
 run_group: drug_like_small
 training_name: drug_like_small_baseline
-total_steps: null
 training_directory: null
 # No WANDB_API_KEY on DAIS yet (no .env); losses go to training_losses.yaml.
 wandb_active: false

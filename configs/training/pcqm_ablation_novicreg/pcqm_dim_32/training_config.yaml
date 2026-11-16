@@ -29,7 +29,6 @@ model_config_path: /path/to/3DMolecularDescriptors/configs/training/pcqm_ablatio
 noise_level: 0.3
 output_base: /path/to/training_runs/pcqm_ablation_novicreg
 run_group: pcqm_ablation_novicreg
-total_steps: null
 training_directory: null
 training_name: pcqm_dim_32
 vicreg:

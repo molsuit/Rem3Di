@@ -1,9 +1,7 @@
-import random
 import statistics as stats
 from time import perf_counter
 
 import numcodecs.blosc as blosc
-import numpy as np
 import torch
 
 
@@ -16,12 +14,9 @@ def worker_init_fn(worker_id: int) -> None:
     # Runtime equivalent of OMP_NUM_THREADS=1 — env vars are read at
     # library-init, which is too late for the already-forked worker.
     torch.set_num_threads(1)
-
-    # Per-worker seeding so np.random / random produce distinct streams across
-    # workers. torch.initial_seed() is already worker-unique; derive from it.
-    base_seed = (torch.initial_seed() + worker_id) % (2**32)
-    np.random.seed(base_seed)
-    random.seed(base_seed)
+    # Seeding is torch's job: it seeds every worker from the loader's base
+    # seed, and nothing in the workers draws from numpy's or Python's global
+    # generators.
 
 
 def benchmark_loader(dl, warmup=10, max_batches=100, device="cuda"):
