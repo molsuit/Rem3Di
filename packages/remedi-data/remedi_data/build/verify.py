@@ -53,8 +53,15 @@ def verify_dataset(dataset_path: Path, *, workers: int = 1) -> VerifyReport:
     report.rows = len(bundle.table)
     if not bundle.spec.has_structures:
         report.problems.append("dataset.yaml declares no geometry_origin")
+    try:
+        dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
+    except (KeyError, OSError, ValueError) as error:
+        # A missing array (KeyError), group or dataset_config.yaml (OSError) or
+        # an unreadable config (ValueError): nothing below can run.
+        report.problems.append(f"the zarr cannot be opened: {error!r}")
+        report.elapsed_seconds = time.monotonic() - started
+        return report
     report.problems += zarr_problems(dataset_path, bundle.spec, bundle.table)
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
     report.structures_sha256 = structures_sha256(dataset)
     structures = read_packed_structures(dataset)
     outputs = bundle.provenance.outputs

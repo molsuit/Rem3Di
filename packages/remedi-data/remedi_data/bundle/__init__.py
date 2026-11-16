@@ -1,4 +1,4 @@
-"""The bundle and dataset format (``BENCHMARK_DATA_FORMAT.md`` §10).
+"""The bundle and dataset format (``BENCHMARK_DATA_FORMAT.md`` §4).
 
 A bundle is a table (``dataset.yaml``, ``table.parquet``, ``provenance.yaml``)
 with one row per stereoisomer; a dataset is a zarr with the same three files
@@ -50,7 +50,6 @@ from remedi_data.bundle.bundle import (
     write_table_files,
 )
 from remedi_data.bundle.expansion import (
-    CONFORMER_EMBEDDING_FAILED,
     ENANTIOMER_PARTNER_FAILED,
     ExpandedDataset,
     expand_to_structures,
@@ -91,7 +90,6 @@ from remedi_data.bundle.spec import (
 )
 from remedi_data.bundle.validate import (
     count_stereoisomer_straddling_constitutions,
-    has_assigned_tetrahedral_centre,
     stereo_agrees_with_frame,
     stereochemistry_from_frame,
     stereochemistry_from_positions,
@@ -102,7 +100,6 @@ from remedi_data.bundle.validate import (
 
 __all__ = [
     "AGGREGATION_NOTICE",
-    "CONFORMER_EMBEDDING_FAILED",
     "DATASET_CONFIG_FILENAME",
     "DUPLICATE_LABEL_TIE",
     "DUPLICATE_SMILES",
@@ -156,7 +153,6 @@ __all__ = [
     "expand_to_structures",
     "filter_source_smiles",
     "git_head_sha",
-    "has_assigned_tetrahedral_centre",
     "identity_from_canonical",
     "is_dataset_directory",
     "merge_source_rows",

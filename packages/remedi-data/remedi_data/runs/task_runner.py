@@ -1,4 +1,4 @@
-"""The shared, fault-tolerant per-task loop (``BENCHMARK_DATA_FORMAT.md`` §3, §13).
+"""The shared, fault-tolerant per-task loop (``BENCHMARK_DATA_FORMAT.md`` §3.2, §6).
 
 Both sides run through here: :func:`remedi_eval.framework.runner.run_manifest`
 with an ``EvalContext`` and :func:`remedi_data.build.build_datasets` with its
@@ -12,6 +12,7 @@ evaluation code; it imports stdlib, pydantic and :mod:`remedi_data` only.
 
 from __future__ import annotations
 
+import functools
 import logging
 import time
 import traceback
@@ -109,10 +110,21 @@ def run_tasks(
     return statuses
 
 
+@functools.cache
+def repository_git_sha() -> str | None:
+    """The git sha of the checkout this package is imported from, resolved once.
+
+    ``status.yaml`` is rewritten after every task, so git runs once per process,
+    not once per write; and it names the code that ran, not whatever repository
+    the working directory happens to be in.
+    """
+    return git_head_sha(Path(__file__).parent)
+
+
 def make_run_report(n_tasks: int, statuses: list[TaskStatus]) -> RunReport:
     """Assemble the report written as ``status.yaml`` and returned to the caller."""
     return RunReport(
-        git_sha=git_head_sha(Path.cwd()),
+        git_sha=repository_git_sha(),
         n_tasks=n_tasks,
         n_failed=sum(not status.ok for status in statuses),
         statuses=statuses,

@@ -19,16 +19,11 @@ class Split(int, Enum):
     unassigned = 255
 
 
-#: The split names a prepared benchmark bundle uses (``BENCHMARK_DATA_FORMAT.md``
-#: §1.1) mapped onto the uint8 codes the zarr stores. The bundle is the
+#: The split names a table's split columns use (``BENCHMARK_DATA_FORMAT.md``
+#: §4.2) mapped onto the uint8 codes the zarr stores. The table is the
 #: human-facing artifact and spells the splits out; the codes are an internal
 #: detail of the zarr.
-SPLIT_CODE_BY_NAME: dict[str, Split] = {
-    "train": Split.train,
-    "valid": Split.valid,
-    "test": Split.test,
-    "unassigned": Split.unassigned,
-}
+SPLIT_CODE_BY_NAME: dict[str, Split] = {split.name: split for split in Split}
 
 
 def split_codes_from_names(values: Sequence[str]) -> np.ndarray:

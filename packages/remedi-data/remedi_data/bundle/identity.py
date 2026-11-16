@@ -1,10 +1,10 @@
-"""The three id levels and the mirror-image relation of §1.1.
+"""The three id levels and the mirror-image relation of §4.2.
 
 ``stereoisomer_id`` / ``molecule_id`` / ``enantiomer_of`` are derived from the
 canonical isomeric SMILES, which encodes tetrahedral centres and double-bond
 geometry only. Axial, helical and planar enantiomers canonicalise to the same
 string, share one ``stereoisomer_id`` and keep a null ``enantiomer_of``; that is
-accepted (§1.1) because nothing splits or pairs on that identity.
+accepted (§4.2) because nothing splits or pairs on that identity.
 """
 
 from __future__ import annotations

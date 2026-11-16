@@ -22,13 +22,22 @@ from rdkit.Chem.Scaffolds import MurckoScaffold
 
 
 def murcko_scaffold(smiles: str, include_chirality: bool = True) -> str | None:
-    """The Bemis-Murcko scaffold SMILES; ``""`` for an acyclic molecule, ``None`` if unparseable."""
+    """The Bemis-Murcko scaffold SMILES; ``""`` for an acyclic molecule.
+
+    ``None`` if the SMILES does not parse or RDKit fails on the scaffold (it
+    raises ``RuntimeError`` or ``ValueError`` from its C++ layer on some
+    molecules that parse); callers treat both as a molecule without a usable
+    scaffold.
+    """
     molecule = Chem.MolFromSmiles(smiles)
     if molecule is None:
         return None
-    return MurckoScaffold.MurckoScaffoldSmiles(
-        mol=molecule, includeChirality=include_chirality
-    )
+    try:
+        return MurckoScaffold.MurckoScaffoldSmiles(
+            mol=molecule, includeChirality=include_chirality
+        )
+    except (RuntimeError, ValueError):
+        return None
 
 
 def scaffold_groups(
@@ -36,7 +45,8 @@ def scaffold_groups(
 ) -> dict[str, list[int]]:
     """Bemis-Murcko scaffold -> the positions of ``smiles`` that share it.
 
-    Groups are keyed in first-seen order; an unparseable SMILES is its own group.
+    Groups are keyed in first-seen order; a SMILES without a scaffold (see
+    :func:`murcko_scaffold`) is its own group.
     """
     scaffolds: dict[str, list[int]] = defaultdict(list)
     for i, smi in enumerate(smiles):
@@ -141,7 +151,7 @@ def fixed_test_seeded_split_columns(
     :func:`seeded_scaffold_train_valid_split` once per seed, with
     ``valid_fraction`` relative to the non-test rows. Returns
     ``{"split": …, "split__seed<s>": …}`` with ``split`` aliasing the first
-    seed, each a ``train``/``valid``/``test`` value per row (§5c).
+    seed, each a ``train``/``valid``/``test`` value per row (§4.5).
     """
     is_test = np.asarray(is_test, dtype=bool)
     if is_test.shape != (len(smiles),):

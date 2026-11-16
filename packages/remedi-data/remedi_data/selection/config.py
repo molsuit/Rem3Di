@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
+from fractions import Fraction
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -39,11 +40,15 @@ class _SizedDraw(BaseModel):
     def molecules_to_draw(self, available: int) -> int:
         """How many of ``available`` molecules the draw takes.
 
+        A ``fraction`` takes the floor of ``fraction * available`` computed on
+        the decimal the config spells (``0.29`` of 100 is 29), not on its binary
+        approximation (``0.29 * 100 == 28.999...``).
+
         Raises:
             SelectionError: if ``count`` asks for more molecules than are left.
         """
         if self.fraction is not None:
-            return math.floor(self.fraction * available)
+            return math.floor(Fraction(repr(self.fraction)) * available)
         assert self.count is not None
         if self.count > available:
             raise SelectionError(

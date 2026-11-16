@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-from ase import Atoms
 from ase.data import atomic_numbers
 from pydantic import BaseModel, ConfigDict
 
@@ -32,13 +31,9 @@ class GeometryLimits(BaseModel):
     min_hydrogen_heavy_ratio: float = 0.0
     min_interatomic_distance: float | None = None
 
-    def allowed_element_symbols(self) -> frozenset[str] | None:
-        """Resolve ``elements`` to a set of symbols, or ``None`` if ungated."""
-        return allowed_element_symbols(self.elements)
-
     def allowed_atomic_numbers(self) -> frozenset[int] | None:
         """Resolve ``elements`` to a set of atomic numbers, or ``None`` if ungated."""
-        symbols = self.allowed_element_symbols()
+        symbols = allowed_element_symbols(self.elements)
         return None if symbols is None else atomic_numbers_of(symbols)
 
 
@@ -52,29 +47,6 @@ def minimum_interatomic_distance(positions: np.ndarray) -> float:
     return float(distance.min())
 
 
-def geometry_violations(
-    atoms: Atoms,
-    limits: GeometryLimits,
-    allowed_symbols: frozenset[str] | None = None,
-) -> list[str]:
-    """The names of the limits one structure violates; empty means it passes.
-
-    The names (``max_atoms``, ``no_heavy_atom``, ``zero_hydrogen``,
-    ``hydrogen_heavy_ratio``, ``element_gate``, ``min_interatomic_distance``)
-    double as ``counts.dropped`` keys. ``allowed_symbols`` lets a caller that
-    checks many structures resolve the element set once; by default it is
-    resolved from ``limits``.
-    """
-    if allowed_symbols is None:
-        allowed_symbols = limits.allowed_element_symbols()
-    return frame_geometry_violations(
-        atoms.get_atomic_numbers(),
-        atoms.get_positions(),
-        limits,
-        None if allowed_symbols is None else atomic_numbers_of(allowed_symbols),
-    )
-
-
 def atomic_numbers_of(symbols: frozenset[str]) -> frozenset[int]:
     """The atomic numbers of a set of element symbols."""
     return frozenset(int(atomic_numbers[symbol]) for symbol in symbols)
@@ -86,10 +58,13 @@ def frame_geometry_violations(
     limits: GeometryLimits,
     allowed_atomic_numbers: frozenset[int] | None,
 ) -> list[str]:
-    """:func:`geometry_violations` on plain arrays; the element gate on atomic numbers.
+    """The names of the limits one structure violates; empty means it passes.
 
-    ``allowed_atomic_numbers`` is ``None`` for an ungated element set; resolve it
-    once per run with :meth:`GeometryLimits.allowed_atomic_numbers`.
+    The names (``max_atoms``, ``no_heavy_atom``, ``zero_hydrogen``,
+    ``hydrogen_heavy_ratio``, ``element_gate``, ``min_interatomic_distance``)
+    double as ``counts.dropped`` keys. ``allowed_atomic_numbers`` is ``None``
+    for an ungated element set; resolve it once per run with
+    :meth:`GeometryLimits.allowed_atomic_numbers`.
     """
     violations: list[str] = []
     if limits.max_atoms is not None and len(atomic_numbers_of_frame) > limits.max_atoms:

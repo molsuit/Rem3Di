@@ -1,6 +1,6 @@
 """``write_dataset``: structures + table -> a zarr with the table files beside it.
 
-The one writer every structure dataset goes through (§10.1): the preparer of a
+The one writer every structure dataset goes through (§4.1): the preparer of a
 source that ships structures calls it directly, and ``dataset_build`` calls it
 after generating conformers for a SMILES bundle. It validates the table and
 every structure (invariants 1-10), writes the zarr through
@@ -12,7 +12,9 @@ writes ``dataset.yaml``, ``table.parquet`` and ``provenance.yaml`` beside it.
 from __future__ import annotations
 
 import hashlib
+import logging
 import shutil
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -35,6 +37,8 @@ from remedi_data.dataset.shard_aligned_writer import (
     ShardAlignedWriter,
 )
 from remedi_data.dataset.tasks import Split, split_codes_from_names
+
+logger = logging.getLogger(__name__)
 
 
 class ZarrLayout(BaseModel):
@@ -205,7 +209,7 @@ def write_dataset(
     The geometry limits checked (invariant 10) are ``provenance.geometry_limits``.
     ``workers`` processes check invariants 9 and 10.
     An existing dataset at ``directory`` is replaced only after the new one has
-    been written and checked in full.
+    been written and checked in full (see :func:`_move_into_place`).
 
     Raises:
         BundleValidationError: if the spec declares no structures, or any
@@ -226,7 +230,8 @@ def write_dataset(
         raise BundleValidationError(directory, problems)
 
     staging = directory.with_name(f".{directory.name}.partial")
-    shutil.rmtree(staging, ignore_errors=True)
+    if staging.exists():
+        shutil.rmtree(staging)  # left by an earlier run that died mid-write
     try:
         _write_zarr(staging, spec, table, structures, layout or ZarrLayout())
         problems = zarr_problems(staging, spec, table)
@@ -237,8 +242,39 @@ def write_dataset(
         written = write_table_files(
             staging, spec, table, provenance, structures_sha256=structure_hash
         )
-        shutil.rmtree(directory, ignore_errors=True)
-        staging.rename(directory)
+        _move_into_place(staging, directory)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return written
+
+
+def _move_into_place(staging: Path, directory: Path) -> None:
+    """Replace ``directory`` by ``staging`` without a moment in which neither exists.
+
+    The old dataset is renamed aside first, so nothing it holds (an NFS
+    ``.nfs*`` file a reader keeps open, an entry without write permission) can
+    stop the new one from taking its name. If the new one cannot be moved in,
+    the old one is moved back. Removing the set-aside copy comes last and only
+    costs disk space when it fails, so that failure is logged, not raised.
+
+    Raises:
+        OSError: if either rename fails; ``directory`` then holds what it held.
+    """
+    if not directory.exists():
+        staging.rename(directory)
+        return
+    set_aside = directory.with_name(f".{directory.name}.old-{uuid.uuid4().hex}")
+    directory.rename(set_aside)
+    try:
+        staging.rename(directory)
+    except OSError:
+        set_aside.rename(directory)
+        raise
+    try:
+        shutil.rmtree(set_aside)
+    except OSError as error:
+        logger.warning(
+            "the replaced dataset %s could not be removed (%s); delete it by hand",
+            set_aside,
+            error,
+        )

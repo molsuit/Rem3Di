@@ -1,4 +1,4 @@
-"""The format's invariants (``BENCHMARK_DATA_FORMAT.md`` §1.1, made conditional by §10.2).
+"""The format's invariants (``BENCHMARK_DATA_FORMAT.md`` §4.4).
 
 ``validate_table`` checks the cheap, vectorised invariants every read asserts,
 on a bundle table or a dataset table; ``structure_problems`` checks the
@@ -20,6 +20,7 @@ from rdkit import Chem
 from rdkit.Geometry import Point3D
 
 from remedi_data.bundle.spec import (
+    SMILES_COLUMNS,
     SPLIT_VALUES,
     DatasetSpec,
     LabelColumn,
@@ -42,6 +43,13 @@ def _summarise_rows(row_indices: list[int]) -> str:
     return f"{len(row_indices)} rows, first {shown}"
 
 
+def _summarise_ids(identifiers: list[int]) -> str:
+    if len(identifiers) <= _MAX_REPORTED_ROWS:
+        return str(identifiers)
+    remaining = len(identifiers) - _MAX_REPORTED_ROWS
+    return f"{identifiers[:_MAX_REPORTED_ROWS]} and {remaining} more"
+
+
 def _is_string_column(series: pd.Series) -> bool:
     return pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series)
 
@@ -49,7 +57,7 @@ def _is_string_column(series: pd.Series) -> bool:
 def count_stereoisomer_straddling_constitutions(
     table: pd.DataFrame, split_column: str
 ) -> int:
-    """Constitutions whose stereoisomers land in more than one fold (§1.1).
+    """Constitutions whose stereoisomers land in more than one fold (§4.3).
 
     Counts ``molecule_id`` groups that hold more than one ``stereoisomer_id``
     *and* more than one distinct value of ``split_column``. This is zero by
@@ -121,17 +129,27 @@ def stereochemistry_from_positions(
 
 
 def stereo_agrees_with_frame(
-    isomeric_smiles: str, atomic_numbers: np.ndarray, positions: np.ndarray
+    isomeric_smiles: str | None, atomic_numbers: np.ndarray, positions: np.ndarray
 ) -> bool:
-    """Invariant 9 for one row: true when the SMILES assigns no tetrahedral centre,
-    or the frame's perceived centres equal the SMILES's."""
-    if not has_assigned_tetrahedral_centre(isomeric_smiles):
+    """Invariant 9 for one row.
+
+    False when ``isomeric_smiles`` is null, empty or does not parse: without a
+    molecule there is nothing the frame could agree with. Otherwise true when
+    the SMILES assigns no tetrahedral centre, or the frame's perceived centres
+    equal the SMILES's.
+    """
+    if not isomeric_smiles:
+        return False
+    molecule = Chem.MolFromSmiles(isomeric_smiles)
+    if molecule is None:
+        return False
+    if not _assigns_tetrahedral_centre(molecule):
         return True
     perceived = stereochemistry_from_positions(
         isomeric_smiles, atomic_numbers, positions
     )
-    return perceived is not None and perceived == tetrahedral_stereo_smiles(
-        isomeric_smiles
+    return perceived is not None and perceived == _tetrahedral_only_canonical_smiles(
+        molecule
     )
 
 
@@ -160,20 +178,51 @@ def _tetrahedral_only_canonical_smiles(molecule: Chem.Mol) -> str:
     return Chem.MolToSmiles(Chem.RemoveHs(stripped.GetMol()))
 
 
-def has_assigned_tetrahedral_centre(isomeric_smiles: str) -> bool:
-    """Whether ``isomeric_smiles`` declares at least one assigned tetrahedral centre.
+def _assigns_tetrahedral_centre(molecule: Chem.Mol) -> bool:
+    """Whether ``molecule`` has at least one assigned tetrahedral centre.
 
-    Invariant 9 only applies to those rows, so both the validator and the
-    conformer generation gate on this before comparing a frame's
-    perceived stereochemistry to the SMILES column.
+    Invariant 9 compares a frame's perceived stereochemistry to the SMILES only
+    for those molecules.
     """
-    molecule = Chem.MolFromSmiles(isomeric_smiles)
-    if molecule is None:
-        return False
     centres = Chem.FindMolChiralCenters(
         molecule, includeUnassigned=False, useLegacyImplementation=False
     )
     return len(centres) > 0
+
+
+def _check_smiles_columns(table: pd.DataFrame, spec: DatasetSpec) -> list[str]:
+    """Invariant 7 for the SMILES columns: every value present and non-empty.
+
+    In a bundle every value must also parse. A dataset is not parsed here,
+    because this check runs on every read and a corpus holds millions of rows:
+    its ``isomeric_smiles`` is parsed row by row by invariant 9, where a value
+    that does not parse fails, at write and in ``verify``.
+    """
+    problems: list[str] = []
+    for column_name in SMILES_COLUMNS:
+        if column_name not in table.columns or not _is_string_column(
+            table[column_name]
+        ):
+            continue
+        column = table[column_name]
+        missing = column.isna() | (column.astype(object) == "")
+        if missing.any():
+            problems.append(
+                f"7: {column_name} is null or empty in "
+                f"{_summarise_rows(np.flatnonzero(missing.to_numpy()).tolist())}"
+            )
+        if spec.has_structures:
+            continue
+        present = column[~missing]
+        unparsable = {
+            text for text in present.unique() if Chem.MolFromSmiles(text) is None
+        }
+        if unparsable:
+            rows = np.flatnonzero(column.isin(unparsable).to_numpy()).tolist()
+            problems.append(
+                f"7: {column_name} does not parse in {_summarise_rows(rows)}"
+            )
+    return problems
 
 
 def _check_columns(table: pd.DataFrame, spec: DatasetSpec) -> list[str]:
@@ -209,6 +258,7 @@ def _check_columns(table: pd.DataFrame, spec: DatasetSpec) -> list[str]:
             problems.append(
                 f"7: {column_name} is {table[column_name].dtype}, not float64"
             )
+    problems += _check_smiles_columns(table, spec)
     for label in spec.labels:
         problems += _check_label_column(table, label)
     return problems
@@ -270,37 +320,67 @@ def _check_identity(table: pd.DataFrame, spec: DatasetSpec) -> list[str]:
 
 
 def _check_enantiomer_relation(table: pd.DataFrame, spec: DatasetSpec) -> list[str]:
-    """Invariant 4: symmetric, irreflexive, resolvable, within one molecule_id."""
+    """Invariant 4: one partner per stereoisomer; symmetric, irreflexive,
+    resolvable, within one ``molecule_id``."""
     problems: list[str] = []
     if not set(spec.fixed_columns()).issubset(table.columns):
         return problems
-    by_stereoisomer = table.drop_duplicates("stereoisomer_id").set_index(
-        "stereoisomer_id"
+    identity = table[["stereoisomer_id", "molecule_id", "enantiomer_of"]]
+    partners_per_stereoisomer = identity.groupby("stereoisomer_id")[
+        "enantiomer_of"
+    ].nunique(dropna=False)
+    inconsistent = partners_per_stereoisomer.index[partners_per_stereoisomer > 1]
+    if len(inconsistent):
+        problems.append(
+            "4: enantiomer_of differs between the rows of stereoisomer "
+            f"{_summarise_ids(inconsistent.tolist())}"
+        )
+    pairs = identity.drop_duplicates("stereoisomer_id")
+    pairs = pairs[pairs["enantiomer_of"].notna()].astype({"enantiomer_of": "int64"})
+    reflexive = pairs["enantiomer_of"] == pairs["stereoisomer_id"]
+    if reflexive.any():
+        problems.append(
+            "4: enantiomer_of is reflexive for stereoisomer "
+            f"{_summarise_ids(pairs.loc[reflexive, 'stereoisomer_id'].tolist())}"
+        )
+    partners = identity.drop_duplicates("stereoisomer_id").rename(
+        columns={
+            "stereoisomer_id": "enantiomer_of",
+            "molecule_id": "partner_molecule_id",
+            "enantiomer_of": "partner_points_at",
+        }
     )
-    partner_of = by_stereoisomer["enantiomer_of"]
-    molecule_of = by_stereoisomer["molecule_id"]
-    for stereoisomer_id, partner_id in partner_of.items():
-        if pd.isna(partner_id):
-            continue
-        if partner_id == stereoisomer_id:
-            problems.append(f"4: enantiomer_of is reflexive for {stereoisomer_id}")
-            continue
-        if partner_id not in partner_of.index:
-            problems.append(
-                f"4: enantiomer_of of {stereoisomer_id} points at stereoisomer "
-                f"{partner_id}, which is absent"
-            )
-            continue
-        back = partner_of[partner_id]
-        if pd.isna(back) or back != stereoisomer_id:
-            problems.append(
-                f"4: enantiomer_of is not symmetric for {stereoisomer_id} -> {partner_id}"
-            )
-        if molecule_of[partner_id] != molecule_of[stereoisomer_id]:
-            problems.append(
-                f"4: enantiomer pair {stereoisomer_id} <-> {partner_id} spans "
-                "two molecule_ids"
-            )
+    matched = pairs[~reflexive].merge(
+        partners, on="enantiomer_of", how="left", indicator=True
+    )
+    found = matched["_merge"] == "both"
+    absent = matched[~found]
+    for stereoisomer_id, partner_id in zip(
+        absent["stereoisomer_id"], absent["enantiomer_of"], strict=True
+    ):
+        problems.append(
+            f"4: enantiomer_of of {stereoisomer_id} points at stereoisomer "
+            f"{partner_id}, which is absent"
+        )
+    matched = matched[found]
+    asymmetric = matched[
+        matched["partner_points_at"].isna()
+        | (matched["partner_points_at"] != matched["stereoisomer_id"]).fillna(True)
+    ]
+    for stereoisomer_id, partner_id in zip(
+        asymmetric["stereoisomer_id"], asymmetric["enantiomer_of"], strict=True
+    ):
+        problems.append(
+            f"4: enantiomer_of is not symmetric for {stereoisomer_id} -> {partner_id}"
+        )
+    across = matched[matched["partner_molecule_id"] != matched["molecule_id"]]
+    for stereoisomer_id, partner_id in zip(
+        across["stereoisomer_id"], across["enantiomer_of"], strict=True
+    ):
+        problems.append(
+            f"4: enantiomer pair {stereoisomer_id} <-> {partner_id} spans "
+            "two molecule_ids"
+        )
     if spec.evaluation is not None and spec.evaluation.require_enantiomer_pairs:
         orphans = int(table["enantiomer_of"].isna().sum())
         if orphans:
@@ -358,7 +438,7 @@ _GEOMETRY_REASONS = {
 
 
 def _frame_problems(
-    isomeric_smiles: Sequence[str] | None,
+    isomeric_smiles: Sequence[str | None] | None,
     structures: PackedStructures,
     limits: GeometryLimits,
     first_row: int,
@@ -388,13 +468,21 @@ def structure_problems(
 ) -> list[str]:
     """The per-frame invariants of a dataset: 8 (one frame per row), 9 and 10.
 
-    Invariant 9 applies to rows whose ``isomeric_smiles`` assigns a tetrahedral
-    centre, so only to a dataset that declares ``smiles: true``. With
+    Invariant 9 applies to a dataset that declares ``smiles: true``: a row whose
+    ``isomeric_smiles`` is null or does not parse fails it, and a row whose
+    SMILES assigns a tetrahedral centre fails it when the frame disagrees. With
     ``workers > 1`` the rows are checked in chunks in a process pool.
     """
     if len(structures) != len(table):
         return [f"8: {len(structures)} structures for {len(table)} table rows"]
-    smiles = [str(value) for value in table["isomeric_smiles"]] if spec.smiles else None
+    smiles = (
+        [
+            value if isinstance(value, str) else None
+            for value in table["isomeric_smiles"]
+        ]
+        if spec.smiles
+        else None
+    )
     rows = len(table)
     chunk_size = max(1, -(-rows // max(1, workers * 8)))
     bounds = [

@@ -48,7 +48,7 @@ from remedi_data.structures.records import (
     PreparedFrame,
     prepare_record,
 )
-from remedi_data.structures.source import StructureSourceBase
+from remedi_data.structures.sources import StructureSource
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ class ShardFailures(RuntimeError):
     """Raised after every shard ran when some of them failed; the others are kept."""
 
 
-def source_fingerprint(source: StructureSourceBase) -> str:
+def source_fingerprint(source: StructureSource) -> str:
     """sha256 of the source config, its type and :data:`PIPELINE_VERSION`.
 
     Shards from another config or pipeline version are refused.
@@ -144,7 +144,7 @@ def _shard_stem(work_directory: Path, index: int) -> Path:
 
 
 def _shard_table(
-    source: StructureSourceBase, frames: Sequence[PreparedFrame]
+    source: StructureSource, frames: Sequence[PreparedFrame]
 ) -> pd.DataFrame:
     columns: dict[str, object] = {
         "source_key": pd.array([frame.source_key for frame in frames], dtype="str")
@@ -173,7 +173,7 @@ def _shard_table(
 
 
 def run_shard(
-    source: StructureSourceBase,
+    source: StructureSource,
     index: int,
     start: int,
     stop: int,
@@ -234,7 +234,7 @@ def _read_shard_summary(work_directory: Path, index: int) -> ShardSummary | None
 
 
 def _plan(
-    source: StructureSourceBase,
+    source: StructureSource,
     settings: StructurePreparationSettings,
     work_directory: Path,
 ) -> PreparationPlan:
@@ -266,7 +266,7 @@ def _plan(
 
 
 def run_shards(
-    source: StructureSourceBase,
+    source: StructureSource,
     settings: StructurePreparationSettings,
     work_directory: Path,
 ) -> tuple[list[ShardSummary], int]:
@@ -340,7 +340,7 @@ def run_shards(
 
 
 def _raw_file_hashes(
-    source: StructureSourceBase, work_directory: Path
+    source: StructureSource, work_directory: Path
 ) -> dict[str, FileHash]:
     """sha256 of every raw file, cached by path, size and modification time."""
     cache_path = work_directory / RAW_HASHES_FILENAME
@@ -368,7 +368,7 @@ def _raw_file_hashes(
     return hashes
 
 
-def dataset_spec(source: StructureSourceBase) -> DatasetSpec:
+def dataset_spec(source: StructureSource) -> DatasetSpec:
     """The ``dataset.yaml`` a source's dataset gets."""
     return DatasetSpec(
         dataset_id=source.dataset_id,
@@ -382,7 +382,7 @@ def dataset_spec(source: StructureSourceBase) -> DatasetSpec:
 
 
 def assemble_table(
-    source: StructureSourceBase, shard_tables: Sequence[pd.DataFrame]
+    source: StructureSource, shard_tables: Sequence[pd.DataFrame]
 ) -> pd.DataFrame:
     """The dataset table from the shard tables: ids, then the declared columns."""
     spec = dataset_spec(source)
@@ -411,7 +411,7 @@ def assemble_table(
 
 
 def prepare_structures(
-    source: StructureSourceBase,
+    source: StructureSource,
     settings: StructurePreparationSettings,
     output_directory: Path,
     work_directory: Path,
@@ -466,6 +466,10 @@ def prepare_structures(
             dropped[reason] = dropped.get(reason, 0) + count
     dropped = dict(sorted(dropped.items()))
     records_read = sum(summary.records_read for summary in summaries)
+    # Source records (a GEOM molecule, an SDF entry, a tmQM complex), not the
+    # records read: a GEOM molecule yields one record per conformer kept, or
+    # one dropped record when its pickle is missing.
+    source_molecules = sum(summary.stop - summary.start for summary in summaries)
     provenance = BundleProvenance(
         dataset_id=source.dataset_id,
         preparer=PreparerRecord(
@@ -479,7 +483,7 @@ def prepare_structures(
         ),
         geometry_limits=source.geometry_limits,
         smiles_filter=source.smiles_filter,
-        counts=BundleCounts(source_molecules=records_read, dropped=dropped),
+        counts=BundleCounts(source_molecules=source_molecules, dropped=dropped),
     )
     logger.info(
         "%s: writing %d structures (%d records read, dropped %s)",

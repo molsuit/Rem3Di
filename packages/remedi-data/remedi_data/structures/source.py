@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from remedi_data.bundle.spec import LabelColumn
 from remedi_data.chemistry.geometry import GeometryLimits
@@ -26,19 +26,42 @@ class StructureSourceBase(BaseModel):
 
     ``smiles_filter`` set means the dataset carries SMILES derived from each
     structure (``smiles: true``, ids from the SMILES); ``None`` means it does
-    not, and ids come from ``source_key``.
+    not, and ids come from ``source_key``. Its ``neutralize`` and ``dedupe``
+    must be off.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    #: Narrowed to a ``Literal`` discriminator by every source.
-    kind: str
     dataset_id: str = Field(min_length=1)
     description: str = ""
     smiles_filter: SmilesFilterConfig | None = None
     geometry_limits: GeometryLimits = Field(default_factory=GeometryLimits)
     #: Read only the first ``limit`` records; for trial runs and the old-path checks.
     limit: int | None = Field(default=None, ge=1)
+
+    @field_validator("smiles_filter")
+    @classmethod
+    def _keeps_every_structure_as_it_is(
+        cls, smiles_filter: SmilesFilterConfig | None
+    ) -> SmilesFilterConfig | None:
+        """Refuse the two filter settings a structure cannot honour.
+
+        Neutralising adds or removes hydrogens, so the SMILES would no longer
+        describe the frame and every protonated or deprotonated structure would
+        be dropped; deduplicating would need memory across records and shards,
+        and conformers of one molecule are meant to be kept anyway.
+        """
+        if smiles_filter is None:
+            return None
+        refused = [
+            name for name in ("neutralize", "dedupe") if getattr(smiles_filter, name)
+        ]
+        if refused:
+            raise ValueError(
+                f"a structure source keeps every structure as it is: set "
+                f"{' and '.join(f'{name}: false' for name in refused)} in smiles_filter"
+            )
+        return smiles_filter
 
     def labels(self) -> list[LabelColumn]:
         """The label columns, in table order."""

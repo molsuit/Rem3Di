@@ -81,8 +81,8 @@ def test_no_per_batch_read_modify_write(tmp_path: Path, monkeypatch) -> None:
     created: dict[str, LoggingStore] = {}
     real_local_store = md.LocalStore
 
-    def factory(path):
-        s = LoggingStore(real_local_store(path))
+    def factory(path, **options):
+        s = LoggingStore(real_local_store(path, **options))
         created["store"] = s
         return s
 
@@ -142,8 +142,8 @@ def test_all_buffered_until_shard_complete(tmp_path: Path, monkeypatch) -> None:
     created: dict[str, LoggingStore] = {}
     real_local_store = md.LocalStore
 
-    def factory(path):
-        s = LoggingStore(real_local_store(path))
+    def factory(path, **options):
+        s = LoggingStore(real_local_store(path, **options))
         created["store"] = s
         return s
 
@@ -248,3 +248,28 @@ def test_a_wrong_length_id_array_is_refused(tmp_path: Path) -> None:
     writer = ShardAlignedWriter(dataset)
     with pytest.raises(ValueError, match="structure_ids must have length 5"):
         _append_five(writer, np.arange(4, dtype="i8"))
+
+
+def test_molecule_count_is_the_number_of_distinct_molecule_ids(tmp_path: Path) -> None:
+    """Ids stay as the bundle assigned them, so a dropped molecule leaves a gap."""
+    dataset = MoleculeDataset.create_empty_dataset(
+        tmp_path / "ds", DatasetConfig(atom_chunk=8, molecule_chunk=4)
+    )
+    writer = ShardAlignedWriter(dataset)
+    writer.append_batch(
+        positions=np.zeros((9, 3), dtype="f4"),
+        atomic_numbers=np.full(9, 6, dtype="u1"),
+        batch_ptr_cumsum=np.array([3, 6, 9]),
+        molecule_ids=np.array([0, 7, 7]),
+        stereoisomer_ids=np.array([0, 9, 10]),
+        total_charge=np.zeros(3, dtype="f4"),
+        multiplicity=np.ones(3, dtype="f4"),
+        system_targets=None,
+        system_masks=None,
+        atom_targets=None,
+        atom_masks=None,
+    )
+    writer.finalize()
+    reopened = MoleculeDataset.open_existing_dataset_from_dir(tmp_path / "ds")
+    assert reopened.N_structures == 3
+    assert reopened.N_molecules == 2

@@ -3,8 +3,7 @@
 Parse -> standardize (strip salts, neutralize) -> filter (size, elements,
 charge, radicals, isotopes, fragments) -> canonicalize -> optionally
 deduplicate. One settings model, :class:`SmilesFilterConfig`, drives every
-caller: the preparers, the pipeline's ``FilterMoleculeStage`` and the 3D-source
-generators.
+caller: the SMILES preparers and the structure sources.
 """
 
 from __future__ import annotations
@@ -91,10 +90,7 @@ def molecule_passes_filter(mol: Chem.Mol | None, config: SmilesFilterConfig) -> 
             return False
         if config.max_atoms is not None and number_of_atoms > config.max_atoms:
             return False
-        if not config.allow_multifragment and (
-            Chem.GetMolFrags(mol, asMols=False, sanitizeFrags=False)
-            and len(Chem.GetMolFrags(mol, asMols=True)) > 1
-        ):
+        if not config.allow_multifragment and len(Chem.GetMolFrags(mol)) > 1:
             return False
         if not config.allow_charged and Chem.GetFormalCharge(mol) != 0:
             return False
@@ -189,19 +185,18 @@ def filter_smiles(
 
 
 def standardized_smiles_for_structure(
-    mol_implicit_hydrogens: Chem.Mol | None,
-    config: SmilesFilterConfig,
-    *,
-    seen: set[str] | None = None,
+    mol_implicit_hydrogens: Chem.Mol | None, config: SmilesFilterConfig
 ) -> str | None:
     """The filter for a source whose molecule already has coordinates.
 
     Same standardize -> filter -> canonicalize path as :func:`filter_smiles`,
     but a molecule whose standardization would remove heavy atoms (a salt) is
     dropped instead, because its coordinates still describe the unstripped
-    molecule. Pass ``seen`` to deduplicate across calls. The input must be in
-    implicit-hydrogen form (``Chem.RemoveAllHs`` first if the source supplied
-    explicit hydrogens).
+    molecule. ``config.dedupe`` and ``config.neutralize`` must be off (a
+    structure source refuses both, see ``StructureSourceBase``): every
+    structure is kept, and neutralising would change the hydrogen count the
+    frame has. The input must be in implicit-hydrogen form
+    (``Chem.RemoveAllHs`` first if the source supplied explicit hydrogens).
 
     Returns the canonical isomeric SMILES, or ``None`` to drop the molecule.
     """
@@ -217,12 +212,7 @@ def standardized_smiles_for_structure(
         return None
     if not molecule_passes_filter(standardized, config):
         return None
-    canonical = _canonical_isomeric_smiles(standardized)
-    if config.dedupe and seen is not None:
-        if canonical in seen:
-            return None
-        seen.add(canonical)
-    return canonical
+    return _canonical_isomeric_smiles(standardized)
 
 
 __all__ = [

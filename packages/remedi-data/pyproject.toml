@@ -16,7 +16,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
 ]
 # Torch-free on purpose: the preparers and remedi-eval install this without
-# the model stack (BENCHMARK_DATA_FORMAT.md §13).
+# the model stack (BENCHMARK_DATA_FORMAT.md §3).
 dependencies = [
     "ase>=3.24.0",
     "rdkit>=2024.9.4",

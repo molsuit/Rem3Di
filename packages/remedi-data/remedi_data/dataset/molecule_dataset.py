@@ -168,10 +168,20 @@ class MoleculeDataset:
 
     @classmethod
     def open_existing_dataset_from_dir(cls, path: Path):
-        """Open an existing on-disk dataset created by create_empty_dataset."""
+        """Open an existing on-disk dataset created by create_empty_dataset, read-only.
+
+        Every array refuses writes (``ValueError``). The only writer is
+        :meth:`create_empty_dataset` followed by ``ShardAlignedWriter``; a
+        finished dataset is replaced as a whole, never edited in place.
+
+        Raises:
+            FileNotFoundError: if ``path`` holds no zarr group or no
+                ``dataset_config.yaml``.
+            KeyError: if one of the arrays is missing.
+        """
         path = Path(path)
-        store = LocalStore(path)
-        g = zarr.open_group(store=store, mode="r+")
+        store = LocalStore(path, read_only=True)
+        g = zarr.open_group(store=store, mode="r")
 
         positions = g["positions"]
         atomic_numbers = g["atomic_numbers"]
@@ -374,10 +384,9 @@ class MoleculeDataset:
 
     @property
     def N_molecules(self) -> int:
-        n = int(self.molecule_ids.shape[0])
-        if n == 0:
-            return 0
-        return int(np.asarray(self.molecule_ids[:]).max()) + 1
+        # Distinct ids, not max + 1: ids keep the bundle's numbering, so a
+        # molecule dropped at embedding leaves a gap.
+        return int(np.unique(np.asarray(self.molecule_ids[:])).size)
 
     def __len__(self):
         return self.N_structures

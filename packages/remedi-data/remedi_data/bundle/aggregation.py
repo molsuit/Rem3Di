@@ -7,11 +7,11 @@ isomeric SMILES while merging their labels, and check that every source row is
 either a bundle row or counted under one drop reason. This module is that
 shared step.
 
-The merge rule (``BENCHMARK_DATA_FORMAT.md`` §9 row 17): per label column, the
+The merge rule (``BENCHMARK_DATA_FORMAT.md`` §4.6): per label column, the
 mean of the replicate measurements for a regression label and their majority
-vote for a classification label; missing measurements (NaN) are ignored, and an
-exact tie leaves that label missing. A row left with no label at all is dropped
-and counted.
+vote for a classification or multiclass label; missing measurements (NaN) are
+ignored, and a tie between the most voted classes leaves that label missing. A
+row left with no label at all is dropped and counted.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from __future__ import annotations
 import dataclasses
 import math
 import statistics
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -42,7 +43,7 @@ INVALID_SMILES = "invalid_smiles"
 SMILES_FILTER = "smiles_filter"
 #: Replicate rows merged into an earlier row.
 DUPLICATE_SMILES = "duplicate_smiles"
-#: Compounds whose every label was lost to an exact classification tie.
+#: Compounds whose every label was lost to a tied vote.
 DUPLICATE_LABEL_TIE = "duplicate_label_tie"
 #: Compounds the source lists without any label.
 MISSING_LABEL = "missing_label"
@@ -51,8 +52,8 @@ MISSING_LABEL = "missing_label"
 AGGREGATION_NOTICE = (
     "Replicate rows sharing a canonical isomeric SMILES are merged into one row: "
     "the label is the mean of the replicate measurements for a regression "
-    "endpoint and their majority vote for a classification endpoint, a compound "
-    "whose classification votes tie exactly is dropped as having no known label "
+    "endpoint and their majority vote for a classification or multiclass "
+    "endpoint, a compound whose votes tie is dropped as having no known label "
     f"(counts.dropped.{DUPLICATE_LABEL_TIE}), and the {MEASUREMENT_COUNT_COLUMN} "
     "column records how many source rows each label was aggregated from."
 )
@@ -110,30 +111,39 @@ def aggregate_label(values: Sequence[float], task_type: TaskType) -> float | Non
     """Collapse the replicate measurements of one compound and one label.
 
     NaN measurements are ignored. A regression label takes the mean of the
-    rest, a classification label their majority vote; an exact tie, or no
-    measurement at all, gives ``None``. A compound measured once keeps its
-    measurement bit for bit.
+    rest; a classification or multiclass label their majority vote, where a
+    tie between the most voted classes gives ``None``, as does no measurement
+    at all. A compound measured once keeps its measurement bit for bit.
 
     Raises:
-        LabelAggregationError: if a classification value is neither 0 nor 1.
-            The vote would silently turn such a value into a class, so the 0/1
-            invariant ``write_bundle`` checks could no longer see it.
+        LabelAggregationError: if a classification value is neither 0 nor 1,
+            or a multiclass value is not a non-negative integer. The vote would
+            silently turn such a value into a class, so the range invariant
+            ``write_bundle`` checks could no longer see it.
     """
     measured = [value for value in values if not math.isnan(value)]
     if not measured:
         return None
-    if task_type is not TaskType.classification:
+    if task_type is TaskType.regression:
         return statistics.fmean(measured)
-    invalid = sorted({value for value in measured if value not in (0.0, 1.0)})
-    if invalid:
-        raise LabelAggregationError(
-            f"classification measurements {invalid} are neither 0 nor 1"
+    if task_type is TaskType.classification:
+        invalid = sorted({value for value in measured if value not in (0.0, 1.0)})
+        if invalid:
+            raise LabelAggregationError(
+                f"classification measurements {invalid} are neither 0 nor 1"
+            )
+    else:
+        invalid = sorted(
+            {value for value in measured if value < 0 or not value.is_integer()}
         )
-    positive_votes = sum(1 for value in measured if value == 1.0)
-    negative_votes = len(measured) - positive_votes
-    if positive_votes == negative_votes:
+        if invalid:
+            raise LabelAggregationError(
+                f"multiclass measurements {invalid} are not class indices"
+            )
+    ranked = Counter(measured).most_common(2)
+    if len(ranked) == 2 and ranked[0][1] == ranked[1][1]:
         return None
-    return 1.0 if positive_votes > negative_votes else 0.0
+    return ranked[0][0]
 
 
 @dataclass(frozen=True)

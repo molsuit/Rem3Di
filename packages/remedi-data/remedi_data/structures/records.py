@@ -17,6 +17,7 @@ from rdkit.Geometry import Point3D
 
 from remedi_data.bundle.identity import mirror_isomeric_smiles
 from remedi_data.bundle.validate import stereo_agrees_with_frame
+from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.geometry import GeometryLimits, frame_geometry_violations
 from remedi_data.chemistry.smiles_filter import (
     SmilesFilterConfig,
@@ -33,7 +34,6 @@ UNREADABLE = "unreadable"
 STEREO_FROM_GEOMETRY_FAILED = "stereo_from_geometry_failed"
 SMILES_FILTER = "smiles_filter"
 SMILES_DOES_NOT_MATCH_STRUCTURE = "smiles_does_not_match_structure"
-CHARGE_CHANGED_BY_STANDARDIZATION = "charge_changed_by_standardization"
 STEREO_MISMATCH = "stereo_mismatch"
 UNSTABLE_CANONICAL_SMILES = "unstable_canonical_smiles"
 SOURCE_SMILES_UNPARSABLE = "source_smiles_unparsable"
@@ -202,14 +202,13 @@ def _frame_from_molecule(
     template = Chem.AddHs(parsed)
     # The match fails when standardisation moved a hydrogen or changed the
     # heavy-atom graph, i.e. whenever the SMILES no longer describes the frame.
+    # Charges cannot change: the source refuses ``neutralize``, and salt
+    # stripping that removes atoms was already dropped by the filter.
     if template.GetNumAtoms() != molecule.GetNumAtoms():
         return SMILES_DOES_NOT_MATCH_STRUCTURE
     match = molecule.GetSubstructMatch(template)
     if len(match) != template.GetNumAtoms():
         return SMILES_DOES_NOT_MATCH_STRUCTURE
-    total_charge = float(Chem.GetFormalCharge(template))
-    if total_charge != float(Chem.GetFormalCharge(molecule)):
-        return CHARGE_CHANGED_BY_STANDARDIZATION
     order = np.asarray(match, dtype=np.int64)
     positions = np.asarray(molecule.GetConformer().GetPositions(), dtype=np.float64)[
         order
@@ -220,9 +219,7 @@ def _frame_from_molecule(
     )
     if not stereo_agrees_with_frame(isomeric_smiles, atomic_numbers, positions):
         return STEREO_MISMATCH
-    radical_electrons = sum(
-        atom.GetNumRadicalElectrons() for atom in template.GetAtoms()
-    )
+    total_charge, multiplicity = charge_and_multiplicity(template)
     has_tetrahedral_tag = any(
         atom.GetChiralTag() != Chem.ChiralType.CHI_UNSPECIFIED
         for atom in parsed.GetAtoms()
@@ -232,7 +229,7 @@ def _frame_from_molecule(
         atomic_numbers=atomic_numbers,
         positions=positions,
         total_charge=total_charge,
-        multiplicity=float(radical_electrons + 1),
+        multiplicity=multiplicity,
         labels=record.labels,
         extras=record.extras,
         isomeric_smiles=isomeric_smiles,

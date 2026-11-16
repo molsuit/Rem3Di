@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from remedi_data.chemistry.splits import (
     deepchem_scaffold_split,
     fixed_test_seeded_split_columns,
+    murcko_scaffold,
     scaffold_groups,
     scaffold_test_mask,
     seeded_scaffold_train_valid_split,
@@ -117,3 +119,23 @@ def test_fixed_test_columns_reject_bad_inputs() -> None:
         fixed_test_seeded_split_columns(_MANY_SMILES, is_test, [1, 1], 0.2)
     with pytest.raises(ValueError, match="shape"):
         fixed_test_seeded_split_columns(_MANY_SMILES, is_test[:3], [1], 0.2)
+
+
+def test_an_rdkit_error_in_the_scaffold_is_an_invalid_scaffold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RDKit can raise inside ``MurckoScaffoldSmiles`` on a SMILES that parses."""
+    real_scaffold = MurckoScaffold.MurckoScaffoldSmiles
+
+    def raising_on_toluene(*, mol, includeChirality):
+        if mol.GetNumAtoms() == 7:
+            raise RuntimeError("Pre-condition Violation")
+        return real_scaffold(mol=mol, includeChirality=includeChirality)
+
+    monkeypatch.setattr(MurckoScaffold, "MurckoScaffoldSmiles", raising_on_toluene)
+    assert murcko_scaffold("Cc1ccccc1") is None
+    assert murcko_scaffold("CCc1ccccc1") == "c1ccccc1"
+    assert scaffold_groups(["Cc1ccccc1", "CCc1ccccc1"]) == {
+        "INVALID:Cc1ccccc1": [0],
+        "c1ccccc1": [1],
+    }

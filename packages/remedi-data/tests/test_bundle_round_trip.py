@@ -1,10 +1,9 @@
 """Round trip: preparer -> bundle -> ``build_datasets`` -> zarr -> ``MoleculeDataset``.
 
-``BENCHMARK_DATA_FORMAT.md`` §8 step 5. A bundle written by the shared SMILES
-preparer path goes through the real dataset build (conformer embedding
-included), and every structure of the resulting dataset must carry exactly the
-ids, ``enantiomer_of``, labels (missing ones included) and split values of the
-bundle row it was built from.
+A bundle written by the shared SMILES preparer path goes through the real
+dataset build (conformer embedding included), and every structure of the
+resulting dataset must carry exactly the ids, ``enantiomer_of``, labels
+(missing ones included) and split values of the bundle row it was built from.
 """
 
 from __future__ import annotations

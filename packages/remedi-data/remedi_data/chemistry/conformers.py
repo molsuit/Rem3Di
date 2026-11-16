@@ -1,5 +1,9 @@
 """Conformer embedding: ETKDGv3 + MMFF94, one molecule at a time or a pool of them.
 
+Every emitted conformer records what MMFF did to it (``mmff_outcomes``): a
+molecule MMFF94 has no parameters for keeps its ETKDG geometry, which
+:attr:`EmbedResult.geometry_origins` reports as ``etkdg``.
+
 :func:`embed_one_smiles` never raises: every parse / embed / relaxation failure
 becomes a :class:`ConformerTimingRecord` with a failure status, so one
 pathological molecule cannot sink a dataset of thousands. :func:`embed_many`
@@ -58,6 +62,20 @@ ConformerTimingStatus = Literal[
     "worker_crashed",
 ]
 
+#: What MMFF did to one conformer: relaxed it to convergence, stopped at
+#: ``max_mmff_steps`` (still relaxed, not converged), or left it untouched
+#: because MMFF94 has no parameters for the molecule (RDKit returns ``-1``).
+MmffOutcome = Literal["converged", "not_converged", "no_parameters"]
+
+#: Where one conformer's coordinates came from: ETKDG alone, or ETKDG then MMFF.
+ConformerGeometryOrigin = Literal["etkdg", "etkdg_mmff"]
+
+_MMFF_OUTCOME_BY_RDKIT_FLAG: dict[int, MmffOutcome] = {
+    0: "converged",
+    1: "not_converged",
+    -1: "no_parameters",
+}
+
 
 class ConformerTimingRecord(BaseModel):
     """Wall time and outcome of embedding one molecule."""
@@ -75,13 +93,14 @@ class ConformerTimingRecord(BaseModel):
     # True when the plain ETKDG start produced nothing and the conformer came
     # from the random-initial-coordinates retry.
     used_random_coordinates: bool = False
+    #: One entry per emitted conformer, in conformer order.
+    mmff_outcomes: list[MmffOutcome] = Field(default_factory=list)
 
 
 @dataclass
 class EmbedResult:
     """What :func:`embed_one_smiles` returns: always populated, never raised."""
 
-    nonisomeric_smiles: str | None
     #: ``(n_conformers, n_atoms, 3)``, or ``None`` on failure.
     positions: np.ndarray | None
     atomic_numbers: np.ndarray | None
@@ -94,6 +113,14 @@ class EmbedResult:
             and self.positions is not None
             and self.atomic_numbers is not None
         )
+
+    @property
+    def geometry_origins(self) -> list[ConformerGeometryOrigin]:
+        """Per conformer, ``etkdg`` when MMFF did not run on it, else ``etkdg_mmff``."""
+        return [
+            "etkdg" if outcome == "no_parameters" else "etkdg_mmff"
+            for outcome in self.timing.mmff_outcomes
+        ]
 
 
 def write_timings_jsonl(records: list[ConformerTimingRecord], path: Path) -> None:
@@ -111,12 +138,10 @@ def _failure(
     error_message: str,
     *,
     n_atoms: int = -1,
-    nonisomeric_smiles: str | None = None,
     embed_seconds: float = 0.0,
     mmff_seconds: float = 0.0,
 ) -> EmbedResult:
     return EmbedResult(
-        nonisomeric_smiles=nonisomeric_smiles,
         positions=None,
         atomic_numbers=None,
         timing=ConformerTimingRecord(
@@ -147,7 +172,6 @@ def embed_one_smiles(
             return _failure(
                 isomeric_smiles, config, "value_error", f"Bad SMILES: {isomeric_smiles}"
             )
-        nonisomeric = Chem.MolToSmiles(parsed, isomericSmiles=False)
         mol = Chem.AddHs(parsed)
     except (RuntimeError, ValueError) as error:
         return _failure(
@@ -188,7 +212,6 @@ def embed_one_smiles(
             "embed_failed",
             f"RDKit raised during embedding of {isomeric_smiles}: {error}",
             n_atoms=n_atoms,
-            nonisomeric_smiles=nonisomeric,
             embed_seconds=perf_counter() - start,
         )
     embed_seconds = perf_counter() - start
@@ -199,13 +222,14 @@ def embed_one_smiles(
             "embed_failed",
             f"No conformers embedded for {isomeric_smiles}",
             n_atoms=n_atoms,
-            nonisomeric_smiles=nonisomeric,
             embed_seconds=embed_seconds,
         )
 
     start = perf_counter()
     try:
-        AllChem.MMFFOptimizeMoleculeConfs(
+        # One (flag, energy) per conformer: flag 0 converged, 1 stopped at
+        # maxIters, -1 no MMFF94 parameters (the conformer is left as embedded).
+        mmff_results = AllChem.MMFFOptimizeMoleculeConfs(
             mol,
             maxIters=config.max_mmff_steps,
             nonBondedThresh=config.mmff_non_bonded_threshold,
@@ -220,21 +244,20 @@ def embed_one_smiles(
             "mmff_failed",
             f"RDKit raised during MMFF relaxation of {isomeric_smiles}: {error}",
             n_atoms=n_atoms,
-            nonisomeric_smiles=nonisomeric,
             embed_seconds=embed_seconds,
             mmff_seconds=perf_counter() - start,
         )
     mmff_seconds = perf_counter() - start
 
     conformers = mol.GetConformers()
-    if len(conformers) == 0:
+    if len(conformers) == 0 or len(mmff_results) != len(conformers):
         return _failure(
             isomeric_smiles,
             config,
             "mmff_failed",
-            f"No conformers after MMFF for {isomeric_smiles}",
+            f"{len(conformers)} conformers but {len(mmff_results)} MMFF results "
+            f"for {isomeric_smiles}",
             n_atoms=n_atoms,
-            nonisomeric_smiles=nonisomeric,
             embed_seconds=embed_seconds,
             mmff_seconds=mmff_seconds,
         )
@@ -246,7 +269,6 @@ def embed_one_smiles(
         axis=0,
     )
     return EmbedResult(
-        nonisomeric_smiles=nonisomeric,
         positions=positions,
         atomic_numbers=np.array(
             [atom.GetAtomicNum() for atom in mol.GetAtoms()], dtype=np.int64
@@ -260,6 +282,9 @@ def embed_one_smiles(
             t_mmff_s=mmff_seconds,
             status="ok",
             used_random_coordinates=used_random_coordinates,
+            mmff_outcomes=[
+                _MMFF_OUTCOME_BY_RDKIT_FLAG[int(flag)] for flag, _ in mmff_results
+            ],
         ),
     )
 
@@ -350,19 +375,3 @@ def _run_pool[Key: Hashable](
                     key,
                     _failure(smiles_by_key[key], config, "other_error", repr(error)),
                 )
-
-
-def charge_and_multiplicity(isomeric_smiles: str) -> tuple[float, float]:
-    """``(total formal charge, spin multiplicity)`` of the molecule a SMILES describes.
-
-    Multiplicity is ``2S + 1`` with ``2S`` the number of unpaired (radical)
-    electrons, so a closed-shell molecule is 1.0.
-
-    Raises:
-        ValueError: if RDKit cannot parse the SMILES.
-    """
-    molecule = Chem.MolFromSmiles(isomeric_smiles)
-    if molecule is None:
-        raise ValueError(f"RDKit could not parse SMILES {isomeric_smiles!r}")
-    unpaired = sum(atom.GetNumRadicalElectrons() for atom in molecule.GetAtoms())
-    return float(Chem.GetFormalCharge(molecule)), float(unpaired + 1)

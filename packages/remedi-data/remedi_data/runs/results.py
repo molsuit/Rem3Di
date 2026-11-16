@@ -9,7 +9,6 @@ from __future__ import annotations
 import gzip
 import json
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -17,20 +16,6 @@ import numpy as np
 import pandas as pd
 import yaml
 from pydantic import BaseModel, ConfigDict
-
-
-def _jsonable(x):
-    if isinstance(x, np.ndarray):
-        return x.tolist()
-    if isinstance(x, np.generic):  # np.float32, np.int64, etc.
-        return x.item()
-    if isinstance(x, Mapping):
-        return {k: _jsonable(v) for k, v in x.items()}
-    if isinstance(x, Sequence) and not isinstance(x, str | bytes):
-        return [_jsonable(v) for v in x]
-    if isinstance(x, Path):
-        return str(x)
-    return x
 
 
 class EvalResult(BaseModel, ABC):

@@ -1,6 +1,6 @@
 """``dataset.yaml``: the :class:`DatasetSpec` of a bundle or a dataset.
 
-See ``BENCHMARK_DATA_FORMAT.md`` §10.2. The same spec heads two kinds of
+See ``BENCHMARK_DATA_FORMAT.md`` §4.3. The same spec heads two kinds of
 directory: a **bundle** (a table with one row per stereoisomer, before any
 structures exist; ``geometry_origin`` unset) and a **dataset** (a zarr with the
 table beside it, one row per structure; ``geometry_origin`` set). Labels are
@@ -24,6 +24,7 @@ from pydantic import (
 )
 
 from remedi_data.dataset.tasks import (
+    SPLIT_CODE_BY_NAME,
     TaskConfig,
     TaskScope,
     TaskSet,
@@ -37,8 +38,8 @@ SMILES_COLUMNS: tuple[str, ...] = ("isomeric_smiles", "nonisomeric_smiles")
 #: The per-structure physics a dataset table carries and the zarr stores.
 CHARGE_COLUMNS: tuple[str, ...] = ("total_charge", "multiplicity")
 
-#: The only values a split column may hold (invariant 5).
-SPLIT_VALUES: frozenset[str] = frozenset({"train", "valid", "test", "unassigned"})
+#: The only values a split column may hold (invariant 5): the ``Split`` names.
+SPLIT_VALUES: frozenset[str] = frozenset(SPLIT_CODE_BY_NAME)
 
 #: Where a dataset's coordinates came from.
 GeometryOrigin = Literal["source", "etkdg_mmff"]
@@ -63,7 +64,7 @@ class EvalMetric(StrEnum):
     pair_ranking_accuracy = "pair-ranking-accuracy"
 
 
-#: The metrics computed alongside the headline one, per task type (§7e).
+#: The metrics computed alongside the headline one, per task type.
 METRICS_BY_TASK_TYPE: dict[TaskType, tuple[EvalMetric, ...]] = {
     TaskType.classification: (EvalMetric.auroc, EvalMetric.auprc),
     TaskType.regression: (
@@ -217,7 +218,7 @@ class EvaluationSpec(BaseModel):
     default_split: str
     # Declared per dataset with no default: molecule_id for the chiral
     # benchmarks, stereoisomer_id for the drug-property panel, which keeps the
-    # public row-level splits (§1.1).
+    # public row-level splits (§4.3).
     split_group: SplitGroup
     #: Orphan rule at conformer generation: drop a stereoisomer whose mirror
     #: partner failed, instead of only nulling its ``enantiomer_of``.

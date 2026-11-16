@@ -1,4 +1,4 @@
-"""Datasets: structures in a zarr with the table files beside it (§10.4).
+"""Datasets: structures in a zarr with the table files beside it (§4.1, §6).
 
 :func:`write_dataset` is the one writer every structure dataset goes through;
 :func:`build_datasets` turns SMILES bundles into datasets by generating
@@ -6,7 +6,9 @@ conformers, then verifies every dataset; :func:`verify_dataset` re-checks one.
 """
 
 from remedi_data.build.build import (
+    CONFORMER_EMBEDDING_FAILED,
     DEFAULT_GEOMETRY_LIMITS,
+    MMFF_NOT_APPLIED,
     STEREO_MISMATCH_AFTER_EMBEDDING,
     TIMINGS_FILENAME,
     BuildDatasetTask,
@@ -26,7 +28,9 @@ from remedi_data.build.write import (
 )
 
 __all__ = [
+    "CONFORMER_EMBEDDING_FAILED",
     "DEFAULT_GEOMETRY_LIMITS",
+    "MMFF_NOT_APPLIED",
     "STEREO_MISMATCH_AFTER_EMBEDDING",
     "TIMINGS_FILENAME",
     "BuildDatasetTask",

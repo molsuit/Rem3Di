@@ -1,4 +1,4 @@
-"""The bundle and dataset format (``BENCHMARK_DATA_FORMAT.md`` §10).
+"""The bundle and dataset format (``BENCHMARK_DATA_FORMAT.md`` §4).
 
 Covers the :class:`DatasetSpec` validators, the disk round trip of the three
 table files, every invariant ``validate_table`` (1-7) and ``structure_problems``
@@ -617,6 +617,12 @@ BUNDLE_TABLE_MUTATIONS: dict[str, tuple[TableMutation, str]] = {
     "split-dtype": (fill_integers("split__random_s1"), "7:.*split__random_s1"),
     "label-dtype": (fill_integers("activity"), "7:.*activity"),
     "classification-out-of-range": (set_value(0, "activity", 0.5), "7:.*0 or 1"),
+    "null-smiles": (set_value(5, "isomeric_smiles", None), "7:.*isomeric_smiles"),
+    "empty-smiles": (set_value(5, "nonisomeric_smiles", ""), "7:.*nonisomeric"),
+    "unparsable-smiles": (
+        set_value(5, "isomeric_smiles", "C1CC"),
+        "7:.*isomeric_smiles.*parse",
+    ),
 }
 
 
@@ -648,6 +654,14 @@ DATASET_TABLE_MUTATIONS: dict[str, tuple[TableMutation, str | None]] = {
         "2:.*isomeric_smiles",
     ),
     "stereoisomer-two-molecules": (set_value(3, "molecule_id", 1), "3:"),
+    "conformers-disagree-on-the-enantiomer": (
+        set_value(3, "enantiomer_of", pd.NA),
+        "4:.*stereoisomer.*0",
+    ),
+    "null-smiles-in-a-dataset": (
+        set_value(2, "isomeric_smiles", None),
+        "7:.*isomeric_smiles",
+    ),
     "integer-charge": (retype("total_charge", "int64"), "7:.*total_charge"),
     "missing-multiplicity": (drop("multiplicity"), "7:.*columns"),
 }
@@ -773,6 +787,34 @@ def test_structure_invariants_8_and_9(
         assert problems == []
     else:
         assert len(problems) == 1 and has_problem(problems, expected), problems
+
+
+@pytest.mark.parametrize("unusable", ["C1CC", None])
+def test_invariant_9_fails_a_row_whose_smiles_does_not_parse(
+    chiral_frames: list[Atoms], unusable: str | None
+) -> None:
+    """Without a molecule there is nothing to agree with: the row fails."""
+    spec, table = make_small_dataset()
+    table["isomeric_smiles"] = table["isomeric_smiles"].astype(object)
+    table.loc[0, "isomeric_smiles"] = unusable
+    problems = structure_problems(
+        spec, table, PackedStructures.from_atoms(chiral_frames), GEOMETRY_LIMITS
+    )
+    assert problems == ["9: geometry disagrees with isomeric_smiles for rows [0]"]
+
+
+def test_invariant_4_holds_for_many_rows_per_stereoisomer() -> None:
+    """Every row of a pair is checked, also when each stereoisomer has many rows."""
+    spec, table = make_small_dataset()
+    repeated = pd.concat([table] * 4, ignore_index=True)
+    repeated["structure_id"] = np.arange(len(repeated), dtype="int64")
+    assert validate_table(spec, repeated) == []
+    partner_of_the_first = repeated.loc[0, "enantiomer_of"]
+    repeated.loc[9, "enantiomer_of"] = 2  # the last conformer of stereoisomer 0
+    problems = validate_table(spec, repeated)
+    assert has_problem(problems, "4:.*stereoisomer.*0"), problems
+    assert repeated.loc[9, "stereoisomer_id"] == repeated.loc[0, "stereoisomer_id"]
+    assert partner_of_the_first != 2
 
 
 def _methane_like(symbols: str, distance: float = 1.1) -> Atoms:

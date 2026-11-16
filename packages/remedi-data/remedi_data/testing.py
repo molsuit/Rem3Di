@@ -46,7 +46,7 @@ from remedi_data.bundle import (
     assign_identity,
     write_bundle,
 )
-from remedi_data.chemistry.conformers import charge_and_multiplicity
+from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.dataset.config import DatasetConfig
@@ -290,7 +290,10 @@ def make_dataset_table(
     """
     table = assign_identity(list(smiles_values)).to_frame()
     table.insert(0, "structure_id", np.arange(len(table), dtype="int64"))
-    charges = [charge_and_multiplicity(smiles) for smiles in table["isomeric_smiles"]]
+    charges = [
+        charge_and_multiplicity(Chem.MolFromSmiles(smiles))
+        for smiles in table["isomeric_smiles"]
+    ]
     table["total_charge"] = [charge for charge, _ in charges]
     table["multiplicity"] = [multiplicity for _, multiplicity in charges]
     if spec.labels:

@@ -229,3 +229,28 @@ def test_rows_dropped_before_the_merge_are_counted_first() -> None:
     assert merged.member_source_rows == [[0], [1]]
     with pytest.raises(LabelAggregationError, match="counted twice"):
         merged.after_source_drops({DUPLICATE_SMILES: 1})
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ([0.0, 2.0, 2.0], 2.0),  # majority vote, never the mean 1.33
+        ([1.0, 1.0, 0.0, 2.0], 1.0),
+        ([0.0, 2.0], None),  # a tie between the two most voted classes
+        ([0.0, 0.0, 2.0, 2.0, 1.0], None),
+        ([NAN, 2.0], 2.0),
+        ([3.0], 3.0),
+    ],
+)
+def test_aggregate_label_votes_on_multiclass_replicates(
+    values: list[float], expected: float | None
+) -> None:
+    assert aggregate_label(values, TaskType.multiclass) == expected
+
+
+@pytest.mark.parametrize("value", [0.5, -1.0])
+def test_aggregate_label_rejects_a_multiclass_value_that_is_no_class_index(
+    value: float,
+) -> None:
+    with pytest.raises(LabelAggregationError, match="class indices"):
+        aggregate_label([1.0, value], TaskType.multiclass)

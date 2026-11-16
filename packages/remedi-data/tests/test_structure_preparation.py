@@ -18,6 +18,7 @@ from typing import ClassVar
 
 import numpy as np
 import pandas as pd
+import pydantic
 import pydantic_yaml
 import pytest
 from rdkit import Chem
@@ -54,7 +55,6 @@ from remedi_data.structures import (
 from remedi_data.structures.pipeline import run_shards
 from remedi_data.structures.records import (
     CONNECTIVITY_DIFFERS_FROM_SOURCE,
-    SMILES_DOES_NOT_MATCH_STRUCTURE,
     SMILES_FILTER,
     UNREADABLE,
     round_trip_canonical_smiles,
@@ -219,15 +219,35 @@ def test_a_charged_molecule_keeps_its_charge() -> None:
     assert prepared.total_charge == -1.0
 
 
-def test_neutralising_a_zwitterion_no_longer_matches_its_frame() -> None:
+def test_a_zwitterion_keeps_its_charges() -> None:
     record = StructureRecord(
         source_key="z", molecule=embedded_molecule("[NH3+]CC(=O)[O-]")
     )
-    neutralising = FILTER.model_copy(update={"neutralize": True})
-    assert (
-        prepare(record, smiles_filter=neutralising) == SMILES_DOES_NOT_MATCH_STRUCTURE
+    prepared = prepare(record)
+    assert isinstance(prepared, PreparedFrame)
+    assert prepared.isomeric_smiles == "[NH3+]CC(=O)[O-]"
+    assert prepared.total_charge == 0.0
+
+
+@pytest.mark.parametrize(
+    "setting",
+    [{"neutralize": True}, {"dedupe": True}],
+    ids=["neutralize", "dedupe"],
+)
+@pytest.mark.parametrize("source", [Pcqm4mv2Source, GeomDrugsSource])
+def test_a_structure_source_refuses_neutralize_and_dedupe(
+    tmp_path: Path, source, setting: dict[str, bool]
+) -> None:
+    """Neutralising changes the hydrogen count, so the SMILES no longer describes
+    the frame; deduplicating would need state across records the source cannot keep."""
+    paths = (
+        {"sdf": tmp_path / "a.sdf", "labels_csv": tmp_path / "a.csv"}
+        if source is Pcqm4mv2Source
+        else {"directory": tmp_path}
     )
-    assert isinstance(prepare(record), PreparedFrame)
+    with pytest.raises(pydantic.ValidationError, match=next(iter(setting))):
+        source(**paths, smiles_filter=FILTER.model_copy(update=setting))
+    assert source(**paths, smiles_filter=FILTER).smiles_filter == FILTER
 
 
 def test_a_salt_and_a_foreign_element_are_dropped_by_the_filter() -> None:
@@ -529,6 +549,9 @@ def test_geom_source_keeps_the_top_conformers_by_weight(tmp_path: Path) -> None:
     assert table["molecule_id"].tolist() == [0, 0, 1, 1]
     # The acetate is charged (the GEOM filter keeps neutral molecules only).
     assert result.dropped == {"missing_pickle": 2, SMILES_FILTER: 1}
+    # five molecules in the summary, although seven records (five conformers
+    # and two missing pickles) were read
+    assert read_provenance(output).counts.source_molecules == 5
     assert verify_dataset(output).problems == []
 
 
@@ -553,3 +576,14 @@ def test_the_drug_like_corpora_drop_radicals(source) -> None:
     smiles_filter = source.model_fields["smiles_filter"].default_factory()
     assert molecule_passes_filter(Chem.MolFromSmiles("CCN"), smiles_filter)
     assert not molecule_passes_filter(Chem.MolFromSmiles("CC[NH]"), smiles_filter)
+
+
+def test_the_fragment_gate_counts_fragments_without_sanitising_them() -> None:
+    """Only the number of fragments matters; building each one as a sanitised
+    molecule used to reject a molecule for a reason the gate does not name."""
+    unsanitised = Chem.MolFromSmiles("CC(C)(C)(C)C", sanitize=False)
+    assert molecule_passes_filter(unsanitised, FILTER)
+    two_fragments = Chem.MolFromSmiles("CCO.CCN")
+    assert not molecule_passes_filter(two_fragments, FILTER)
+    allowing = FILTER.model_copy(update={"allow_multifragment": True})
+    assert molecule_passes_filter(two_fragments, allowing)

@@ -473,3 +473,15 @@ def test_the_production_selection_config_parses() -> None:
         SelectionBatchConfig,
         REPOSITORY_ROOT / "configs/dataset_creation/select_structures.yaml",
     )
+
+
+@pytest.mark.parametrize(
+    ("fraction", "available", "expected"),
+    [(0.29, 100, 29), (0.57, 100, 57), (0.5, 7, 3), (1.0, 8, 8), (0.1, 5, 0)],
+)
+def test_a_fraction_draws_the_floor_of_the_fraction_as_written(
+    fraction: float, available: int, expected: int
+) -> None:
+    """``0.29 * 100`` is ``28.999...`` in binary; the draw must still take 29."""
+    draw = RandomMolecules(fraction=fraction)
+    assert draw.molecules_to_draw(available) == expected

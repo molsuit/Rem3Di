@@ -25,10 +25,13 @@ import pytest
 import yaml
 import zarr
 from ase import Atoms
+from rdkit import Chem
 from rdkit.Chem import AllChem, rdForceFieldHelpers
 
 from remedi_data.build import (
+    CONFORMER_EMBEDDING_FAILED,
     DEFAULT_GEOMETRY_LIMITS,
+    MMFF_NOT_APPLIED,
     STEREO_MISMATCH_AFTER_EMBEDDING,
     TIMINGS_FILENAME,
     BuildSummary,
@@ -42,8 +45,9 @@ from remedi_data.build import (
     zarr_problems,
 )
 from remedi_data.build import build as build_module
+from remedi_data.build import verify as verify_module
+from remedi_data.build import write as write_module
 from remedi_data.bundle import (
-    CONFORMER_EMBEDDING_FAILED,
     ENANTIOMER_PARTNER_FAILED,
     PROVENANCE_FILENAME,
     SPEC_FILENAME,
@@ -62,10 +66,8 @@ from remedi_data.bundle import (
     validate_table,
     write_bundle,
 )
-from remedi_data.chemistry.conformers import (
-    ConformerEmbeddingConfig,
-    charge_and_multiplicity,
-)
+from remedi_data.chemistry.charge import charge_and_multiplicity
+from remedi_data.chemistry.conformers import ConformerEmbeddingConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.dataset.tasks import Split, TaskType
@@ -123,7 +125,7 @@ def frames_for(
 
 def neutral_charges(bundle: Bundle) -> dict[int, tuple[float, float]]:
     return {
-        int(stereoisomer_id): charge_and_multiplicity(str(smiles))
+        int(stereoisomer_id): charge_and_multiplicity(Chem.MolFromSmiles(str(smiles)))
         for stereoisomer_id, smiles in zip(
             bundle.table["stereoisomer_id"],
             bundle.table["isomeric_smiles"],
@@ -258,10 +260,10 @@ def test_the_orphan_rule(require_enantiomer_pairs: bool) -> None:
             .isna()
             .all()
         )
-    expected = {CONFORMER_EMBEDDING_FAILED: 1, ENANTIOMER_PARTNER_FAILED: 1}
-    assert expanded.dropped_counts == expected
-    # merged onto the preparer's own counts
-    assert expanded.provenance.counts.dropped == {"element_gate": 2, **expected}
+    # only the orphan rule is the expansion's own; the caller counts why a
+    # stereoisomer has no structure, and merges the counts once
+    assert expanded.dropped_counts == {ENANTIOMER_PARTNER_FAILED: 1}
+    assert expanded.provenance.counts.dropped == {"element_gate": 2}
     assert validate_table(expanded.spec, table) == []
 
 
@@ -272,7 +274,7 @@ def test_a_stereoisomer_absent_from_frames_and_charges_counts_as_failed() -> Non
     del frames[ethanol], charges[ethanol]
     expanded = expand(bundle, frames, charges=charges)
     assert len(expanded.table) == 5
-    assert expanded.dropped_counts == {CONFORMER_EMBEDDING_FAILED: 1}
+    assert expanded.dropped_counts == {}
 
 
 def test_charges_are_taken_per_stereoisomer() -> None:
@@ -432,6 +434,55 @@ def test_a_successful_rewrite_replaces_the_dataset(
     assert report.structures_sha256 == structures_identity(directory)
 
 
+def test_a_rewrite_succeeds_when_the_old_copy_cannot_be_deleted(
+    tmp_path: Path, expanded: ExpandedDataset
+) -> None:
+    """An entry that survives deletion (an NFS ``.nfs*`` file held open, here a
+    read-only directory) must not cost the new build."""
+    directory = tmp_path / DATASET_ID
+    write(expanded, directory)
+    locked = directory / "locked"
+    locked.mkdir()
+    (locked / "held_open").write_text("from the previous build")
+    locked.chmod(0o500)
+    bundle = make_bundle()
+    frames = frames_for(bundle)
+    del frames[stereoisomer_id_of(bundle, "CCO")]
+    try:
+        write(expand(bundle, frames), directory)
+
+        report = verify_dataset(directory)
+        assert report.problems == [] and report.rows == 5
+        assert not (directory / "locked").exists()
+        (set_aside,) = [path for path in tmp_path.iterdir() if path != directory]
+        assert set_aside.name.startswith(f".{DATASET_ID}.old-")
+    finally:
+        for path in tmp_path.rglob("locked"):
+            path.chmod(0o700)
+
+
+def test_a_failed_swap_puts_the_previous_dataset_back(
+    tmp_path: Path, expanded: ExpandedDataset, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = tmp_path / DATASET_ID
+    first = write(expanded, directory)
+    real_rename = Path.rename
+
+    def failing_to_move_the_new_build(self: Path, target):
+        if self.name.endswith(".partial"):
+            raise OSError("rename failed")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", failing_to_move_the_new_build)
+    with pytest.raises(OSError, match="rename failed"):
+        write(expanded, directory)
+    monkeypatch.undo()
+
+    assert [path.name for path in tmp_path.iterdir()] == [DATASET_ID]
+    assert read_bundle(directory).provenance == first
+    assert verify_dataset(directory).problems == []
+
+
 def test_structures_sha256_moves_with_the_coordinates(
     tmp_path: Path, expanded: ExpandedDataset
 ) -> None:
@@ -583,6 +634,7 @@ def test_build_datasets_builds_and_verifies_every_bundle(tmp_path: Path) -> None
         CONFORMER_EMBEDDING_FAILED: 0,
         STEREO_MISMATCH_AFTER_EMBEDDING: 0,
         ENANTIOMER_PARTNER_FAILED: 0,
+        MMFF_NOT_APPLIED: 0,
     }
     summary = read_summary(config, DATASET_ID)
     assert not summary.skipped
@@ -753,14 +805,17 @@ def test_a_stereo_mismatch_after_embedding_is_dropped_and_counted(
 ) -> None:
     """MMFF walking a centre through planarity is injected at the perception step."""
     target = canonical(D_ALANINE)
+    real_check = build_module.stereo_agrees_with_frame
 
-    def flipped_stereochemistry(isomeric_smiles: str, atoms: Atoms) -> str | None:
+    def flipped_stereochemistry(
+        isomeric_smiles: str, atomic_numbers: np.ndarray, positions: np.ndarray
+    ) -> bool:
         if canonical(isomeric_smiles) == target:
-            return canonical(L_ALANINE)
-        return stereochemistry_from_frame(isomeric_smiles, atoms)
+            return False
+        return real_check(isomeric_smiles, atomic_numbers, positions)
 
     monkeypatch.setattr(
-        build_module, "stereochemistry_from_frame", flipped_stereochemistry
+        build_module, "stereo_agrees_with_frame", flipped_stereochemistry
     )
     write_smiles_bundle(tmp_path / "bundles", dataset_id=DATASET_ID)
     config = build_config(tmp_path)
@@ -817,6 +872,94 @@ def test_one_raising_molecule_does_not_sink_the_dataset(
     assert statuses.count("mmff_failed") == 1
 
 
+def test_a_frame_mmff_could_not_relax_is_dropped_and_counted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without MMFF parameters RDKit returns ``(-1, -1.0)`` and leaves the ETKDG
+    geometry; such a frame cannot sit in a dataset declaring ``etkdg_mmff``."""
+    real_mmff = rdForceFieldHelpers.MMFFOptimizeMoleculeConfs
+    calls = {"count": 0}
+
+    def no_parameters_for_the_first_molecule(molecule, *args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return [(-1, -1.0)] * molecule.GetNumConformers()
+        return real_mmff(molecule, *args, **kwargs)
+
+    monkeypatch.setattr(
+        AllChem, "MMFFOptimizeMoleculeConfs", no_parameters_for_the_first_molecule
+    )
+    write_smiles_bundle(tmp_path / "bundles", dataset_id=DATASET_ID)
+    config = build_config(tmp_path)
+
+    assert build_datasets(config).n_failed == 0
+
+    directory = tmp_path / "zarrs" / DATASET_ID
+    dataset = read_bundle(directory)
+    assert len(dataset.table) == 5
+    dropped = dataset.provenance.counts.dropped
+    assert dropped[MMFF_NOT_APPLIED] == 1
+    assert dropped[CONFORMER_EMBEDDING_FAILED] == 0
+    # L-alanine is first: its partner D-alanine survives as an orphan
+    assert dropped[ENANTIOMER_PARTNER_FAILED] == 1
+    assert read_summary(config, DATASET_ID).dropped == dropped
+    outcomes = [
+        yaml.safe_load(line)["mmff_outcomes"]
+        for line in (directory / TIMINGS_FILENAME).read_text().splitlines()
+    ]
+    assert outcomes.count(["no_parameters"]) == 1
+    assert outcomes.count(["converged"]) + outcomes.count(["not_converged"]) == 5
+
+
+def test_the_build_checks_with_its_workers_and_reuses_the_bundle_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invariants 9 and 10 run with ``n_workers`` at write and at verify, and the
+    bundle's content hash is the one ``read_bundle`` already checked."""
+    workers_seen: list[int] = []
+    real_structure_problems = write_module.structure_problems
+
+    def recording_structure_problems(*args, workers: int, **kwargs) -> list[str]:
+        workers_seen.append(workers)
+        return real_structure_problems(*args, workers=1, **kwargs)
+
+    def recomputing_the_bundle_hash(table: pd.DataFrame) -> str:
+        raise AssertionError("the build recomputed the bundle's content hash")
+
+    monkeypatch.setattr(
+        write_module, "structure_problems", recording_structure_problems
+    )
+    monkeypatch.setattr(
+        verify_module, "structure_problems", recording_structure_problems
+    )
+    monkeypatch.setattr(
+        build_module,
+        "content_hash_of_table",
+        recomputing_the_bundle_hash,
+        raising=False,
+    )
+    monkeypatch.setattr(build_module, "embed_many", embedding_in_process)
+    bundle_directory = write_smiles_bundle(tmp_path / "bundles", dataset_id=DATASET_ID)
+    config = build_config(tmp_path, n_workers=3)
+
+    assert build_datasets(config).n_failed == 0
+
+    assert workers_seen == [3, 3]
+    bundle = read_bundle(bundle_directory)
+    summary = read_summary(config, DATASET_ID)
+    assert summary.bundle_content_sha256 == content_hash_of_table(bundle.table)
+    assert build_datasets(config).n_failed == 0
+    assert read_summary(config, DATASET_ID).skipped
+
+
+def embedding_in_process(smiles_by_key, config, *, n_workers):
+    """``embed_many`` without a process pool, whatever ``n_workers`` says."""
+    return REAL_EMBED_MANY(smiles_by_key, config, n_workers=1)
+
+
+REAL_EMBED_MANY = build_module.embed_many
+
+
 # -------------------------------------------------------------- verify_dataset
 
 
@@ -861,6 +1004,10 @@ def delete_the_table(directory: Path) -> None:
     (directory / TABLE_FILENAME).unlink()
 
 
+def delete_an_array(directory: Path) -> None:
+    shutil.rmtree(directory / "multiplicity")
+
+
 @pytest.mark.parametrize(
     ("tamper", "expected"),
     [
@@ -869,6 +1016,7 @@ def delete_the_table(directory: Path) -> None:
         (change_a_label_in_the_table, ["content_sha256"]),
         (tamper_provenance_structures_hash, ["structures_sha256"]),
         (delete_the_table, [TABLE_FILENAME]),
+        (delete_an_array, ["multiplicity"]),
     ],
 )
 def test_verify_catches_tampering(

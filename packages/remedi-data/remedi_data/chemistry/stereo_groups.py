@@ -14,7 +14,7 @@ or OR group unspecified, so the SMILES claims only what the source knows.
 
 An OR row is one specific stereoisomer that cannot be named, so a preparer
 usually drops it instead (:func:`has_or_stereo_group`, ``BENCHMARK_DATA_FORMAT.md``
-§11.3): unspecifying it would merge the two separated enantiomers of a compound
+§4.6): unspecifying it would merge the two separated enantiomers of a compound
 into one row whose label belongs to neither.
 """
 

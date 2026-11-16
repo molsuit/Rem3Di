@@ -7,7 +7,7 @@ config-is-the-task pattern as ``latent_evaluation.analysis_tasks``.
 
 The protocol is deliberately **context-agnostic**: an eval task is handed an
 ``EvalContext``, a dataset build task its own build context
-(``BENCHMARK_DATA_FORMAT.md`` §3; the contexts share the runner, not a base
+(``BENCHMARK_DATA_FORMAT.md`` §3.2; the contexts share the runner, not a base
 class). Typing ``ctx`` as ``Any`` is what lets :mod:`remedi_data.runs.task_runner`
 stay a dependency-light leaf that both sides import.
 """

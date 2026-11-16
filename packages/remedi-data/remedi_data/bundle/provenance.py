@@ -1,6 +1,6 @@
 """``provenance.yaml``: where a bundle or dataset came from, what it hashes to, what it counts.
 
-See ``BENCHMARK_DATA_FORMAT.md`` §1.4 and §10.2. The preparer fills
+See ``BENCHMARK_DATA_FORMAT.md`` §4.7 and §4.3. The preparer fills
 ``preparer``, ``source``, ``geometry_limits``, ``smiles_filter``, ``notices`` and
 the parts of ``counts`` only it knows (``source_molecules`` and ``dropped``);
 the writer (:func:`remedi_data.bundle.bundle.write_bundle` or
@@ -88,7 +88,7 @@ class SourceRecord(BaseModel):
 
 
 class TableOutputRecord(BaseModel):
-    """The two hashes of ``table.parquet`` (§1.4).
+    """The two hashes of ``table.parquet`` (§4.7).
 
     ``file_sha256`` is a *writer* hash — compression and row-group size change
     it. ``content_sha256`` is over the logical content and is the key every
@@ -116,7 +116,7 @@ class BundleOutputs(BaseModel):
 class ConformerGenerationRecord(BaseModel):
     """Present only on a dataset with ``geometry_origin: etkdg_mmff``.
 
-    Descriptive, not a reproduction contract: no ETKDG seed is pinned (§1.2).
+    Descriptive, not a reproduction contract: no ETKDG seed is pinned (§4.7).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -144,7 +144,7 @@ class BundleCounts(BaseModel):
 
 
 class BundleProvenance(BaseModel):
-    """``provenance.yaml`` in full (§1.4)."""
+    """``provenance.yaml`` in full (§4.7)."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 

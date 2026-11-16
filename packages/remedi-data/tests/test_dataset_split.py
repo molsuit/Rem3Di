@@ -14,12 +14,14 @@ from pathlib import Path
 
 import numpy as np
 
+from remedi_data.bundle import SPLIT_VALUES
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.shard_aligned_writer import (
     ShardAlignedWriter,
 )
 from remedi_data.dataset.tasks import (
+    SPLIT_CODE_BY_NAME,
     Split,
     TaskConfig,
     TaskScope,
@@ -109,3 +111,8 @@ def test_split_defaults_unassigned_when_not_supplied(tmp_path: Path) -> None:
         np.asarray(reopened.split[:9]),
         np.full(9, Split.unassigned.value, dtype="u1"),
     )
+
+
+def test_the_split_names_are_the_split_members() -> None:
+    assert set(SPLIT_CODE_BY_NAME) == SPLIT_VALUES == {split.name for split in Split}
+    assert all(SPLIT_CODE_BY_NAME[split.name] is split for split in Split)

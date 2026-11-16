@@ -84,3 +84,28 @@ def test_embed_many_survives_a_worker_that_dies(
     crashed = smiles.index(CRASHING_SMILES)
     assert results[crashed].timing.status == "worker_crashed"
     assert all(result.succeeded for key, result in results.items() if key != crashed)
+
+
+@pytest.mark.parametrize("smiles", ["C[Se]C", "F[S](F)(F)(F)(F)F", "C[I+]C"])
+def test_a_molecule_without_mmff_parameters_keeps_a_truthful_etkdg_origin(
+    smiles: str,
+) -> None:
+    """MMFF94 has no parameters for these; RDKit reports ``(-1, -1.0)`` per conformer."""
+    result = embed_one_smiles(smiles, ConformerEmbeddingConfig(n_conformers=2))
+
+    assert result.succeeded
+    assert result.timing.mmff_outcomes == ["no_parameters", "no_parameters"]
+    assert result.geometry_origins == ["etkdg", "etkdg"]
+
+
+def test_mmff_convergence_is_recorded_per_conformer() -> None:
+    converged = embed_one_smiles("CCO", ConformerEmbeddingConfig(max_mmff_steps=10_000))
+    assert converged.timing.mmff_outcomes == ["converged"]
+    assert converged.geometry_origins == ["etkdg_mmff"]
+
+    capped = embed_one_smiles(
+        "CCCCCCCCCO", ConformerEmbeddingConfig(n_conformers=2, max_mmff_steps=1)
+    )
+    assert capped.succeeded
+    assert capped.timing.mmff_outcomes == ["not_converged", "not_converged"]
+    assert capped.geometry_origins == ["etkdg_mmff", "etkdg_mmff"]

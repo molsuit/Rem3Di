@@ -71,3 +71,11 @@ def test_a_directory_without_the_structure_arrays_is_refused(tmp_path: Path) -> 
     zarr.open_group(tmp_path / "empty", mode="w")
     with pytest.raises(KeyError, match="molecule_ptr"):
         MoleculeDataset.open_structure_arrays(tmp_path / "empty")
+
+
+def test_an_existing_dataset_opens_read_only(ten_structure_dataset: Path) -> None:
+    dataset = MoleculeDataset.open_existing_dataset_from_dir(ten_structure_dataset)
+    with pytest.raises(ValueError, match="read-only"):
+        dataset.positions[0] = np.zeros(3)
+    with pytest.raises(ValueError, match="read-only"):
+        dataset.molecule_ids[0] = 99

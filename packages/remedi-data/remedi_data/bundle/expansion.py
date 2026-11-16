@@ -19,9 +19,7 @@ from remedi_data.bundle.bundle import Bundle
 from remedi_data.bundle.provenance import BundleProvenance
 from remedi_data.bundle.spec import DatasetSpec, GeometryOrigin
 
-#: ``counts.dropped`` key for a stereoisomer that produced no structure at all.
-CONFORMER_EMBEDDING_FAILED = "conformer_embedding_failed"
-#: ``counts.dropped`` key for the orphan rule (§1.2).
+#: ``counts.dropped`` key for the orphan rule (§6).
 ENANTIOMER_PARTNER_FAILED = "enantiomer_partner_failed"
 
 
@@ -33,7 +31,9 @@ class ExpandedDataset:
     table: pd.DataFrame
     structures: list[Atoms]
     provenance: BundleProvenance
-    #: reason -> count, also merged into ``provenance.counts.dropped``.
+    #: The expansion's own drops (the orphan rule), reason -> count. Not merged
+    #: into ``provenance.counts.dropped``: the caller merges them once, with
+    #: its own reasons for the stereoisomers that have no structure.
     dropped_counts: dict[str, int] = field(default_factory=dict)
 
 
@@ -43,12 +43,13 @@ def _apply_drop_rules(
     *,
     require_enantiomer_pairs: bool,
 ) -> tuple[set[int], dict[str, int]]:
-    """Which stereoisomers survive, and why the others did not.
+    """Which stereoisomers survive, and the orphan count.
 
-    A stereoisomer with no structure failed to embed. A survivor whose mirror
-    partner failed is an *orphan*: its pointer is nulled, and it is dropped too
-    when the evaluation declares ``require_enantiomer_pairs``. Either way the
-    case is counted as ``enantiomer_partner_failed``.
+    A stereoisomer with no structure is gone; why it has none (its embedding
+    failed, its frames were rejected) is the caller's to count. A survivor
+    whose mirror partner is gone is an *orphan*: its pointer is nulled, and it
+    is dropped too when the evaluation declares ``require_enantiomer_pairs``.
+    Either way the case is counted as ``enantiomer_partner_failed``.
     """
     dropped_counts: dict[str, int] = {}
     surviving = {
@@ -56,9 +57,6 @@ def _apply_drop_rules(
         for stereoisomer_id in source["stereoisomer_id"]
         if len(structures_by_stereoisomer.get(int(stereoisomer_id), ())) > 0
     }
-    embedding_failures = len(source) - len(surviving)
-    if embedding_failures:
-        dropped_counts[CONFORMER_EMBEDDING_FAILED] = embedding_failures
     partner_of = source.set_index("stereoisomer_id")["enantiomer_of"]
     orphaned = {
         stereoisomer_id
@@ -87,7 +85,9 @@ def expand_to_structures(
     gives ``(total_charge, multiplicity)`` for every surviving stereoisomer.
     ``structure_id`` is assigned densely, the identity columns carry through,
     labels / splits / extras are repeated onto every structure of their
-    stereoisomer, and the orphan rule applies.
+    stereoisomer, and the orphan rule applies (its count is
+    :attr:`ExpandedDataset.dropped_counts`; the bundle's ``counts.dropped`` is
+    carried over unchanged).
 
     Raises:
         ValueError: if ``bundle`` is not a bundle (it already has structures)
@@ -140,10 +140,6 @@ def expand_to_structures(
     table = table[expanded_spec.expected_columns()]
     provenance = bundle.provenance.model_copy(deep=True)
     provenance.outputs = None
-    merged = dict(provenance.counts.dropped)
-    for reason, count in dropped_counts.items():
-        merged[reason] = merged.get(reason, 0) + count
-    provenance.counts.dropped = merged
     return ExpandedDataset(
         spec=expanded_spec,
         table=table,

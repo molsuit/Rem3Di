@@ -1,4 +1,4 @@
-"""Reading and writing the three files of a bundle or a dataset (§10.1).
+"""Reading and writing the three files of a bundle or a dataset (§4.1).
 
 A **bundle** directory is exactly::
 
@@ -65,6 +65,24 @@ class Bundle:
     table: pd.DataFrame
     provenance: BundleProvenance
 
+    @property
+    def content_sha256(self) -> str:
+        """The table's ``content_sha256`` as ``provenance.yaml`` records it.
+
+        For a bundle from :func:`read_bundle`, which compared it to the table,
+        this is the table's content hash without computing it again.
+
+        Raises:
+            BundleValidationError: if the provenance records no outputs (a
+                bundle assembled in memory and never written).
+        """
+        outputs = self.provenance.outputs
+        if outputs is None:
+            raise BundleValidationError(
+                None, [f"{PROVENANCE_FILENAME} of this bundle records no outputs"]
+            )
+        return outputs.table_parquet.content_sha256
+
 
 # ------------------------------------------------------------------- hashing
 
@@ -91,7 +109,7 @@ def _canonical_dtype_label(series: pd.Series) -> str:
 def content_hash_of_table(table: pd.DataFrame) -> str:
     """sha256 over the *logical* content: column names, dtypes and row hashes.
 
-    This is the comparability key of §1.4. Unlike ``sha256(table.parquet)`` it
+    This is the comparability key of §4.7. Unlike ``sha256(table.parquet)`` it
     does not move when the parquet writer's compression or row-group size
     changes. String columns are hashed as plain objects so that the hash does
     not depend on which pandas string backend is in use.
@@ -281,7 +299,7 @@ def _check_recorded_table_hash(
     """Compare the table's content hash and row count to the record.
 
     ``sha256(table.parquet)`` is deliberately *not* enforced: it is a writer
-    hash and moves with compression or row-group settings (§1.4).
+    hash and moves with compression or row-group settings (§4.7).
     """
     outputs = provenance.outputs
     if outputs is None:
@@ -352,7 +370,7 @@ def read_provenance(directory: Path) -> BundleProvenance:
 
 
 def structures_identity(directory: Path) -> str:
-    """The hash identifying the *data* anything derived from a directory saw (§7c).
+    """The hash identifying the *data* anything derived from a directory saw (§4.7).
 
     For a dataset that is ``structures_sha256``, the hash of the zarr's
     structures; for a bundle, the table's ``content_sha256``. A descriptor cache
