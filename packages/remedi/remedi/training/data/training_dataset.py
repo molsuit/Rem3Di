@@ -126,12 +126,3 @@ class TrainingMoleculeDataset(Dataset):
     def __getitem__(self, idx: int) -> Sample:
         self._ensure_open()
         return self._get_item(self, int(idx))
-
-    @classmethod
-    def from_molecule_dataset(
-        cls,
-        dataset: MoleculeDataset,
-        *,
-        get_item: GetItemFn = atoms_getitem,
-    ) -> TrainingMoleculeDataset:
-        return cls(Path(dataset.path), get_item=get_item)

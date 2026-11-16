@@ -102,11 +102,11 @@ class RemediCalculator(DescriptorCalculator):
         device = self._resolve_device()
         model = self._model.to(device)
 
-        train_ds: TrainingMoleculeDataset | Subset = (
-            TrainingMoleculeDataset.from_molecule_dataset(
-                dataset, get_item=atoms_getitem
-            )
-        )
+        # Read the structure arrays once: item-wise reads from the sharded zarr
+        # cost a shard decompression per structure (tmQM: > 45 min on one core).
+        train_ds: TrainingMoleculeDataset | Subset = TrainingMoleculeDataset(
+            Path(dataset.path), get_item=atoms_getitem, in_memory=True
+        ).open()
         if limit is not None and limit < len(train_ds):
             train_ds = Subset(train_ds, range(limit))
         n = len(train_ds)
