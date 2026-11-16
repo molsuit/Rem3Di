@@ -38,8 +38,13 @@ class PairDistanceMatrixGeometricPreprocessor(nn.Module):
         atom_mask = sample.padding_mask
         mask_pair = ~(atom_mask[:, :, None] | atom_mask[:, None, :])
         # positions (B, N, 3)
-        # Calculate the pairwise distance matrix
-        distances = torch.cdist(positions, positions)
+        # Pairwise distance matrix. The default cdist switches to a matmul
+        # formulation above 25 atoms, which in float32 loses ~1e-2 Å at
+        # realistic coordinates; that made a molecule's descriptor depend on the
+        # padded size of its batch. Compute the differences directly instead.
+        distances = torch.cdist(
+            positions, positions, compute_mode="donot_use_mm_for_euclid_dist"
+        )
 
         rbf = self.radial_basis(distances)
 

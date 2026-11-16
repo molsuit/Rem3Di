@@ -3,7 +3,20 @@ from typing import Annotated
 import numpy as np
 import pydantic_yaml as pyaml
 from e3nn.o3 import Irreps
-from pydantic import BaseModel, BeforeValidator, PlainSerializer, WithJsonSchema
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    PlainSerializer,
+    WithJsonSchema,
+)
+
+
+class StrictBaseModel(BaseModel):
+    """Config base that rejects unknown keys, so a mistyped yaml key fails loudly."""
+
+    model_config = ConfigDict(extra="forbid")
+
 
 IrrepType = Annotated[
     Irreps,

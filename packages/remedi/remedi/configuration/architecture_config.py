@@ -1,5 +1,3 @@
-import importlib
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -9,31 +7,18 @@ import torch
 import torch.nn as nn
 import yaml
 from e3nn.o3 import Irreps
-from pydantic import (
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
-    Field,
-    PlainSerializer,
-    computed_field,
-    model_validator,
-)
+from pydantic import ConfigDict, Field, model_validator
 
-from remedi.configuration.config_utils import IrrepType
+from remedi.configuration.config_utils import IrrepType, StrictBaseModel
 from remedi.configuration.mace_config import MaceConfig
 from remedi.model.pooling import AttnPool, MeanPool, PMAAggregator
 from remedi.model.preprocessing.radial_basis_functions import (
     BesselBasisFunctions,
     GaussianBasisFunctions,
 )
-from remedi.utils.model_utils import (
-    get_equivariant_irreps,
-    get_invariant_indices,
-)
+from remedi.utils.model_utils import get_invariant_indices
 
 if TYPE_CHECKING:
-    from mace.calculators import MACECalculator
-
     from remedi.model.preprocessing.atomic_descriptor_preprocessor import (
         AtomicDescriptorPreprocessor,
     )
@@ -51,91 +36,96 @@ class HeadType(Enum):
     LINEAR = "linear"
 
 
-class Activations(Enum):
-    SILU = "SiLU"
-    GELU = "gelu"
+ActivationName = Literal["silu", "gelu", "relu", "tanh"]
 
-    @staticmethod
-    def get_activation_fn(activation_name: str) -> Callable:
-        if activation_name in Activations.__members__:
-            fn_name = Activations.__members__[activation_name].value
-            module = importlib.import_module("torch.nn")
-            activation_class = getattr(module, fn_name)
-            return activation_class()
-        else:
-            raise ValueError(
-                f"Activation function '{activation_name}' is not supported."
-            )
+ACTIVATION_MODULES: dict[str, type[nn.Module]] = {
+    "silu": nn.SiLU,
+    "gelu": nn.GELU,
+    "relu": nn.ReLU,
+    "tanh": nn.Tanh,
+}
 
 
-def _to_activation_fn(v: str | Callable | Activations) -> Callable:
-    if isinstance(v, Activations):
-        return Activations.get_activation_fn(v.value.upper())
-    if isinstance(v, str):
-        return Activations.get_activation_fn(v.upper())
-    if callable(v):
-        return v
-    raise ValueError(f"Cannot coerce {v!r} to an activation function.")
+def build_activation(name: ActivationName) -> nn.Module:
+    """A fresh activation module, so no state is shared between blocks."""
+    return ACTIVATION_MODULES[name]()
 
 
-ActivationFn = Annotated[
-    Callable,
-    BeforeValidator(_to_activation_fn),
-    PlainSerializer(lambda fn: fn.__class__.__name__, return_type=str),
-]
+@dataclass(frozen=True)
+class ModelDimensions:
+    """Widths every part of the model derives from the architecture config.
+
+    None of these is settable in yaml: each one is fixed by another field, and
+    letting the yaml repeat it only allowed mismatches that failed in forward.
+    """
+
+    embedding_dimension: int  # atomic embedding width after preprocessing
+    pair_dimension: int  # pair representation width (d_projection)
+    radial_basis_dimension: int  # number of radial basis functions
+    descriptor_dimension: int  # width of one descriptor token
+    descriptor_sequence_length: int  # number of descriptor tokens
+
+    @property
+    def descriptor_flat_dimension(self) -> int:
+        return self.descriptor_sequence_length * self.descriptor_dimension
 
 
-class AttentionLayerConfig(BaseModel):
+class AttentionLayerConfig(StrictBaseModel):
     num_heads: int
     dim_feedforward: int
     dropout: float
-    embedding_dim: int | None = None
 
 
-class EncoderConfig(BaseModel):
+class EncoderConfig(StrictBaseModel):
     N_layers: int
     attention_layer_config: AttentionLayerConfig
-    d_pair: int | None = None
-    d_geo: int | None = None
 
-    def build(self, global_aggregator: nn.Module) -> nn.Module:
+    def build(
+        self, global_aggregator: nn.Module, dimensions: ModelDimensions
+    ) -> nn.Module:
         from remedi.model.pair_encoder import TransformerPairEncoder
 
-        return TransformerPairEncoder(self, global_aggregator)
+        return TransformerPairEncoder(self, global_aggregator, dimensions)
 
 
-class DecoderConfig(BaseModel):
+class DecoderConfig(StrictBaseModel):
     N_layers: int
-    d_descriptor: int | None = None
     attention_layer_config: AttentionLayerConfig
-    d_pair: int | None = None
-    d_geo: int | None = None
 
-    def build(self) -> nn.Module:
+    def build(self, dimensions: ModelDimensions) -> nn.Module:
         from remedi.model.decoder import TransformerPairDecoder
 
-        return TransformerPairDecoder(self)
+        return TransformerPairDecoder(self, dimensions)
 
 
-class RegressionHeadConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    task_name: str | None = None
-    task_config: None = None
-    activation_fn: ActivationFn = torch.nn.SiLU()
-    hidden_dimensions: list[int] = [256, 128]
-    input_dimensions: int | None = None
+class RegressionHeadConfig(StrictBaseModel):
+    task_name: str
+    activation: ActivationName = "silu"
+    hidden_dimensions: list[int] = Field(default_factory=lambda: [256, 128])
+    dropout: float = 0.1
+    # Width of the per-task auxiliary data concatenated to the flat descriptor
+    # (``Sample.auxillary_data[task_name]``); 0 when the task has none.
+    auxiliary_input_dimension: int = 0
     head_type: HeadType = HeadType.FULLY_CONNECTED
-    # ``None`` -> scalar regression head (final Linear -> 1, label scaling).
+    # ``None`` -> scalar regression head (final Linear -> 1).
     # A positive int -> single-label classification head over that many classes
-    # (final Linear -> n_classes, raw logits, no label scaling). This is the
-    # only thing that distinguishes a regression from a classification
-    # architecture; everything upstream (preprocessor / encoder / aggregator) is
-    # shared.
+    # (final Linear -> n_classes, raw logits). This is the only thing that
+    # distinguishes a regression from a classification architecture; everything
+    # upstream (preprocessor / encoder / aggregator) is shared.
     n_classes: int | None = None
 
+    @model_validator(mode="after")
+    def _linear_head_has_no_hidden_layers(self) -> Self:
+        if self.head_type == HeadType.LINEAR and self.hidden_dimensions:
+            raise ValueError(
+                "head_type 'linear' is a single Linear layer; set "
+                "hidden_dimensions to [] instead of "
+                f"{self.hidden_dimensions}."
+            )
+        return self
 
-class PrecomputedInvariantNormalizationConfig(BaseModel):
+
+class PrecomputedInvariantNormalizationConfig(StrictBaseModel):
     kind: Literal["precomputed_normalization"] = "precomputed_normalization"
 
     def build(self, invariant_dimension: int) -> nn.Module:
@@ -148,7 +138,7 @@ class PrecomputedInvariantNormalizationConfig(BaseModel):
         )
 
 
-class OnTheFlyInvariantNormalizationConfig(BaseModel):
+class OnTheFlyInvariantNormalizationConfig(StrictBaseModel):
     kind: Literal["on_the_fly_normalization"] = "on_the_fly_normalization"
     momentum: float
     warm_up_batches: int
@@ -171,7 +161,7 @@ InvNormConfig = Annotated[
 ]
 
 
-class IdentityInvariantProjectionConfig(BaseModel):
+class IdentityInvariantProjectionConfig(StrictBaseModel):
     """Pass invariants through unchanged."""
 
     kind: Literal["identity"] = "identity"
@@ -183,7 +173,7 @@ class IdentityInvariantProjectionConfig(BaseModel):
         return nn.Identity()
 
 
-class LinearInvariantProjectionConfig(BaseModel):
+class LinearInvariantProjectionConfig(StrictBaseModel):
     """Single linear down (or up) projection applied atomwise to the invariants."""
 
     kind: Literal["linear"] = "linear"
@@ -197,15 +187,13 @@ class LinearInvariantProjectionConfig(BaseModel):
         return nn.Linear(input_dim, self.output_dim, bias=self.bias)
 
 
-class MLPInvariantProjectionConfig(BaseModel):
+class MLPInvariantProjectionConfig(StrictBaseModel):
     """Multi-layer perceptron projection applied atomwise to the invariants."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     kind: Literal["mlp"] = "mlp"
     output_dim: int
     hidden_dimensions: list[int]
-    activation_fn: ActivationFn = torch.nn.SiLU()
+    activation: ActivationName = "silu"
     dropout: float = 0.0
 
     def output_dim_for(self, input_dim: int) -> int:
@@ -213,16 +201,14 @@ class MLPInvariantProjectionConfig(BaseModel):
 
     def build(self, input_dim: int) -> nn.Module:
         layers: list[nn.Module] = []
-        prev = input_dim
-        for h in self.hidden_dimensions:
-            layers.append(nn.Linear(prev, h))
-            # Each block gets its own activation instance so optional state
-            # (e.g. learnable parameters in custom activations) is not shared.
-            layers.append(type(self.activation_fn)())
+        previous_dimension = input_dim
+        for hidden_dimension in self.hidden_dimensions:
+            layers.append(nn.Linear(previous_dimension, hidden_dimension))
+            layers.append(build_activation(self.activation))
             if self.dropout > 0:
                 layers.append(nn.Dropout(self.dropout))
-            prev = h
-        layers.append(nn.Linear(prev, self.output_dim))
+            previous_dimension = hidden_dimension
+        layers.append(nn.Linear(previous_dimension, self.output_dim))
         return nn.Sequential(*layers)
 
 
@@ -234,23 +220,22 @@ InvariantProjectionConfig = Annotated[
 ]
 
 
-class EmbeddingPreprocessConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+class EmbeddingPreprocessConfig(StrictBaseModel):
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
-    # Resolved from the parent architecture's MaceConfig during cascade; can
-    # also be set directly (e.g. in unit tests that don't want to load MACE).
-    input_irreps: IrrepType | None = None
-    # Per-layer breakdown of `input_irreps` (one entry per MACE product stack
-    # layer). Required for `mace_layer_indices` to take effect; resolved by the
-    # architecture cascade from `MaceConfig.get_per_layer_irreps()` when None.
+    # Irreps emitted by each MACE message-passing layer (product stack), in
+    # order. Filled from the architecture's MaceConfig (and checked against it
+    # when given); required when the model consumes precomputed embeddings.
+    # The full input irreps are their concatenation (`input_irreps`).
     mace_per_layer_irreps: list[IrrepType] | None = None
     # Subset of MACE message-passing layers to use. None = all layers.
     mace_layer_indices: list[int] | None = None
     pseudoscalar_dimension: int
     chiral_embedding_dimension: int
     gated: bool = True
+    # Chiral (pseudoscalar) embedding of the equivariant features, preceded by
+    # an RMS norm of the l=1 blocks. Off: only the invariants are used.
     pseudoscalars: bool = True
-    equivariant_rms_normalization: bool = True
     invariant_normalization_config: InvNormConfig = (
         PrecomputedInvariantNormalizationConfig()
     )
@@ -258,20 +243,16 @@ class EmbeddingPreprocessConfig(BaseModel):
         IdentityInvariantProjectionConfig()
     )
 
-    def _check_layer_selection(self) -> None:
-        """Validate `mace_layer_indices` against the per-layer info that is
-        currently available. Safe to call multiple times — defers to the cascade
-        when per-layer info hasn't been populated yet."""
-        if self.mace_layer_indices is None:
+    def check_layer_selection(self) -> None:
+        """Validate `mace_layer_indices` against the per-layer irreps, once known."""
+        if self.mace_layer_indices is None or self.mace_per_layer_irreps is None:
             return
-        if self.mace_per_layer_irreps is None:
-            return
-        n_layers = len(self.mace_per_layer_irreps)
-        for idx in self.mace_layer_indices:
-            if idx < 0 or idx >= n_layers:
+        number_of_layers = len(self.mace_per_layer_irreps)
+        for index in self.mace_layer_indices:
+            if index < 0 or index >= number_of_layers:
                 raise ValueError(
-                    f"mace_layer_indices contains {idx}, out of range "
-                    f"[0, {n_layers}) for the configured MACE layer stack."
+                    f"mace_layer_indices contains {index}, out of range "
+                    f"[0, {number_of_layers}) for the configured MACE layer stack."
                 )
         if len(set(self.mace_layer_indices)) != len(self.mace_layer_indices):
             raise ValueError("mace_layer_indices must not contain duplicates.")
@@ -282,65 +263,40 @@ class EmbeddingPreprocessConfig(BaseModel):
             )
 
     @model_validator(mode="after")
-    def _validate_layer_selection(self) -> "EmbeddingPreprocessConfig":
-        self._check_layer_selection()
+    def _validate_layer_selection(self) -> Self:
+        self.check_layer_selection()
         return self
 
-    @computed_field(return_type=IrrepType, repr=True)
     @property
-    def pseudoscalar_irrep(self):
-        if self.pseudoscalars:
-            return Irreps([(self.pseudoscalar_dimension, (0, -1))])
-        else:
-            return Irreps()
-
-    @computed_field(return_type=int, repr=True)
-    @property
-    def input_equivariant_dimension(self) -> int | None:
-        equivariant_irreps = get_equivariant_irreps(self.input_irreps)
-        return sum([e_irrep.dim for e_irrep in equivariant_irreps])
-
-    @computed_field(return_type=int, repr=True)
-    @property
-    def input_dimension(self):
-        return self.input_irreps.dim
-
-    @computed_field(return_type=int, repr=True)
-    @property
-    def input_invariant_dimension(self):
-        invariant_irreps = [
-            Irreps([(m, (i.l, i.p))]) for m, i in self.input_irreps if i.l == 0
-        ]
-
-        return sum([i_irrep.dim for i_irrep in invariant_irreps])
-
-    @property
-    def selected_layer_indices(self) -> list[int] | None:
-        """Resolved layer indices, or None when no selection is active.
-
-        Returns None when either `mace_layer_indices` is None (all layers) AND
-        per-layer info is missing; in that case the caller treats the input
-        irreps as already representing the selection.
-        """
+    def per_layer_irreps(self) -> list[Irreps]:
         if self.mace_per_layer_irreps is None:
-            return None
+            raise ValueError(
+                "embedding_preprocess_config.mace_per_layer_irreps is not set: "
+                "give a mace_config to derive it from, or set it explicitly."
+            )
+        return self.mace_per_layer_irreps
+
+    @property
+    def input_irreps(self) -> Irreps:
+        """Irreps of the full MACE node features (all layers concatenated)."""
+        irreps = Irreps()
+        for layer_irreps in self.per_layer_irreps:
+            irreps = irreps + layer_irreps
+        return irreps
+
+    @property
+    def selected_layer_indices(self) -> list[int]:
         if self.mace_layer_indices is None:
-            return list(range(len(self.mace_per_layer_irreps)))
+            return list(range(len(self.per_layer_irreps)))
         return list(self.mace_layer_indices)
 
     @property
     def selected_input_irreps(self) -> Irreps:
         """Concatenation of the per-layer irreps for the selected layers."""
-        idxs = self.selected_layer_indices
-        if idxs is None or self.mace_per_layer_irreps is None:
-            assert self.input_irreps is not None, (
-                "input_irreps must be resolved before reading selected_input_irreps"
-            )
-            return self.input_irreps
-        out = Irreps()
-        for i in idxs:
-            out = out + self.mace_per_layer_irreps[i]
-        return out
+        irreps = Irreps()
+        for index in self.selected_layer_indices:
+            irreps = irreps + self.per_layer_irreps[index]
+        return irreps
 
     @property
     def selected_invariant_irreps(self) -> Irreps:
@@ -356,17 +312,15 @@ class EmbeddingPreprocessConfig(BaseModel):
         """Channel positions in `input_irreps` that correspond to the selected
         layers. Returns None when no slicing is needed (selection covers all
         layers contiguously from the start)."""
-        idxs = self.selected_layer_indices
-        if idxs is None or self.mace_per_layer_irreps is None:
-            return None
-        if idxs == list(range(len(self.mace_per_layer_irreps))):
+        indices = self.selected_layer_indices
+        if indices == list(range(len(self.per_layer_irreps))):
             return None
         cursor = 0
         ranges: list[tuple[int, int]] = []
-        for layer_irreps in self.mace_per_layer_irreps:
+        for layer_irreps in self.per_layer_irreps:
             ranges.append((cursor, cursor + layer_irreps.dim))
             cursor += layer_irreps.dim
-        return [c for i in idxs for c in range(*ranges[i])]
+        return [channel for index in indices for channel in range(*ranges[index])]
 
     @property
     def projected_invariant_dimension(self) -> int:
@@ -374,36 +328,25 @@ class EmbeddingPreprocessConfig(BaseModel):
             self.selected_invariant_dimension
         )
 
-    @computed_field(return_type=IrrepType, repr=True)
     @property
-    def output_irreps(self):
-        # Output is purely l=0 (scalars). The e3nn tuples are (l, parity), not
-        # (l, multiplicity): (0, 1) = even scalar (0e), (0, -1) = pseudoscalar
-        # (0o). Multiplicities are the leading ints (`projected_invariant_dim`
-        # and `chiral_embedding_dimension`). MACE's l>=1 channels are consumed
-        # internally — they feed the chiral embedding model, which contracts
-        # them down to a pseudoscalar before concatenation here. After
-        # projection the invariants no longer correspond to the original MACE
-        # invariant block structure, so we represent them as a single 0e block.
+    def output_irreps(self) -> Irreps:
+        # Output is purely l=0: the (projected) even invariants, then the odd
+        # chiral embedding. The e3nn tuples are (l, parity): (0, 1) = 0e,
+        # (0, -1) = 0o. MACE's l>=1 channels are consumed internally by the
+        # chiral embedding model. After projection the invariants no longer
+        # follow MACE's invariant block structure, so they form one 0e block.
         even_invariants = Irreps([(self.projected_invariant_dimension, (0, 1))])
+        if not self.pseudoscalars:
+            return even_invariants
+        return even_invariants + Irreps([(self.chiral_embedding_dimension, (0, -1))])
 
-        if self.pseudoscalars:
-            odd_invariants_chiral_embedding = Irreps(
-                [(self.chiral_embedding_dimension, (0, -1))]
-            )
-        else:
-            odd_invariants_chiral_embedding = Irreps()
-
-        return even_invariants + odd_invariants_chiral_embedding
-
-    @computed_field(return_type=int, repr=True)
     @property
-    def output_irreps_dim(self):
+    def output_irreps_dim(self) -> int:
         return self.output_irreps.dim
 
-    @computed_field(return_type=IrrepType, repr=True)
     @property
-    def invariant_irreps(self):
+    def invariant_irreps(self) -> Irreps:
+        """Invariant irreps of the full (unselected) input."""
         _, irreps = get_invariant_indices(self.input_irreps)
         return irreps
 
@@ -415,32 +358,32 @@ class EmbeddingPreprocessConfig(BaseModel):
         `selected_invariant_dimension` (already sliced) or to
         `invariant_irreps.dim` (full invariants — gets sliced here).
         """
-        full_dim = self.invariant_irreps.dim
-        sel_dim = self.selected_invariant_dimension
+        full_dimension = self.invariant_irreps.dim
+        selected_dimension = self.selected_invariant_dimension
         last = stats.shape[-1]
-        if last == sel_dim:
+        if last == selected_dimension:
             return stats
-        if last != full_dim:
+        if last != full_dimension:
             raise ValueError(
                 f"Precomputed stats trailing dim {last} matches neither the "
-                f"selected invariant dim ({sel_dim}) nor the full invariant "
-                f"dim ({full_dim})."
+                f"selected invariant dim ({selected_dimension}) nor the full "
+                f"invariant dim ({full_dimension})."
             )
-        if self.mace_per_layer_irreps is None:
-            return stats  # Nothing we can do without per-layer info.
 
         # Build the slice indices in *invariant-only* coordinates.
-        idxs = self.selected_layer_indices or []
         cursor = 0
-        layer_inv_ranges: list[tuple[int, int]] = []
-        for layer_irreps in self.mace_per_layer_irreps:
-            _, layer_inv = get_invariant_indices(layer_irreps)
-            layer_dim = layer_inv.dim
-            layer_inv_ranges.append((cursor, cursor + layer_dim))
-            cursor += layer_dim
-        sel_idx = [c for i in idxs for c in range(*layer_inv_ranges[i])]
-        index = torch.tensor(sel_idx, dtype=torch.long, device=stats.device)
-        return stats.index_select(-1, index)
+        layer_invariant_ranges: list[tuple[int, int]] = []
+        for layer_irreps in self.per_layer_irreps:
+            _, layer_invariants = get_invariant_indices(layer_irreps)
+            layer_invariant_ranges.append((cursor, cursor + layer_invariants.dim))
+            cursor += layer_invariants.dim
+        selected = [
+            channel
+            for index in self.selected_layer_indices
+            for channel in range(*layer_invariant_ranges[index])
+        ]
+        index_tensor = torch.tensor(selected, dtype=torch.long, device=stats.device)
+        return stats.index_select(-1, index_tensor)
 
     def build(
         self,
@@ -452,9 +395,9 @@ class EmbeddingPreprocessConfig(BaseModel):
             PrecomputedInvariantNormalization,
         )
 
-        sel_inv_dim = self.selected_invariant_dimension
+        selected_invariant_dimension = self.selected_invariant_dimension
         invariant_normalization = self.invariant_normalization_config.build(
-            invariant_dimension=sel_inv_dim
+            invariant_dimension=selected_invariant_dimension
         )
 
         if (
@@ -462,13 +405,13 @@ class EmbeddingPreprocessConfig(BaseModel):
             and mean_atomic_embedding is not None
             and std_atomic_embedding is not None
         ):
-            mean = self._slice_stats_to_selection(mean_atomic_embedding)
-            std = self._slice_stats_to_selection(std_atomic_embedding)
-            assert mean.shape[-1] == sel_inv_dim
-            invariant_normalization.set_stats(mean=mean, std=std)
+            invariant_normalization.set_stats(
+                mean=self._slice_stats_to_selection(mean_atomic_embedding),
+                std=self._slice_stats_to_selection(std_atomic_embedding),
+            )
 
         invariant_projection = self.invariant_projection_config.build(
-            input_dim=sel_inv_dim
+            input_dim=selected_invariant_dimension
         )
 
         return AtomicDescriptorPreprocessor(
@@ -479,7 +422,7 @@ class EmbeddingPreprocessConfig(BaseModel):
         )
 
 
-class MeanAggregatorConfig(BaseModel):
+class MeanAggregatorConfig(StrictBaseModel):
     aggregator_type: Literal["mean"] = "mean"
 
     @property
@@ -492,7 +435,13 @@ class MeanAggregatorConfig(BaseModel):
         return MeanPool(d_in=input_dim, d_out=output_dim, output_dropout=output_dropout)
 
 
-class AttentionAggregatorConfig(BaseModel):
+class AttentionAggregatorConfig(StrictBaseModel):
+    """Multi-head attention pooling with one learned query per head.
+
+    `head_dim` is the per-head key width (as for `PMAAggregatorConfig`); the
+    total key width is `num_heads * head_dim`. None: `input_dim / num_heads`.
+    """
+
     aggregator_type: Literal["attention"] = "attention"
     num_heads: int
     head_dim: int | None = None
@@ -508,14 +457,14 @@ class AttentionAggregatorConfig(BaseModel):
         return AttnPool(
             d_in=input_dim,
             d_out=output_dim,
-            d_hidden=self.head_dim,
+            d_hidden=None if self.head_dim is None else self.num_heads * self.head_dim,
             n_heads=self.num_heads,
             dropout=self.attn_dropout or 0.0,
             output_dropout=output_dropout,
         )
 
 
-class PMAAggregatorConfig(BaseModel):
+class PMAAggregatorConfig(StrictBaseModel):
     """Set Transformer pooling-by-multihead-attention.
 
     `head_dim` is the per-head Q/K dim (PyTorch convention); the total Q/K
@@ -558,44 +507,32 @@ AggUnion = Annotated[
 ]
 
 
-class GlobalAggregatorConfig(BaseModel):
+class GlobalAggregatorConfig(StrictBaseModel):
     aggregator_type_config: AggUnion
-    input_dim: int | None = None
+    # Width of one descriptor token. None: the atomic embedding width.
     output_dim: int | None = None
     global_molecular_descriptor_dropout: float | None = None
 
-    @computed_field(return_type=int, repr=True)
     @property
     def descriptor_seq_len(self) -> int:
         return self.aggregator_type_config.descriptor_seq_len
 
-    @computed_field(return_type=int | None, repr=True)
-    @property
-    def descriptor_flat_dim(self) -> int | None:
-        if self.output_dim is None:
-            return None
-        return self.descriptor_seq_len * self.output_dim
-
-    def build(self) -> nn.Module:
-        assert self.input_dim is not None and self.output_dim is not None, (
-            "Dimensions must be resolved by ArchitectureConfig cascade before build."
-        )
-
+    def build(self, dimensions: ModelDimensions) -> nn.Module:
         return self.aggregator_type_config.build(
-            input_dim=self.input_dim,
-            output_dim=self.output_dim,
+            input_dim=dimensions.embedding_dimension,
+            output_dim=dimensions.descriptor_dimension,
             output_dropout=self.global_molecular_descriptor_dropout,
         )
 
 
-class GaussianBasisConfig(BaseModel):
+class GaussianBasisConfig(StrictBaseModel):
     kind: Literal["gaussian"] = "gaussian"
 
     def build(self, N_radial_basis_functions: int, distance_cutoff: float) -> nn.Module:
         return GaussianBasisFunctions(N_radial_basis_functions, distance_cutoff)
 
 
-class BesselBasisConfig(BaseModel):
+class BesselBasisConfig(StrictBaseModel):
     kind: Literal["bessel"] = "bessel"
     eps: float = 1e-8
 
@@ -611,7 +548,7 @@ BasisFunctionConfig = Annotated[
 ]
 
 
-class RelativeDistancePositionalEncodingConfig(BaseModel):
+class RelativeDistancePositionalEncodingConfig(StrictBaseModel):
     N_radial_basis_functions: int
     distance_cutoff: float
     d_projection: int
@@ -641,7 +578,7 @@ class EncoderDecoderBundle:
     decoder: nn.Module
 
 
-class _BaseArchitectureConfig(BaseModel):
+class _BaseArchitectureConfig(StrictBaseModel):
     mace_config: MaceConfig | None = None
     embedding_preprocess_config: EmbeddingPreprocessConfig
     encoder_config: EncoderConfig
@@ -649,43 +586,58 @@ class _BaseArchitectureConfig(BaseModel):
     positional_encoding_config: RelativeDistancePositionalEncodingConfig
 
     @model_validator(mode="after")
-    def _cascade_shared_dims(self):
-        if self.embedding_preprocess_config.input_irreps is None:
-            if self.mace_config is None:
+    def _resolve_mace_per_layer_irreps(self) -> Self:
+        embedding_config = self.embedding_preprocess_config
+        if self.mace_config is not None:
+            mace_irreps = self.mace_config.get_per_layer_irreps()
+            if embedding_config.mace_per_layer_irreps is None:
+                embedding_config.mace_per_layer_irreps = mace_irreps
+            elif list(embedding_config.mace_per_layer_irreps) != mace_irreps:
                 raise ValueError(
-                    "embedding_preprocess_config.input_irreps is not set and "
-                    "no mace_config was provided to derive it from."
+                    "embedding_preprocess_config.mace_per_layer_irreps "
+                    f"{[str(irreps) for irreps in embedding_config.mace_per_layer_irreps]} "
+                    "does not match the configured MACE model "
+                    f"{[str(irreps) for irreps in mace_irreps]}."
                 )
-            self.embedding_preprocess_config.input_irreps = (
-                self.mace_config.get_irrep_signature()
+        elif embedding_config.mace_per_layer_irreps is None:
+            raise ValueError(
+                "embedding_preprocess_config.mace_per_layer_irreps is not set and "
+                "no mace_config was provided to derive it from."
             )
-
-        if (
-            self.embedding_preprocess_config.mace_per_layer_irreps is None
-            and self.mace_config is not None
-        ):
-            self.embedding_preprocess_config.mace_per_layer_irreps = (
-                self.mace_config.get_per_layer_irreps()
-            )
-        # Re-run the layer-selection check now that per-layer info is available.
-        self.embedding_preprocess_config._check_layer_selection()
-
-        embed_dim = self.embedding_preprocess_config.output_irreps_dim
-        _fill_encoder_dims(
-            self.encoder_config, embed_dim, self.positional_encoding_config
-        )
-        _fill_aggregator_dims(
-            self.global_aggregator_config,
-            self.encoder_config.attention_layer_config.embedding_dim,
-        )
+        embedding_config.check_layer_selection()
         return self
+
+    @property
+    def dimensions(self) -> ModelDimensions:
+        embedding_dimension = self.embedding_preprocess_config.output_irreps_dim
+        output_dim = self.global_aggregator_config.output_dim
+        return ModelDimensions(
+            embedding_dimension=embedding_dimension,
+            pair_dimension=self.positional_encoding_config.d_projection,
+            radial_basis_dimension=(
+                self.positional_encoding_config.N_radial_basis_functions
+            ),
+            descriptor_dimension=(
+                embedding_dimension if output_dim is None else output_dim
+            ),
+            descriptor_sequence_length=self.global_aggregator_config.descriptor_seq_len,
+        )
+
+    def _build_mace_model(self):
+        if self.mace_config is None:
+            return None
+        return self.mace_config.build_torch_sim_model()
 
     def _build_preprocessor(
         self,
-        mace_model=None,
         mean_atomic_embedding: torch.Tensor | None = None,
         std_atomic_embedding: torch.Tensor | None = None,
     ) -> "Preprocessor":
+        """Atomic preprocessor in float64, geometric preprocessor in float32.
+
+        The MACE model keeps the dtype its MaceConfig asks for: casting it
+        would desynchronise it from the torch-sim wrapper's own dtype.
+        """
         from remedi.model.preprocessing.preprocessing import (
             Preprocessor,
             PreprocessorWithAtomicEmbedding,
@@ -693,34 +645,47 @@ class _BaseArchitectureConfig(BaseModel):
 
         atomic = self.embedding_preprocess_config.build(
             mean_atomic_embedding, std_atomic_embedding
-        )
-        geometric = self.positional_encoding_config.build()
+        ).double()
+        geometric = self.positional_encoding_config.build().float()
+        mace_model = self._build_mace_model()
         if mace_model is not None:
             return PreprocessorWithAtomicEmbedding(
                 mace_model=mace_model,
                 atomic_preprocessor=atomic,
                 geometric_preprocessor=geometric,
+                node_feature_irreps=self.embedding_preprocess_config.input_irreps,
             )
         return Preprocessor(
             atomic_preprocessor=atomic, geometric_preprocessor=geometric
         )
 
     def _build_encoder(self) -> nn.Module:
-        aggregator = self.global_aggregator_config.build()
-        return self.encoder_config.build(aggregator)
+        dimensions = self.dimensions
+        aggregator = self.global_aggregator_config.build(dimensions)
+        return self.encoder_config.build(aggregator, dimensions).float()
 
 
 class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):
     kind: Literal["encoder_only"] = "encoder_only"
 
     @classmethod
-    def from_encoder_yaml(cls, directory: str | Path, trained: bool = True) -> Self:
+    def from_encoder_yaml(
+        cls,
+        directory: str | Path,
+        trained: bool = True,
+        mace_device: str | None = None,
+        mace_model_path: Path | None = None,
+    ) -> Self:
         """Load encoder + preprocessor from a checkpoint, ignoring decoder fields.
 
         Pretraining writes ``kind: encoder_decoder`` configs; descriptor probes
         only need the encoder half. This reads the yaml as a dict, strips the
         decoder block, and forces ``kind: encoder_only`` so the same checkpoint
         directory can be consumed without staging a patched config on disk.
+
+        ``mace_device`` / ``mace_model_path`` replace the training-time MACE
+        device and (absolute, machine-specific) model path before validation,
+        which already loads MACE to read its irreps.
         """
         filename = (
             "post_training_architecture_config.yaml"
@@ -731,11 +696,21 @@ class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):
             data = yaml.safe_load(fh)
         data.pop("decoder_config", None)
         data["kind"] = "encoder_only"
+        if mace_device is not None or mace_model_path is not None:
+            mace_data = data.get("mace_config")
+            if mace_data is None:
+                raise ValueError(
+                    f"{Path(directory) / filename} has no mace_config to apply "
+                    "the MACE device / model path override to."
+                )
+            if mace_device is not None:
+                mace_data["device"] = mace_device
+            if mace_model_path is not None:
+                mace_data["model_path"] = str(mace_model_path)
         return cls.model_validate(data)
 
     def build(
         self,
-        mace_calculator: "MACECalculator | None" = None,
         mean_atomic_embedding: torch.Tensor | None = None,
         std_atomic_embedding: torch.Tensor | None = None,
     ) -> "REM3DIModel":
@@ -743,34 +718,17 @@ class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):
 
         if self.mace_config is None:
             raise ValueError("EncoderOnlyArchitectureConfig.build requires mace_config")
-        mace_model = self.mace_config.build_torch_sim_model()
-
-        preprocessor = self._build_preprocessor(
-            mace_model, mean_atomic_embedding, std_atomic_embedding
+        return REM3DIModel(
+            preprocessor=self._build_preprocessor(
+                mean_atomic_embedding, std_atomic_embedding
+            ),
+            encoder=self._build_encoder(),
         )
-        encoder = self._build_encoder()
-        model = REM3DIModel(
-            preprocessor=preprocessor,
-            encoder=encoder,
-            mace_calculator=mace_calculator,
-        ).float()
-        model.preprocessor.atomic_preprocessor.double()
-        return model
 
 
 class EncoderDecoderArchitectureConfig(_BaseArchitectureConfig):
     kind: Literal["encoder_decoder"] = "encoder_decoder"
     decoder_config: DecoderConfig
-
-    @model_validator(mode="after")
-    def _cascade_decoder_dims(self):
-        _fill_decoder_dims(
-            self.decoder_config,
-            self.embedding_preprocess_config.output_irreps_dim,
-            self.global_aggregator_config.output_dim,
-            self.positional_encoding_config,
-        )
-        return self
 
     def build(
         self,
@@ -781,14 +739,12 @@ class EncoderDecoderArchitectureConfig(_BaseArchitectureConfig):
             raise ValueError(
                 "EncoderDecoderArchitectureConfig.build requires mace_config"
             )
-        mace_model = self.mace_config.build_torch_sim_model()
-        preprocessor = self._build_preprocessor(
-            mace_model, mean_atomic_embedding, std_atomic_embedding
-        )
-        encoder = self._build_encoder()
-        decoder = self.decoder_config.build()
         return EncoderDecoderBundle(
-            preprocessor=preprocessor, encoder=encoder, decoder=decoder
+            preprocessor=self._build_preprocessor(
+                mean_atomic_embedding, std_atomic_embedding
+            ),
+            encoder=self._build_encoder(),
+            decoder=self.decoder_config.build(self.dimensions).float(),
         )
 
 
@@ -796,55 +752,31 @@ class RegressionArchitectureConfig(_BaseArchitectureConfig):
     kind: Literal["regression"] = "regression"
     regression_head_config: list[RegressionHeadConfig]
 
-    @model_validator(mode="after")
-    def _cascade_head_dims(self):
-        # Heads consume the *flattened* descriptor (num_seeds * output_dim for
-        # PMA; output_dim for single-token aggregators).
-        out_dim = self.global_aggregator_config.descriptor_flat_dim
-        for head in self.regression_head_config:
-            if head.input_dimensions is None:
-                head.input_dimensions = out_dim
-        return self
-
-    def insert_task_configs(self, task_configs) -> None:
-        for task_cfg, head_cfg in zip(
-            task_configs, self.regression_head_config, strict=True
-        ):
-            assert head_cfg.task_name == task_cfg.task_name
-            head_cfg.task_config = task_cfg
-
     def build(
         self,
         mean_atomic_embedding: torch.Tensor | None = None,
         std_atomic_embedding: torch.Tensor | None = None,
     ) -> "MultiTaskRegressionModel":
+        """With a ``mace_config`` the preprocessor runs MACE on the fly from raw
+        atoms (supervised training from scratch — the only path that trains the
+        pseudoscalar preprocessor). Without one the model consumes precomputed
+        ``Sample.embeddings`` (described by ``mace_per_layer_irreps``)."""
         from remedi.model.regression_models import (
             MultitaskHeads,
             MultiTaskRegressionModel,
         )
 
-        # With a ``mace_config`` the preprocessor runs MACE on the fly from raw
-        # atoms (supervised training from scratch — the only path that trains
-        # the pseudoscalar preprocessor). Without one the model consumes
-        # precomputed ``Sample.embeddings`` (input_irreps given directly).
-        mace_model = (
-            self.mace_config.build_torch_sim_model()
-            if self.mace_config is not None
-            else None
-        )
-        preprocessor = self._build_preprocessor(
-            mace_model, mean_atomic_embedding, std_atomic_embedding
-        )
-        encoder = self._build_encoder()
-        model = MultiTaskRegressionModel(
-            preprocessor=preprocessor,
-            encoder=encoder,
-            regression_heads=MultitaskHeads(
-                regression_head_configs=self.regression_head_config
-            ),
+        heads = MultitaskHeads(
+            regression_head_configs=self.regression_head_config,
+            descriptor_flat_dimension=self.dimensions.descriptor_flat_dimension,
         ).float()
-        model.preprocessor.atomic_preprocessor.double()
-        return model
+        return MultiTaskRegressionModel(
+            preprocessor=self._build_preprocessor(
+                mean_atomic_embedding, std_atomic_embedding
+            ),
+            encoder=self._build_encoder(),
+            regression_heads=heads,
+        )
 
 
 ArchitectureConfig = Annotated[
@@ -853,41 +785,3 @@ ArchitectureConfig = Annotated[
     | RegressionArchitectureConfig,
     Field(discriminator="kind"),
 ]
-
-
-def _fill_encoder_dims(
-    encoder_config: EncoderConfig,
-    embed_dim: int,
-    pos: RelativeDistancePositionalEncodingConfig,
-):
-    attn = encoder_config.attention_layer_config
-    if attn.embedding_dim is None:
-        attn.embedding_dim = embed_dim
-    if encoder_config.d_pair is None:
-        encoder_config.d_pair = pos.d_projection
-    if encoder_config.d_geo is None:
-        encoder_config.d_geo = pos.N_radial_basis_functions
-
-
-def _fill_aggregator_dims(agg: GlobalAggregatorConfig, embed_dim: int | None):
-    if agg.input_dim is None:
-        agg.input_dim = embed_dim
-    if agg.output_dim is None:
-        agg.output_dim = agg.input_dim
-
-
-def _fill_decoder_dims(
-    decoder_config: DecoderConfig,
-    embed_dim: int,
-    descriptor_dim: int | None,
-    pos: RelativeDistancePositionalEncodingConfig,
-):
-    attn = decoder_config.attention_layer_config
-    if attn.embedding_dim is None:
-        attn.embedding_dim = embed_dim
-    if decoder_config.d_descriptor is None:
-        decoder_config.d_descriptor = descriptor_dim
-    if decoder_config.d_pair is None:
-        decoder_config.d_pair = pos.d_projection
-    if decoder_config.d_geo is None:
-        decoder_config.d_geo = pos.N_radial_basis_functions

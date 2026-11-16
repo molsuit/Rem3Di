@@ -6,6 +6,7 @@ from remedi.configuration.architecture_config import (
     AttentionAggregatorConfig,
     GlobalAggregatorConfig,
     MeanAggregatorConfig,
+    PMAAggregatorConfig,
 )
 from remedi.model.pooling import AttnPool
 
@@ -53,6 +54,26 @@ def test_attention_cfg_success():
     assert '"aggregator_type":"attention"' in cfg.model_dump_json()
 
 
+@pytest.mark.parametrize(
+    "aggregator_config",
+    [
+        AttentionAggregatorConfig(num_heads=4, head_dim=8),
+        PMAAggregatorConfig(num_heads=4, head_dim=8, num_seeds=2),
+    ],
+)
+def test_head_dim_is_per_head(aggregator_config):
+    # Regression: head_dim meant the total key width for the attention
+    # aggregator but the per-head width for PMA.
+    pool = aggregator_config.build(input_dim=64, output_dim=32)
+    key_projection = pool.key_proj if hasattr(pool, "key_proj") else pool.W_K
+    assert key_projection.out_features == 4 * 8
+
+
+def test_attention_head_dim_defaults_to_input_split_over_heads():
+    pool = AttentionAggregatorConfig(num_heads=4).build(input_dim=64, output_dim=32)
+    assert pool.key_proj.out_features == 64
+
+
 def test_attention_cfg_missing_fields():
     with pytest.raises(ValidationError):
         AttentionAggregatorConfig()
@@ -67,7 +88,6 @@ adapter = TypeAdapter(GlobalAggregatorConfig)
         (
             {
                 "aggregator_type_config": {"aggregator_type": "mean"},
-                "input_dim": 32,
                 "output_dim": 16,
             },
             MeanAggregatorConfig,
@@ -79,7 +99,6 @@ adapter = TypeAdapter(GlobalAggregatorConfig)
                     "num_heads": 4,
                     "head_dim": 16,
                 },
-                "input_dim": 64,
                 "output_dim": 16,
             },
             AttentionAggregatorConfig,
@@ -94,7 +113,6 @@ def test_global_dispatch(payload, expected_cls):
 def test_global_invalid_discriminant():
     bad = {
         "aggregator_type_config": {"aggregator_type": "foo"},
-        "input_dim": 1,
         "output_dim": 1,
     }
     with pytest.raises(ValidationError):

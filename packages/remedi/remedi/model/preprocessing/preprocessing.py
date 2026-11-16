@@ -1,5 +1,6 @@
 import torch
 from ase.data import atomic_masses
+from e3nn.o3 import Irreps
 from mace.calculators.mace_torchsim import MaceTorchSimModel
 from torch import nn
 from torch_sim.state import SimState
@@ -17,13 +18,60 @@ from remedi.training.data.samplers import quantize_pad_length
 _ATOMIC_MASS_TABLE = torch.as_tensor(atomic_masses, dtype=torch.float32)
 
 
-def _capture_node_feats(model: MaceTorchSimModel, state: SimState) -> torch.Tensor:
-    """Run the MaceTorchSimModel and return the underlying model's node_feats.
+def ir_mul_to_mul_ir(features: torch.Tensor, irreps: Irreps) -> torch.Tensor:
+    """Reorder flat irreps features from cuequivariance's ``ir_mul`` layout to
+    e3nn's ``mul_ir`` layout.
+
+    Within each ``(multiplicity, irrep)`` block, ``ir_mul`` stores the
+    ``irrep.dim`` components outermost; ``mul_ir`` (what e3nn and the RMS norm
+    downstream expect) stores the channels outermost. Scalar blocks are
+    unchanged.
+    """
+    if features.shape[-1] != irreps.dim:
+        raise ValueError(
+            f"features have {features.shape[-1]} channels, irreps {irreps} "
+            f"describe {irreps.dim}."
+        )
+    leading_shape = features.shape[:-1]
+    blocks = []
+    for (multiplicity, irrep), block_slice in zip(irreps, irreps.slices(), strict=True):
+        block = features[..., block_slice]
+        if irrep.dim > 1:
+            block = (
+                block.reshape(*leading_shape, irrep.dim, multiplicity)
+                .transpose(-1, -2)
+                .reshape(*leading_shape, multiplicity * irrep.dim)
+            )
+        blocks.append(block)
+    return torch.cat(blocks, dim=-1)
+
+
+def _uses_ir_mul_layout(model: MaceTorchSimModel) -> bool:
+    """Whether the wrapper converted MACE to cuequivariance.
+
+    ``MaceTorchSimModel`` converts with ``layout="ir_mul"`` (also on the hybrid
+    cueq + oeq fallback), so the node features of such a model come out in
+    ``ir_mul`` order.
+    """
+    return bool(getattr(model, "_enable_cueq", False))
+
+
+def _capture_node_feats(
+    model: MaceTorchSimModel,
+    state: SimState,
+    node_feature_irreps: Irreps | None = None,
+) -> torch.Tensor:
+    """Run the MaceTorchSimModel and return the underlying model's node_feats
+    in e3nn ``mul_ir`` layout.
 
     The wrapper only forwards node_feats in its result dict for PolarMACE
     checkpoints; for stock MACE we register a forward hook on
     ``model.model`` to grab them out of the raw output dict. The hook is
     one-shot — it is removed before this function returns.
+
+    ``node_feature_irreps`` (the concatenated per-layer product irreps) is
+    required for a cuequivariance-converted model, whose features arrive in
+    ``ir_mul`` layout and are transposed back here.
     """
     captured: dict[str, torch.Tensor] = {}
 
@@ -38,10 +86,20 @@ def _capture_node_feats(model: MaceTorchSimModel, state: SimState) -> torch.Tens
         handle.remove()
 
     if isinstance(result, dict) and "node_feats" in result:
-        return result["node_feats"]
-    if "node_feats" in captured:
-        return captured["node_feats"]
-    raise RuntimeError("MACE model did not return 'node_feats'.")
+        node_feats = result["node_feats"]
+    elif "node_feats" in captured:
+        node_feats = captured["node_feats"]
+    else:
+        raise RuntimeError("MACE model did not return 'node_feats'.")
+
+    if not _uses_ir_mul_layout(model):
+        return node_feats
+    if node_feature_irreps is None:
+        raise ValueError(
+            "The MACE model runs on cuequivariance (ir_mul layout); pass "
+            "node_feature_irreps to transpose its node features to mul_ir."
+        )
+    return ir_mul_to_mul_ir(node_feats, node_feature_irreps)
 
 
 class Preprocessor(nn.Module):
@@ -69,6 +127,16 @@ class Preprocessor(nn.Module):
         ) = self.geometric_preprocessor(sample)
 
         return preprocessed_sample
+
+
+def centre_per_system(
+    positions: torch.Tensor, system_index: torch.Tensor, atom_counts: torch.Tensor
+) -> torch.Tensor:
+    """Subtract each system's mean position from its atoms' positions."""
+    sums = positions.new_zeros((atom_counts.shape[0], positions.shape[-1]))
+    sums.index_add_(0, system_index, positions)
+    means = sums / atom_counts.to(positions.dtype).unsqueeze(1).clamp_min(1.0)
+    return positions - means.index_select(0, system_index)
 
 
 def _sample_to_simstate(sample: Sample, r_max: float) -> tuple[SimState, torch.Tensor]:
@@ -101,14 +169,16 @@ def _sample_to_simstate(sample: Sample, r_max: float) -> tuple[SimState, torch.T
         raise ValueError("Cannot build SimState from an empty batch.")
     if system_idx.min() < 0:
         raise ValueError("system_index must be non-negative.")
+    if (system_idx[1:] < system_idx[:-1]).any():
+        raise ValueError(
+            "system_index must be sorted: each system's atoms must be contiguous "
+            "(as yield_molecules_collate_fn emits them)."
+        )
     n_systems = int(system_idx.max().item()) + 1
 
     lengths = torch.bincount(system_idx, minlength=n_systems)
 
-    sums = torch.zeros((n_systems, 3), device=device, dtype=dtype)
-    sums.index_add_(0, system_idx, positions)
-    means = sums / lengths.to(dtype).unsqueeze(1).clamp_min(1.0)
-    centered = positions - means.index_select(0, system_idx)
+    centered = centre_per_system(positions, system_idx, lengths)
 
     per_atom_norm = centered.norm(dim=-1)
     radius = torch.zeros(n_systems, device=device, dtype=dtype).scatter_reduce(
@@ -163,10 +233,14 @@ class PreprocessorWithAtomicEmbedding(Preprocessor):
         mace_model: MaceTorchSimModel,
         atomic_preprocessor,
         geometric_preprocessor: PairDistanceMatrixGeometricPreprocessor,
+        node_feature_irreps: Irreps | None = None,
         pad_multiple: int = 1,
     ):
         super().__init__(atomic_preprocessor, geometric_preprocessor)
         self.torch_sim_mace_model = mace_model
+        # Irreps of MACE's node features (all product layers concatenated);
+        # needed to undo the cuequivariance ir_mul layout.
+        self.node_feature_irreps = node_feature_irreps
         # Padded atom count is rounded up to a multiple of `pad_multiple` so
         # torch.compile sees only a small set of distinct shapes. 1 = off.
         if pad_multiple <= 0:
@@ -183,7 +257,9 @@ class PreprocessorWithAtomicEmbedding(Preprocessor):
         through a one-shot forward hook on the underlying model — that path
         works uniformly for both PolarMACE and stock MACE.
         """
-        return _capture_node_feats(self.torch_sim_mace_model, state)
+        return _capture_node_feats(
+            self.torch_sim_mace_model, state, self.node_feature_irreps
+        )
 
     def forward(self, sample: Sample) -> PreprocessedSample:
         state, lengths = _sample_to_simstate(
@@ -199,41 +275,47 @@ class PreprocessorWithAtomicEmbedding(Preprocessor):
             max_atoms = quantize_pad_length(max_atoms, self.pad_multiple)
 
         device = state.positions.device
-        atom_dim = state.positions.shape[-1]
-        embed_dim = atomic_embeddings.shape[-1]
+        system_index = state.system_idx
 
-        padded_positions = sample.atomic_positions.new_zeros(
-            (n_systems, max_atoms, atom_dim)
-        )
-        padded_embeddings = atomic_embeddings.new_zeros(
-            (n_systems, max_atoms, embed_dim)
+        # The pair-distance preprocessor gets each system's centred positions
+        # (the frame MACE saw, before the shift into the simulation cell).
+        centred_positions = centre_per_system(
+            sample.atomic_positions.to(device), system_index, lengths
         )
 
-        # Positions come from the (already-centred) per-system view so that the
-        # downstream pair-distance preprocessor sees the same coordinates
-        # the MACE model saw.
-        sort_idx = torch.argsort(state.system_idx, stable=True)
-        sorted_positions = sample.atomic_positions.index_select(0, sort_idx)
-        sorted_embeddings = atomic_embeddings.index_select(0, sort_idx)
+        padded_positions = pad_per_system(
+            centred_positions, system_index, lengths, max_atoms
+        )
+        padded_embeddings = pad_per_system(
+            atomic_embeddings, system_index, lengths, max_atoms
+        )
 
-        start = 0
-        for sys_id, count in enumerate(lengths.tolist()):
-            if count == 0:
-                continue
-            end = start + count
-            padded_positions[sys_id, :count] = sorted_positions[start:end]
-            padded_embeddings[sys_id, :count] = sorted_embeddings[start:end]
-            start = end
-
-        if max_atoms > 0:
-            padding_mask = torch.arange(max_atoms, device=device).unsqueeze(0).expand(
-                n_systems, max_atoms
-            ) >= lengths.unsqueeze(1)
-        else:
-            padding_mask = torch.zeros((n_systems, 0), device=device, dtype=torch.bool)
+        padding_mask = torch.arange(max_atoms, device=device).unsqueeze(0).expand(
+            n_systems, max_atoms
+        ) >= lengths.unsqueeze(1)
 
         sample.embeddings = padded_embeddings
         sample.atomic_positions = padded_positions
         sample.padding_mask = padding_mask
 
         return super().forward(sample)
+
+
+def pad_per_system(
+    values: torch.Tensor,
+    system_index: torch.Tensor,
+    atom_counts: torch.Tensor,
+    max_atoms: int,
+) -> torch.Tensor:
+    """Scatter flat per-atom ``values`` (N, F) into a zero-padded (B, max_atoms, F).
+
+    ``system_index`` must be sorted (``_sample_to_simstate`` checks it), so an
+    atom's slot within its system is its flat index minus the system's offset.
+    """
+    offsets = torch.cumsum(atom_counts, dim=0) - atom_counts
+    local_index = (
+        torch.arange(values.shape[0], device=values.device) - offsets[system_index]
+    )
+    padded = values.new_zeros((atom_counts.shape[0], max_atoms, values.shape[-1]))
+    padded[system_index, local_index] = values
+    return padded

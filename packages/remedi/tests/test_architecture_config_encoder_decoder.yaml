@@ -1,6 +1,8 @@
 kind: encoder_decoder
 embedding_preprocess_config:
-  input_irreps: 128x0e+128x1o+128x0e
+  mace_per_layer_irreps:
+  - 128x0e+128x1o
+  - 128x0e
   pseudoscalar_dimension: 0
   chiral_embedding_dimension: 16
   pseudoscalars: false

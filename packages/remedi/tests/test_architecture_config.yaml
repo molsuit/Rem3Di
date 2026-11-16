@@ -1,6 +1,8 @@
 kind: regression
 embedding_preprocess_config:
-  input_irreps: 128x0e+128x1o+128x0e
+  mace_per_layer_irreps:
+  - 128x0e+128x1o
+  - 128x0e
   pseudoscalar_dimension: 0
   chiral_embedding_dimension: 16
   pseudoscalars: false
@@ -18,14 +20,14 @@ global_aggregator_config:
   aggregator_type_config:
     aggregator_type: mean
 regression_head_config:
-- activation_fn: SiLU
+- activation: silu
   head_type: fully_connected
   hidden_dimensions:
   - 512
   - 256
   - 128
   task_name: pIC50 (MERS-CoV Mpro)
-- activation_fn: SiLU
+- activation: silu
   head_type: fully_connected
   hidden_dimensions:
   - 512

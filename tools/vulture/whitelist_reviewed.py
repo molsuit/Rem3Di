@@ -44,7 +44,6 @@ MultiHeadSelfAttention  # model/multihead_self_attention.py
 PairCrossAttentionBlock  # model/pair_block.py
 FusedMultiHeadRegression  # model/regression_models.py
 OddMLP  # alternative output MLP of ChiralEmbeddingModel (commented-out use)
-_.get_remedi_descriptor  # REM3DIModel
 _.d_cutoff  # GeometricPreprocessor
 _.layer_norm  # PairBiasedAttention: part of the state dict; removing it breaks strict checkpoint loads
 chiral_difference_loss  # training/regression_training.py, enantiomer-difference losses (CMRT work)
@@ -64,10 +63,8 @@ benchmark_loader  # training/data/util.py
 _.log_epoch  # training/telemetry.py
 _.get_track_grad_norm_fn
 _.plot_grad_norm
-get_mace_calculator_embedding_dimension  # utils/model_utils.py
-remove_equivariants
+remove_equivariants  # utils/model_utils.py
 get_pseudoscalars_indices
-_.insert_task_configs  # ArchitectureConfig
 to_yaml  # configuration/config_utils.py
 pretraining_padded_collate_fn  # training/data/sample.py
 paired_sample_collate_fn

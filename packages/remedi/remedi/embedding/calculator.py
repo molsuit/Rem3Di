@@ -58,23 +58,35 @@ class RemediCalculator(DescriptorCalculator):
             EncoderOnlyArchitectureConfig,
         )
 
-        cfg = EncoderOnlyArchitectureConfig.from_encoder_yaml(self.model_dir)
-        if self.mace_model_path is not None:
-            if cfg.mace_config is None:
-                raise ValueError(
-                    "mace_model_path override given but the checkpoint config "
-                    "has no mace_config to apply it to."
-                )
-            cfg.mace_config.model_path = self.mace_model_path
+        device = self._resolve_device()
+        # MACE runs where the calculator runs, not where the checkpoint was
+        # trained (the yaml records the training device and MACE path).
+        cfg = EncoderOnlyArchitectureConfig.from_encoder_yaml(
+            self.model_dir,
+            mace_device=str(device),
+            mace_model_path=self.mace_model_path,
+        )
         model = cfg.build()
-        model.encoder.load_state_dict(torch.load(self.model_dir / "encoder.pth"))
+        model.encoder.load_state_dict(
+            torch.load(
+                self.model_dir / "encoder.pth", map_location=device, weights_only=True
+            )
+        )
         model.preprocessor.atomic_preprocessor.load_state_dict(
-            torch.load(self.model_dir / "atomic_preprocessor.pth")
+            torch.load(
+                self.model_dir / "atomic_preprocessor.pth",
+                map_location=device,
+                weights_only=True,
+            )
         )
         model.preprocessor.geometric_preprocessor.load_state_dict(
-            torch.load(self.model_dir / "geometric_preprocessor.pth")
+            torch.load(
+                self.model_dir / "geometric_preprocessor.pth",
+                map_location=device,
+                weights_only=True,
+            )
         )
-        self._model = model.eval()
+        self._model = model.to(device).eval()
 
     def _resolve_device(self) -> torch.device:
         if self.device_str == "cuda" and not torch.cuda.is_available():

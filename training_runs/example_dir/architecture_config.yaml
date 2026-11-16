@@ -8,7 +8,6 @@ embedding_preprocess_config:
   pseudoscalar_dimension: 0
   chiral_embedding_dimension: 0
   pseudoscalars: false
-  equivariant_rms_normalization: true
   gated: true
   # Subset of MACE message-passing layers to keep. Omit (or set to null) for
   # all layers; e.g. [0] for the first MP layer only, [1] for the second.
@@ -18,7 +17,7 @@ embedding_preprocess_config:
   #   {kind: identity}                                                   - no projection (default)
   #   {kind: linear, output_dim: <int>, bias: true}
   #   {kind: mlp, output_dim: <int>, hidden_dimensions: [<int>, ...],
-  #    activation_fn: SiLU, dropout: 0.0}
+  #    activation: silu, dropout: 0.0}
   invariant_projection_config:
     kind: linear
     output_dim: 256
@@ -29,16 +28,12 @@ encoder_config:
     dim_feedforward: 4096
     dropout: 0.3
     num_heads: 8
-  d_geo: 16
-  d_pair: 64
 decoder_config:
   N_layers: 4
   attention_layer_config:
     dim_feedforward: 4096
     dropout: 0.3
     num_heads: 8
-  d_geo: 16
-  d_pair: 64
 positional_encoding_config:
   N_radial_basis_functions: 16
   d_projection: 64

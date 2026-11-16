@@ -63,7 +63,7 @@ class PairBlock(nn.Module):
         self.pair_up = PairOuterProdUpdate(embedding_dim, d_pair, d_geo)
 
         # optional mini-FFN over the pair tensor
-        self.pair_ffn = PairFFN(d_pair) if pair_ffn else nn.Identity()
+        self.pair_ffn = PairFFN(d_pair, dropout) if pair_ffn else nn.Identity()
 
     def forward(self, S, mask, P, p_geo, mask_pair):
         # Atom Representation Attention Update

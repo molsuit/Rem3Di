@@ -7,8 +7,8 @@ import torch.nn as nn
 from remedi.configuration.architecture_config import (
     HeadType,
     RegressionHeadConfig,
+    build_activation,
 )
-from remedi.configuration.data_config import LabelScalingType
 from remedi.model.model_output import ModelOutput
 from remedi.model.molecular_descriptor import MolecularDescriptor
 from remedi.model.pair_encoder import TransformerPairEncoder
@@ -44,7 +44,9 @@ class ResidualBlock(nn.Module):
 
 
 class FullyConnectedBlock(nn.Module):
-    def __init__(self, in_dim: int, out_dim: int, activation_fn: nn.Module):
+    def __init__(
+        self, in_dim: int, out_dim: int, activation_fn: nn.Module, dropout: float
+    ):
         super().__init__()
 
         self.block = nn.Sequential(
@@ -52,8 +54,8 @@ class FullyConnectedBlock(nn.Module):
                 [
                     ("linear_layer", nn.Linear(in_dim, out_dim)),
                     ("layer_norm", nn.LayerNorm(out_dim)),
-                    ("activation", nn.SiLU()),
-                    ("dropout", nn.Dropout(0.1)),
+                    ("activation", activation_fn),
+                    ("dropout", nn.Dropout(dropout)),
                 ]
             )
         )
@@ -64,89 +66,65 @@ class FullyConnectedBlock(nn.Module):
 
 
 class RegressionHead(nn.Module):
-    def __init__(self, head_config: RegressionHeadConfig):
-        """
-        Build a regression head based on the provided configuration.
+    def __init__(self, head_config: RegressionHeadConfig, input_dimension: int):
+        """Build a regression (or classification) head.
 
         Args:
-            head_config (RegressionHeadConfig): Configuration for the regression head.
-            input_dim (int): Input dimension for the regression head.
-
-        Returns:
-            nn.Module: The constructed regression head.
+            head_config: Configuration for the head.
+            input_dimension: Width of the head input (flat descriptor plus the
+                task's auxiliary data).
         """
 
         super().__init__()
 
         self.head_config = head_config
-        self.task_config = head_config.task_config
         # n_classes None -> scalar regression; positive int -> classification
         # logits over n_classes. The whole head body is shared; only the final
-        # projection width and the (regression-only) label scaling differ.
+        # projection width differs.
         self.n_classes = head_config.n_classes
         self.is_classification = self.n_classes is not None
         out_features = self.n_classes if self.is_classification else 1
 
         head = nn.Sequential()
 
-        head.add_module("initial_norm", nn.LayerNorm(head_config.input_dimensions))
+        head.add_module("initial_norm", nn.LayerNorm(input_dimension))
 
-        dimensions = [head_config.input_dimensions, *head_config.hidden_dimensions]
-        idx = 0
-        for idx, (in_dim, out_dim) in enumerate(pairwise(dimensions)):
+        dimensions = [input_dimension, *head_config.hidden_dimensions]
+        for index, (in_dim, out_dim) in enumerate(pairwise(dimensions)):
+            activation = build_activation(head_config.activation)
             if head_config.head_type == HeadType.FULLY_CONNECTED:
                 head.add_module(
-                    f"fully_connected_{idx}",
-                    FullyConnectedBlock(in_dim, out_dim, head_config.activation_fn),
+                    f"fully_connected_{index}",
+                    FullyConnectedBlock(
+                        in_dim, out_dim, activation, dropout=head_config.dropout
+                    ),
                 )
             elif head_config.head_type == HeadType.RESIDUAL:
                 head.add_module(
-                    f"residual_{idx}",
-                    ResidualBlock(in_dim, out_dim, head_config.activation_fn),
+                    f"residual_{index}",
+                    ResidualBlock(in_dim, out_dim, activation),
                 )
-        head.add_module(
-            f"linear_{idx + 1}",
-            nn.Linear(dimensions[-1], out_features),
-        )
+        head.add_module("output_linear", nn.Linear(dimensions[-1], out_features))
 
         self.head = head
-
-        # Classification heads emit raw logits — no label standardization, and
-        # task_config (with its mean/std/scaling) is not required.
-        if not self.is_classification:
-            # Default to identity scaling when no task_config was inserted
-            # (e.g. a bare build() before insert_task_configs).
-            mean = getattr(self.task_config, "mean", 0.0) if self.task_config else 0.0
-            std = getattr(self.task_config, "std", 1.0) if self.task_config else 1.0
-            if type(mean) is float:
-                mean = torch.Tensor([mean])
-            if type(std) is float:
-                std = torch.Tensor([std])
-
-            self.register_buffer("task_mean", mean)
-            self.register_buffer("task_std", std)
 
     def forward(self, molecular_descriptor):
         return self.head(molecular_descriptor)
 
     def inference(self, molecular_descriptor):
+        """Regression: the prediction; classification: per-class probabilities."""
         logits_or_value = self.head(molecular_descriptor)
-
-        # Classification: return per-class probabilities (softmax over logits).
         if self.is_classification:
             return torch.softmax(logits_or_value, dim=-1)
-
-        # Regression: undo the label standardization.
-        standardized_prediction = (logits_or_value * self.task_std) + self.task_mean
-
-        if getattr(self.task_config, "scaling", None) == LabelScalingType.LOG_Z:
-            standardized_prediction = torch.exp(standardized_prediction)
-
-        return standardized_prediction
+        return logits_or_value
 
 
 class MultitaskHeads(nn.Module):
-    def __init__(self, regression_head_configs: list[RegressionHeadConfig]):
+    def __init__(
+        self,
+        regression_head_configs: list[RegressionHeadConfig],
+        descriptor_flat_dimension: int,
+    ):
         super().__init__()
         self.regression_head_configs = regression_head_configs
 
@@ -154,7 +132,14 @@ class MultitaskHeads(nn.Module):
         self.N_tasks = len(self.task_list)
 
         self.task_heads = nn.ModuleDict(
-            {conf.task_name: RegressionHead(conf) for conf in regression_head_configs}
+            {
+                conf.task_name: RegressionHead(
+                    conf,
+                    input_dimension=descriptor_flat_dimension
+                    + conf.auxiliary_input_dimension,
+                )
+                for conf in regression_head_configs
+            }
         )
 
     def forward(
@@ -216,7 +201,7 @@ class MultiTaskRegressionModel(nn.Module):
         self.multitask_heads = regression_heads
         self.preprocessor = preprocessor
 
-    def forward(self, sample: Sample):
+    def forward(self, sample: Sample) -> ModelOutput:
         molecular_descriptor = self.get_molecular_descriptor(sample)
 
         preds = self.multitask_heads(molecular_descriptor, sample.auxillary_data)
@@ -225,8 +210,8 @@ class MultiTaskRegressionModel(nn.Module):
             molecular_descriptor=molecular_descriptor, regression_predictions=preds
         )
 
-    def inference(self, sample: Sample):
-        # Calls the multitask inference method that returns the prediction in the original unit system
+    def inference(self, sample: Sample) -> ModelOutput:
+        # Regression values as predicted, classification as probabilities.
 
         molecular_descriptor = self.get_molecular_descriptor(sample)
 

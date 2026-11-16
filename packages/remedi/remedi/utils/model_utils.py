@@ -1,21 +1,8 @@
 import torch
 from e3nn.o3 import Irreps
-from mace.calculators import MACECalculator
 
 
-def get_mace_calculator_irrep_signature(mace_calculator: MACECalculator) -> Irreps:
-    signature = None
-
-    for products in mace_calculator.models[0].products:  # type: ignore
-        if signature is None:
-            signature = Irreps(str(products.linear.__dict__["irreps_out"]))
-        else:
-            signature = signature + Irreps(str(products.linear.__dict__["irreps_out"]))
-
-    return signature
-
-
-def get_mace_model_irrep_signature(mace_model: MACECalculator) -> Irreps:
+def get_mace_model_irrep_signature(mace_model: torch.nn.Module) -> Irreps:
     signature = None
 
     for products in mace_model.products:  # type: ignore
@@ -25,12 +12,6 @@ def get_mace_model_irrep_signature(mace_model: MACECalculator) -> Irreps:
             signature = signature + Irreps(str(products.linear.__dict__["irreps_out"]))
 
     return signature
-
-
-def get_mace_calculator_embedding_dimension(mace_calculator: MACECalculator) -> int:
-    irrep_signature = get_mace_calculator_irrep_signature(mace_calculator)
-    embdeding_dimension = Irreps(irrep_signature).dim
-    return embdeding_dimension
 
 
 def remove_equivariants(atomic_embeddings, invariant_indices):

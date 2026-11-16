@@ -262,8 +262,6 @@ class AtomicDescriptorPreprocessor(nn.Module):
         )
         self.equivariant_irreps = get_equivariant_irreps(selected_input_irreps)
 
-        assert all(degree == 1 for degree in self.equivariant_irreps.ls)
-
         if selected_channel_indices is not None:
             self.register_buffer(
                 "selected_channel_indices",
@@ -279,20 +277,29 @@ class AtomicDescriptorPreprocessor(nn.Module):
             invariant_projection if invariant_projection is not None else nn.Identity()
         )
 
-        self.equivariant_rms_norm = RMSLayerNorm(
-            num_blocks=self.equivariant_irreps.num_irreps
-        )
-
-        self.chiral_embedding_model = ChiralEmbeddingModel(
-            invariant_irreps=self.invariant_irreps,
-            equivariant_irreps=self.equivariant_irreps,
-            pseudoscalar_dimension=self.config.pseudoscalar_dimension,
-            chiral_embedding_dim=self.config.chiral_embedding_dimension,
-            gated=self.config.gated,
-            dtype=torch.float32,
-        )
-
+        # The chiral embedding (and the RMS norm of the l=1 blocks feeding it)
+        # exists only when pseudoscalars are requested: without them the
+        # selected layers may carry no equivariant channels at all.
         self.has_chiral_embedding = self.config.pseudoscalars
+        self.equivariant_rms_norm: RMSLayerNorm | None = None
+        self.chiral_embedding_model: ChiralEmbeddingModel | None = None
+        if self.has_chiral_embedding:
+            if any(degree != 1 for degree in self.equivariant_irreps.ls):
+                raise ValueError(
+                    "The chiral embedding supports l=1 equivariant irreps only, "
+                    f"got {self.equivariant_irreps}."
+                )
+            self.equivariant_rms_norm = RMSLayerNorm(
+                num_blocks=self.equivariant_irreps.num_irreps
+            )
+            self.chiral_embedding_model = ChiralEmbeddingModel(
+                invariant_irreps=self.invariant_irreps,
+                equivariant_irreps=self.equivariant_irreps,
+                pseudoscalar_dimension=self.config.pseudoscalar_dimension,
+                chiral_embedding_dim=self.config.chiral_embedding_dimension,
+                gated=self.config.gated,
+                dtype=torch.float32,
+            )
 
     def _select_layers(self, embeddings: torch.Tensor) -> torch.Tensor:
         if self.selected_channel_indices is None:
@@ -310,15 +317,17 @@ class AtomicDescriptorPreprocessor(nn.Module):
 
         normalized_invariants = self.invariant_normalization(invariants, padding_mask)
 
-        if self.has_chiral_embedding:
+        chiral_embedding = None
+        if (
+            self.equivariant_rms_norm is not None
+            and self.chiral_embedding_model is not None
+        ):
             normalized_equivariants = self.equivariant_rms_norm(
                 equivariants, padding_mask
             )
             chiral_embedding = self.chiral_embedding_model(
                 normalized_invariants, normalized_equivariants, padding_mask
             )
-        else:
-            chiral_embedding = None
 
         # Projection runs in the module's working dtype (float64 in the
         # encoder/regression paths, where the atomic preprocessor is .double()'d

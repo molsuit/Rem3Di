@@ -35,10 +35,8 @@ from remedi.training.data.sample import (
 
 
 def test_head_classification_shapes_and_no_scaling() -> None:
-    cfg = RegressionHeadConfig(
-        task_name="chirality_type", n_classes=5, input_dimensions=16
-    )
-    head = RegressionHead(cfg)
+    cfg = RegressionHeadConfig(task_name="chirality_type", n_classes=5)
+    head = RegressionHead(cfg, input_dimension=16)
     assert head.is_classification
     # No regression label-scaling buffers on a classification head.
     assert not hasattr(head, "task_mean")
@@ -51,15 +49,12 @@ def test_head_classification_shapes_and_no_scaling() -> None:
 
 
 def test_head_regression_still_scalar() -> None:
-    # n_classes None -> scalar regression head; task_config carries mean/std.
-    import types
-
-    cfg = RegressionHeadConfig(task_name="y", input_dimensions=16)
-    cfg.task_config = types.SimpleNamespace(mean=0.0, std=1.0, scaling=None)
-    head = RegressionHead(cfg)
+    # n_classes None -> scalar regression head.
+    cfg = RegressionHeadConfig(task_name="y")
+    head = RegressionHead(cfg, input_dimension=16)
     assert not head.is_classification
     assert head(torch.randn(4, 16)).shape == (4, 1)
-    assert hasattr(head, "task_mean")
+    assert not hasattr(head, "task_mean")
 
 
 def test_focal_loss_equals_cross_entropy_at_gamma_zero() -> None:
@@ -132,5 +127,5 @@ def test_chiral_architecture_yaml_is_single_head_classifier() -> None:
     heads = ac.regression_head_config
     assert len(heads) == 1
     assert heads[0].n_classes == 5
-    # Head input dim cascades from the aggregator's flat descriptor dim.
-    assert heads[0].input_dimensions == ac.global_aggregator_config.descriptor_flat_dim
+    # The head consumes the flat descriptor (plus no auxiliary data).
+    assert heads[0].auxiliary_input_dimension == 0

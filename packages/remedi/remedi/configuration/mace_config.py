@@ -5,17 +5,23 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 from e3nn.o3 import Irreps
-from pydantic import BaseModel, PrivateAttr
+from pydantic import PrivateAttr
+
+from remedi.configuration.config_utils import StrictBaseModel
 
 if TYPE_CHECKING:
     from mace.calculators.mace import MACECalculator
     from mace.calculators.mace_torchsim import MaceTorchSimModel
 
 
-class MaceConfig(BaseModel):
+class MaceConfig(StrictBaseModel):
     """Configuration for loading a MACE model for both ASE and torch-sim inference.
 
-    `model_path=None` falls back to the MACE-OFF medium checkpoint.
+    `model_path=None` falls back to the MACE-OFF medium checkpoint. The raw
+    model is always loaded on the CPU (reading its irreps must not need a GPU);
+    `build_torch_sim_model` moves it to `device`, so `device` may still be
+    changed after validation (e.g. to run a checkpoint on another machine).
+    `enable_cueq` only takes effect on CUDA devices.
     """
 
     model_path: Path | None = None
@@ -32,6 +38,11 @@ class MaceConfig(BaseModel):
     def torch_dtype(self) -> torch.dtype:
         return torch.float64 if self.dtype == "float64" else torch.float32
 
+    @property
+    def uses_cuequivariance(self) -> bool:
+        """cuequivariance kernels are CUDA-only; on the CPU the e3nn model runs."""
+        return self.enable_cueq and torch.device(self.device).type == "cuda"
+
     def _load_raw_model(self):
         if self._raw_model is not None:
             return self._raw_model
@@ -42,7 +53,7 @@ class MaceConfig(BaseModel):
         if self.model_path is None:
             raw = mace_off(
                 model="medium",
-                device=self.device,
+                device="cpu",
                 default_dtype=self.dtype,
                 return_raw_model=True,
                 enable_cueq=False,
@@ -50,7 +61,7 @@ class MaceConfig(BaseModel):
         else:
             calc = MACECalculator(
                 model_paths=str(self.model_path),
-                device=self.device,
+                device="cpu",
                 default_dtype=self.dtype,
                 enable_cueq=False,
             )
@@ -112,5 +123,5 @@ class MaceConfig(BaseModel):
             dtype=self.torch_dtype,
             compute_forces=self.compute_forces,
             compute_stress=self.compute_stress,
-            enable_cueq=self.enable_cueq,
+            enable_cueq=self.uses_cuequivariance,
         )

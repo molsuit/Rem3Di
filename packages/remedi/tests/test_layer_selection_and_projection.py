@@ -34,7 +34,6 @@ def _make_config(
     pseudoscalars: bool = False,
 ):
     return EmbeddingPreprocessConfig(
-        input_irreps=FULL_INPUT_IRREPS,
         mace_per_layer_irreps=PER_LAYER_IRREPS,
         mace_layer_indices=layer_indices,
         pseudoscalar_dimension=0,
@@ -46,7 +45,7 @@ def _make_config(
 
 
 # --------------------------------------------------------------------------- #
-# Computed fields                                                             #
+# Derived properties                                                          #
 # --------------------------------------------------------------------------- #
 
 
@@ -55,6 +54,7 @@ def test_selected_input_irreps_all_layers_default():
         layer_indices=None,
         projection=IdentityInvariantProjectionConfig(),
     )
+    assert cfg.input_irreps == FULL_INPUT_IRREPS
     assert cfg.selected_input_irreps == FULL_INPUT_IRREPS
     assert cfg.selected_channel_indices is None
     assert cfg.selected_invariant_dimension == 16  # 8 + 8
@@ -199,7 +199,6 @@ def test_atomic_preprocessor_layer_slice_matches_manual():
 
     cfg_manual = EmbeddingPreprocessConfig(
         # Only layer 1's irreps -> the "post-slice" view.
-        input_irreps=PER_LAYER_IRREPS[layer_idx],
         mace_per_layer_irreps=[PER_LAYER_IRREPS[layer_idx]],
         pseudoscalar_dimension=0,
         chiral_embedding_dimension=0,
@@ -267,3 +266,41 @@ def test_yaml_roundtrip_with_projection():
     config_str = pyaml.to_yaml_str(cfg)
     reconstructed = pyaml.parse_yaml_raw_as(EmbeddingPreprocessConfig, config_str)
     assert pyaml.to_yaml_str(reconstructed) == config_str
+
+
+# --------------------------------------------------------------------------- #
+# Pseudoscalars off                                                           #
+# --------------------------------------------------------------------------- #
+
+
+def test_scalar_only_layer_without_pseudoscalars_builds():
+    # Regression: pseudoscalars=False still built ChiralEmbeddingModel, which
+    # raised "No 2-TP pseudoscalar paths" when the selected layers carry no
+    # vectors (e.g. the scalar-only last layer of MACE-OFF medium).
+    cfg = EmbeddingPreprocessConfig(
+        mace_per_layer_irreps=["8x0e+4x1o", "8x0e"],
+        mace_layer_indices=[1],
+        pseudoscalar_dimension=4,
+        chiral_embedding_dimension=4,
+        pseudoscalars=False,
+    )
+    pre = cfg.build()
+    assert pre.chiral_embedding_model is None
+    assert pre.equivariant_rms_norm is None
+    out = pre(torch.randn(2, 3, 28, dtype=torch.float64), None)
+    assert out.preprocessed_atomic_embeddings.shape == (2, 3, 8)
+    assert out.chiral_embeddings is None
+
+
+def test_pseudoscalars_build_the_chiral_embedding():
+    cfg = EmbeddingPreprocessConfig(
+        mace_per_layer_irreps=["8x0e+4x1o"],
+        pseudoscalar_dimension=4,
+        chiral_embedding_dimension=3,
+        pseudoscalars=True,
+    )
+    pre = cfg.build().double()
+    assert pre.chiral_embedding_model is not None
+    out = pre(torch.randn(2, 3, 20, dtype=torch.float64), None)
+    assert out.preprocessed_atomic_embeddings.shape == (2, 3, 8 + 3)
+    assert out.chiral_embeddings.shape == (2, 3, 3)

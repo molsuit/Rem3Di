@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from remedi.configuration.architecture_config import DecoderConfig
+from remedi.configuration.architecture_config import DecoderConfig, ModelDimensions
 from remedi.model.molecular_descriptor import MolecularDescriptor
 from remedi.model.multihead_self_attention import MultiHeadCrossAttention
 from remedi.model.pair_biased_attention import (
@@ -53,24 +53,29 @@ class DecoderPairBlock(nn.Module):
 
         S = S + self.ffn(self.layer_norm_2(S))
 
-        P = P + self.pair_update(S, P, p_geo, mask_pair)  # Outer product update
-        P = P + self.pair_ffn(P)
+        # Both pair updates are residual already (they return P + delta).
+        P = self.pair_update(S, P, p_geo, mask_pair)  # Outer product update
+        P = self.pair_ffn(P)
 
         return S, P
 
 
 class TransformerPairDecoder(nn.Module):
-    def __init__(self, decoder_config: DecoderConfig):
+    def __init__(self, decoder_config: DecoderConfig, dimensions: ModelDimensions):
         super().__init__()
 
         self.config = decoder_config
+        attention = decoder_config.attention_layer_config
         self.layers = nn.ModuleList(
             [
                 DecoderPairBlock(
-                    **decoder_config.attention_layer_config.model_dump(),
-                    d_descriptor=self.config.d_descriptor,
-                    d_pair=decoder_config.d_pair,
-                    d_geo=decoder_config.d_geo,
+                    embedding_dim=dimensions.embedding_dimension,
+                    num_heads=attention.num_heads,
+                    dim_feedforward=attention.dim_feedforward,
+                    dropout=attention.dropout,
+                    d_descriptor=dimensions.descriptor_dimension,
+                    d_pair=dimensions.pair_dimension,
+                    d_geo=dimensions.radial_basis_dimension,
                 )
                 for _ in range(decoder_config.N_layers)
             ]
