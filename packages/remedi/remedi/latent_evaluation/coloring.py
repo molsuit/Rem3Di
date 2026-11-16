@@ -32,7 +32,7 @@ class ColorSpec:
 
 
 class _BaseColorProvider(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     label: str | None = None
     """Optional override for the plot title suffix; defaults to a per-provider value."""

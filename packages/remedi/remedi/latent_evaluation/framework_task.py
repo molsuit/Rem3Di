@@ -1,10 +1,11 @@
-"""Descriptor-analysis task: capacity / distribution / projection over one model.
+"""``DescriptorAnalysisConfig``: the descriptor-space analyses as one eval task.
 
-Wraps the existing ``descriptor_analysis`` task family into the framework. It
-builds the shared embedding once (via :class:`EmbeddingSpec`), constructs a
-:class:`DescriptorAnalysisContext` from it, and runs the configured analysis
-sub-tasks — each in its own try/except so one failing analysis does not lose the
-others. Sub-task artifacts are re-rooted under ``descriptor_analysis/``.
+It reads the dataset's embedding through the run's resource cache (for a Rem3Di
+checkpoint: the precomputed embeddings that ``embed_and_evaluate`` writes),
+builds one :class:`DescriptorAnalysisContext` (normalisation, optional 2D
+projection) and runs the configured analyses, each in its own try/except so one
+failing analysis does not lose the others. Artifacts go under
+``descriptor_analysis/``.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from remedi.latent_evaluation import (
     DescriptorNormalizationConfig,
     ProjectionConfig,
 )
+from remedi_data.bundle.bundle import read_spec
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import EvalResult
 from remedi_eval.framework.context import EvalContext
@@ -34,11 +36,10 @@ logger = logging.getLogger(__name__)
 class DescriptorAnalysisConfig(BaseModel):
     """Intrinsic descriptor analyses (capacity, distribution, projection, ...)."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="forbid")
 
     kind: Literal["descriptor_analysis"] = "descriptor_analysis"
     dataset_path: Path
-    dataset_id: str
     normalization: DescriptorNormalizationConfig = Field(
         default_factory=DescriptorNormalizationConfig
     )
@@ -46,6 +47,7 @@ class DescriptorAnalysisConfig(BaseModel):
     # UMAP fit — fine for capacity / distribution tasks that don't need it.
     projection: ProjectionConfig | None = None
     max_structures: int | None = None
+    """Analyse only the first ``max_structures`` rows (the whole dataset is embedded)."""
     tasks: list[DescriptorAnalysisTask] = Field(default_factory=list, min_length=1)
 
     def run(self, ctx: EvalContext) -> Iterator[EvalResult]:
@@ -53,7 +55,7 @@ class DescriptorAnalysisConfig(BaseModel):
         dataset = MoleculeDataset.open_existing_dataset_from_dir(self.dataset_path)
         X = ctx.resources.get(
             EmbeddingSpec(
-                dataset_id=self.dataset_id,
+                dataset_id=read_spec(self.dataset_path).dataset_id,
                 descriptor=ctx.model,
                 dataset=dataset,
                 cache_dir=ctx.resource_cache_dir,

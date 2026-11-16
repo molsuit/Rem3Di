@@ -6,7 +6,7 @@ from typing import Literal
 
 import numpy as np
 import torch
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from remedi.latent_evaluation.clustering import (
     PCACalculator,
@@ -35,6 +35,8 @@ def _l2_normalize(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
 class DescriptorNormalizationConfig(BaseModel):
     """Pre-projection normalization applied to descriptors."""
 
+    model_config = ConfigDict(extra="forbid")
+
     z_score: bool = True
     l2_normalize: bool = True
 
@@ -55,6 +57,8 @@ class ProjectionConfig(BaseModel):
     viewer, the analysis-dir PNGs, and any cross-model comparison share one
     deterministic layout. Override per-task for one-off experiments.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     method: Literal["umap", "pca"] = "umap"
     n_components: int = 2

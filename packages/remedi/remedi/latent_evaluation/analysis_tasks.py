@@ -32,7 +32,7 @@ from remedi_eval.results import FigureResult
 
 
 class _BaseAnalysisTask(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     @abstractmethod
     def run(self, ctx: DescriptorAnalysisContext) -> list[EvalResult]: ...

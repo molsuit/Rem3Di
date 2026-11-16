@@ -1,0 +1,47 @@
+# Which tmQM chemistry the descriptor clusters line up with. HDBSCAN on a 15-D
+# cosine UMAP (and directly on the descriptors, cluster_reducer: none, to tell
+# whether weak clustering comes from the descriptor or from the UMAP), read
+# against metal, block, coordination, geometry, donor set and ligand motifs.
+# descriptor_structure_benchmark is the cross-model scorecard (adjusted mutual
+# information per chemical axis); the rest are for inspecting the clusters.
+#
+#   uv run --no-sync python scripts/evaluation/embed_and_evaluate.py \
+#       --config configs/evaluation/descriptor_analysis/tmqm_clusters.yaml
+embedding:
+  name: mixture_smoke_transition_metal_complex
+  model_dir: /dais/fs/scratch/wedigs/remedi/training_runs/mixture_smoke/1-2026_11_16_15_08_27-mixture_smoke_transition_metal_complex
+manifest:
+  model:
+    descriptor_kind: precomputed
+    name: mixture_smoke_transition_metal_complex
+    embeddings_root: /dais/fs/scratch/wedigs/remedi/eval_runs/embeddings
+  output_root: /dais/fs/scratch/wedigs/remedi/eval_runs/descriptor_analysis/tmqm_clusters
+  tasks:
+    - kind: descriptor_analysis
+      dataset_path: /dais/fs/scratch/wedigs/remedi/pretraining/tmqm
+      normalization:
+        z_score: false
+        l2_normalize: true
+      projection:
+        method: umap
+      tasks:
+        - kind: descriptor_structure_benchmark
+        # Raw descriptors with a euclidean UMAP, so the vector norm enters the partition.
+        - kind: descriptor_structure_benchmark
+          cluster_metric: euclidean
+          use_raw_descriptors: true
+          summary_file_name: descriptor_structure_benchmark_euclidean_raw.yaml
+        - kind: cluster_granularity_sweep
+          summary_file_name: cluster_granularity_sweep_umap.yaml
+        - kind: cluster_granularity_sweep
+          cluster_reducer: none
+          summary_file_name: cluster_granularity_sweep_noumap.yaml
+        - kind: cluster_chemical_fingerprint
+          min_cluster_size: 50
+          summary_file_name: cluster_fingerprint_umap_mcs50.yaml
+        - kind: cluster_axis_analysis
+          min_cluster_size: 50
+          summary_file_name: cluster_axis_umap_mcs50.yaml
+        - kind: chemiscope_cluster
+          min_cluster_sizes: [25, 50, 100]
+          default_color_mcs: 50

@@ -5,7 +5,6 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal, Self
 
-import pydantic_yaml as pyaml
 import torch
 import torch.nn as nn
 import yaml
@@ -709,15 +708,6 @@ class _BaseArchitectureConfig(BaseModel):
     def _build_encoder(self) -> nn.Module:
         aggregator = self.global_aggregator_config.build()
         return self.encoder_config.build(aggregator)
-
-    @classmethod
-    def from_directory(cls, directory: str, trained: bool = True) -> Self:
-        filename = (
-            "post_training_architecture_config.yaml"
-            if trained
-            else "architecture_config.yaml"
-        )
-        return pyaml.parse_yaml_file_as(cls, f"{directory}/{filename}")
 
 
 class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):

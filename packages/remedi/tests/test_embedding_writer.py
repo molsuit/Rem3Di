@@ -221,3 +221,28 @@ def test_the_remedi_identity_is_the_checkpoint_hash_and_is_memoised(
     # A model directory without weights names the problem.
     with pytest.raises(FileNotFoundError, match=r"no \.pth checkpoint"):
         RemediConfig(name="remedi", model_dir=other_dir / "empty").identity()
+
+
+def test_embed_and_evaluate_runs_descriptor_analyses_on_the_embeddings(
+    tmp_path: Path, stub_encoder: list[str]
+) -> None:
+    """A ``descriptor_analysis`` task gets its dataset embedded and analysed in one run."""
+    (corpus,) = _datasets(tmp_path, ["corpus"])
+    raw = _pipeline_config(tmp_path)
+    raw["manifest"]["tasks"] = [
+        {
+            "kind": "descriptor_analysis",
+            "dataset_path": str(corpus),
+            "tasks": [{"kind": "capacity_diagnostic"}],
+        }
+    ]
+    config = EmbedAndEvaluateConfig.model_validate(raw)
+    assert config.dataset_dirs() == [corpus]
+
+    embedding_report, run_report = embed_and_evaluate(config)
+
+    assert embedding_report.written == ["corpus"]
+    assert stub_encoder == ["corpus"]
+    assert run_report.n_failed == 0
+    output = tmp_path / "eval_out" / "descriptor_analysis" / "capacity_diagnostic.yaml"
+    assert output.exists()

@@ -17,8 +17,8 @@ from remedi_eval.framework import EvalContext, ResourceCache
 
 
 def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
-    """``DescriptorAnalysisConfig`` (no longer in the manifest's task union) runs
-    on an explicit :class:`EvalContext`, artifacts under ``descriptor_analysis/``."""
+    """``DescriptorAnalysisConfig`` runs on an explicit :class:`EvalContext`,
+    artifacts under ``descriptor_analysis/``; the dataset id comes from its spec."""
     from remedi.latent_evaluation import CapacityDiagnosticTask
     from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
 
@@ -40,10 +40,44 @@ def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
     )
     task = DescriptorAnalysisConfig(
         dataset_path=tmp_path / "datasets" / "corpus",
-        dataset_id="corpus",
         tasks=[CapacityDiagnosticTask()],
     )
     for artifact in task.run(ctx):
         artifact.serialize_to(out)
 
     assert (out / "descriptor_analysis" / "capacity_diagnostic.yaml").exists()
+
+
+def test_unknown_analysis_fields_are_rejected() -> None:
+    """A misspelt option fails instead of silently running the default analysis."""
+    import pytest
+    from pydantic import ValidationError
+
+    from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
+
+    with pytest.raises(ValidationError, match="dead_thr"):
+        DescriptorAnalysisConfig.model_validate(
+            {
+                "dataset_path": "corpus",
+                "tasks": [{"kind": "capacity_diagnostic", "dead_thr": 0.1}],
+            }
+        )
+
+
+def test_shipped_descriptor_analysis_configs_parse() -> None:
+    """Every config under ``configs/evaluation/descriptor_analysis/`` is a valid pipeline."""
+    import pydantic_yaml as pyd_yaml
+
+    from remedi.embedding import EmbedAndEvaluateConfig
+    from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
+
+    config_dir = (
+        Path(__file__).resolve().parents[3] / "configs/evaluation/descriptor_analysis"
+    )
+    paths = sorted(config_dir.glob("*.yaml"))
+    assert paths
+    for path in paths:
+        config = pyd_yaml.parse_yaml_file_as(EmbedAndEvaluateConfig, path)
+        assert all(
+            isinstance(task, DescriptorAnalysisConfig) for task in config.manifest.tasks
+        )

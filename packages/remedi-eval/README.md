@@ -76,30 +76,18 @@ Training reads structures through `TrainingMoleculeDataset` (`remedi/training/da
 
 ## Using Pretrained Model
 
-
-
 ```python
-import torch
-from remedi.configuration.architecture_config import EncoderOnlyArchitectureConfig
-from remedi.latent_evaluation.descriptor_embedding import (
-    evaluate_molecular_descriptor_on_dataset,
-)
-from remedi.training.data.training_dataset import (
-    TrainingMoleculeDataset,
-    atoms_getitem,
-)
+from pathlib import Path
 
-ds = TrainingMoleculeDataset(dataset_path, get_item=atoms_getitem)
-model = EncoderOnlyArchitectureConfig.from_directory(model_dir).build()
-model.encoder.load_state_dict(torch.load(f"{model_dir}/encoder.pth"))
-model.preprocessor.atomic_preprocessor.load_state_dict(
-    torch.load(f"{model_dir}/atomic_preprocessor.pth")
-)
-model.preprocessor.geometric_preprocessor.load_state_dict(
-    torch.load(f"{model_dir}/geometric_preprocessor.pth")
-)
-remedi_descriptors = evaluate_molecular_descriptor_on_dataset(model, ds)
+from remedi.embedding import RemediConfig
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+
+calculator = RemediConfig(name="my_model", model_dir=Path(model_dir)).build()
+dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
+descriptors = calculator.calculate(dataset)  # (structures, descriptor length)
 ```
+
+To score a checkpoint on the benchmark panel or run the descriptor-space analyses (`configs/evaluation/descriptor_analysis/`), use `scripts/evaluation/embed_and_evaluate.py`.
 
 ## Citation
 

@@ -1,14 +1,14 @@
-"""Descriptor-space analysis — what the latent space *looks like*.
+"""Descriptor-space analysis: what the latent space *looks like*.
 
-Capacity diagnostics, clustering, UMAP/PCA projections, chemiscope exports and
-the MACE invariant statistics. This is intrinsic analysis of a descriptor
-matrix, not prediction evaluation, so it lives outside the benchmark framework
-(``remedi_eval``) and is not part of the paper's probe panel.
+Capacity diagnostics, distributions, UMAP/PCA projections, HDBSCAN clusters read
+against tmQM chemistry (metal, donor sets, geometry), chemiscope exports and the
+MACE invariant statistics. This is intrinsic analysis of a descriptor matrix, not
+prediction evaluation, so it is not part of ``remedi_eval``'s probe panel.
 
-It keeps its ``EvalTask`` shape: :class:`DescriptorAnalysisConfig` (in
-:mod:`remedi.latent_evaluation.framework_task`) is still a runnable framework
-task, but it is deliberately **not** a member of the framework's ``TaskConfig``
-union, so a manifest cannot reach it until this family is worked on again.
+:class:`~remedi.latent_evaluation.framework_task.DescriptorAnalysisConfig`
+(``kind: descriptor_analysis``) is the one entry point: a task of the
+``remedi.embedding`` manifest, so ``scripts/evaluation/embed_and_evaluate.py``
+embeds the dataset with a checkpoint and runs the analyses in the same job.
 """
 
 from .analysis_tasks import (
@@ -44,12 +44,6 @@ from .context import (
     DescriptorNormalizationConfig,
     ProjectionConfig,
 )
-from .plotting import (
-    plot_reduced_dimension,
-    plot_reduced_dimension_3d,
-    plot_reduced_dimension_functional_group_comparison,
-)
-from .runner import DescriptorAnalysisRunner
 
 __all__ = [
     "CapacityDiagnosticTask",
@@ -63,7 +57,6 @@ __all__ = [
     "CoordinationNumberColor",
     "DBlockColor",
     "DescriptorAnalysisContext",
-    "DescriptorAnalysisRunner",
     "DescriptorAnalysisTask",
     "DescriptorDistributionTask",
     "DescriptorNormalizationConfig",
@@ -78,7 +71,4 @@ __all__ = [
     "RegressionTargetColor",
     "TopNormDescriptorsTask",
     "UMAPCalculator",
-    "plot_reduced_dimension",
-    "plot_reduced_dimension_3d",
-    "plot_reduced_dimension_functional_group_comparison",
 ]

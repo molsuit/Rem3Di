@@ -19,8 +19,8 @@ from remedi_eval.framework.tasks import BenchmarkPanelConfig
 # Discriminated union of task configs; the runner and manifest are agnostic to
 # membership — add a variant here and it is runnable from a manifest. The panel
 # is currently the only member: retrieval and the chiral report were retired
-# (§6) and ``DescriptorAnalysisConfig`` moved to :mod:`remedi.latent_evaluation`
-# and left the union with it.
+# (§6). ``remedi.embedding.RemediEvalManifest`` extends the union with
+# ``DescriptorAnalysisConfig``, which needs the Rem3Di package.
 TaskConfig = Annotated[
     BenchmarkPanelConfig,
     Field(discriminator="kind"),
