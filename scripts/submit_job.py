@@ -7,7 +7,10 @@ the snapshot. Every run is one ``scripts/pretrain.slurm`` job on one H200 or B20
 
 Usage::
 
-    uv run python scripts/submit_job.py cfgA.yaml cfgB.yaml --group scaling
+    uv run python scripts/submit_job.py cfgA.yaml cfgB.yaml --group scaling --time 06:00:00
+
+Set ``--time`` to the expected runtime plus a modest margin: a job whose limit
+fits a gap in the schedule starts early (backfill), a 24 h default waits.
 """
 
 from __future__ import annotations
@@ -77,6 +80,12 @@ def main() -> None:
         help="SLURM job-name prefix; each run becomes <group>_<training_name>.",
     )
     parser.add_argument(
+        "--time",
+        type=str,
+        default=None,
+        help="SLURM time limit (HH:MM:SS); default: the sbatch script's 24 h.",
+    )
+    parser.add_argument(
         "--no-submit",
         action="store_true",
         help="Snapshot configs only; do not call sbatch.",
@@ -93,6 +102,7 @@ def main() -> None:
         command = [
             "sbatch",
             f"--job-name={args.group}_{name}",
+            *([f"--time={args.time}"] if args.time else []),
             str(args.sbatch_script),
             str(snapshot),
         ]

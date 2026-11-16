@@ -130,13 +130,16 @@ def test_one_job_is_submitted_per_config(tmp_path: Path, monkeypatch) -> None:
         submit_job.subprocess, "run", lambda command, **_: commands.append(command)
     )
     monkeypatch.setattr(
-        submit_job.sys, "argv", ["submit_job.py", *map(str, configs), "--group", "g"]
+        submit_job.sys,
+        "argv",
+        ["submit_job.py", *map(str, configs), "--group", "g", "--time", "02:00:00"],
     )
     submit_job.main()
     assert [command[1] for command in commands] == [
         f"--job-name=g_run_{i}" for i in range(3)
     ]
-    assert all(command[2] == "scripts/pretrain.slurm" for command in commands)
+    assert all(command[2] == "--time=02:00:00" for command in commands)
+    assert all(command[3] == "scripts/pretrain.slurm" for command in commands)
 
 
 def test_default_stage_dir_prefers_localdir(monkeypatch) -> None:
