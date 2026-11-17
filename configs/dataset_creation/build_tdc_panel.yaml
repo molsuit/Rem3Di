@@ -1,0 +1,39 @@
+# The 22 TDC ADMET datasets: bundles from `prepare-tdc` -> conformers -> datasets.
+# Paths are relative to the repository root; run from there:
+#
+#   uv run --no-sync python scripts/dataset_creation/build_datasets.py \
+#       --config configs/dataset_creation/build_tdc_panel.yaml
+bundle_root: benchmark_data/bundles
+dataset_root: benchmark_data/datasets
+dataset_ids:
+  - Caco2_Wang
+  - HIA_Hou
+  - Pgp_Broccatelli
+  - Bioavailability_Ma
+  - Lipophilicity_AstraZeneca
+  - Solubility_AqSolDB
+  - BBB_Martins
+  - PPBR_AZ
+  - VDss_Lombardo
+  - CYP2C9_Veith
+  - CYP2D6_Veith
+  - CYP3A4_Veith
+  - CYP2C9_Substrate_CarbonMangels
+  - CYP2D6_Substrate_CarbonMangels
+  - CYP3A4_Substrate_CarbonMangels
+  - Half_Life_Obach
+  - Clearance_Hepatocyte_AZ
+  - Clearance_Microsome_AZ
+  - LD50_Zhu
+  - hERG
+  - AMES
+  - DILI
+conformers:
+  n_conformers: 1
+  max_embed_attempts: 200
+  max_mmff_steps: 100
+  mmff_non_bonded_threshold: 100.0
+n_workers: null
+overwrite: false
+verify: true
+keep_going: true

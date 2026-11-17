@@ -15,12 +15,12 @@ import argparse
 import logging
 from pathlib import Path
 
-import pydantic_yaml as pyd_yaml
-
-from remedi.configuration.dataset_comparison_config import (
+from remedi_data.logging_setup import setup_logging
+from remedi_data.yaml_io import read_model
+from remedi_eval.dataset_analysis.comparison import DatasetComparison
+from remedi_eval.dataset_analysis.config import (
     DatasetComparisonConfig,
 )
-from remedi.data_handling.dataset_comparison import DatasetComparison
 
 
 def main() -> None:
@@ -31,12 +31,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
-    )
+    setup_logging(args.log_level)
 
-    config = pyd_yaml.parse_yaml_file_as(DatasetComparisonConfig, file=args.config)
+    config = read_model(args.config, DatasetComparisonConfig)
     comparison = DatasetComparison(config)
     comparison.run()
     out = comparison.output()

@@ -1,0 +1,46 @@
+# Descriptor-space overview of one Rem3Di checkpoint on tmQM: capacity diagnostics
+# and the 2D UMAP coloured by size and metal centre. Run from the repository root
+# as one GPU job (embeds tmQM, then runs the analyses on the embeddings):
+#
+#   uv run --no-sync python scripts/evaluation/embed_and_evaluate.py \
+#       --config configs/evaluation/descriptor_analysis/tmqm_overview.yaml
+embedding:
+  name: mixture_smoke_transition_metal_complex
+  model_dir: /dais/fs/scratch/wedigs/remedi/training_runs/mixture_smoke/1-2026_11_16_15_08_27-mixture_smoke_transition_metal_complex
+manifest:
+  model:
+    kind: precomputed
+    name: mixture_smoke_transition_metal_complex
+    embeddings_root: /dais/fs/scratch/wedigs/remedi/eval_runs/embeddings
+  output_root: /dais/fs/scratch/wedigs/remedi/eval_runs/descriptor_analysis/tmqm_overview
+  tasks:
+    - kind: descriptor_analysis
+      dataset_path: /dais/fs/scratch/wedigs/remedi/pretraining/tmqm
+      normalization:
+        z_score: false
+        l2_normalize: true
+      projection:
+        kind: umap
+      tasks:
+        - kind: capacity_diagnostic
+        - kind: capacity_diagnostic
+          l2_normalize: true
+          file_name: capacity_diagnostic_l2.yaml
+        - kind: capacity_diagnostic
+          drop_outlier_quantile: 0.99
+          file_name: capacity_diagnostic_no_outliers.yaml
+        - kind: projection_plot
+          file_name: number_of_atoms.png
+          color_provider: {kind: num_atoms}
+        - kind: projection_plot
+          file_name: metal_center_element.png
+          color_provider: {kind: metal_center_element}
+        - kind: projection_plot
+          file_name: metal_center_atomic_number.png
+          color_provider: {kind: metal_center_atomic_number}
+        - kind: projection_plot
+          file_name: metal_center_block.png
+          color_provider: {kind: d_block}
+        - kind: projection_plot
+          file_name: coordination_number.png
+          color_provider: {kind: coordination_number}

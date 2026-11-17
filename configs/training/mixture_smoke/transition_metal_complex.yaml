@@ -1,0 +1,48 @@
+compile:
+  dynamo_cache_size_limit: 16
+  enabled: false
+  pad_multiple: 1
+dataloader:
+  batch_sampling:
+    bucket_size: 512
+    kind: bucket_batch
+    max_atoms_per_batch: 5250
+    max_batch_size: null
+  num_workers: 12
+  persistent_workers: true
+  pin_memory: true
+  prefetch_factor: 4
+data:
+  domain: transition_metal_complex
+  components:
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/tmqm
+  validation:
+    kind: molecule_fraction
+    fraction: 0.02
+    seed: 0
+  deduplicate_across_components: nonisomeric_smiles
+epochs: 1
+learning_rate: 0.0003
+max_grad_norm: 1.0
+model_config_path: /dais/u/wedigs/descriptors/Rem3Di/configs/training/mixture_smoke/architecture_config.yaml
+noise_level: 0.3
+output_base: /dais/fs/scratch/wedigs/remedi/training_runs/mixture_smoke
+run_group: mixture_smoke
+training_name: mixture_smoke_transition_metal_complex
+training_directory: null
+wandb_active: false
+weight_decay: 0.001
+vicreg:
+  covariance_weight: 1.0
+  enabled: false
+  target_std: 1.0
+  variance_weight: 25.0
+probe:
+  enabled: true
+  every_n_steps: 20
+  n_probe_molecules: 256
+  ridge_alpha: 1.0
+  val_fraction: 0.3
+  properties: null
+  report_count_accuracy: false
+  seed: 0

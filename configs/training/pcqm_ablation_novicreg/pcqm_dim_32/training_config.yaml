@@ -12,24 +12,23 @@ dataloader:
   persistent_workers: true
   pin_memory: true
   prefetch_factor: 4
-dataset_path: /path/to/datasets/pcqm4m/pcqm500k_std
+data:
+  domain: drug_like
+  components:
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/pcqm4mv2
+    selection: random_300k
+  validation:
+    kind: molecule_fraction
+    fraction: 0.02
+    seed: 0
+  deduplicate_across_components: nonisomeric_smiles
 epochs: 15
 learning_rate: 0.0003
 max_grad_norm: 1.0
-model_config_path:
-  /path/to/3DMolecularDescriptors/configs/training/pcqm_ablation_novicreg/pcqm_dim_32/architecture_config.yaml
+model_config_path: /path/to/3DMolecularDescriptors/configs/training/pcqm_ablation_novicreg/pcqm_dim_32/architecture_config.yaml
 noise_level: 0.3
 output_base: /path/to/training_runs/pcqm_ablation_novicreg
 run_group: pcqm_ablation_novicreg
-split_config:
-  N_folds: null
-  N_repeats: null
-  shuffle: true
-  strategy: single
-  train_val_ratios:
-  - 0.98
-  - 0.02
-total_steps: null
 training_directory: null
 training_name: pcqm_dim_32
 vicreg:

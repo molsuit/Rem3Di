@@ -11,7 +11,7 @@ looser neighbourhood than the pretrain pool.
 Usage::
 
     uv run python scripts/dataset_creation/calibrate_bitbirch_threshold.py \\
-        --config configs/dataset_creation/dataset_comparison_pcqm100k.yaml
+        --config configs/dataset_creation/dataset_comparison_dev.yaml
 """
 
 from __future__ import annotations
@@ -21,12 +21,13 @@ import logging
 from pathlib import Path
 
 import numpy as np
-import pydantic_yaml as pyd_yaml
 
-from remedi.configuration.dataset_comparison_config import (
+from remedi_data.logging_setup import setup_logging
+from remedi_data.yaml_io import read_model
+from remedi_eval.dataset_analysis.comparison import DatasetComparison
+from remedi_eval.dataset_analysis.config import (
     DatasetComparisonConfig,
 )
-from remedi.data_handling.dataset_comparison import DatasetComparison
 
 DEFAULT_FACTORS: tuple[float, ...] = (1.0, 2.0, 3.0, 4.0, 5.0)
 
@@ -55,21 +56,18 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(message)s",
-    )
+    setup_logging()
 
-    config = pyd_yaml.parse_yaml_file_as(DatasetComparisonConfig, file=args.config)
-    n_features = config.bitbirch.n_features
+    config = read_model(args.config, DatasetComparisonConfig)
+    n_features = config.bitbirch.fingerprint_size
     comparison = DatasetComparison(config)
     comparison.load_datasets()
-    union = comparison._build_union()
+    union = comparison.union_fingerprints()
 
     print("\nPer-dataset iSIM:")
     print("-" * 72)
     print(f"  {'name':<24}{'role':<10}{'n_fp':>8}  {'mean iSIM':>10}  {'std':>10}")
-    for ld in comparison._loaded:
+    for ld in comparison.loaded_datasets:
         if ld.fps_packed.shape[0] < 2:
             print(
                 f"  {ld.entry.name:<24}{ld.entry.role:<10}"

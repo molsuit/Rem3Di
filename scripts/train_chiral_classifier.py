@@ -10,15 +10,17 @@ axial/helical/planar imbalance).
 The architecture is the *unified* ``kind: regression`` config whose single head
 carries ``n_classes`` — that and ``mace_config`` (which switches the preprocessor
 to on-the-fly MACE) are the only things that make it a classifier. The
-train/valid split is the **stored stratified split** materialized into the zarr
-by ``build_chiral_cat.py`` (``split_config`` in the training yaml is not used for
-this task); the test fold is held out for the eval framework
-(``chiral_report`` / ``benchmark_panel``).
+train/valid split is the dataset's ``default_split`` column of ``table.parquet``
+(the stored stratified split; ``split_config`` in the training yaml is not used
+for this task), and the labels are its multiclass label column, both read
+through :func:`remedi_eval.protocol.load_benchmark`; the test fold is held out
+for the eval framework's ``benchmark_panel``, whose multiclass cells carry the
+per-class report.
 
-Best-by-balanced-accuracy checkpoints are written in the REM3DI layout
-(``encoder.pth`` / ``atomic_preprocessor.pth`` / ``geometric_preprocessor.pth``)
-so the trained model drops straight into the eval framework as a ``remedi``
-descriptor, plus ``classification_head.pth`` for reuse.
+Best-by-balanced-accuracy checkpoints are written in the checkpoint layout
+(:mod:`remedi.model.checkpoint`: encoder, preprocessors and the classification
+head) so the trained model drops straight into the eval framework as a
+``remedi`` descriptor.
 
 Run with:
     uv run python scripts/train_chiral_classifier.py \\
@@ -29,11 +31,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import pydantic_yaml as pyaml
 import torch
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import Subset
@@ -42,25 +42,26 @@ from remedi.configuration.architecture_config import (
     ArchitectureConfig,
     RegressionArchitectureConfig,
 )
-from remedi.configuration.training_config import TrainingConfig
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset.tasks import Split
-from remedi.data_handling.dataset.training_dataset import (
+from remedi.configuration.training_config import ClassifierTrainingConfig
+from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
+from remedi.training.data.sample import yield_molecules_supervised_collate_fn
+from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
 )
-from remedi.data_handling.sample import yield_molecules_supervised_collate_fn
-from remedi.evaluation.benchmark.metrics import (
+from remedi.training.telemetry import TrainingTelemetry
+from remedi_data.logging_setup import setup_logging
+from remedi_data.yaml_io import read_model, write_model
+from remedi_eval.benchmark.losses import (
+    FocalLoss,
+    inverse_frequency_alpha,
+)
+from remedi_eval.benchmark.metrics import (
     balanced_accuracy,
     macro_auroc_ovr,
     macro_f1,
 )
-from remedi.training.classification_training import (
-    FocalLoss,
-    inverse_frequency_alpha,
-)
-from remedi.training.data.samplers import lengths_from_ptr
-from remedi.training.telemetry import TrainingTelemetry
+from remedi_eval.protocol import load_benchmark
 
 logger = logging.getLogger("remedi.chiral")
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -81,19 +82,6 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def _stored_split_indices(dataset: MoleculeDataset) -> tuple[np.ndarray, np.ndarray]:
-    """Train / valid index arrays from the materialized stratified split."""
-    if dataset.split is None:
-        raise ValueError(
-            "Dataset has no `split` column. Build it with build_chiral_cat.py so "
-            "the stratified split is materialized."
-        )
-    codes = np.asarray(dataset.split[:], dtype=np.uint8)
-    train_idx = np.nonzero(codes == Split.train.value)[0]
-    val_idx = np.nonzero(codes == Split.valid.value)[0]
-    return train_idx, val_idx
-
-
 def _trainable_parameters(model) -> list[torch.nn.Parameter]:
     """Encoder + heads + pseudoscalar/geometric preprocessors. Excludes the
     frozen MACE foundation model living inside the preprocessor."""
@@ -103,35 +91,6 @@ def _trainable_parameters(model) -> list[torch.nn.Parameter]:
         + list(model.preprocessor.atomic_preprocessor.parameters())
         + list(model.preprocessor.geometric_preprocessor.parameters())
     )
-
-
-def _resolve_output_dir(training_config: TrainingConfig) -> Path:
-    """The explicit ``training_directory`` or a fresh timestamped run dir under
-    ``output_base`` (mirrors the pretraining run layout)."""
-    out_base = training_config.training_directory
-    if out_base is None:
-        base = training_config.output_base
-        base.mkdir(parents=True, exist_ok=True)
-        idx = len(list(base.glob("*/")))
-        stamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        out_base = base / f"{idx}-{stamp}-{training_config.training_name}"
-    out_base.mkdir(parents=True, exist_ok=True)
-    return out_base
-
-
-def _save_checkpoint(model, out_base: Path) -> None:
-    """Write the best model in the REM3DI layout (so it loads as a ``remedi``
-    descriptor in the eval framework) plus the classification head."""
-    torch.save(model.encoder.state_dict(), out_base / "encoder.pth")
-    torch.save(
-        model.preprocessor.atomic_preprocessor.state_dict(),
-        out_base / "atomic_preprocessor.pth",
-    )
-    torch.save(
-        model.preprocessor.geometric_preprocessor.state_dict(),
-        out_base / "geometric_preprocessor.pth",
-    )
-    torch.save(model.multitask_heads.state_dict(), out_base / "classification_head.pth")
 
 
 @torch.no_grad()
@@ -156,21 +115,18 @@ def _evaluate(model, loader, n_classes: int, max_batches: int | None):
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-    )
+    setup_logging()
     args = parse_args()
     global device
     if args.device is not None:
         device = args.device
-    torch.manual_seed(0)
-    np.random.seed(0)
-
-    training_config = pyaml.parse_yaml_file_as(TrainingConfig, args.training_config)
+    training_config = read_model(args.training_config, ClassifierTrainingConfig)
+    torch.manual_seed(training_config.seed)
+    np.random.seed(training_config.seed)
     if args.max_epochs is not None:
         training_config.epochs = args.max_epochs
-    architecture_config = pyaml.parse_yaml_file_as(
-        ArchitectureConfig, training_config.model_config_path
+    architecture_config = read_model(
+        training_config.model_config_path, ArchitectureConfig
     )
     if not isinstance(architecture_config, RegressionArchitectureConfig):
         raise ValueError(
@@ -184,9 +140,11 @@ def main() -> None:
     n_classes = int(head_cfgs[0].n_classes)
 
     dataset_path = args.dataset_path or training_config.dataset_path
-    full_dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
-    labels = np.asarray(full_dataset.targets_system[:, 0]).astype(np.int64)
-    train_idx, val_idx = _stored_split_indices(full_dataset)
+    benchmark = load_benchmark(dataset_path)
+    full_dataset = benchmark.dataset
+    labels = benchmark.class_indices()
+    partition = benchmark.partition()
+    train_idx, val_idx = partition.train, partition.valid
     logger.info(
         "stored split: train=%d valid=%d | train class counts=%s",
         len(train_idx),
@@ -194,24 +152,24 @@ def main() -> None:
         np.bincount(labels[train_idx], minlength=n_classes).tolist(),
     )
 
-    ds = TrainingMoleculeDataset(
-        dataset_path, get_item=make_supervised_getitem(labels), in_memory=True
-    )
-    all_lengths = lengths_from_ptr(np.asarray(full_dataset.ptr[:]))
+    ds = TrainingMoleculeDataset(dataset_path, get_item=make_supervised_getitem(labels))
+    all_lengths = full_dataset.structures.atom_counts()
     train_loader = training_config.dataloader.build(
         Subset(ds, train_idx),
         lengths=all_lengths[train_idx],
         collate_fn=yield_molecules_supervised_collate_fn,
         shuffle=True,
+        seed=training_config.seed,
     )
     val_loader = training_config.dataloader.build(
         Subset(ds, val_idx),
         lengths=all_lengths[val_idx],
         collate_fn=yield_molecules_supervised_collate_fn,
         shuffle=False,
+        seed=training_config.seed,
     )
 
-    out_base = _resolve_output_dir(training_config)
+    out_base = training_config.create_run_directory()
     logger.info("training dir: %s", out_base)
 
     model = architecture_config.build()
@@ -242,9 +200,7 @@ def main() -> None:
         total_steps=training_config.epochs * max(1, len(train_loader)),
     )
 
-    pyaml.to_yaml_file(
-        out_base / "post_training_architecture_config.yaml", architecture_config
-    )
+    write_model(out_base / ARCHITECTURE_FILENAME, architecture_config)
 
     best_score = -np.inf
     with TrainingTelemetry(
@@ -270,10 +226,7 @@ def main() -> None:
                 loss = criterion(logits, targets)
                 optimizer.zero_grad()
                 loss.backward()
-                if training_config.max_grad_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(
-                        params, training_config.max_grad_norm
-                    )
+                torch.nn.utils.clip_grad_norm_(params, training_config.max_grad_norm)
                 optimizer.step()
                 scheduler.step()
                 running += float(loss.detach()) * targets.numel()
@@ -288,7 +241,7 @@ def main() -> None:
                     "lr": scheduler.get_last_lr()[0],
                 }
             )
-            telemetry.log_metrics(metrics)
+            telemetry.log_epoch_metrics(metrics)
             logger.info(
                 "epoch %d: train_focal=%.4f val_bal_acc=%.4f val_macro_f1=%.4f "
                 "val_macro_auroc=%.4f",
@@ -302,7 +255,7 @@ def main() -> None:
             score = metrics["val_balanced_accuracy"]
             if score > best_score:
                 best_score = score
-                _save_checkpoint(model, out_base)
+                save_checkpoint(model, out_base)
                 logger.info(
                     "  new best val balanced accuracy %.4f -> checkpointed", score
                 )

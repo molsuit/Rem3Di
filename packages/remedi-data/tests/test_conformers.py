@@ -1,0 +1,111 @@
+"""Conformer embedding: ``embed_one_smiles``, its timing records, and ``embed_many``.
+
+Writing the timing records is exercised by the build tests in
+``test_dataset_build.py``.
+"""
+
+from __future__ import annotations
+
+import multiprocessing
+import os
+
+import numpy as np
+import pytest
+
+from remedi_data.chemistry import conformers as conformers_module
+from remedi_data.chemistry.conformers import (
+    ConformerEmbeddingConfig,
+    EmbedResult,
+    embed_many,
+    embed_one_smiles,
+)
+
+#: The SMILES the crashing fake below kills its worker on.
+CRASHING_SMILES = "CCCCCCO"
+REAL_EMBED_ONE_SMILES = embed_one_smiles
+
+
+def test_embed_many_in_process_records_a_timing_for_every_key() -> None:
+    smiles_by_key = {"ethanol": "CCO", "bad": "not_a_real_smiles"}
+
+    results = dict(embed_many(smiles_by_key, ConformerEmbeddingConfig(), n_workers=1))
+
+    assert set(results) == set(smiles_by_key)
+    ethanol = results["ethanol"]
+    assert ethanol.succeeded and ethanol.timing.status == "ok"
+    assert ethanol.positions is not None and ethanol.atomic_numbers is not None
+    assert ethanol.positions.shape == (1, ethanol.atomic_numbers.shape[0], 3)
+    assert ethanol.positions.dtype == np.float64
+    assert ethanol.timing.n_confs_emitted == ethanol.timing.n_confs_requested == 1
+    assert ethanol.timing.n_atoms == 9
+    assert ethanol.timing.error_msg is None
+
+    bad = results["bad"]
+    assert bad.timing.status == "value_error"
+    assert bad.positions is None and bad.atomic_numbers is None
+    assert bad.timing.n_confs_emitted == 0
+    assert bad.timing.error_msg is not None
+    # parse failure happens before any phase runs
+    assert bad.timing.t_embed_s == bad.timing.t_mmff_s == 0.0
+
+
+def kill_the_worker_on_one_molecule(
+    isomeric_smiles: str, config: ConformerEmbeddingConfig
+) -> EmbedResult:
+    """Stand-in for a segfault inside RDKit: the worker process just dies."""
+    if isomeric_smiles == CRASHING_SMILES:
+        os._exit(1)
+    return REAL_EMBED_ONE_SMILES(isomeric_smiles, config)
+
+
+@pytest.mark.skipif(
+    multiprocessing.get_start_method() != "fork",
+    reason="the forked workers must inherit the monkeypatch; the default start method "
+    "is not fork here (Python >= 3.14 defaults to forkserver; the workspace pins 3.12)",
+)
+def test_embed_many_survives_a_worker_that_dies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One molecule killing its worker must not lose the others (open thread 5).
+
+    The pool bisects the unfinished molecules until the crashing one is alone;
+    every other molecule comes back embedded, as it would in-process. Relies on
+    the fork start method, so the forked workers inherit the patch.
+    """
+    monkeypatch.setattr(
+        conformers_module, "embed_one_smiles", kill_the_worker_on_one_molecule
+    )
+    smiles = ["CCO", "CCN", CRASHING_SMILES, "CCC", "CC=O", "CCCl"]
+    smiles_by_key = dict(enumerate(smiles))
+
+    results = dict(embed_many(smiles_by_key, ConformerEmbeddingConfig(), n_workers=2))
+
+    assert set(results) == set(smiles_by_key)
+    crashed = smiles.index(CRASHING_SMILES)
+    assert results[crashed].timing.status == "worker_crashed"
+    assert all(result.succeeded for key, result in results.items() if key != crashed)
+
+
+@pytest.mark.parametrize("smiles", ["C[Se]C", "F[S](F)(F)(F)(F)F", "C[I+]C"])
+def test_a_molecule_without_mmff_parameters_keeps_a_truthful_etkdg_origin(
+    smiles: str,
+) -> None:
+    """MMFF94 has no parameters for these; RDKit reports ``(-1, -1.0)`` per conformer."""
+    result = embed_one_smiles(smiles, ConformerEmbeddingConfig(n_conformers=2))
+
+    assert result.succeeded
+    assert result.timing.mmff_outcomes == ["no_parameters", "no_parameters"]
+    assert result.geometry_origins == ["etkdg", "etkdg"]
+
+
+def test_mmff_convergence_is_recorded_per_conformer() -> None:
+    converged = embed_one_smiles("CCO", ConformerEmbeddingConfig(max_mmff_steps=10_000))
+    assert converged.timing.mmff_outcomes == ["converged"]
+    assert converged.geometry_origins == ["etkdg_mmff"]
+
+    capped = embed_one_smiles(
+        "CCCCCCCCCO", ConformerEmbeddingConfig(n_conformers=2, max_mmff_steps=1)
+    )
+    assert capped.succeeded
+    assert capped.timing.mmff_outcomes == ["not_converged", "not_converged"]
+    assert capped.geometry_origins == ["etkdg_mmff", "etkdg_mmff"]

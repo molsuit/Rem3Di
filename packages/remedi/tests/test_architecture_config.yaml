@@ -1,0 +1,36 @@
+kind: regression
+embedding_preprocess_config:
+  mace_per_layer_irreps:
+  - 128x0e+128x1o
+  - 128x0e
+  pseudoscalar_dimension: 0
+  chiral_embedding_dimension: 16
+  pseudoscalars: false
+encoder_config:
+  N_layers: 5
+  attention_layer_config:
+    dim_feedforward: 1024
+    dropout: 0.3
+    num_heads: 8
+positional_encoding_config:
+  N_radial_basis_functions: 16
+  d_projection: 64
+  distance_cutoff: 32.0
+global_aggregator_config:
+  aggregator_config:
+    kind: mean
+regression_head_config:
+- activation: silu
+  head_type: fully_connected
+  hidden_dimensions:
+  - 512
+  - 256
+  - 128
+  task_name: pIC50 (MERS-CoV Mpro)
+- activation: silu
+  head_type: fully_connected
+  hidden_dimensions:
+  - 512
+  - 256
+  - 128
+  task_name: pIC50 (SARS-CoV-2 Mpro)

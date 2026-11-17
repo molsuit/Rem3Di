@@ -11,13 +11,13 @@ import argparse
 import logging
 from pathlib import Path
 
-import pydantic_yaml as pyd_yaml
-
-from remedi.configuration.dataset_analysis_config import (
+from remedi_data.dataset import Dataset
+from remedi_data.logging_setup import setup_logging
+from remedi_data.yaml_io import read_model
+from remedi_eval.dataset_analysis.analysis import MoleculeDatasetAnalysis
+from remedi_eval.dataset_analysis.config import (
     MoleculeDatasetAnalysisConfig,
 )
-from remedi.data_handling.dataset.molecule_dataset import MoleculeDataset
-from remedi.data_handling.dataset_analysis import MoleculeDatasetAnalysis
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,20 +43,18 @@ def parse_args() -> argparse.Namespace:
 def load_config(path: Path | None) -> MoleculeDatasetAnalysisConfig:
     if path is None:
         return MoleculeDatasetAnalysisConfig()
-    return pyd_yaml.parse_yaml_file_as(MoleculeDatasetAnalysisConfig, file=path)
+    return read_model(path, MoleculeDatasetAnalysisConfig)
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
-    )
+    setup_logging()
     args = parse_args()
 
     config = load_config(args.config)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     logging.info("Opening dataset at %s", args.dataset_dir)
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(args.dataset_dir)
+    dataset = Dataset.open(args.dataset_dir)
 
     analysis = MoleculeDatasetAnalysis(dataset, config=config)
     summary = analysis.run()

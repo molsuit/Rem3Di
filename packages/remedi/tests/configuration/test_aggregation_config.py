@@ -1,0 +1,119 @@
+import pytest
+import torch
+from pydantic import TypeAdapter, ValidationError
+
+from remedi.configuration.architecture_config import (
+    AttentionAggregatorConfig,
+    GlobalAggregatorConfig,
+    MeanAggregatorConfig,
+    PMAAggregatorConfig,
+)
+from remedi.model.pooling import AttnPool
+
+
+def test_attnpool_bad_divisibility():
+    with pytest.raises(AssertionError):
+        AttnPool(d_in=10, n_heads=4)  # 10 % 4 => assertion
+
+
+def test_attnpool_projects_to_d_out_when_different():
+    pool = AttnPool(d_in=1024, d_out=320, n_heads=8, d_hidden=64)
+    x = torch.randn(2, 5, 1024)
+    pad_mask = torch.zeros(2, 5, dtype=torch.bool)
+    out = pool(x, pad_mask)
+    # AttnPool returns a length-1 descriptor sequence (B, 1, d_out).
+    assert out.shape == (2, 1, 320)
+
+
+def test_attnpool_identity_when_d_in_equals_d_out():
+    pool = AttnPool(d_in=128, d_out=128, n_heads=8, d_hidden=64)
+    assert isinstance(pool.out_proj, torch.nn.Identity)
+
+
+def test_mean_cfg_roundtrip():
+    cfg = MeanAggregatorConfig()
+    assert cfg.kind == "mean"
+    assert '"kind":"mean"' in cfg.model_dump_json()
+    assert MeanAggregatorConfig.model_validate_json(cfg.model_dump_json()) == cfg
+
+
+def test_mean_cfg_build_honors_output_dim():
+    # Regression for the `agg_mean` ablation crash: build() must produce a
+    # module that emits `output_dim` (64), not `input_dim` (256), so the
+    # decoder cross-attention (wired for output_dim) matches.
+    pool = MeanAggregatorConfig().build(input_dim=256, output_dim=64)
+    x = torch.randn(2, 5, 256)
+    mask = torch.zeros(2, 5, dtype=torch.bool)
+    out = pool(x, mask)
+    assert out.shape == (2, 1, 64)
+
+
+def test_attention_cfg_success():
+    cfg = AttentionAggregatorConfig(num_heads=8, head_dim=16)
+    assert cfg.num_heads == 8
+    assert '"kind":"attention"' in cfg.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "aggregator_config",
+    [
+        AttentionAggregatorConfig(num_heads=4, head_dim=8),
+        PMAAggregatorConfig(num_heads=4, head_dim=8, num_seeds=2),
+    ],
+)
+def test_head_dim_is_per_head(aggregator_config):
+    # Regression: head_dim meant the total key width for the attention
+    # aggregator but the per-head width for PMA.
+    pool = aggregator_config.build(input_dim=64, output_dim=32)
+    key_projection = pool.key_proj if hasattr(pool, "key_proj") else pool.W_K
+    assert key_projection.out_features == 4 * 8
+
+
+def test_attention_head_dim_defaults_to_input_split_over_heads():
+    pool = AttentionAggregatorConfig(num_heads=4).build(input_dim=64, output_dim=32)
+    assert pool.key_proj.out_features == 64
+
+
+def test_attention_cfg_missing_fields():
+    with pytest.raises(ValidationError):
+        AttentionAggregatorConfig()
+
+
+adapter = TypeAdapter(GlobalAggregatorConfig)
+
+
+@pytest.mark.parametrize(
+    "payload, expected_cls",
+    [
+        (
+            {
+                "aggregator_config": {"kind": "mean"},
+                "output_dim": 16,
+            },
+            MeanAggregatorConfig,
+        ),
+        (
+            {
+                "aggregator_config": {
+                    "kind": "attention",
+                    "num_heads": 4,
+                    "head_dim": 16,
+                },
+                "output_dim": 16,
+            },
+            AttentionAggregatorConfig,
+        ),
+    ],
+)
+def test_global_dispatch(payload, expected_cls):
+    cfg = adapter.validate_python(payload)
+    assert isinstance(cfg.aggregator_config, expected_cls)
+
+
+def test_global_invalid_discriminant():
+    bad = {
+        "aggregator_config": {"kind": "foo"},
+        "output_dim": 1,
+    }
+    with pytest.raises(ValidationError):
+        adapter.validate_python(bad)

@@ -1,0 +1,57 @@
+# Selections of the pretraining corpora (BENCHMARK_DATA_FORMAT.md §5.2.3).
+# Run: uv run python scripts/dataset_creation/select_structures.py --config <this file>
+# Each selection lands in <dataset>/selections/<name>.{parquet,yaml}. Rerunning keeps
+# selections whose config and dataset are unchanged.
+workers: 32
+
+corpora:
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/pcqm4mv2
+    selections:
+      # Nested scaling subsets: one seed, so 100k ⊂ 300k ⊂ 1M.
+      - name: random_100k
+        steps: [{kind: random_molecules, count: 100000, seed: 0}]
+      - name: random_300k
+        steps: [{kind: random_molecules, count: 300000, seed: 0}]
+      - name: random_1m
+        steps: [{kind: random_molecules, count: 1000000, seed: 0}]
+      # The "excluded" setting: the benchmark pool removed first. Random keys are
+      # per molecule, so these are the subsets above minus benchmark molecules,
+      # topped up from the next molecules in the same order.
+      - name: without_benchmarks
+        description: Every molecule not in the 37-benchmark pool.
+        steps:
+          - &exclude_benchmarks
+            kind: exclude_overlap
+            datasets: [/dais/u/wedigs/descriptors/Rem3Di/benchmark_data/datasets]
+            match_on: nonisomeric_smiles
+      - name: without_benchmarks_random_100k
+        steps: [*exclude_benchmarks, {kind: random_molecules, count: 100000, seed: 0}]
+      - name: without_benchmarks_random_300k
+        steps: [*exclude_benchmarks, {kind: random_molecules, count: 300000, seed: 0}]
+      - name: without_benchmarks_random_1m
+        steps: [*exclude_benchmarks, {kind: random_molecules, count: 1000000, seed: 0}]
+      # Diversity-first nested subsets over the two-level Butina clusters
+      # (configs/dataset_creation/cluster_molecules.yaml), square_root cluster weighting.
+      - name: diverse_100k
+        steps: [{kind: hierarchical_clusters, clusters: ecfp4_butina, count: 100000, seed: 0}]
+      - name: diverse_300k
+        steps: [{kind: hierarchical_clusters, clusters: ecfp4_butina, count: 300000, seed: 0}]
+      - name: diverse_1m
+        steps: [{kind: hierarchical_clusters, clusters: ecfp4_butina, count: 1000000, seed: 0}]
+      - name: without_benchmarks_diverse_100k
+        steps: [*exclude_benchmarks, {kind: hierarchical_clusters, clusters: ecfp4_butina, count: 100000, seed: 0}]
+      - name: without_benchmarks_diverse_300k
+        steps: [*exclude_benchmarks, {kind: hierarchical_clusters, clusters: ecfp4_butina, count: 300000, seed: 0}]
+      - name: without_benchmarks_diverse_1m
+        steps: [*exclude_benchmarks, {kind: hierarchical_clusters, clusters: ecfp4_butina, count: 1000000, seed: 0}]
+
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/geom_drugs
+    selections:
+      # The lowest-energy conformer of every GEOM entry (one entry per summary SMILES).
+      - name: top1
+        steps:
+          - &geom_top1 {kind: conformers_per_molecule, rank_by: conformer_rank, group_by: geom_smiles, count: 1}
+      - name: without_benchmarks
+        steps: [*exclude_benchmarks]
+      - name: without_benchmarks_top1
+        steps: [*exclude_benchmarks, *geom_top1]

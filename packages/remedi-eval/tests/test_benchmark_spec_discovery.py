@@ -1,0 +1,100 @@
+"""Discovering benchmark datasets by the ``dataset.yaml`` beside their structures.
+
+A dataset is self-describing: the evaluation side reads the metrics, the labels
+and the split columns from its ``dataset.yaml`` and never imports a registry.
+This module pins that contract: :func:`discover_benchmarks` must find exactly
+the directories that carry *both* a spec and a ``structures.atp`` *and*
+whose spec declares an evaluation block.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+import yaml
+
+from remedi_data.format import (
+    SPEC_FILENAME,
+    STRUCTURES_FILENAME,
+    DatasetSpec,
+    EvalMetric,
+    EvaluationSpec,
+    LabelColumn,
+    TaskType,
+    read_spec,
+)
+from remedi_eval.benchmark.cells import discover_benchmarks
+from remedi_eval.protocol import evaluation_of
+
+
+def make_spec(dataset_id: str = "esol", *, evaluation: bool = True) -> DatasetSpec:
+    return DatasetSpec(
+        dataset_id=dataset_id,
+        description="A synthetic spec for the discovery tests.",
+        smiles=True,
+        geometry_origin="etkdg_mmff",
+        labels=[LabelColumn(name="measured", task_type=TaskType.regression)],
+        evaluation=(
+            EvaluationSpec(
+                metrics=[EvalMetric.rmse, EvalMetric.mae],
+                split_columns=["split", "split__seed1"],
+                default_split="split",
+                split_group="stereoisomer_id",
+            )
+            if evaluation
+            else None
+        ),
+        source_kind="synthetic",
+    )
+
+
+def write_dataset_dir(
+    root: Path,
+    dataset_id: str,
+    *,
+    with_spec: bool = True,
+    with_structures: bool = True,
+    evaluation: bool = True,
+) -> Path:
+    """A directory that looks like a dataset to discovery, and nothing more."""
+    directory = root / dataset_id
+    directory.mkdir(parents=True)
+    if with_spec:
+        spec = make_spec(dataset_id, evaluation=evaluation)
+        (directory / SPEC_FILENAME).write_text(
+            yaml.safe_dump(spec.model_dump(mode="json", exclude_none=True))
+        )
+    if with_structures:
+        (directory / STRUCTURES_FILENAME).write_bytes(b"")
+    return directory
+
+
+def test_the_evaluation_block_is_read_back_from_a_dataset_directory(
+    tmp_path: Path,
+) -> None:
+    spec = read_spec(write_dataset_dir(tmp_path, "esol"))
+    assert spec == make_spec("esol")
+    evaluation = evaluation_of(spec)
+    assert evaluation.metrics[0] is EvalMetric.rmse
+    assert evaluation.default_split in evaluation.split_columns
+    with pytest.raises(ValueError, match="no evaluation block"):
+        evaluation_of(make_spec("corpus", evaluation=False))
+
+
+def test_discovery_finds_only_benchmarks_sorted(tmp_path: Path) -> None:
+    write_dataset_dir(tmp_path, "zeta")
+    write_dataset_dir(tmp_path, "alpha")
+    # a corpus is a dataset, but not a benchmark
+    write_dataset_dir(tmp_path, "corpus", evaluation=False)
+    write_dataset_dir(tmp_path, "structures_without_spec", with_spec=False)
+    # A bundle has a dataset.yaml but no structures.atp; pointing eval_root
+    # at a bundle_root must therefore find nothing rather than crash on a
+    # directory that holds no structures.
+    write_dataset_dir(tmp_path, "bundle_only", with_structures=False)
+
+    discovered = discover_benchmarks(tmp_path)
+
+    assert [path.name for path, _ in discovered] == ["alpha", "zeta"]
+    assert [spec.dataset_id for _, spec in discovered] == ["alpha", "zeta"]
+    assert discover_benchmarks(tmp_path / "nothing_here") == []

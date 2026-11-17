@@ -1,0 +1,155 @@
+# The ten MoleculeNet bundles this preparer writes (BENCHMARK_DATA_FORMAT.md §5a, §11),
+# from nine files of the DeepChem S3 release.
+#
+# base_url: where `prepare-moleculenet --download` fetches a missing file from.
+# source_files: file name -> pinned sha256; a file that does not match fails the
+#   run. Verified 2026-10-05; equal to the copies in the old
+#   moleculenet_bundle.tar.gz (HIV.csv once line endings are normalised: the S3
+#   copy has "\r\n\n", a blank line after every row, which pandas skips).
+# datasets, in run order:
+#   dataset_id: the bundle directory name.
+#   source_file: a key of source_files.
+#   smiles_column: read by name (tox21's SMILES column is not the first).
+#   source_rows: asserted on read.
+#   task_type: of every label. The metrics follow the MoleculeNet convention:
+#     RMSE for regression, AUROC for classification, macro-AUROC alone for a
+#     multi-label classification dataset.
+#   labels: the bundle label columns in table order; source_column when the
+#     source spells it differently.
+base_url: https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/
+source_files:
+  bace.csv: f3fb9ce90bada3e2bd6148b0df13f8f8145a357bf87df0dd5b391ede974fc737
+  BBBP.csv: d07a38487aeac5cee5508413e468043ef3097451d2a112701c2d60be9ec6b662
+  clintox.csv.gz: 7324a84a180ad9068d3847677c85d58e8432e82b3ae6ac95cf0e98b3a58d9697
+  delaney-processed.csv: 8c06a76f0c6487d29ab0f903e6a7a7139f189ab3c1178f159c8be8964602f189
+  HIV.csv: 9ffa7fe57dc86c342627ee1d5255e937e2ab812393c73c4d16c697022f6e1d22
+  Lipophilicity.csv: aed41590cb30609d51d8e08ad3ff06495a76e80e211358801f596b10da69bacd
+  SAMPL.csv: ab5895d914ee87cb563bd7b9611e869527bba45bec6b014d34dc495a0f9dcb72
+  sider.csv.gz: 4cc7ccb20dded475853c583596e227116c222c6ca7dbb40159bdbe9ee3f099b9
+  tox21.csv.gz: 45d09792492ce049039dd24aa27b07fc79ce20c573187d4d90bcd178c0c0d360
+datasets:
+  - dataset_id: esol
+    source_file: delaney-processed.csv
+    smiles_column: smiles
+    source_rows: 1128
+    task_type: regression
+    property_description: aqueous solubility (ESOL / Delaney, log mol/L)
+    labels:
+      - name: solubility
+        source_column: measured log solubility in mols per litre
+  - dataset_id: freesolv
+    source_file: SAMPL.csv
+    smiles_column: smiles
+    source_rows: 642
+    task_type: regression
+    property_description: experimental hydration free energy in water (FreeSolv, kcal/mol)
+    labels:
+      - name: hydration_free_energy
+        source_column: expt
+  - dataset_id: lipophilicity
+    source_file: Lipophilicity.csv
+    smiles_column: smiles
+    source_rows: 4200
+    task_type: regression
+    property_description: octanol/water distribution coefficient (logD at pH 7.4, AstraZeneca via ChEMBL)
+    labels:
+      - name: lipophilicity
+        source_column: exp
+  - dataset_id: bace_pic50
+    source_file: bace.csv
+    smiles_column: mol
+    source_rows: 1513
+    task_type: regression
+    property_description: BACE-1 inhibition potency (pIC50)
+    labels:
+      - name: bace_pIC50
+        source_column: pIC50
+  - dataset_id: bace
+    source_file: bace.csv
+    smiles_column: mol
+    source_rows: 1513
+    task_type: classification
+    property_description: BACE-1 inhibitor activity class
+    labels:
+      - name: bace_active
+        source_column: Class
+  - dataset_id: bbbp
+    source_file: BBBP.csv
+    smiles_column: smiles
+    source_rows: 2050
+    task_type: classification
+    property_description: blood-brain barrier penetration
+    labels:
+      - name: bbbp_permeable
+        source_column: p_np
+  - dataset_id: hiv
+    source_file: HIV.csv
+    smiles_column: smiles
+    source_rows: 41127
+    task_type: classification
+    property_description: inhibition of HIV replication (DTP AIDS antiviral screen, confirmed active or moderately active)
+    labels:
+      - name: hiv_active
+        source_column: HIV_active
+  - dataset_id: clintox
+    source_file: clintox.csv.gz
+    smiles_column: smiles
+    source_rows: 1484
+    task_type: classification
+    property_description: FDA approval status and clinical-trial toxicity
+    labels:
+      - name: FDA_APPROVED
+      - name: CT_TOX
+  - dataset_id: sider
+    source_file: sider.csv.gz
+    smiles_column: smiles
+    source_rows: 1427
+    task_type: classification
+    property_description: marketed-drug adverse reactions grouped into 27 MedDRA system organ classes
+    labels:
+      - name: Hepatobiliary disorders
+      - name: Metabolism and nutrition disorders
+      - name: Product issues
+      - name: Eye disorders
+      - name: Investigations
+      - name: Musculoskeletal and connective tissue disorders
+      - name: Gastrointestinal disorders
+      - name: Social circumstances
+      - name: Immune system disorders
+      - name: Reproductive system and breast disorders
+      - name: Neoplasms benign, malignant and unspecified (incl cysts and polyps)
+      - name: General disorders and administration site conditions
+      - name: Endocrine disorders
+      - name: Surgical and medical procedures
+      - name: Vascular disorders
+      - name: Blood and lymphatic system disorders
+      - name: Skin and subcutaneous tissue disorders
+      - name: Congenital, familial and genetic disorders
+      - name: Infections and infestations
+      - name: Respiratory, thoracic and mediastinal disorders
+      - name: Psychiatric disorders
+      - name: Renal and urinary disorders
+      - name: Pregnancy, puerperium and perinatal conditions
+      - name: Ear and labyrinth disorders
+      - name: Cardiac disorders
+      - name: Nervous system disorders
+      - name: Injury, poisoning and procedural complications
+  - dataset_id: tox21
+    source_file: tox21.csv.gz
+    smiles_column: smiles
+    source_rows: 7831
+    task_type: classification
+    property_description: activity in the 12 Tox21 2014 challenge nuclear-receptor and stress-response assays
+    labels:
+      - name: NR-AR
+      - name: NR-AR-LBD
+      - name: NR-AhR
+      - name: NR-Aromatase
+      - name: NR-ER
+      - name: NR-ER-LBD
+      - name: NR-PPAR-gamma
+      - name: SR-ARE
+      - name: SR-ATAD5
+      - name: SR-HSE
+      - name: SR-MMP
+      - name: SR-p53

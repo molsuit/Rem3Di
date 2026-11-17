@@ -1,12 +1,11 @@
 """Run a unified evaluation manifest (model x tasks) fault-tolerantly.
 
-One manifest describes one model's full evaluation — a benchmark panel, a
-retrieval panel, etc. Tasks share embeddings / indices via the run's
-:class:`ResourceCache`; artifacts are written incrementally and a failing task
-is recorded in ``status.yaml`` rather than sinking the run.
+One manifest describes one model's full evaluation — currently the benchmark
+panel. Tasks share descriptor matrices through the run's context; artifacts
+are written incrementally and a failing task is recorded in ``status.yaml``
+rather than sinking the run.
 
-This is the single eval entrypoint — it superseded the former separate
-benchmark / retrieval runner scripts.
+This is the single eval entrypoint.
 
 Usage::
 
@@ -19,23 +18,20 @@ import argparse
 import logging
 from pathlib import Path
 
-import pydantic_yaml as pyd_yaml
-
-from remedi.evaluation.framework import EvalManifest, run_manifest
+from remedi_data.logging_setup import setup_logging
+from remedi_data.yaml_io import read_model
+from remedi_eval.framework import EvalManifest, run_manifest
 
 logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    setup_logging()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
 
-    manifest = pyd_yaml.parse_yaml_file_as(EvalManifest, args.config)
+    manifest = read_model(args.config, EvalManifest)
     report = run_manifest(manifest)
     logger.info(
         "eval done: %d/%d task(s) ok -> %s",

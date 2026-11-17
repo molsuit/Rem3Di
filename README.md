@@ -33,14 +33,16 @@ downstream heads, training from scratch, and concepts) are online at
 Install with [uv](https://docs.astral.sh/uv/) (requires Python >=3.12):
 
 ```bash
-uv pip install "remedi[cpu]"    # PyTorch + MACE, CPU descriptors
-uv pip install "remedi[cuda]"   # adds GPU accelerators
+uv pip install remedi                     # PyTorch + MACE, descriptors on CPU or GPU
+uv pip install "remedi[cuda]"             # adds the cuEquivariance GPU kernels
+uv pip install "remedi[telemetry]"        # adds Weights & Biases logging of training runs
+uv pip install "remedi-eval[descriptor-analysis]"  # tmQM chemistry and chemiscope exports
 ```
 
 Or with pip:
 
 ```bash
-pip install "remedi[cpu]"
+pip install remedi
 ```
 
 See the [installation docs](https://molsuit.github.io/Rem3Di/) for extras, GPU builds, and full detail.
@@ -57,50 +59,44 @@ mkdir raw_datasets
 bash scripts/dataset_download/download_geomdrugs.sh ./raw_datasets
 ```
 
-## Generating a MoleculeDataset for Training
-TL;DR: We generate molecular datasets containing molecular structures and their mace descriptors from various sources, examples can be found in ```scripts/dataset_creation```.
+## Generating a Dataset for Training
+TL;DR: a preparer writes each corpus once as a dataset (`scripts/dataset_creation/prepare_structures.py`), subsets of it are selections (`scripts/dataset_creation/select_structures.py`), and a pretraining config names a mixture of datasets and selections (`configs/training/mixture_smoke/` has two examples).
 
 
 ### Dataset Overview
-MoleculeDatasets (```remedi/data_handling/dataset/molecule_dataset.py```) is the object that contains all embedding and structural data for our molecular datasets. The datasets can further contain system wide, molecular labels, or atomwise labels, which can be used for training regression models. Our datasets are backed by zarr arrays(Design motivitation: multithreaded read access from disk, when dataset size exceeds memory limit). As the size of molecules varies, the MoleculeDataset contain pointer values that point to the molecules atom limits.
+A dataset is a directory with four files:
+
+- `dataset.yaml`: the spec (`DatasetSpec`): labels, SMILES columns, evaluation settings.
+- `table.parquet`: one row per structure, in `structure_id` order, with the ids (`structure_id`, `molecule_id`, `stereoisomer_id`), `total_charge`, `multiplicity`, the SMILES, the labels and the split columns.
+- `structures.atp`: the frames, one [atompack](https://github.com/LeMaterial/atompack) record per table row (positions as float32, atomic numbers as uint8). The file is memory-mapped, so a single structure reads in microseconds and data-loader workers share it through the page cache.
+- `provenance.yaml`: how the dataset was made, and its hashes.
+
+`remedi_data.dataset.Dataset` (`packages/remedi-data/remedi_data/dataset/`) opens a dataset directory; `Dataset.read_structures()` returns `Structures`, the in-memory form (flat `positions` and `atomic_numbers` with a pointer `ptr`, plus `total_charge` and `multiplicity` from the table).
 
 ### Dataset Generation
-Dataset generation is implemented batchwise to increase performance, as GPU memory can be fully utilized in this way. The pipeline goes through the following stages.
-
-1. MoleculeGenerators yield batches of smiles or processed ase atoms, in case the molecular structures are available in the datasets. For a new data source, like a new dataset that stores molecular data in its own way, you need to implement a new MoleculeGenerator.
-2. Configurable Orchestrator will execute the pipeline. E.g. perform conformal sampling, relaxation. Lastly, the mace descriptors will be configured
-3. Everything (Embeddings, structures, optional system wide or atom wise regression labels) will be shoved into the right zarr arrays in the MoleculeDataset.
+Every corpus has a preparer under `packages/remedi-data/remedi_data/preparation/structures/sources/`. `scripts/dataset_creation/prepare_structures.py` runs one from a yaml config (one `kind` per source) and writes the dataset directory. SMILES-only benchmarks are prepared as bundles (a table without structures) and turned into datasets by `scripts/dataset_creation/build_datasets.py`, which generates the conformers. MACE descriptors are computed during training, not stored.
 
 ## Running Pretraining
-1. Create a training dir with a training_config.yaml and architecture_config.yaml **or** generate the architecture_config.yaml with the scripts/write_config_file.py script. In the train dir
-2. Run pretrainig via scripts/scripts/run_denoising_pretraining.py --train_dir "dir"
+1. Write a training config whose `data` section names a mixture of datasets and selections, next to an architecture config (examples in `configs/training/mixture_smoke/`).
+2. Submit it to DAIS: `uv run python scripts/submit_job.py <training_config.yaml> --time 06:00:00`. Each config is frozen into its training directory and runs as one `scripts/pretrain.slurm` job on an H200 or B200. To run in the current shell instead: `uv run python scripts/run_online_embedding_denoising_pretraining.py --training_config <training_config.yaml>`.
 
-One note re. training: For training we create new dataset object (class TrainingMoleculeDataset). This contains additionally logic how multiple dataloader workers can simulatounsly retireve data from the same zarr files.
+Training reads structures through `TrainingMoleculeDataset` (`remedi/training/data/training_dataset.py`): each dataloader worker opens its own `StructureFile` on `structures.atp` and reads every sample from disk when it is asked for.
 
 
 ## Using Pretrained Model
 
-
-
 ```python
-import torch
-from remedi.configuration.architecture_config import EncoderOnlyArchitectureConfig
-from remedi.evaluation.evaluation_utils import evaluate_molecular_descriptor_on_dataset
-from remedi.data_handling.dataset.training_dataset import (
-    TrainingMoleculeDataset,
-    pos_emb_getitem,
-)
-ds = TrainingMoleculeDataset(training_config.dataset_path, get_item=pos_emb_getitem)
-model = EncoderOnlyArchitectureConfig.from_directory(model_dir).build()
-model.encoder.load_state_dict(torch.load(f"{model_dir}/encoder.pth"))
-model.preprocessor.atomic_preprocessor.load_state_dict(
-    torch.load(f"{model_dir}/atomic_preprocessor.pth")
-)
-model.preprocessor.geometric_preprocessor.load_state_dict(
-    torch.load(f"{model_dir}/geometric_preprocessor.pth")
-)
-remedi_descriptors = evaluate_molecular_descriptor_on_dataset(model, ds)
+from pathlib import Path
+
+from remedi.embedding import RemediConfig
+from remedi_data.dataset import Dataset
+
+calculator = RemediConfig(name="my_model", model_dir=Path(model_dir)).build()
+dataset = Dataset.open(dataset_path)
+descriptors = calculator.calculate(dataset)  # (structures, descriptor length)
 ```
+
+To score a checkpoint on the benchmark panel or run the descriptor-space analyses (`configs/evaluation/descriptor_analysis/`), use `scripts/evaluation/embed_and_evaluate.py`.
 
 ## Citation
 

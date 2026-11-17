@@ -1,0 +1,196 @@
+"""Framework runner: fault tolerance, shared resources, decoupled plotting.
+
+CPU-only — ECFP descriptors over benchmark datasets written by the real
+``write_dataset``, so the whole framework (manifest -> runner -> tasks ->
+artifacts -> status) is exercised without a GPU or a trained model.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from remedi_data.dataset import Dataset
+from remedi_data.format import EvalMetric, LabelColumn, TaskType
+from remedi_data.runs.results import TableResult
+from remedi_data.yaml_io import read_model
+from remedi_eval.benchmark.learners import LinearLearner
+from remedi_eval.descriptors import EcfpConfig
+from remedi_eval.framework import (
+    BenchmarkPanelConfig,
+    EvalContext,
+    EvalManifest,
+    render,
+    run_manifest,
+)
+from remedi_eval.framework.runner import RunReport
+from testing import ACHIRAL_TEN_SMILES, write_small_dataset
+
+_N_ROWS = len(ACHIRAL_TEN_SMILES)
+
+
+def _build_reg_dataset(tmp_path: Path, dataset_id: str, targets: np.ndarray) -> Path:
+    """One regression dataset at ``tmp_path/datasets/<dataset_id>``."""
+    return write_small_dataset(
+        tmp_path / "datasets",
+        dataset_id=dataset_id,
+        labels=[LabelColumn(name="y", task_type=TaskType.regression)],
+        metrics=[EvalMetric.rmse],
+        targets=targets,
+    )
+
+
+def _manifest(tmp_path: Path) -> EvalManifest:
+    eval_root = tmp_path / "datasets"
+    _build_reg_dataset(tmp_path, "toy_a", np.linspace(0, 1, _N_ROWS))
+    _build_reg_dataset(tmp_path, "toy_b", np.linspace(1, 0, _N_ROWS))
+    return EvalManifest(
+        model=EcfpConfig(name="ecfp_256", fingerprint_size=256),
+        output_root=tmp_path / "eval_out" / "model_x",
+        tasks=[
+            BenchmarkPanelConfig(
+                eval_root=eval_root, learners=[LinearLearner(ridge_alpha=1.0)]
+            )
+        ],
+    )
+
+
+def _failing_panel_task(tmp_path: Path) -> BenchmarkPanelConfig:
+    """A valid task whose discovery raises (an unsupported ``format_version``)
+    before the panel's own per-dataset fault tolerance can catch anything."""
+    broken_root = tmp_path / "broken_root"
+    broken = broken_root / "broken_dataset"
+    broken.mkdir(parents=True, exist_ok=True)
+    (broken / "dataset.yaml").write_text("format_version: 99\n")
+    (broken / "structures.atp").write_bytes(b"")
+    return BenchmarkPanelConfig(
+        eval_root=broken_root, learners=[LinearLearner(ridge_alpha=1.0)]
+    )
+
+
+def test_keep_going_records_failed_task_but_finishes(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest.tasks.append(_failing_panel_task(tmp_path))
+    report = run_manifest(manifest)  # must not raise
+    out = manifest.output_root
+
+    assert report.n_failed == 1
+    # The healthy task's artifacts still landed, next to the manifest.
+    assert (out / "manifest.yaml").exists()
+    csv = pd.read_csv(out / "benchmark" / "results.csv")
+    assert set(csv.dataset_id) == {"toy_a", "toy_b"}
+
+    # status.yaml round-trips and records both tasks, the healthy one with its
+    # artifact and the broken one with its error.
+    status = read_model(out / "status.yaml", RunReport)
+    healthy, broken = status.statuses
+    assert healthy.ok and healthy.kind == "benchmark_panel"
+    assert any("results.csv" in a["file_name"] for a in healthy.artifacts)
+    assert not broken.ok
+    assert broken.error and broken.traceback
+
+
+def test_fail_fast_raises(tmp_path: Path) -> None:
+    manifest = _manifest(tmp_path)
+    manifest.keep_going = False
+    manifest.tasks.append(_failing_panel_task(tmp_path))
+    with pytest.raises(Exception):  # noqa: B017 - any error from the failing task
+        run_manifest(manifest)
+    # status.yaml was still flushed in the finally block.
+    assert (manifest.output_root / "status.yaml").exists()
+
+
+def test_a_descriptor_matrix_is_loaded_once_per_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keyed on the descriptor's identity and the structures, not the dataset id
+    or the descriptor's name."""
+    dataset_path = _build_reg_dataset(tmp_path, "toy_a", np.linspace(0, 1, _N_ROWS))
+    dataset = Dataset.open(dataset_path)
+    descriptor = EcfpConfig(name="ecfp_256", fingerprint_size=256)
+    loads: list[str] = []
+    original = EcfpConfig.load_matrix
+
+    def counting_load(self, dataset, dataset_id, cache_root):
+        loads.append(self.name)
+        return original(self, dataset, dataset_id, cache_root)
+
+    monkeypatch.setattr(EcfpConfig, "load_matrix", counting_load)
+    ctx = EvalContext(
+        output_root=tmp_path / "out",
+        descriptor_cache_dir=tmp_path / "cache",
+        model=descriptor,
+    )
+    first = ctx.descriptor_matrix(descriptor, dataset, "toy_a")
+    assert ctx.descriptor_matrix(descriptor, dataset, "toy_a") is first
+    assert loads == ["ecfp_256"]
+    ctx.descriptor_matrix(
+        EcfpConfig(name="ecfp_256", fingerprint_size=128), dataset, "toy_a"
+    )
+    assert loads == ["ecfp_256", "ecfp_256"]
+
+
+def test_benchmark_plotter_renders_from_a_loaded_results_table(tmp_path: Path) -> None:
+    """Plotting is decoupled: the registered plotter runs on a reloaded artifact."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import remedi_eval.framework.builtin_plotters  # noqa: F401
+
+    frame = pd.DataFrame(
+        {
+            "dataset_id": ["esol", "esol", "bace", "bace"],
+            "descriptor_name": ["ecfp", "ecfp", "ecfp", "ecfp"],
+            "learner_name": ["linear", "mlp", "linear", "mlp"],
+            "metric_name": ["RMSE", "RMSE", "AUROC", "AUROC"],
+            "metric_value": [1.1, 0.9, 0.82, 0.85],
+        }
+    )
+    TableResult(file_name=Path("results.csv"), frame=frame).serialize_to(tmp_path)
+    loaded = TableResult.load(tmp_path / "results.csv")
+    pd.testing.assert_frame_equal(loaded, frame)
+
+    figures = render("benchmark_results", loaded, tmp_path / "plots")
+    # one figure per metric_name (RMSE, AUROC)
+    assert len(figures) == 2
+    assert (tmp_path / "plots" / "benchmark_RMSE.png").exists()
+    assert (tmp_path / "plots" / "benchmark_AUROC.png").exists()
+
+
+def test_benchmark_plotter_gives_each_descriptor_and_learner_its_own_bar() -> None:
+    """The model is not averaged with the baselines, nor two learners of one
+    kind with each other."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from matplotlib.patches import Rectangle
+
+    from remedi_eval.framework.builtin_plotters import plot_benchmark_results
+
+    frame = pd.DataFrame(
+        {
+            "dataset_id": ["esol"] * 4,
+            "descriptor_name": ["model", "model", "ecfp", "ecfp"],
+            "learner_name": ["ridge_weak", "ridge_strong"] * 2,
+            "metric_name": ["RMSE"] * 4,
+            "metric_value": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+    (figure,) = plot_benchmark_results(frame, Path("unused"))
+    axes = figure.figure.axes[0]
+    legend = axes.get_legend()
+    assert legend is not None
+    labels = sorted(text.get_text() for text in legend.get_texts())
+    assert labels == sorted(
+        f"{descriptor} / {learner}"
+        for descriptor in ("model", "ecfp")
+        for learner in ("ridge_weak", "ridge_strong")
+    )
+    assert "lower is better" in axes.get_xlabel()
+    bar_widths = sorted(
+        patch.get_width() for patch in axes.patches if isinstance(patch, Rectangle)
+    )
+    assert bar_widths == [1.0, 2.0, 3.0, 4.0]

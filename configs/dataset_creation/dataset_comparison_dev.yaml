@@ -1,10 +1,10 @@
-# Dev config for `DatasetComparison`. Compares two small benchmark zarrs so
+# Dev config for `DatasetComparison`. Compares two small benchmark datasets so
 # the full pipeline (BitBIRCH, NN Tanimoto, scaffold overlap) finishes in
 # seconds instead of the hours needed for a full pcqm4m vs benchmarks
 # comparison. The role labels are nominal here -- it's two benchmarks role-
 # tagged so the pretrain/eval code paths exercise. For the real comparison,
-# point one entry at the pcqm4m zarr with role=pretrain and the rest at the
-# benchmark zarrs with role=eval.
+# point one entry at the pcqm4m dataset with role=pretrain and the rest at the
+# benchmark datasets with role=eval.
 
 output_dir: /path/to/datasets/comparisons/dev_freesolv_vs_bace
 
@@ -22,8 +22,8 @@ datasets:
 
 bitbirch:
   enabled: true
-  fingerprint_kind: ecfp4
-  n_features: 2048
+  radius: 2
+  fingerprint_size: 2048
   threshold: 0.65
   branching_factor: 50
   merge_criterion: diameter
@@ -31,21 +31,23 @@ bitbirch:
   umap:
     enabled: true
     sample_size: null
-    n_neighbors: 30
-    min_dist: 0.1
-    metric: jaccard
+    sampling: uniform
+    projection:
+      kind: umap
+      n_neighbors: 30
+      min_dist: 0.1
+      metric: jaccard
+      random_state: 42
     top_clusters_colored: 10
     plot_size: 1200
 
+# Scored on the bitbirch fingerprint above. For the GPU backend:
+#   backend: {kind: nvmolkit, chunk_size: 2048}
 nn_tanimoto:
   enabled: true
-  fingerprint_kind: ecfp4
-  n_features: 2048
-  chunk_size: 256
-  backend: cpu
-  histogram_bins: 40
+  backend:
+    kind: cpu
 
 scaffold_overlap:
   enabled: true
   include_generic: true
-  n_rdkit_workers: 4

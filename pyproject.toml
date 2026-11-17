@@ -1,118 +1,101 @@
-[project]
-name = "remedi"
-version = "0.1.1"
-description = "Smooth, chiral 3D molecular descriptors from atomistic foundation models"
-readme = "README.md"
-requires-python = ">=3.12"
-license = "Apache-2.0"
-license-files = ["LICENSE", "NOTICE"]
-keywords = [
-    "molecular-descriptors",
-    "cheminformatics",
-    "machine-learned-interatomic-potentials",
-    "mace",
-    "equivariant",
-    "chirality",
-]
-authors = [
-    { name = "The Rem3Di Authors" },
-]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Science/Research",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Scientific/Engineering :: Chemistry",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+# Workspace root only: members and the shared tool configuration (ruff, ty,
+# pytest). The packages live under packages/ (see BENCHMARK_DATA_FORMAT.md
+# §13); the benchmark preparers under preparers/. `uv sync --all-packages`
+# installs every member into the shared venv.
+[tool.uv.workspace]
+members = [
+    "packages/remedi-data",
+    "packages/remedi-eval",
+    "packages/remedi",
+    "preparers/tdc",
+    "preparers/moleculenet",
+    "preparers/polaris",
+    "preparers/chiralcat",
+    "preparers/qm9or",
 ]
 
-# The core install is intentionally torch-free and lightweight. The PyTorch /
-# MACE stack lives in the `cpu` and `cuda` extras so users install the build
-# matching their platform (see the docs). `import remedi` works without them.
-dependencies = [
-    "ase>=3.24.0",
-    "rdkit>=2024.9.4",
-    "pydantic",
-    "pydantic_yaml",
-    "zarr>=3.2",
-    "wandb",
-    "umap-learn",
-    "pymatgen>=2026.3.23",
-    "datashader>=0.19.0",
-    "chemiscope>=1.0.3",
-    "PyTDC>=0.3.6",
-    # PolarisOfflineGenerator reads the standardized parquet produced by
-    # scripts/dataset_download/dump_polaris.py; pandas is already pulled
-    # transitively, but the parquet engine is not.
-    "pyarrow",
-]
-
-# ``polaris-lib`` is intentionally NOT listed here: it pins ``zarr<3`` and so
-# cannot share a venv with this project (which requires ``zarr>=3.2`` for the
-# MoleculeDataset store). Polaris ingest runs out-of-venv via
-# ``scripts/dataset_download/dump_polaris.py`` (PEP 723 inline deps); the
-# build pipeline reads its parquet dumps via ``PolarisOfflineGenerator``.
-
-[project.urls]
-Homepage = "https://molsuit.github.io/Rem3Di/"
-Documentation = "https://molsuit.github.io/Rem3Di/"
-Repository = "https://github.com/molsuit/Rem3Di"
-Paper = "https://openreview.net/forum?id=jOmZsvXoK5"
-
-[project.optional-dependencies]
-# PyTorch + MACE stack. `cpu` is enough to compute descriptors on CPU; `cuda`
-# adds GPU accelerators. For a specific CUDA build of torch, install it from the
-# PyTorch index yourself before/with the extra (PyPI ships the default build).
-cpu = [
-    "torch>=2.5.1",
-    "mace-torch>=0.3.16",
-    "torch-sim-atomistic",
-]
-cuda = [
-    "remedi[cpu]",
-    "cuequivariance-torch==0.9.1",
-    "cuequivariance==0.9.1",
-    "cuequivariance-ops-torch-cu12==0.9.1",
-    # torch's cu126 wheels need libcusparseLt.so.0 at `import torch`.
-    "nvidia-cusparselt-cu12",
-    "nvmolkit>=0.5.0",
-]
-eval = [
-    "lightgbm>=4.6.0",
-    "pandas",
-    "scipy",
-    "scikit-learn",
-    "pyyaml",
-    "bblean>=0.10.3",
-    "molfeat"
-]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["remedi"]
+[[tool.uv.index]]
+# CUDA 13.2 build: torch >= 2.15 ships only cu13x wheels, and these carry sm_100 for the B200
+# nodes. The DAIS driver (580, CUDA 13.0) runs them through minor-version compatibility.
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
 
 [tool.ruff]
+# First-party detection for import sorting: the packages are not at the root, and
+# tests/support holds the test helpers (`testing`).
+src = [".", "packages/*", "tests/support"]
+# The root has no [project], so requires-python cannot supply these.
+target-version = "py312"
+# Vulture whitelists are name lists, not importable code.
+extend-exclude = ["tools/vulture/*whitelist*.py"]
 lint.select = ["I", "UP", "F", "E", "W", "C90", "B", "A", "RUF"]
-lint.ignore = ["E501", "B008"]
+# UP042 (str + Enum -> StrEnum) changes str(member), and these enums are stored in
+# configs and yaml; switch deliberately, not as a lint fix.
+lint.ignore = ["E501", "B008", "UP042"]
+
+# Tests live next to their package (packages/<name>/tests); tests/integration
+# holds the workspace-level ones (scripts/, configs/, package layout).
+# importlib mode lets the per-package directories share module and conftest
+# names. Each preparer runs its own suite from its own directory:
+# `cd preparers/<name> && uv run --no-sync pytest`.
+[tool.pytest.ini_options]
+testpaths = [
+    "packages/remedi-data/tests",
+    "packages/remedi-eval/tests",
+    "packages/remedi/tests",
+    "tests/integration",
+]
+addopts = ["--import-mode=importlib"]
+# tests/support holds the helpers every test directory imports (`from testing import ...`):
+# synthetic bundles and datasets. It is not part of any package.
+pythonpath = ["tests/support"]
 
 [dependency-groups]
 dev = [
+    # Declared vs imported dependencies of every member (tests/integration/test_declared_dependencies.py).
+    "deptry",
     "pre-commit>=4.5.1",
     "pytest",
+    "pytest-cov",
     "ty>=0.0.32",
-    "ruff"
+    "ruff",
+    "vulture>=2.16",
+    # Only for scripts/dataset_creation/convert_zarr_to_atompack.py, which reads the old zarr
+    # datasets; goes once every dataset is converted.
+    "zarr>=3.2",
 ]
-[[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
-explicit = true
 
-# Local-dev only (uv): these are stripped from the built package's metadata.
-[tool.uv.sources]
-torch-sim-atomistic = { git = "https://github.com/TorchSim/torch-sim.git", branch = "main"}
-torch = { index = "pytorch-cu126" }
+[tool.ty.src]
+exclude = ["tools/vulture/*whitelist*.py"]
 
 [tool.ty.environment]
-root = ["./remedi"]
+python-version = "3.12"
+# preparers/chiralcat/tests before ".", so its `import conftest` does not resolve to the root conftest.
+root = ["packages/remedi-data", "packages/remedi-eval", "packages/remedi", "preparers/chiralcat/tests", "tests/support", "."]
+
+# Dead-code analysis, run by pre-commit through tools/vulture/run_vulture.py,
+# which first regenerates the pydantic-field / enum-member whitelist.
+# whitelist_reviewed.py lists everything kept on purpose, each with its reason.
+[tool.vulture]
+paths = [
+    "packages",
+    "preparers",
+    "scripts",
+    "tests",
+    "tools/vulture/generated_whitelist.py",
+    "tools/vulture/whitelist_reviewed.py",
+]
+exclude = ["preparers/qm9or/generators/"]
+ignore_decorators = [
+    "@model_validator",
+    "@field_validator",
+    "@computed_field",
+    "@field_serializer",
+    "@model_serializer",
+    "@register_plotter",
+    "@pytest.fixture",
+    "@property",
+    "@cached_property",
+]
+min_confidence = 60
