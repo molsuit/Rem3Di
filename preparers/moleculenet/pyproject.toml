@@ -7,7 +7,7 @@ dependencies = [
     "remedi-data",
     "pandas",
     "pydantic",
-    "pyyaml",
+    "rdkit>=2024.9.4",
 ]
 
 [project.scripts]

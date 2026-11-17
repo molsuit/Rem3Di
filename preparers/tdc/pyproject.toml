@@ -7,7 +7,7 @@ dependencies = [
     "remedi-data",
     "pandas",
     "pydantic",
-    "pyyaml",
+    "rdkit>=2024.9.4",
     # Pinned: the frozen split__seed{1..5} columns are PyTDC's own
     # get_train_valid_split output, recorded in every bundle's provenance.
     "PyTDC==0.3.6",

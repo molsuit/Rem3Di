@@ -52,3 +52,21 @@ def test_epoch_metrics_are_on_disk_after_every_epoch(tmp_path: Path) -> None:
     telemetry.log_epoch_metrics({"epoch": 0, "val_balanced_accuracy": 0.5})
     history = yaml.safe_load((tmp_path / "training_losses.yaml").read_text())
     assert history == [{"epoch": 0, "val_balanced_accuracy": 0.5}]
+
+
+def test_wandb_logging_without_the_telemetry_extra_names_it(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import sys
+
+    import pytest
+
+    monkeypatch.setitem(sys.modules, "wandb", None)
+    with pytest.raises(ImportError, match=r"remedi\[telemetry\]"):
+        TrainingTelemetry(
+            wandb_active=True,
+            run_name="run",
+            group_name="group",
+            out_dir=tmp_path,
+            config={},
+        )

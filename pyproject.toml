@@ -49,6 +49,8 @@ addopts = ["--import-mode=importlib"]
 
 [dependency-groups]
 dev = [
+    # Declared vs imported dependencies of every member (tests/integration/test_declared_dependencies.py).
+    "deptry",
     "pre-commit>=4.5.1",
     "pytest",
     "pytest-cov",

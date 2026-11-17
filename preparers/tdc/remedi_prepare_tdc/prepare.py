@@ -158,16 +158,10 @@ def patch_tdc_print_sys() -> None:
     skip-and-continue runs.
     """
     import tdc.utils.split as tdc_split_module
+    from tdc.utils import print_sys
 
     if hasattr(tdc_split_module, "print_sys"):
         return
-    try:
-        from tdc.utils import print_sys
-    except ImportError:
-
-        def print_sys(message: str, *args: object, **kwargs: object) -> None:
-            logger.warning("tdc skipped: %s", message)
-
     # setattr keeps ty happy — print_sys is intentionally not declared on
     # tdc.utils.split (the bug we're patching).
     setattr(tdc_split_module, "print_sys", print_sys)  # noqa: B010

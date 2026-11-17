@@ -33,14 +33,16 @@ downstream heads, training from scratch, and concepts) are online at
 Install with [uv](https://docs.astral.sh/uv/) (requires Python >=3.12):
 
 ```bash
-uv pip install "remedi[cpu]"    # PyTorch + MACE, CPU descriptors
-uv pip install "remedi[cuda]"   # adds GPU accelerators
+uv pip install remedi                     # PyTorch + MACE, descriptors on CPU or GPU
+uv pip install "remedi[cuda]"             # adds the cuEquivariance GPU kernels
+uv pip install "remedi[telemetry]"        # adds Weights & Biases logging of training runs
+uv pip install "remedi-eval[descriptor-analysis]"  # tmQM chemistry and chemiscope exports
 ```
 
 Or with pip:
 
 ```bash
-pip install "remedi[cpu]"
+pip install remedi
 ```
 
 See the [installation docs](https://molsuit.github.io/Rem3Di/) for extras, GPU builds, and full detail.

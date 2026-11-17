@@ -1,12 +1,33 @@
 import math
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import wandb
 
 from remedi_data.yaml_io import write_yaml
+
+
+def _start_wandb_run(run_name: str, group_name: str, config: Any) -> Any:
+    """A Weights & Biases run (the ``telemetry`` extra).
+
+    Raises:
+        ImportError: naming the extra, if wandb is not installed.
+    """
+    try:
+        import wandb
+    except ImportError as error:
+        raise ImportError(
+            f"wandb_active needs wandb ({error}): pip install 'remedi[telemetry]'"
+        ) from error
+    return wandb.init(
+        project="remedi",
+        entity="remedi",
+        name=run_name,
+        group=group_name,
+        config=config,
+    )
 
 
 class TrainingTelemetry:
@@ -14,7 +35,6 @@ class TrainingTelemetry:
         self, wandb_active: bool, run_name: str, group_name: str, out_dir: Path, config
     ):
         # self.task_names: list[str] = dataset_config.get_task_names()
-        self.wandb_active = wandb_active
         self.out_dir = out_dir
 
         self.loss_data = []
@@ -25,14 +45,10 @@ class TrainingTelemetry:
         self.best_validation_loss = math.inf
         self.best_epoch = True
 
-        if self.wandb_active:
-            self._run = wandb.init(
-                project="remedi",
-                entity="remedi",
-                name=run_name,
-                group=group_name,
-                config=config,
-            )
+        #: The Weights & Biases run, ``None`` when wandb logging is off.
+        self._wandb_run = (
+            _start_wandb_run(run_name, group_name, config) if wandb_active else None
+        )
 
         self.grad_norm_data = []
 
@@ -50,8 +66,8 @@ class TrainingTelemetry:
 
         # self.plot_grad_norm()
 
-        if self.wandb_active:
-            wandb.finish()
+        if self._wandb_run is not None:
+            self._wandb_run.finish()
 
     def zip_task_losses(self, task_losses: torch.Tensor):
         if task_losses is None:
@@ -106,8 +122,7 @@ class TrainingTelemetry:
             f"Epoch {epoch} Training Loss: {avg_train_loss} Validation Loss: {avg_validation_loss}"
         )
 
-        if self.wandb_active:
-            wandb.log(epoch_train_data)
+        self._log_to_wandb(epoch_train_data)
 
     def log_pretraining_epoch(
         self,
@@ -135,16 +150,14 @@ class TrainingTelemetry:
         self.loss_data.append(epoch_data)
         self.dump_loss_history()
 
-        if self.wandb_active:
-            wandb.log(data=epoch_data)
+        self._log_to_wandb(epoch_data)
 
     def log_epoch_metrics(self, metrics: dict[str, float]) -> None:
         """Record one epoch's metrics: written to ``training_losses.yaml`` now
         and logged to wandb."""
         self.loss_data.append(dict(metrics))
         self.dump_loss_history()
-        if self.wandb_active:
-            wandb.log(data=metrics)
+        self._log_to_wandb(metrics)
 
     def log_metrics(self, metrics: dict[str, float]) -> None:
         """Mid-epoch metric flush (e.g. rolling throughput).
@@ -152,8 +165,7 @@ class TrainingTelemetry:
         Auto-steps via wandb's internal counter so it stays monotonic
         alongside epoch-level logs that don't pin step explicitly.
         """
-        if self.wandb_active:
-            wandb.log(data=metrics)
+        self._log_to_wandb(metrics)
 
     def log_probe(self, global_step: int, metrics: dict[str, float]) -> None:
         """Record one linear-probe point: persisted to disk AND logged to wandb.
@@ -165,8 +177,11 @@ class TrainingTelemetry:
         record = {"global_step": int(global_step), **metrics}
         self.probe_data.append(record)
         self.dump_probe_history()
-        if self.wandb_active:
-            wandb.log(data=record)
+        self._log_to_wandb(record)
+
+    def _log_to_wandb(self, data: dict[str, Any]) -> None:
+        if self._wandb_run is not None:
+            self._wandb_run.log(data)
 
     def dump_loss_history(self):
         """Rewrite ``training_losses.yaml``; called after every epoch so a job

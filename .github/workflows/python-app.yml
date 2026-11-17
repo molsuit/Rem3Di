@@ -22,7 +22,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install the workspace (CPU)
-        run: uv sync --locked --all-packages --extra cpu
+        run: uv sync --locked --all-packages --extra descriptor-analysis --extra telemetry
       - name: Lint
         run: |
           uv run --no-sync ruff check .

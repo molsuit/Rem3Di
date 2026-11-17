@@ -5,7 +5,6 @@ description = "Curation pipeline for the ChiralCat 3D chirality-classification d
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.0",
-    "pandas>=2.0",
     "pydantic>=2.4",
     "pyyaml>=6.0",
     "rdkit>=2023.3",

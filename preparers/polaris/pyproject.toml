@@ -5,10 +5,10 @@ description = "Polaris hub parquet dumps -> one bundle per dataset"
 requires-python = ">=3.12"
 dependencies = [
     "remedi-data",
+    "numpy",
     "pandas",
-    "pyarrow",
     "pydantic",
-    "pyyaml",
+    "rdkit>=2024.9.4",
 ]
 
 [project.scripts]
@@ -23,3 +23,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["remedi_prepare_polaris"]
+
+# dump_polaris.py runs in its own PEP 723 environment (polaris-lib pins zarr<3).
+[tool.deptry]
+extend_exclude = ["dump_polaris\\.py"]

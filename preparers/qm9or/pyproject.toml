@@ -8,10 +8,12 @@ dependencies = [
     "numpy",
     "pandas",
     "pydantic",
-    # The isomeric_smiles column is pinned by sha256; it was reproduced with
-    # RDKit 2026.03.5. Another canonicaliser version can change the strings
-    # (the preparer reports that case separately).
-    "rdkit",
+    # The isomeric_smiles column is pinned by sha256; RDKit 2026.03.5, 2026.03.6
+    # and 2026.09.2 all reproduce it (2026-11-17). Another canonicaliser can
+    # change the strings (the preparer reports that case separately), so the
+    # version is exact; it also holds the workspace's RDKit, which canonicalises
+    # every other bundle's SMILES, at the version of the 2026-11-16 lock.
+    "rdkit==2026.3.6",
 ]
 
 [project.scripts]

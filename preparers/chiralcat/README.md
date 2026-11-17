@@ -19,7 +19,7 @@ Class labels follow the paper (Peng et al., *AI Chemistry* 2025):
 This package is a member of the Rem3Di uv workspace. From the Rem3Di root:
 
 ```bash
-uv sync --all-packages --extra cuda --extra eval    # once
+uv sync --all-packages --all-extras    # once
 uv run --no-sync build-chiralcat-dataset
 ```
 

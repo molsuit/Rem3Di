@@ -1,5 +1,6 @@
-"""Morgan fingerprints: RDKit's bits in every layout, and the same bits as the
-libraries the workspace used before (molfeat's ECFP, bblean's ``ecfp4``)."""
+"""Morgan fingerprints: RDKit's bits in every layout, and the same bits as
+bblean's ``ecfp4``/``ecfp6`` (molfeat's ECFP, used before, matched bit for bit
+until it left the workspace)."""
 
 from __future__ import annotations
 
@@ -92,19 +93,6 @@ def test_every_layout_stores_the_same_bits(radius: int) -> None:
     np.testing.assert_array_equal(
         np.unpackbits(packed_words.view(np.uint8), axis=1, bitorder="little"), bits
     )
-
-
-@pytest.mark.parametrize("size", [256, 2048])
-def test_dense_bits_are_molfeats_ecfp(size: int) -> None:
-    """The ECFP descriptor used molfeat's ``FPVecTransformer(kind="ecfp")``
-    before; the bits are identical (molfeat's ecfp is radius-2 Morgan, chirality
-    off). Skipped once molfeat leaves the environment."""
-    fingerprint = pytest.importorskip("molfeat.trans.fp")
-    reference = np.asarray(
-        fingerprint.FPVecTransformer(kind="ecfp", length=size)(VARIED_SMILES)
-    )
-    ours = morgan_fingerprints(VARIED_SMILES, layout="dense", radius=2, size=size)
-    np.testing.assert_array_equal(ours, reference.astype(np.uint8))
 
 
 @pytest.mark.parametrize(("kind", "radius"), [("ecfp4", 2), ("ecfp6", 3)])

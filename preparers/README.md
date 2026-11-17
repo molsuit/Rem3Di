@@ -34,7 +34,7 @@ separately (build-order step 11).
 ## Running
 
 From the repository root, with the venv synced once by
-`uv sync --all-packages --extra cuda --extra eval`:
+`uv sync --all-packages --all-extras`:
 
 ```
 uv run --no-sync prepare-tdc [--only HIA_Hou ...]
