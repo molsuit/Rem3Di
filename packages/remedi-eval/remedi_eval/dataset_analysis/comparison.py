@@ -173,7 +173,9 @@ def _scaffold_of(smiles: str, generic: bool) -> str | None:
 
 
 @dataclass
-class _LoadedDataset:
+class LoadedDataset:
+    """One configured dataset's unique SMILES and their packed fingerprints."""
+
     entry: DatasetEntry
     smiles: list[str]
     fps_packed: np.ndarray  # (n, fingerprint_size // 8), uint8, one row per SMILES
@@ -261,7 +263,9 @@ def _nn_tanimoto_nvmolkit(query_packed: np.ndarray, ref_fps, chunk_size: int):
 
 
 @dataclass
-class _UnionFps:
+class UnionFingerprints:
+    """Every loaded dataset's fingerprints stacked (what BitBIRCH clusters)."""
+
     fps_packed: np.ndarray  # (N, F/8) uint8
     dataset_index: np.ndarray  # (N,) int64, into self._entries
     smiles: list[str]  # length N, kept-aligned
@@ -297,7 +301,8 @@ class DatasetComparison:
         }
         if len(self._name_to_idx) != len(self._entries):
             raise ValueError("DatasetComparisonConfig.datasets must have unique names")
-        self._loaded: list[_LoadedDataset] = []
+        #: Filled by :meth:`load_datasets`, in config order.
+        self.loaded_datasets: list[LoadedDataset] = []
         self._scaffold_cache: dict[bool, dict[str, str | None]] = {}
 
     # ----- Load + fingerprint -----
@@ -325,20 +330,22 @@ class DatasetComparison:
                 entry.role,
                 len(smiles),
             )
-            self._loaded.append(
-                _LoadedDataset(entry=entry, smiles=smiles, fps_packed=fps_packed)
+            self.loaded_datasets.append(
+                LoadedDataset(entry=entry, smiles=smiles, fps_packed=fps_packed)
             )
 
-    def _build_union(self) -> _UnionFps:
+    def union_fingerprints(self) -> UnionFingerprints:
         """Every dataset's fingerprints stacked, capped at ``bitbirch.max_molecules``
         rows by a uniform random subsample of the union."""
-        fps_list = [ld.fps_packed for ld in self._loaded if ld.fps_packed.shape[0] > 0]
+        fps_list = [
+            ld.fps_packed for ld in self.loaded_datasets if ld.fps_packed.shape[0] > 0
+        ]
         if not fps_list:
             raise RuntimeError("No fingerprints produced for any dataset")
         fps = np.vstack(fps_list)
         idx_list: list[np.ndarray] = []
         smiles: list[str] = []
-        for di, ld in enumerate(self._loaded):
+        for di, ld in enumerate(self.loaded_datasets):
             n = ld.fps_packed.shape[0]
             if n == 0:
                 continue
@@ -354,12 +361,14 @@ class DatasetComparison:
             fps = fps[rows]
             dataset_index = dataset_index[rows]
             smiles = [smiles[int(row)] for row in rows]
-        return _UnionFps(fps_packed=fps, dataset_index=dataset_index, smiles=smiles)
+        return UnionFingerprints(
+            fps_packed=fps, dataset_index=dataset_index, smiles=smiles
+        )
 
     # ----- BitBIRCH on the union -----
 
     def run_bitbirch_union(
-        self, union: _UnionFps
+        self, union: UnionFingerprints
     ) -> tuple[np.ndarray, BitBirchSummary]:
         """Run BitBIRCH on the union FP array. Returns (row->cluster_id, summary)."""
         cfg = self.config.bitbirch
@@ -410,7 +419,7 @@ class DatasetComparison:
     ) -> None:
         cmap = plt.colormaps.get_cmap("tab20")
         fig, ax = self._umap_figure()
-        for di, ld in enumerate(self._loaded):
+        for di, ld in enumerate(self.loaded_datasets):
             m = dataset_index == di
             if not np.any(m):
                 continue
@@ -474,7 +483,7 @@ class DatasetComparison:
     # ----- Cluster composition analyses -----
 
     def analyze_clusters(
-        self, union: _UnionFps, row_cluster: np.ndarray
+        self, union: UnionFingerprints, row_cluster: np.ndarray
     ) -> ClusterCompositionSummary | None:
         n = int(row_cluster.shape[0])
         if n == 0:
@@ -605,7 +614,7 @@ class DatasetComparison:
         fig, ax = plt.subplots(figsize=(max(8, 0.5 * top_n), 5))
         bottom = np.zeros(top_n, dtype=np.float64)
         x = np.arange(top_n)
-        for di, ld in enumerate(self._loaded):
+        for di, ld in enumerate(self.loaded_datasets):
             counts = contingency[order, di].astype(np.float64)
             ax.bar(
                 x,
@@ -650,8 +659,10 @@ class DatasetComparison:
         if not cfg.enabled:
             return None
         backend = cfg.backend
-        pretrain_loaded = [ld for ld in self._loaded if ld.entry.role == "pretrain"]
-        eval_loaded = [ld for ld in self._loaded if ld.entry.role == "eval"]
+        pretrain_loaded = [
+            ld for ld in self.loaded_datasets if ld.entry.role == "pretrain"
+        ]
+        eval_loaded = [ld for ld in self.loaded_datasets if ld.entry.role == "eval"]
         if not pretrain_loaded or not eval_loaded:
             log.warning("NN Tanimoto skipped: need >=1 pretrain and >=1 eval dataset")
             return NnTanimotoSummary(backend=backend.kind, n_pretrain_reference=0)
@@ -798,7 +809,7 @@ class DatasetComparison:
         specific_sets: dict[str, set[str]] = {}
         generic_sets: dict[str, set[str]] = {}
         per_dataset: list[ScaffoldOverlapPerDataset] = []
-        for ld in self._loaded:
+        for ld in self.loaded_datasets:
             spec = self._scaffolds(ld.smiles, generic=False)
             specific_sets[ld.entry.name] = {s for s in spec if s is not None}
             generic_set: set[str] | None = None
@@ -834,7 +845,7 @@ class DatasetComparison:
         self, eval_sets: dict[str, set[str]], pretrain_union: set[str]
     ) -> dict[str, float]:
         out: dict[str, float] = {}
-        for ld in self._loaded:
+        for ld in self.loaded_datasets:
             if ld.entry.role != "eval":
                 continue
             es = eval_sets[ld.entry.name]
@@ -860,7 +871,7 @@ class DatasetComparison:
 
         pretrain_union_specific: set[str] = set()
         pretrain_union_generic: set[str] = set()
-        for ld in self._loaded:
+        for ld in self.loaded_datasets:
             if ld.entry.role != "pretrain":
                 continue
             pretrain_union_specific |= specific_sets[ld.entry.name]
@@ -934,8 +945,10 @@ class DatasetComparison:
             self.load_datasets()
 
         with timed("build_union", self._timings):
-            union = self._build_union()
-        n_in_union = np.bincount(union.dataset_index, minlength=len(self._loaded))
+            union = self.union_fingerprints()
+        n_in_union = np.bincount(
+            union.dataset_index, minlength=len(self.loaded_datasets)
+        )
 
         per_dataset_counts = [
             PerDatasetCounts(
@@ -944,7 +957,7 @@ class DatasetComparison:
                 n_smiles_unique=len(ld.smiles),
                 n_in_union=int(n_in_union[dataset_position]),
             )
-            for dataset_position, ld in enumerate(self._loaded)
+            for dataset_position, ld in enumerate(self.loaded_datasets)
         ]
 
         composition = None

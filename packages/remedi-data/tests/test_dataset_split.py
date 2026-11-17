@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from remedi_data.bundle import SPLIT_VALUES
-from remedi_data.dataset.tasks import (
+from remedi_data.dataset.split_codes import (
     SPLIT_CODE_BY_NAME,
     Split,
     split_codes_from_names,

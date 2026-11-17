@@ -47,6 +47,7 @@ from remedi_data.bundle import (
     PreparerSettings,
     SourceLabel,
     SourceRecord,
+    TaskType,
     check_unique,
     merge_source_rows,
     preparer_main,
@@ -64,7 +65,7 @@ from remedi_data.chemistry.stereo_groups import (
     has_or_stereo_group,
     unspecify_relative_stereo,
 )
-from remedi_data.dataset.tasks import Split, TaskType
+from remedi_data.dataset.split_codes import Split
 from remedi_data.yaml_io import read_model
 
 logger = logging.getLogger("preparers.polaris")

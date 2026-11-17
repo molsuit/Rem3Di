@@ -12,8 +12,8 @@ from remedi_data.bundle import (
     EvalMetric,
     EvaluationSpec,
     LabelColumn,
+    TaskType,
 )
-from remedi_data.dataset.tasks import TaskType
 from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.framework.tasks.benchmark import BenchmarkPanelConfig
 

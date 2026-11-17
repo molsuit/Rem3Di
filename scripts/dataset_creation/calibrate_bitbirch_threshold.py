@@ -62,12 +62,12 @@ def main() -> None:
     n_features = config.bitbirch.fingerprint_size
     comparison = DatasetComparison(config)
     comparison.load_datasets()
-    union = comparison._build_union()
+    union = comparison.union_fingerprints()
 
     print("\nPer-dataset iSIM:")
     print("-" * 72)
     print(f"  {'name':<24}{'role':<10}{'n_fp':>8}  {'mean iSIM':>10}  {'std':>10}")
-    for ld in comparison._loaded:
+    for ld in comparison.loaded_datasets:
         if ld.fps_packed.shape[0] < 2:
             print(
                 f"  {ld.entry.name:<24}{ld.entry.role:<10}"

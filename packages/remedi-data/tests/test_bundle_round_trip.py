@@ -22,6 +22,7 @@ from remedi_data.bundle import (
     PreparerSettings,
     SourceLabel,
     SourceRecord,
+    TaskType,
     merge_source_rows,
     read_bundle,
     smiles_bundle_spec,
@@ -29,7 +30,6 @@ from remedi_data.bundle import (
 )
 from remedi_data.chemistry.splits import fixed_test_seeded_split_columns
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.tasks import TaskType
 
 DATASET_ID = "round_trip"
 LABELS = ("y", "z")

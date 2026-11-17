@@ -42,10 +42,10 @@ from remedi_data.bundle.spec import (
     IdentityLabelTransform,
     LabelColumn,
     LabelTransform,
+    TaskType,
     metrics_with_headline,
 )
 from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.logging_setup import setup_logging
 
 logger = logging.getLogger(__name__)

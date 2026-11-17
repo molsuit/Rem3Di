@@ -108,6 +108,7 @@ from remedi_data.bundle.spec import (
     LabelTransform,
     Log10LabelTransform,
     SplitGroup,
+    TaskType,
     metrics_with_headline,
 )
 from remedi_data.bundle.validate import (
@@ -170,6 +171,7 @@ __all__ = [
     "SourceRecord",
     "SplitGroup",
     "TableOutputRecord",
+    "TaskType",
     "aggregate_by_canonical_smiles",
     "aggregate_label",
     "assign_identity",

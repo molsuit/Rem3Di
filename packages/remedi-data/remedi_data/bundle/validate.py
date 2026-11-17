@@ -22,13 +22,13 @@ from remedi_data.bundle.spec import (
     SPLIT_VALUES,
     DatasetSpec,
     LabelColumn,
+    TaskType,
 )
 from remedi_data.chemistry.geometry import (
     GeometryLimits,
     frame_geometry_violations,
 )
 from remedi_data.dataset.packed_structures import PackedStructures
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.parallel import process_map
 
 #: How many offending rows a single message names before it summarises.

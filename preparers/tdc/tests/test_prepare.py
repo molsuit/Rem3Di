@@ -44,9 +44,9 @@ from remedi_data.bundle import (
     BundleReport,
     EvalMetric,
     PreparerRecord,
+    TaskType,
     read_bundle,
 )
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.yaml_io import read_model
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]

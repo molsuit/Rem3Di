@@ -88,9 +88,8 @@ def test_molecule_dataset_analysis_runs(tmp_path: Path):
 
 
 def test_target_stats_come_from_the_spec_labels_in_the_table(tmp_path: Path):
-    from remedi_data.bundle import LabelColumn
+    from remedi_data.bundle import LabelColumn, TaskType
     from remedi_data.dataset.molecule_dataset import MoleculeDataset
-    from remedi_data.dataset.tasks import TaskType
     from remedi_data.testing import write_small_dataset
 
     values = np.linspace(0.0, 9.0, 10)

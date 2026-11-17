@@ -19,6 +19,7 @@ from remedi_data.bundle import (
     PreparerSettings,
     SourceLabel,
     SourceRecord,
+    TaskType,
     format_report,
     merge_source_rows,
     preparer_main,
@@ -29,7 +30,6 @@ from remedi_data.bundle import (
     smiles_evaluation_metrics,
     write_smiles_bundle,
 )
-from remedi_data.dataset.tasks import TaskType
 
 ETHANOL = "CCO"
 PROPANOL = "CCCO"

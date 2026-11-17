@@ -17,8 +17,8 @@ from remedi_data.bundle import (
     IdentityLabelTransform,
     LabelColumn,
     Log10LabelTransform,
+    TaskType,
 )
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.testing import write_small_dataset
 from remedi_eval.protocol import (
     apply_label_transforms,

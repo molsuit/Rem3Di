@@ -15,9 +15,8 @@ import pandas as pd
 import pytest
 import yaml
 
-from remedi_data.bundle import EvalMetric, LabelColumn, structures_identity
+from remedi_data.bundle import EvalMetric, LabelColumn, TaskType, structures_identity
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
 from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.descriptors import (

@@ -10,7 +10,7 @@ from remedi_data.testing import write_synthetic_dataset
 from remedi_eval.dataset_analysis.comparison import (
     DatasetComparison,
     DatasetComparisonSummary,
-    _UnionFps,
+    UnionFingerprints,
 )
 from remedi_eval.dataset_analysis.config import (
     BitBirchConfig,
@@ -180,7 +180,7 @@ def test_scaffold_purity_skips_acyclic_molecules_and_keeps_chirality(
     empty scaffold of an acyclic molecule is no scaffold at all."""
     config = _make_config(tmp_path / "a", tmp_path / "b", tmp_path / "out")
     comparison = DatasetComparison(config)
-    union = _UnionFps(
+    union = UnionFingerprints(
         fps_packed=np.zeros((6, 128), dtype=np.uint8),
         dataset_index=np.array([0, 0, 1, 1, 0, 1]),
         smiles=["CCO", "CCCN", TRANS_DECALIN, CIS_DECALIN, "c1ccccc1", "Cc1ccccc1"],

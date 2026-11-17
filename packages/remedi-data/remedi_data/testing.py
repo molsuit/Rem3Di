@@ -43,6 +43,7 @@ from remedi_data.bundle import (
     LabelColumn,
     PreparerRecord,
     SourceRecord,
+    TaskType,
     assign_identity,
     write_bundle,
 )
@@ -52,7 +53,6 @@ from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.packed_structures import PackedStructures
-from remedi_data.dataset.tasks import TaskType
 
 #: One enantiomer pair, an achiral ring, a meso compound, a lone chiral
 #: molecule and a small achiral molecule: six distinct stereoisomers.

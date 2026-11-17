@@ -1,3 +1,5 @@
+"""Split membership codes: the uint8 code of each split name a table uses."""
+
 from collections.abc import Sequence
 from enum import Enum
 
@@ -46,11 +48,3 @@ def split_codes_from_names(values: Sequence[str]) -> np.ndarray:
     return np.array(
         [SPLIT_CODE_BY_NAME[str(value)].value for value in values], dtype="u1"
     )
-
-
-class TaskType(str, Enum):
-    regression = "regression"
-    classification = "classification"  # single-label or multi-label (see output_dim)
-    # Single-label, multi-class (>2 mutually exclusive classes in one column).
-    # The integer class index lives in a single label column of the table.
-    multiclass = "multiclass"

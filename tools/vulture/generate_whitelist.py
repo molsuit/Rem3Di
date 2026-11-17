@@ -57,18 +57,24 @@ def _classes(files: list[Path]) -> list[ast.ClassDef]:
         except SyntaxError as error:
             print(f"skipping {path}: {error}", file=sys.stderr)
             continue
-        classes.extend(node for node in ast.walk(tree) if isinstance(node, ast.ClassDef))
+        classes.extend(
+            node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
+        )
     return classes
 
 
 def _field_names(class_node: ast.ClassDef) -> set[str]:
     names: set[str] = set()
     for statement in class_node.body:
-        if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
+        if isinstance(statement, ast.AnnAssign) and isinstance(
+            statement.target, ast.Name
+        ):
             names.add(statement.target.id)
         elif isinstance(statement, ast.Assign):
             names.update(
-                target.id for target in statement.targets if isinstance(target, ast.Name)
+                target.id
+                for target in statement.targets
+                if isinstance(target, ast.Name)
             )
     return names
 

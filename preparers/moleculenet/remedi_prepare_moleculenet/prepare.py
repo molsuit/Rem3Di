@@ -42,6 +42,7 @@ from remedi_data.bundle import (
     PreparerSettings,
     SourceLabel,
     SourceRecord,
+    TaskType,
     check_unique,
     ensure_pinned_file,
     merge_source_rows,
@@ -55,7 +56,6 @@ from remedi_data.chemistry.splits import (
     fixed_test_seeded_split_columns,
     scaffold_test_mask,
 )
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.yaml_io import read_model
 
 logger = logging.getLogger("preparers.moleculenet")

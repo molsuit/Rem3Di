@@ -13,9 +13,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from remedi_data.bundle import EvalMetric, LabelColumn
+from remedi_data.bundle import EvalMetric, LabelColumn, TaskType
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.runs.results import TableResult
 from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
 from remedi_data.yaml_io import read_model

@@ -21,9 +21,9 @@ from remedi_data.bundle import (
     EvalMetric,
     EvaluationSpec,
     LabelColumn,
+    TaskType,
     read_spec,
 )
-from remedi_data.dataset.tasks import TaskType
 from remedi_eval.benchmark.cells import discover_benchmarks
 from remedi_eval.protocol import evaluation_of
 

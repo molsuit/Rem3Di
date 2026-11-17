@@ -57,6 +57,7 @@ from remedi_data.bundle import (
     EvalMetric,
     ExpandedDataset,
     LabelColumn,
+    TaskType,
     canonical_smiles_pair,
     content_hash_of_table,
     expand_to_structures,
@@ -70,7 +71,6 @@ from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.conformers import ConformerEmbeddingConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.packed_structures import PackedStructures
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.runs.results import PydanticResult
 from remedi_data.testing import (
     ACHIRAL_TEN_SMILES,

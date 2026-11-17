@@ -12,6 +12,7 @@ from remedi_data.bundle import (
     MISSING_LABEL,
     AggregatedRows,
     LabelAggregationError,
+    TaskType,
     aggregate_by_canonical_smiles,
     aggregate_label,
     check_row_accounting,
@@ -19,7 +20,6 @@ from remedi_data.bundle import (
     merge_source_rows,
 )
 from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
-from remedi_data.dataset.tasks import TaskType
 
 ETHANOL = "CCO"
 PROPANOL = "CCCO"

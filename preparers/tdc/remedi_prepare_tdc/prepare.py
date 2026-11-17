@@ -45,6 +45,7 @@ from remedi_data.bundle import (
     PreparerRecord,
     PreparerSettings,
     SourceRecord,
+    TaskType,
     check_unique,
     merge_source_rows,
     metrics_with_headline,
@@ -53,7 +54,6 @@ from remedi_data.bundle import (
     smiles_bundle_spec,
     write_smiles_bundle,
 )
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.yaml_io import read_model
 
 logger = logging.getLogger("preparers.tdc")

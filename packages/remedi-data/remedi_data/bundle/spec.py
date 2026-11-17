@@ -10,7 +10,7 @@ needs lives in the optional ``evaluation`` block.
 
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import Enum, StrEnum
 from typing import Annotated, Any, Literal
 
 import numpy as np
@@ -23,7 +23,18 @@ from pydantic import (
     model_validator,
 )
 
-from remedi_data.dataset.tasks import SPLIT_CODE_BY_NAME, TaskType
+from remedi_data.dataset.split_codes import SPLIT_CODE_BY_NAME
+
+
+class TaskType(str, Enum):
+    """What a label column holds: one kind of supervised task."""
+
+    regression = "regression"
+    classification = "classification"  # single-label or multi-label (see output_dim)
+    # Single-label, multi-class (>2 mutually exclusive classes in one column).
+    # The integer class index lives in a single label column of the table.
+    multiclass = "multiclass"
+
 
 #: The identity columns every table starts with, in order.
 IDENTITY_COLUMNS: tuple[str, ...] = ("stereoisomer_id", "molecule_id", "enantiomer_of")

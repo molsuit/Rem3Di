@@ -39,6 +39,7 @@ from remedi_data.bundle import (
     EvaluationSpec,
     LabelColumn,
     PreparerRecord,
+    TaskType,
     assign_identity,
     content_hash_of_table,
     count_stereoisomer_straddling_constitutions,
@@ -64,7 +65,6 @@ from remedi_data.bundle import (
 from remedi_data.bundle import bundle as bundle_module
 from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.dataset.packed_structures import PackedStructures
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.testing import (
     GEOMETRY_LIMITS,
     embed_frame,

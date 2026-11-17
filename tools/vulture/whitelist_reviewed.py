@@ -66,7 +66,6 @@ paired_sample_collate_fn
 _cluster_label_str  # remedi_eval/framework/tasks/descriptor_analysis/analysis_tasks.py
 get_descriptor_channel_distribution  # .../descriptor_analysis/capacity_diagnostic.py
 write_report  # remedi/latent_evaluation/mace_invariant_stats.py
-_.serialize  # latent_evaluation/runner.py
 
 # --- Public API without an in-repository caller -----------------------------------------------
 _.embed_atoms  # RemediCalculator: embed molecules that are not in a zarr

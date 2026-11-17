@@ -20,9 +20,8 @@ import pandas as pd
 from ase.data import atomic_numbers
 from pydantic import Field
 
-from remedi_data.bundle import LabelColumn
+from remedi_data.bundle import LabelColumn, TaskType
 from remedi_data.chemistry.geometry import GeometryLimits
-from remedi_data.dataset.tasks import TaskType
 from remedi_data.structures.records import DroppedRecord, StructureRecord
 from remedi_data.structures.source import StructureSourceBase
 

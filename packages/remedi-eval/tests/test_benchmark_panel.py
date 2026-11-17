@@ -16,8 +16,7 @@ import pydantic
 import pytest
 import yaml
 
-from remedi_data.bundle import EvalMetric, LabelColumn
-from remedi_data.dataset.tasks import TaskType
+from remedi_data.bundle import EvalMetric, LabelColumn, TaskType
 from remedi_data.testing import (
     ACHIRAL_TEN_SMILES,
     TEN_ROW_SPLIT,

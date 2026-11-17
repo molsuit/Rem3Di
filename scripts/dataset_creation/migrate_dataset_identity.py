@@ -65,7 +65,7 @@ from remedi_data.bundle import (
 )
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.tasks import Split, split_codes_from_names
+from remedi_data.dataset.split_codes import Split, split_codes_from_names
 from remedi_data.logging_setup import setup_logging
 from remedi_data.parallel import default_workers
 from remedi_data.yaml_io import read_yaml, write_model, write_yaml

@@ -11,8 +11,7 @@ from typing import Any, cast
 import numpy as np
 import pydantic
 
-from remedi_data.bundle import EvalMetric, LabelColumn
-from remedi_data.dataset.tasks import TaskType
+from remedi_data.bundle import EvalMetric, LabelColumn, TaskType
 from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
 from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import EvalContext

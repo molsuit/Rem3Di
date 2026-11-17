@@ -30,12 +30,13 @@ from remedi_data.bundle import (
     DatasetSpec,
     EvalMetric,
     EvaluationSpec,
+    TaskType,
     read_spec,
     read_table,
     table_columns,
 )
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.tasks import Split, TaskType, split_codes_from_names
+from remedi_data.dataset.split_codes import Split, split_codes_from_names
 
 TaskKind = Literal["regression", "binary", "multilabel", "multiclass"]
 

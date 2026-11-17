@@ -42,11 +42,12 @@ from remedi_data.bundle import (
     Log10LabelTransform,
     MergedRows,
     PreparerRecord,
+    TaskType,
     merge_source_rows,
     read_bundle,
 )
 from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
-from remedi_data.dataset.tasks import Split, TaskType
+from remedi_data.dataset.split_codes import Split
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RAW_ROOT = REPOSITORY_ROOT / "benchmark_data" / "raw" / "polaris"
