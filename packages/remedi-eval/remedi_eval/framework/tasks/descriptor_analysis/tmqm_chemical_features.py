@@ -20,11 +20,14 @@ import numpy as np
 from ase import Atoms
 from ase.data import chemical_symbols
 from pydantic import BaseModel
-from pymatgen.core import Molecule
-from pymatgen.core.local_env import MinimumDistanceNN
 
-from remedi.latent_evaluation.tmqm_clustering_utils import METAL_CENTRE_ATOMIC_NUMBERS
 from remedi_data.chemistry.elements import element_block
+from remedi_eval.framework.tasks.descriptor_analysis.optional_dependencies import (
+    missing_extra_error,
+)
+from remedi_eval.framework.tasks.descriptor_analysis.tmqm_clustering_utils import (
+    METAL_CENTRE_ATOMIC_NUMBERS,
+)
 
 HALOGENS = {"F", "Cl", "Br", "I", "At"}
 
@@ -303,6 +306,12 @@ def _radius_of_gyration(positions: np.ndarray) -> float:
 
 
 def _features_for_atoms(atoms: Atoms) -> MetalEnvironmentFeatures:
+    try:
+        from pymatgen.core import Molecule
+        from pymatgen.core.local_env import MinimumDistanceNN
+    except ImportError as error:
+        raise missing_extra_error("pymatgen", error) from error
+
     numbers = np.asarray(atoms.get_atomic_numbers(), dtype=np.int64)
     symbols = [chemical_symbols[int(z)] for z in numbers]
     elem_counts = Counter(symbols)

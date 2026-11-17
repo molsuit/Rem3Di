@@ -14,15 +14,12 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_eval.descriptors import DescriptorConfig
-from remedi_eval.framework.tasks import BenchmarkPanelConfig
+from remedi_eval.framework.tasks import BenchmarkPanelConfig, DescriptorAnalysisConfig
 
 # Discriminated union of task configs; the runner and manifest are agnostic to
-# membership — add a variant here and it is runnable from a manifest. The panel
-# is currently the only member: retrieval and the chiral report were retired
-# (§6). ``remedi.embedding.RemediEvalManifest`` extends the union with
-# ``DescriptorAnalysisConfig``, which needs the Rem3Di package.
+# membership — add a variant here and it is runnable from a manifest.
 TaskConfig = Annotated[
-    BenchmarkPanelConfig,
+    BenchmarkPanelConfig | DescriptorAnalysisConfig,
     Field(discriminator="kind"),
 ]
 

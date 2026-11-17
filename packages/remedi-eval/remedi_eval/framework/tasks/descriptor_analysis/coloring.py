@@ -9,16 +9,16 @@ import numpy as np
 from matplotlib.lines import Line2D
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.latent_evaluation.context import (
+from remedi_data.bundle import read_spec, read_table
+from remedi_eval.framework.tasks.descriptor_analysis.context import (
     DescriptorAnalysisContext,
 )
-from remedi.latent_evaluation.tmqm_clustering_utils import (
+from remedi_eval.framework.tasks.descriptor_analysis.tmqm_clustering_utils import (
     get_atomic_num_colors,
     get_block_colors,
     get_metal_center_type,
     get_tm_colormap,
 )
-from remedi_data.bundle import read_spec, read_table
 
 
 @dataclass

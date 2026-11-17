@@ -13,10 +13,11 @@ from remedi_eval.framework.config import EvalManifest, TaskConfig
 from remedi_eval.framework.context import EvalContext
 from remedi_eval.framework.plotting import register_plotter, render
 from remedi_eval.framework.runner import run_manifest
-from remedi_eval.framework.tasks import BenchmarkPanelConfig
+from remedi_eval.framework.tasks import BenchmarkPanelConfig, DescriptorAnalysisConfig
 
 __all__ = [
     "BenchmarkPanelConfig",
+    "DescriptorAnalysisConfig",
     "EvalContext",
     "EvalManifest",
     "RunReport",

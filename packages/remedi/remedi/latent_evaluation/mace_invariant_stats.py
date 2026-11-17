@@ -16,7 +16,8 @@ import torch
 from e3nn.o3 import Irreps
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from remedi.latent_evaluation.capacity_diagnostic import (
+from remedi_data.yaml_io import write_model
+from remedi_eval.framework.tasks.descriptor_analysis.capacity_diagnostic import (
     count_dead_dimensions,
     covariance_spectrum,
     draw_cumulative_explained_variance,
@@ -25,7 +26,6 @@ from remedi.latent_evaluation.capacity_diagnostic import (
     marginal_entropy_bits,
     participation_ratio,
 )
-from remedi_data.yaml_io import write_model
 
 
 class LayerSpec(BaseModel):

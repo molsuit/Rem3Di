@@ -2,22 +2,21 @@
 
 The yaml holds the checkpoint (``embedding``) and an eval manifest whose
 ``model`` reads those embeddings back (``kind: precomputed``, same
-``name``). Its tasks are benchmark panels and descriptor analyses
-(``kind: descriptor_analysis``, :mod:`remedi.latent_evaluation`). One GPU job
-runs both halves; ``remedi_eval`` itself never sees the model.
+``name``). Its tasks are any of the eval framework's: benchmark panels and
+descriptor analyses (``kind: descriptor_analysis``,
+:mod:`remedi_eval.framework.tasks.descriptor_analysis`). One GPU job runs both
+halves; ``remedi_eval`` itself never sees the model.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from remedi.embedding.calculator import RemediConfig
 from remedi.embedding.writer import EmbeddingReport, embed_datasets
-from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
 from remedi_data.yaml_io import write_model
 from remedi_eval.descriptors import PrecomputedEmbeddingsConfig
 from remedi_eval.framework import BenchmarkPanelConfig, EvalManifest, run_manifest
@@ -28,25 +27,13 @@ logger = logging.getLogger(__name__)
 EMBEDDING_REPORT_FILENAME = "embedding_status.yaml"
 
 
-RemediTaskConfig = Annotated[
-    BenchmarkPanelConfig | DescriptorAnalysisConfig,
-    Field(discriminator="kind"),
-]
-
-
-class RemediEvalManifest(EvalManifest):
-    """An eval manifest whose tasks may also be descriptor analyses."""
-
-    tasks: list[RemediTaskConfig] = Field(default_factory=list, min_length=1)  # type: ignore[assignment]
-
-
 class EmbedAndEvaluateConfig(BaseModel):
     """A Rem3Di checkpoint plus the manifest that evaluates its embeddings."""
 
     model_config = ConfigDict(extra="forbid")
 
     embedding: RemediConfig
-    manifest: RemediEvalManifest
+    manifest: EvalManifest
 
     @model_validator(mode="after")
     def _manifest_reads_these_embeddings(self) -> EmbedAndEvaluateConfig:

@@ -14,7 +14,6 @@ import pydantic
 from remedi_data.bundle import EvalMetric, LabelColumn
 from remedi_data.dataset.tasks import TaskType
 from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
-from remedi_data.yaml_io import read_model
 from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import EvalContext
 from remedi_eval.projection import PcaConfig, ProjectionConfig, UmapConfig
@@ -23,8 +22,10 @@ from remedi_eval.projection import PcaConfig, ProjectionConfig, UmapConfig
 def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:
     """``DescriptorAnalysisConfig`` runs on an explicit :class:`EvalContext`,
     artifacts under ``descriptor_analysis/``; the dataset id comes from its spec."""
-    from remedi.latent_evaluation import CapacityDiagnosticTask
-    from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
+    from remedi_eval.framework.tasks.descriptor_analysis import CapacityDiagnosticTask
+    from remedi_eval.framework.tasks.descriptor_analysis.task import (
+        DescriptorAnalysisConfig,
+    )
 
     write_small_dataset(
         tmp_path / "datasets",
@@ -56,7 +57,9 @@ def test_unknown_analysis_fields_are_rejected() -> None:
     import pytest
     from pydantic import ValidationError
 
-    from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
+    from remedi_eval.framework.tasks.descriptor_analysis.task import (
+        DescriptorAnalysisConfig,
+    )
 
     with pytest.raises(ValidationError, match="dead_thr"):
         DescriptorAnalysisConfig.model_validate(
@@ -67,21 +70,73 @@ def test_unknown_analysis_fields_are_rejected() -> None:
         )
 
 
-def test_shipped_descriptor_analysis_configs_parse() -> None:
-    """Every config under ``configs/evaluation/descriptor_analysis/`` is a valid pipeline."""
+def test_an_eval_manifest_runs_descriptor_analyses_of_its_model(
+    tmp_path: Path,
+) -> None:
+    """One manifest type serves every run: ``run_manifest`` analyses the
+    manifest's model (here ECFP) and records the task in ``status.yaml``."""
+    from remedi_eval.framework import EvalManifest, run_manifest
 
-    from remedi.embedding import EmbedAndEvaluateConfig
-    from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
-
-    config_dir = (
-        Path(__file__).resolve().parents[3] / "configs/evaluation/descriptor_analysis"
+    write_small_dataset(
+        tmp_path / "datasets",
+        dataset_id="corpus",
+        labels=[LabelColumn(name="y", task_type=TaskType.regression)],
+        metrics=[EvalMetric.rmse],
+        targets=np.linspace(0, 1, len(ACHIRAL_TEN_SMILES)),
     )
-    paths = sorted(config_dir.glob("*.yaml"))
-    assert paths
-    for path in paths:
-        config = read_model(path, EmbedAndEvaluateConfig)
-        assert all(
-            isinstance(task, DescriptorAnalysisConfig) for task in config.manifest.tasks
+    manifest = EvalManifest.model_validate(
+        {
+            "model": {"kind": "ecfp", "name": "ecfp_256", "fingerprint_size": 256},
+            "output_root": str(tmp_path / "eval_out" / "ecfp_256"),
+            "tasks": [
+                {
+                    "kind": "descriptor_analysis",
+                    "dataset_path": str(tmp_path / "datasets" / "corpus"),
+                    "tasks": [{"kind": "descriptor_distribution"}],
+                }
+            ],
+        }
+    )
+    report = run_manifest(manifest)
+
+    assert report.n_failed == 0
+    analysis_dir = manifest.output_root / "descriptor_analysis"
+    assert (analysis_dir / "descriptor_distribution_summary.yaml").exists()
+
+
+def test_an_analysis_without_its_extra_names_the_extra(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Without chemiscope installed the chemiscope export fails naming the
+    ``descriptor-analysis`` extra; the other analyses do not need it."""
+    import sys
+
+    import pytest
+
+    from remedi_eval.framework.tasks.descriptor_analysis import (
+        ChemiscopeProjectionTask,
+        DescriptorAnalysisContext,
+    )
+    from remedi_eval.framework.tasks.descriptor_analysis.tmqm_chemical_features import (
+        compute_metal_environment_features,
+    )
+
+    monkeypatch.setitem(sys.modules, "chemiscope", None)
+    monkeypatch.setitem(sys.modules, "pymatgen", None)
+    monkeypatch.setitem(sys.modules, "pymatgen.core", None)
+    ctx = DescriptorAnalysisContext.build(
+        dataset=cast("Any", None),
+        descriptors=np.eye(4),
+        projection_config=PcaConfig(),
+    )
+    with pytest.raises(ImportError, match=r"remedi-eval\[descriptor-analysis\]"):
+        ChemiscopeProjectionTask().run(ctx)
+
+    from ase import Atoms
+
+    with pytest.raises(ImportError, match=r"remedi-eval\[descriptor-analysis\]"):
+        compute_metal_environment_features(
+            [Atoms("FeH", positions=[[0, 0, 0], [1.5, 0, 0]])]
         )
 
 
@@ -115,7 +170,8 @@ def test_max_structures_cuts_every_per_structure_analysis(
     """With ``max_structures`` every analysis sees the same first rows: colours,
     chemiscope frames, top-norm panels and the scorecard's chemistry all have
     as many entries as there are descriptor rows, read from the dataset once."""
-    from remedi.latent_evaluation import (
+    from remedi_data.dataset.molecule_dataset import MoleculeDataset
+    from remedi_eval.framework.tasks.descriptor_analysis import (
         ChemiscopeClusterTask,
         ChemiscopeProjectionTask,
         DescriptorStructureBenchmarkTask,
@@ -124,8 +180,9 @@ def test_max_structures_cuts_every_per_structure_analysis(
         RegressionTargetColor,
         TopNormDescriptorsTask,
     )
-    from remedi.latent_evaluation.framework_task import DescriptorAnalysisConfig
-    from remedi_data.dataset.molecule_dataset import MoleculeDataset
+    from remedi_eval.framework.tasks.descriptor_analysis.task import (
+        DescriptorAnalysisConfig,
+    )
 
     dataset_path = _write_corpus(tmp_path / "datasets")
     ctx, out = _context(tmp_path)
@@ -184,12 +241,12 @@ def test_a_failed_analysis_fails_the_task(tmp_path: Path) -> None:
     every failure, so ``status.yaml`` records it and ``keep_going=False`` stops."""
     import pytest
 
-    from remedi.latent_evaluation import (
+    from remedi_eval.framework.tasks.descriptor_analysis import (
         CapacityDiagnosticTask,
         NumAtomsColor,
         ProjectionPlotTask,
     )
-    from remedi.latent_evaluation.framework_task import (
+    from remedi_eval.framework.tasks.descriptor_analysis.task import (
         DescriptorAnalysisConfig,
         DescriptorAnalysisError,
     )
@@ -231,8 +288,10 @@ def test_the_projection_union_reads_its_kind() -> None:
 
 
 def test_capacity_plot_draws_the_configured_dead_threshold() -> None:
-    from remedi.latent_evaluation import CapacityDiagnosticTask
-    from remedi.latent_evaluation.context import DescriptorAnalysisContext
+    from remedi_eval.framework.tasks.descriptor_analysis import CapacityDiagnosticTask
+    from remedi_eval.framework.tasks.descriptor_analysis.context import (
+        DescriptorAnalysisContext,
+    )
     from remedi_eval.results import FigureResult
 
     rng = np.random.default_rng(0)
@@ -260,7 +319,7 @@ def test_capacity_entropy_has_no_invalid_value_warnings() -> None:
     """Empty histogram bins must not produce ``0 * log(0)`` warnings."""
     import warnings
 
-    from remedi.latent_evaluation.capacity_diagnostic import (
+    from remedi_eval.framework.tasks.descriptor_analysis.capacity_diagnostic import (
         run_latent_space_capacity_diagnostic,
     )
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from remedi.latent_evaluation.tmqm_clustering_utils import (
+from remedi_eval.framework.tasks.descriptor_analysis.tmqm_clustering_utils import (
     METAL_CENTRE_ATOMIC_NUMBERS,
     get_block_colors,
     get_tm_colormap,

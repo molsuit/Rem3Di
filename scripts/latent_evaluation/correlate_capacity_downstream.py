@@ -1,31 +1,31 @@
 """Correlate the capacity diagnostic with downstream property-prediction quality.
 
-Reproduces the analysis written up in ``docs/pcqm_novicreg_eval_results.md``.
+Reads, for every model run under an eval root (one directory per eval manifest
+``output_root``):
 
-For every model under an eval root (one ``<model>/benchmark/results.csv`` +
-``<model>/retrieval/tanimoto_similarity.yaml`` each, plus a shared
-``descriptor_cache/pcqm100k__<model>.npz``) it:
+- ``manifest.yaml``: the run's model, whose rows of the panel are used;
+- ``benchmark/results.csv``: the benchmark panel;
+- ``descriptor_analysis/<capacity file>``: the capacity diagnostics a
+  ``descriptor_analysis`` task wrote (``kind: capacity_diagnostic``) on a fixed
+  corpus, one file per variant (e.g. raw and L2-normalised).
 
-1. Recomputes the latent capacity diagnostic (effective dimension ``d_eff``,
-   total marginal entropy ``H_tot``) on the *cached* PCQM100k embeddings — no
-   GPU / re-encoding needed.
-2. Aggregates the benchmark panel into a per-model mean rank (1 = best across
-   models, metric-direction aware) and reads the retrieval Spearman.
-3. Reports (a) aggregate across-model correlations of each capacity metric vs
-   the two downstream summaries, and (b) the per-task distribution of the
-   across-model correlation between ``d_eff`` and oriented task performance —
-   i.e. is capacity predictive of prediction quality, task by task.
+and reports (a) the across-model Spearman correlation of every capacity metric
+(effective dimension ``d_eff``, total marginal entropy ``H_tot``, per capacity
+file) with the model's mean rank over the panel cells (1 = best, metric
+direction aware), and (b) per panel cell, the across-model correlation of the
+first capacity file's ``d_eff`` with the oriented score: is capacity predictive
+of prediction quality, task by task.
 
 Usage::
 
     uv run python scripts/latent_evaluation/correlate_capacity_downstream.py \\
-        --eval-root /path/to/evaluation_results/pcqm_ablation_novicreg
+        --eval-root /path/to/eval_runs/pcqm_ablation_novicreg \\
+        --capacity-files capacity_diagnostic.yaml capacity_diagnostic_l2.yaml
 """
 
 from __future__ import annotations
 
 import argparse
-import glob
 import logging
 from pathlib import Path
 
@@ -34,200 +34,192 @@ import pandas as pd
 from pydantic import BaseModel
 from scipy.stats import spearmanr
 
-from remedi.latent_evaluation.capacity_diagnostic import (
-    run_latent_space_capacity_diagnostic,
-)
+from remedi_data.bundle import EvalMetric
 from remedi_data.logging_setup import setup_logging
-from remedi_data.yaml_io import read_yaml, write_model
+from remedi_data.runs.task_runner import MANIFEST_FILENAME
+from remedi_data.yaml_io import read_model, read_yaml, write_model
+from remedi_eval.benchmark.metrics import higher_is_better
+from remedi_eval.framework import EvalManifest
 
 logger = logging.getLogger(__name__)
 
-# Benchmark metrics where lower is better (everything else is higher-is-better).
-LOWER_IS_BETTER = {"RMSE", "MAE", "MSE"}
-# Regression-style metrics (for the regression/classification task-type split).
-REGRESSION_METRICS = {"RMSE", "MAE", "MSE", "Spearman"}
-CAPACITY_METRICS = ("deff", "deff_l2", "H_tot")
+RESULTS_PATH = Path("benchmark") / "results.csv"
+ANALYSIS_DIRECTORY = Path("descriptor_analysis")
+#: Columns that identify one panel cell across models.
+CELL_COLUMNS = ["dataset_id", "target_col", "learner_name", "metric_name"]
 
 
 class CapacityCorrelationReport(BaseModel):
     """Serializable summary of the capacity-vs-downstream analysis."""
 
     models: list[str]
-    retrieval_dataset_id: str
-    # aggregate: capacity metric -> {"vs_bench_rank": rho, "vs_retr_spearman": rho}
-    aggregate_spearman: dict[str, dict[str, float]]
-    # per-task d_eff correlation distribution summaries, keyed by subgroup
-    per_task_deff: dict[str, dict[str, float]]
-    n_tasks: int
-    n_tasks_regression: int
-    n_tasks_classification: int
+    capacity_files: list[str]
+    #: capacity metric -> Spearman correlation with the mean panel rank
+    #: (negative: more capacity, better rank).
+    spearman_with_mean_rank: dict[str, float]
+    #: Summaries of the per-cell ``d_eff`` correlations, by subgroup.
+    per_cell_effective_dimension: dict[str, dict[str, float]]
+    cell_count: int
 
 
-def _capacity_per_model(
-    cache_dir: Path, dataset_id: str, models: list[str]
-) -> pd.DataFrame:
-    rows = []
-    for m in models:
-        X = np.load(cache_dir / f"{dataset_id}__{m}.npz")["X"]
-        rows.append(
-            {
-                "model": m,
-                "D": int(X.shape[1]),
-                "deff": run_latent_space_capacity_diagnostic(X).d_eff,
-                "deff_l2": run_latent_space_capacity_diagnostic(
-                    X, l2_normalize=True
-                ).d_eff,
-                "H_tot": run_latent_space_capacity_diagnostic(X).H_tot,
-            }
+def model_runs(eval_root: Path, capacity_files: list[str]) -> dict[str, Path]:
+    """The model name of every run under ``eval_root`` that has a panel and
+    every capacity file, mapped to its directory.
+
+    Raises:
+        FileNotFoundError: if no run has them all.
+    """
+    runs = {}
+    for directory in sorted(path for path in eval_root.iterdir() if path.is_dir()):
+        needed = [directory / MANIFEST_FILENAME, directory / RESULTS_PATH] + [
+            directory / ANALYSIS_DIRECTORY / name for name in capacity_files
+        ]
+        if all(path.is_file() for path in needed):
+            manifest = read_model(directory / MANIFEST_FILENAME, EvalManifest)
+            runs[manifest.model.name] = directory
+    if not runs:
+        raise FileNotFoundError(
+            f"no run under {eval_root} has {RESULTS_PATH} and "
+            f"{ANALYSIS_DIRECTORY}/{{{', '.join(capacity_files)}}}"
         )
+    return runs
+
+
+def capacity_table(runs: dict[str, Path], capacity_files: list[str]) -> pd.DataFrame:
+    """``d_eff`` and ``H_tot`` of every capacity file, one row per model."""
+    rows = []
+    for model, directory in runs.items():
+        row: dict[str, float | str] = {"model": model}
+        for name in capacity_files:
+            report = read_yaml(directory / ANALYSIS_DIRECTORY / name)
+            stem = Path(name).stem
+            row[f"{stem}:d_eff"] = float(report["d_eff"])
+            row[f"{stem}:H_tot"] = float(report["H_tot"])
+        rows.append(row)
     return pd.DataFrame(rows).set_index("model")
 
 
-def _benchmark_long(eval_root: Path, models: list[str]) -> pd.DataFrame:
+def panel_table(runs: dict[str, Path]) -> pd.DataFrame:
+    """Every model's own rows of its panel, with an oriented score and the
+    model's rank within each cell."""
     frames = []
-    for m in models:
-        df = pd.read_csv(eval_root / m / "benchmark" / "results.csv")
-        df["model"] = m
-        frames.append(df)
-    bdf = pd.concat(frames, ignore_index=True)
-    bdf["oriented"] = np.where(
-        bdf.metric_name.isin(LOWER_IS_BETTER), -bdf.metric_value, bdf.metric_value
+    for model, directory in runs.items():
+        rows = pd.read_csv(directory / RESULTS_PATH)
+        rows = rows[rows["descriptor_name"] == model].assign(model=model)
+        frames.append(rows)
+    panel = pd.concat(frames, ignore_index=True)
+    panel["target_col"] = panel["target_col"].fillna("")
+    sign = panel["metric_name"].map(
+        lambda name: 1.0 if higher_is_better(EvalMetric(name)) else -1.0
     )
-    bdf["ttype"] = np.where(
-        bdf.metric_name.isin(REGRESSION_METRICS), "regression", "classification"
+    panel["oriented"] = sign * panel["metric_value"]
+    panel["rank"] = panel.groupby(CELL_COLUMNS)["oriented"].rank(
+        ascending=False, method="average"
     )
-    bdf["cell"] = (
-        bdf.dataset_id + "|" + bdf.target_col.fillna("_") + "|" + bdf.learner_kind
-    )
-    bdf["rank"] = bdf.groupby("cell", group_keys=False).apply(
-        lambda g: g.metric_value.rank(
-            ascending=g.metric_name.iloc[0] in LOWER_IS_BETTER, method="average"
-        )
-    )
-    return bdf
+    return panel
 
 
-def _summarize(s: pd.Series) -> dict[str, float]:
-    s = s.dropna()
+def _summarize(values: pd.Series) -> dict[str, float]:
+    values = values.dropna()
     return {
-        "median": float(s.median()),
-        "mean": float(s.mean()),
-        "frac_positive": float((s > 0).mean()),
-        "n": int(s.size),
+        "median": float(values.median()),
+        "mean": float(values.mean()),
+        "fraction_positive": float((values > 0).mean()),
+        "count": int(values.size),
     }
 
 
 def run(
-    eval_root: Path, dataset_id: str
+    eval_root: Path, capacity_files: list[str]
 ) -> tuple[CapacityCorrelationReport, pd.DataFrame]:
-    cache_dir = eval_root / "descriptor_cache"
-    models = sorted(
-        Path(p).name.removeprefix(f"{dataset_id}__").removesuffix(".npz")
-        for p in glob.glob(str(cache_dir / f"{dataset_id}__*.npz"))
-    )
-    if not models:
-        raise FileNotFoundError(f"No cached {dataset_id} embeddings under {cache_dir}")
+    runs = model_runs(eval_root, capacity_files)
+    capacity = capacity_table(runs, capacity_files)
+    panel = panel_table(runs)
+    mean_rank = panel.groupby("model")["rank"].mean()
 
-    cap = _capacity_per_model(cache_dir, dataset_id, models)
-    bdf = _benchmark_long(eval_root, models)
-    mean_rank = bdf.groupby("model")["rank"].mean()
-    retr = {
-        m: read_yaml(eval_root / m / "retrieval" / "tanimoto_similarity.yaml")[
-            "spearman_emb_vs_tanimoto"
-        ]
-        for m in models
+    with_mean_rank = {
+        metric: float(
+            spearmanr(capacity.loc[mean_rank.index, metric], mean_rank).statistic
+        )
+        for metric in capacity.columns
     }
-    retr_s = pd.Series(retr)
 
-    aggregate: dict[str, dict[str, float]] = {}
-    for c in CAPACITY_METRICS:
-        rb = spearmanr(cap.loc[mean_rank.index, c], mean_rank).statistic
-        rr = spearmanr(cap.loc[retr_s.index, c], retr_s).statistic
-        aggregate[c] = {"vs_bench_rank": float(rb), "vs_retr_spearman": float(rr)}
-
-    # Per-task: across-model correlation of each capacity metric vs oriented perf.
-    recs = []
-    grouped = bdf.groupby(["dataset_id", "target_col", "learner_kind"], dropna=False)
-    for group_key, g in grouped:
-        ds, tc, lk = group_key  # ty: ignore[not-iterable]  # multi-key groupby
-        g = g.set_index("model")
-        if g.index.nunique() < len(models) or g["oriented"].nunique() < 3:
+    effective_dimension = f"{Path(capacity_files[0]).stem}:d_eff"
+    cells = []
+    for key, rows in panel.groupby(CELL_COLUMNS):
+        rows = rows.set_index("model")
+        if rows.index.nunique() < len(runs) or rows["oriented"].nunique() < 3:
             continue
-        rec = {
-            "dataset_id": ds,
-            "target_col": tc,
-            "learner": lk,
-            "ttype": g.ttype.iloc[0],
-        }
-        for c in CAPACITY_METRICS:
-            res = spearmanr(cap.loc[g.index, c].astype(float), g["oriented"].values)
-            rec[f"rho_{c}"] = res.statistic
-            rec[f"p_{c}"] = res.pvalue
-        recs.append(rec)
-    pt = pd.DataFrame(recs)
+        result = spearmanr(
+            capacity.loc[rows.index, effective_dimension].to_numpy(dtype=float),
+            rows["oriented"].to_numpy(dtype=float),
+        )
+        cells.append(
+            dict(zip(CELL_COLUMNS, key, strict=True))
+            | {
+                "learner_kind": rows["learner_kind"].iloc[0],
+                "spearman": result.statistic,
+                "p_value": result.pvalue,
+            }
+        )
+    per_cell = pd.DataFrame(cells)
+    if per_cell.empty:
+        raise ValueError(
+            "no panel cell is scored for every model with at least three distinct values"
+        )
 
-    per_task = {
-        "all": _summarize(pt.rho_deff),
-        "regression": _summarize(pt.loc[pt.ttype == "regression", "rho_deff"]),
-        "classification": _summarize(pt.loc[pt.ttype == "classification", "rho_deff"]),
-        "linear": _summarize(pt.loc[pt.learner == "linear", "rho_deff"]),
-        "mlp": _summarize(pt.loc[pt.learner == "mlp", "rho_deff"]),
+    summaries = {"all": _summarize(per_cell["spearman"])}
+    for learner_kind, rows in per_cell.groupby("learner_kind"):
+        summaries[f"learner_kind={learner_kind}"] = _summarize(rows["spearman"])
+    significant = per_cell[per_cell["p_value"] < 0.05]
+    summaries["significant_p05"] = {
+        "fraction_of_cells": float((per_cell["p_value"] < 0.05).mean()),
+        "fraction_positive": float((significant["spearman"] > 0).mean())
+        if len(significant)
+        else float(np.nan),
     }
-    sig = pt[pt.p_deff < 0.05]
-    per_task["significant_p05"] = {
-        "frac_of_tasks": float((pt.p_deff < 0.05).mean()),
-        "frac_positive_among_significant": float((sig.rho_deff > 0).mean())
-        if len(sig)
-        else float("nan"),
-    }
-
     report = CapacityCorrelationReport(
-        models=models,
-        retrieval_dataset_id=dataset_id,
-        aggregate_spearman=aggregate,
-        per_task_deff=per_task,
-        n_tasks=len(pt),
-        n_tasks_regression=int((pt.ttype == "regression").sum()),
-        n_tasks_classification=int((pt.ttype == "classification").sum()),
+        models=list(runs),
+        capacity_files=capacity_files,
+        spearman_with_mean_rank=with_mean_rank,
+        per_cell_effective_dimension=summaries,
+        cell_count=len(per_cell),
     )
-    return report, pt
+    return report, per_cell
 
 
 def main() -> None:
     setup_logging()
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--eval-root", type=Path, required=True)
     parser.add_argument(
-        "--eval-root",
-        type=Path,
-        default=Path("/path/to/evaluation_results/pcqm_ablation_novicreg"),
+        "--capacity-files",
+        nargs="+",
+        default=["capacity_diagnostic.yaml"],
+        help="Capacity reports under each run's descriptor_analysis/; the first "
+        "one's d_eff is the per-cell correlate.",
     )
-    parser.add_argument("--dataset-id", type=str, default="pcqm100k")
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
-        help="Where to write capacity_correlation.yaml + per_task_capacity.csv "
+        help="Where to write capacity_correlation.yaml + per_cell_capacity.csv "
         "(default: <eval-root>/capacity_correlation).",
     )
     args = parser.parse_args()
 
-    report, pt = run(args.eval_root, args.dataset_id)
+    report, per_cell = run(args.eval_root, args.capacity_files)
     out = args.output_dir or (args.eval_root / "capacity_correlation")
     out.mkdir(parents=True, exist_ok=True)
     write_model(out / "capacity_correlation.yaml", report)
-    pt.to_csv(out / "per_task_capacity.csv", index=False)
+    per_cell.to_csv(out / "per_cell_capacity.csv", index=False)
 
-    logger.info("aggregate Spearman (capacity vs downstream):")
-    for c, d in report.aggregate_spearman.items():
-        logger.info(
-            "  %-8s vs bench_rank %+.2f   vs retr_spearman %+.2f",
-            c,
-            d["vs_bench_rank"],
-            d["vs_retr_spearman"],
-        )
-    logger.info("per-task d_eff correlation (median, frac positive):")
-    for k, d in report.per_task_deff.items():
-        logger.info("  %s", f"{k}: {d}")
+    logger.info("Spearman of capacity with the mean panel rank:")
+    for metric, value in report.spearman_with_mean_rank.items():
+        logger.info("  %-40s %+.2f", metric, value)
+    logger.info("per-cell d_eff correlation:")
+    for group, summary in report.per_cell_effective_dimension.items():
+        logger.info("  %s: %s", group, summary)
     logger.info("wrote %s", out)
 
 

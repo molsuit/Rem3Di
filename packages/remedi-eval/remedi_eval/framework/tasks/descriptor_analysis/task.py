@@ -1,8 +1,9 @@
 """``DescriptorAnalysisConfig``: the descriptor-space analyses as one eval task.
 
-It reads the dataset's embedding through the run's resource cache (for a Rem3Di
-checkpoint: the precomputed embeddings that ``embed_and_evaluate`` writes),
-builds one :class:`DescriptorAnalysisContext` (normalisation, optional 2D
+It reads the run's ``model`` descriptor over one dataset through
+:meth:`EvalContext.descriptor_matrix`, so any descriptor the eval framework knows
+works: an ECFP fingerprint, precomputed embeddings, or a Rem3Di checkpoint's
+embeddings (written by ``remedi.embedding.embed_and_evaluate``). It builds one :class:`DescriptorAnalysisContext` (normalisation, optional 2D
 projection) and runs the configured analyses. A failing analysis does not lose
 the others: they all run and write their artifacts, then the task raises
 :class:`DescriptorAnalysisError` naming every failure, so the run records it.
@@ -18,15 +19,17 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.latent_evaluation import (
-    DescriptorAnalysisContext,
-    DescriptorAnalysisTask,
-    DescriptorNormalizationConfig,
-)
 from remedi_data.bundle import read_spec
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import EvalResult
 from remedi_eval.framework.context import EvalContext
+from remedi_eval.framework.tasks.descriptor_analysis.analysis_tasks import (
+    DescriptorAnalysisTask,
+)
+from remedi_eval.framework.tasks.descriptor_analysis.context import (
+    DescriptorAnalysisContext,
+    DescriptorNormalizationConfig,
+)
 from remedi_eval.projection import ProjectionConfig
 
 logger = logging.getLogger(__name__)

@@ -5,14 +5,16 @@ the chemiscope/fingerprint assembly with the (expensive) UMAP→HDBSCAN step
 monkeypatched out.
 """
 
+import warnings
 from typing import Any, cast
 
 import numpy as np
 import pytest
 from ase import Atoms
 
-from remedi.latent_evaluation import analysis_tasks
-from remedi.latent_evaluation.analysis_tasks import (
+from remedi_data.runs.results import ChemiscopeResult, PydanticResult
+from remedi_eval.framework.tasks.descriptor_analysis import analysis_tasks
+from remedi_eval.framework.tasks.descriptor_analysis.analysis_tasks import (
     ChemiscopeClusterTask,
     ClusterAxisAnalysisTask,
     ClusterChemicalFingerprintTask,
@@ -22,14 +24,13 @@ from remedi.latent_evaluation.analysis_tasks import (
     _suggest_label,
     compute_hdbscan_labels,
 )
-from remedi.latent_evaluation.context import (
+from remedi_eval.framework.tasks.descriptor_analysis.context import (
     DescriptorAnalysisContext,
 )
-from remedi.latent_evaluation.tmqm_chemical_features import (
+from remedi_eval.framework.tasks.descriptor_analysis.tmqm_chemical_features import (
     MetalEnvironmentFeatures,
     compute_metal_environment_features,
 )
-from remedi_data.runs.results import ChemiscopeResult, PydanticResult
 from remedi_eval.projection import UmapConfig
 
 
@@ -333,13 +334,16 @@ def test_compute_hdbscan_labels_no_umap_runs_on_raw_descriptors():
         projection=None,
         cache={},
     )
-    labels = compute_hdbscan_labels(
-        ctx,
-        projection=None,
-        min_cluster_size=5,
-        min_samples=None,
-        cluster_selection_epsilon=0.0,
-    )
+    # sklearn changes HDBSCAN's ``copy`` default in 1.10; it is passed explicitly.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        labels = compute_hdbscan_labels(
+            ctx,
+            projection=None,
+            min_cluster_size=5,
+            min_samples=None,
+            cluster_selection_epsilon=0.0,
+        )
     assert labels.shape == (80,)
     assert np.unique(labels[labels >= 0]).size >= 2
     assert np.mean(labels == -1) < 0.2
@@ -521,7 +525,9 @@ def test_axis_analysis_identifies_best_explaining_axis(monkeypatch):
 
 def test_coordination_number_color_finds_the_metal_anywhere():
     """tmQM does not always store the metal first: the colour must use the metal."""
-    from remedi.latent_evaluation.coloring import CoordinationNumberColor
+    from remedi_eval.framework.tasks.descriptor_analysis.coloring import (
+        CoordinationNumberColor,
+    )
 
     metal_first = _octahedral(26, 8)
     metal_last = Atoms(
@@ -536,7 +542,9 @@ def test_coordination_number_color_finds_the_metal_anywhere():
 def test_every_cluster_task_uses_the_benchmark_seed():
     """One projection (seed included) for all cluster tasks, so they share one
     cached UMAP partition."""
-    from remedi.latent_evaluation.analysis_tasks import HDBSCANClusterTask
+    from remedi_eval.framework.tasks.descriptor_analysis.analysis_tasks import (
+        HDBSCANClusterTask,
+    )
 
     benchmark_projection = DescriptorStructureBenchmarkTask().cluster_projection
     assert benchmark_projection is not None
@@ -613,7 +621,9 @@ def test_hdbscan_labels_raise_no_future_warning():
 
 @pytest.mark.filterwarnings("error")
 def test_chemiscope_projection_uses_the_structures_argument():
-    from remedi.latent_evaluation.analysis_tasks import ChemiscopeProjectionTask
+    from remedi_eval.framework.tasks.descriptor_analysis.analysis_tasks import (
+        ChemiscopeProjectionTask,
+    )
 
     mols = [_octahedral(26, 8), _phosphine()]
     (result,) = ChemiscopeProjectionTask().run(_make_ctx(mols))

@@ -37,8 +37,6 @@ dependencies = [
     "pydantic_yaml",
     "wandb",
     "umap-learn",
-    "pymatgen>=2026.3.23",
-    "chemiscope>=1.0.3",
     "matplotlib",
     "scikit-learn",
 ]

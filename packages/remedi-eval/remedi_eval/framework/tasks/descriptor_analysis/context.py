@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-import torch
 from pydantic import BaseModel, ConfigDict
 
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
@@ -15,15 +14,9 @@ from remedi_eval.projection import ProjectionConfig
 if TYPE_CHECKING:
     from ase import Atoms
 
-    from remedi.latent_evaluation.tmqm_chemical_features import (
+    from remedi_eval.framework.tasks.descriptor_analysis.tmqm_chemical_features import (
         MetalEnvironmentFeatures,
     )
-
-
-def _to_numpy(x: np.ndarray | torch.Tensor) -> np.ndarray:
-    if isinstance(x, torch.Tensor):
-        return x.detach().cpu().numpy()
-    return np.asarray(x)
 
 
 def _z_score(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
@@ -77,12 +70,12 @@ class DescriptorAnalysisContext:
     def build(
         cls,
         dataset: MoleculeDataset,
-        descriptors: np.ndarray | torch.Tensor,
+        descriptors: np.ndarray,
         normalization: DescriptorNormalizationConfig | None = None,
         projection_config: ProjectionConfig | None = None,
         file_prefix: str = "",
     ) -> DescriptorAnalysisContext:
-        raw = _to_numpy(descriptors).astype(np.float64, copy=False)
+        raw = np.asarray(descriptors, dtype=np.float64)
         normalizer = normalization or DescriptorNormalizationConfig()
         normalized = normalizer.apply(raw)
 
@@ -121,7 +114,7 @@ class DescriptorAnalysisContext:
     @cached_property
     def metal_environment_features(self) -> list[MetalEnvironmentFeatures]:
         """Per-structure metal-environment chemistry (one pymatgen pass)."""
-        from remedi.latent_evaluation.tmqm_chemical_features import (
+        from remedi_eval.framework.tasks.descriptor_analysis.tmqm_chemical_features import (
             compute_metal_environment_features,
         )
 

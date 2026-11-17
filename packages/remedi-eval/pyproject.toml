@@ -37,6 +37,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The tmQM chemistry (pymatgen) and the chemiscope exports of
+# framework/tasks/descriptor_analysis; the other descriptor analyses run without.
+descriptor-analysis = [
+    "pymatgen>=2026.3.23",
+    "chemiscope>=1.0.3",
+]
 # GPU nearest-neighbour Tanimoto in dataset_analysis/comparison.py (backend "nvmolkit").
 cuda = [
     "nvmolkit>=0.7.0",

@@ -63,9 +63,9 @@ pretraining_padded_collate_fn  # training/data/sample.py
 paired_sample_collate_fn
 
 # --- Latent-space analysis helpers kept for future analyses -------------------------------------
-_cluster_label_str  # latent_evaluation/analysis_tasks.py
-get_descriptor_channel_distribution  # latent_evaluation/capacity_diagnostic.py
-write_report  # latent_evaluation/mace_invariant_stats.py
+_cluster_label_str  # remedi_eval/framework/tasks/descriptor_analysis/analysis_tasks.py
+get_descriptor_channel_distribution  # .../descriptor_analysis/capacity_diagnostic.py
+write_report  # remedi/latent_evaluation/mace_invariant_stats.py
 _.serialize  # latent_evaluation/runner.py
 
 # --- Public API without an in-repository caller -----------------------------------------------

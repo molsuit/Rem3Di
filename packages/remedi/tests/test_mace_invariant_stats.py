@@ -6,10 +6,6 @@ import pytest
 import torch
 from e3nn.o3 import Irreps
 
-from remedi.latent_evaluation.capacity_diagnostic import (
-    marginal_entropy_bits,
-    participation_ratio,
-)
 from remedi.latent_evaluation.mace_invariant_stats import (
     _CovarianceAccumulator,
     _ReservoirSampler,
@@ -17,6 +13,10 @@ from remedi.latent_evaluation.mace_invariant_stats import (
     coding_rate,
     get_layer_invariant_specs,
     mean_abs_correlation,
+)
+from remedi_eval.framework.tasks.descriptor_analysis.capacity_diagnostic import (
+    marginal_entropy_bits,
+    participation_ratio,
 )
 
 

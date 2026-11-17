@@ -3,7 +3,8 @@
 A task is any object with a ``kind`` string and a ``run(ctx)`` that yields
 :class:`EvalResult` artifacts. Concrete tasks are pydantic config models (so a
 manifest stays declarative yaml) that also implement ``run`` — the same
-config-is-the-task pattern as ``latent_evaluation.analysis_tasks``.
+config-is-the-task pattern as the descriptor analyses in
+``remedi_eval.framework.tasks.descriptor_analysis``.
 
 The protocol is deliberately **context-agnostic**: an eval task is handed an
 ``EvalContext``, a dataset build task its own build context

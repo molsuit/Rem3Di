@@ -12,21 +12,24 @@ import numpy as np
 from ase.visualize.plot import plot_atoms
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi.latent_evaluation.capacity_diagnostic import (
+from remedi_data.runs.results import (
+    ChemiscopeResult,
+    EvalResult,
+    PydanticResult,
+)
+from remedi_eval.framework.tasks.descriptor_analysis.capacity_diagnostic import (
     LatentCapacityReportModel,
     draw_cumulative_explained_variance,
     draw_per_dimension_entropy,
     get_descriptor_norm_distribution,
     run_latent_space_capacity_diagnostic,
 )
-from remedi.latent_evaluation.coloring import ColorProvider
-from remedi.latent_evaluation.context import (
+from remedi_eval.framework.tasks.descriptor_analysis.coloring import ColorProvider
+from remedi_eval.framework.tasks.descriptor_analysis.context import (
     DescriptorAnalysisContext,
 )
-from remedi_data.runs.results import (
-    ChemiscopeResult,
-    EvalResult,
-    PydanticResult,
+from remedi_eval.framework.tasks.descriptor_analysis.optional_dependencies import (
+    missing_extra_error,
 )
 from remedi_eval.projection import ProjectionConfig, UmapConfig
 from remedi_eval.results import FigureResult
@@ -397,7 +400,10 @@ class ChemiscopeProjectionTask(_BaseAnalysisTask):
                 "ChemiscopeProjectionTask requires a cached 2D projection."
             )
 
-        import chemiscope
+        try:
+            import chemiscope
+        except ImportError as error:
+            raise missing_extra_error("chemiscope", error) from error
 
         properties = {self.component_label: ctx.projection}
         settings = chemiscope.quick_settings(
@@ -545,7 +551,10 @@ class ChemiscopeClusterTask(_ClusterTaskBase):
                 "(set projection_config on the runner)."
             )
 
-        import chemiscope
+        try:
+            import chemiscope
+        except ImportError as error:
+            raise missing_extra_error("chemiscope", error) from error
 
         molecules = ctx.molecules
         feats = ctx.metal_environment_features
