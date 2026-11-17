@@ -12,7 +12,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from remedi_data.bundle import EvalMetric
+from remedi_data.format import EvalMetric
 from remedi_eval.benchmark.cells import BenchmarkCell, evaluate_pairwise_cell
 from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.benchmark.pairwise import pair_ranking_accuracy

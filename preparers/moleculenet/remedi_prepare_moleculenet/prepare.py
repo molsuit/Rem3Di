@@ -3,7 +3,7 @@
 ``BENCHMARK_DATA_FORMAT.md`` §5a and §11. For each of the ten datasets listed in
 ``datasets.yaml`` next to this module this reads one pinned csv of the DeepChem
 S3 release, checks its sha256 and row count, merges the source rows into one
-row per stereoisomer (:func:`remedi_data.bundle.merge_source_rows`),
+row per stereoisomer (:func:`remedi_data.preparation.smiles.merge_source_rows`),
 freezes the deterministic DeepChem scaffold test fold plus five seeded
 train/valid partitions as ``split__seed{1..5}``, and writes
 ``benchmark_data/bundles/<dataset_id>/``.
@@ -30,19 +30,25 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rdkit import rdBase
 
-from remedi_data.bundle import (
-    PREPARER_REPOSITORY,
-    BundleReport,
+from remedi_data.chemistry.splits import (
+    fixed_test_seeded_split_columns,
+    scaffold_test_mask,
+)
+from remedi_data.format import (
     DatasetSpec,
     EvalMetric,
     FileHash,
-    PinnedFile,
-    PreparationError,
     PreparerRecord,
-    PreparerSettings,
-    SourceLabel,
     SourceRecord,
     TaskType,
+)
+from remedi_data.preparation.smiles import (
+    PREPARER_REPOSITORY,
+    BundleReport,
+    PinnedFile,
+    PreparationError,
+    PreparerSettings,
+    SourceLabel,
     check_unique,
     ensure_pinned_file,
     merge_source_rows,
@@ -51,10 +57,6 @@ from remedi_data.bundle import (
     smiles_bundle_spec,
     smiles_evaluation_metrics,
     write_smiles_bundle,
-)
-from remedi_data.chemistry.splits import (
-    fixed_test_seeded_split_columns,
-    scaffold_test_mask,
 )
 from remedi_data.yaml_io import read_model
 

@@ -33,24 +33,26 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rdkit import rdBase
 
-from remedi_data.bundle import (
+from remedi_data.format import (
     METRICS_BY_TASK_TYPE,
-    PREPARER_REPOSITORY,
-    BundleReport,
     DatasetSpec,
     EvalMetric,
     FileHash,
     LabelColumn,
-    PreparationError,
     PreparerRecord,
-    PreparerSettings,
     SourceRecord,
     TaskType,
+    metrics_with_headline,
+    sha256_of_file,
+)
+from remedi_data.preparation.smiles import (
+    PREPARER_REPOSITORY,
+    BundleReport,
+    PreparationError,
+    PreparerSettings,
     check_unique,
     merge_source_rows,
-    metrics_with_headline,
     preparer_main,
-    sha256_of_file,
     smiles_bundle_spec,
     write_smiles_bundle,
 )

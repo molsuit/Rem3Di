@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import remedi_eval.framework.tasks.benchmark as benchmark_module
-from remedi_data.bundle import (
+from remedi_data.format import (
     DatasetSpec,
     EvalMetric,
     EvaluationSpec,

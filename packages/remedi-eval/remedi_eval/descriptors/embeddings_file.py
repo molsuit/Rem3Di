@@ -34,8 +34,8 @@ from typing import Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from remedi_data.bundle import git_head_sha, sha256_of_file, structures_identity
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.format import git_head_sha, sha256_of_file, structures_identity
 from remedi_data.yaml_io import read_model, write_model
 
 logger = logging.getLogger(__name__)

@@ -14,11 +14,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from rdkit import Chem, RDLogger
 from rdkit.Chem import rdMolDescriptors as rdMD
 
-from remedi_data.bundle import SPEC_FILENAME, read_spec, read_table
 from remedi_data.chemistry.fingerprints import morgan_fingerprints
-from remedi_data.chemistry.physchem import DESCRIPTORS_2D
 from remedi_data.chemistry.splits import murcko_scaffold
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.format import SPEC_FILENAME, read_spec, read_table
 from remedi_data.parallel import process_map
 from remedi_data.runs.results import (
     ArrayResult,
@@ -31,6 +30,7 @@ from remedi_eval.dataset_analysis.bitbirch import (
     fit_umap,
 )
 from remedi_eval.dataset_analysis.config import MoleculeDatasetAnalysisConfig
+from remedi_eval.dataset_analysis.physchem import DESCRIPTORS_2D
 from remedi_eval.dataset_analysis.statistics import DistributionStats, timed
 from remedi_eval.results import FigureResult
 

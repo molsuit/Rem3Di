@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from remedi_data.bundle import (
+from remedi_data.format import (
     DATASET_CONFIG_FILENAME,
     SPEC_FILENAME,
     DatasetSpec,

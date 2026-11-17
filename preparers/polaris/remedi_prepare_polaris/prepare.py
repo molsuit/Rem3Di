@@ -7,7 +7,7 @@ root. For each bundle listed in ``datasets.yaml`` next to this module, this
 reads the parquet, drops the rows whose CXSMILES carries an OR stereo group (a
 separated enantiomer of unknown absolute configuration), makes every AND-group
 centre unspecified (§11.3), merges the source rows into one row per stereoisomer
-(:func:`remedi_data.bundle.merge_source_rows`), fixes the test fold
+(:func:`remedi_data.preparation.smiles.merge_source_rows`), fixes the test fold
 (the shipped ``Set`` column or a DeepChem scaffold split), freezes five seeded
 train/valid partitions as ``split__seed{1..5}`` and writes
 ``benchmark_data/bundles/<dataset_id>/``.
@@ -34,29 +34,6 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from rdkit import rdBase
 
-from remedi_data.bundle import (
-    PREPARER_REPOSITORY,
-    BundleReport,
-    DatasetSpec,
-    EvalMetric,
-    FileHash,
-    LabelColumn,
-    MergedRows,
-    PreparationError,
-    PreparerRecord,
-    PreparerSettings,
-    SourceLabel,
-    SourceRecord,
-    TaskType,
-    check_unique,
-    merge_source_rows,
-    preparer_main,
-    seeded_split_notice,
-    sha256_of_file,
-    smiles_bundle_spec,
-    smiles_evaluation_metrics,
-    write_smiles_bundle,
-)
 from remedi_data.chemistry.splits import (
     fixed_test_seeded_split_columns,
     scaffold_test_mask,
@@ -65,7 +42,32 @@ from remedi_data.chemistry.stereo_groups import (
     has_or_stereo_group,
     unspecify_relative_stereo,
 )
-from remedi_data.dataset.split_codes import Split
+from remedi_data.format import (
+    DatasetSpec,
+    EvalMetric,
+    FileHash,
+    LabelColumn,
+    PreparerRecord,
+    SourceRecord,
+    TaskType,
+    sha256_of_file,
+)
+from remedi_data.format.split_codes import Split
+from remedi_data.preparation.smiles import (
+    PREPARER_REPOSITORY,
+    BundleReport,
+    MergedRows,
+    PreparationError,
+    PreparerSettings,
+    SourceLabel,
+    check_unique,
+    merge_source_rows,
+    preparer_main,
+    seeded_split_notice,
+    smiles_bundle_spec,
+    smiles_evaluation_metrics,
+    write_smiles_bundle,
+)
 from remedi_data.yaml_io import read_model
 
 logger = logging.getLogger("preparers.polaris")

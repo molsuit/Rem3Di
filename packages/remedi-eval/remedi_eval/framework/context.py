@@ -17,8 +17,8 @@ from pathlib import Path
 
 import numpy as np
 
-from remedi_data.bundle import structures_identity
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.format import structures_identity
 from remedi_eval.descriptors import DescriptorConfig
 
 logger = logging.getLogger(__name__)

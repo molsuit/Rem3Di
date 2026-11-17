@@ -1,4 +1,4 @@
-"""What every SMILES preparer shares (``bundle/preparation.py``)."""
+"""What every SMILES preparer shares (``preparation/smiles/preparation.py``)."""
 
 from __future__ import annotations
 
@@ -8,22 +8,24 @@ from typing import Any
 
 import pytest
 
-from remedi_data.bundle import (
+from remedi_data.format import (
+    EvalMetric,
+    Log10LabelTransform,
+    PreparerRecord,
+    SourceRecord,
+    TaskType,
+    read_bundle,
+)
+from remedi_data.preparation.smiles import (
     AGGREGATION_NOTICE,
     MEASUREMENT_COUNT_COLUMN,
     BundleReport,
-    EvalMetric,
-    Log10LabelTransform,
     PreparationError,
-    PreparerRecord,
     PreparerSettings,
     SourceLabel,
-    SourceRecord,
-    TaskType,
     format_report,
     merge_source_rows,
     preparer_main,
-    read_bundle,
     seeded_split_notice,
     smiles_bundle_spec,
     smiles_bundle_table,

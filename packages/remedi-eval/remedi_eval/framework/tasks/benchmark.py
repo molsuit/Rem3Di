@@ -34,10 +34,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 
-from remedi_data.bundle import (
-    DatasetSpec,
-    EvalMetric,
-)
+from remedi_data.format import DatasetSpec, EvalMetric
 from remedi_data.runs.results import (
     ArrayResult,
     EvalResult,

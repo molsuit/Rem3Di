@@ -1,7 +1,7 @@
 """Tests for the TDC-specific parts of the TDC ADMET preparer.
 
 The shared mechanics (merge, table, spec, report, CLI) are tested with
-``remedi_data.bundle``. Here: the endpoint catalog, the metric mapping,
+``remedi_data.preparation.smiles``. Here: the endpoint catalog, the metric mapping,
 the PyTDC quirks, mapping PyTDC's train/valid partitions back onto the source
 rows, ``prepare_endpoint`` end to end on synthetic csvs with a stand-in for the
 PyTDC benchmark group, and two tests on real endpoints, skipped when the pinned
@@ -36,16 +36,13 @@ from remedi_prepare_tdc.prepare import (
     train_valid_labels,
 )
 
-from remedi_data.bundle import (
+from remedi_data.format import EvalMetric, PreparerRecord, TaskType, read_bundle
+from remedi_data.preparation.smiles import (
     AGGREGATION_NOTICE,
     DUPLICATE_LABEL_TIE,
     DUPLICATE_SMILES,
     MEASUREMENT_COUNT_COLUMN,
     BundleReport,
-    EvalMetric,
-    PreparerRecord,
-    TaskType,
-    read_bundle,
 )
 from remedi_data.yaml_io import read_model
 

@@ -24,16 +24,16 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 
-from remedi_data.bundle.provenance import (
+from remedi_data.format.invariants import (
+    count_stereoisomer_straddling_constitutions,
+    validate_table,
+)
+from remedi_data.format.provenance import (
     BundleOutputs,
     BundleProvenance,
     TableOutputRecord,
 )
-from remedi_data.bundle.spec import DatasetSpec
-from remedi_data.bundle.validate import (
-    count_stereoisomer_straddling_constitutions,
-    validate_table,
-)
+from remedi_data.format.spec import DatasetSpec
 from remedi_data.yaml_io import read_model, read_yaml, write_model
 
 SPEC_FILENAME = "dataset.yaml"

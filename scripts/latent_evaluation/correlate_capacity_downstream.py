@@ -34,7 +34,7 @@ import pandas as pd
 from pydantic import BaseModel
 from scipy.stats import spearmanr
 
-from remedi_data.bundle import EvalMetric
+from remedi_data.format import EvalMetric
 from remedi_data.logging_setup import setup_logging
 from remedi_data.runs.task_runner import MANIFEST_FILENAME
 from remedi_data.yaml_io import read_model, read_yaml, write_model

@@ -17,14 +17,14 @@ import numpy as np
 import pytest
 import yaml
 
-from remedi_data.bundle import (
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.format import (
     PROVENANCE_FILENAME,
     BundleOutputs,
     BundleProvenance,
     PreparerRecord,
     TableOutputRecord,
 )
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_eval.descriptors import (
     EcfpConfig,
     embeddings_paths,

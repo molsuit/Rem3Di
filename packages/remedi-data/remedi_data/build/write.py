@@ -12,7 +12,6 @@ writes ``dataset.yaml``, ``table.parquet`` and ``provenance.yaml`` beside it.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import shutil
 import uuid
@@ -21,7 +20,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from remedi_data.bundle import (
+from remedi_data.dataset.config import DatasetConfig
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.format import (
     BundleProvenance,
     BundleValidationError,
     DatasetSpec,
@@ -30,33 +32,9 @@ from remedi_data.bundle import (
     validate_table,
     write_table_files,
 )
-from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.format.verify import structures_sha256, zarr_problems
 
 logger = logging.getLogger(__name__)
-
-
-def structures_sha256(dataset: MoleculeDataset) -> str:
-    """sha256 over everything the model reads from the zarr.
-
-    ``atomic_numbers``, ``positions`` and ``molecule_ptr`` (the structures) and
-    the per-structure ``total_charge`` and ``multiplicity``. The data identity a
-    descriptor cache and a selection key on: it moves whenever any structure,
-    its charge or spin, or the set of structures changes.
-    """
-    digest = hashlib.sha256()
-    for name, array in (
-        ("atomic_numbers", dataset.atomic_numbers),
-        ("positions", dataset.positions),
-        ("molecule_ptr", dataset.ptr),
-        ("total_charge", dataset.total_charge),
-        ("multiplicity", dataset.multiplicity),
-    ):
-        values = np.ascontiguousarray(np.asarray(array[:]))
-        digest.update(f"{name}:{values.dtype.str}:{values.shape}\n".encode())
-        digest.update(values.tobytes())
-    return digest.hexdigest()
 
 
 def _write_zarr(
@@ -76,41 +54,6 @@ def _write_zarr(
         stereoisomer_ids=table["stereoisomer_id"].to_numpy(dtype=np.int64),
         config=layout,
     )
-
-
-def zarr_problems(path: Path, table: pd.DataFrame) -> list[str]:
-    """Invariant 8: the zarr at ``path`` against the table, row for row.
-
-    Structure count, the three id arrays, ``total_charge`` and ``multiplicity``
-    must all equal what the table says. Labels and splits live only in the
-    table, so there is nothing of theirs to compare.
-    """
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(path)
-    rows = len(table)
-    if dataset.N_structures != rows:
-        return [f"8: the zarr holds {dataset.N_structures} structures for {rows} rows"]
-    problems: list[str] = []
-    expected_ids = {
-        "ids/structure_id": (dataset.structure_ids, table["structure_id"]),
-        "ids/molecule_id": (dataset.molecule_ids, table["molecule_id"]),
-        "ids/stereoisomer_id": (dataset.isomer_ids, table["stereoisomer_id"]),
-    }
-    for name, (array, column) in expected_ids.items():
-        if array is None or not np.array_equal(
-            np.asarray(array[:rows], dtype=np.int64),
-            column.to_numpy(dtype=np.int64),
-        ):
-            problems.append(f"8: {name} does not match the table")
-    for name, array in (
-        ("total_charge", dataset.total_charge),
-        ("multiplicity", dataset.multiplicity),
-    ):
-        if not np.array_equal(
-            np.asarray(array[:rows], dtype=np.float64),
-            table[name].to_numpy(dtype=np.float64),
-        ):
-            problems.append(f"8: {name} does not match the table")
-    return problems
 
 
 def write_dataset(

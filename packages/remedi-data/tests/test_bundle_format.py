@@ -26,7 +26,10 @@ import pytest
 import yaml
 from ase import Atoms
 from rdkit import Chem
-from remedi_data.bundle import (
+
+from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.format import (
     DATASET_CONFIG_FILENAME,
     PROVENANCE_FILENAME,
     SPEC_FILENAME,
@@ -61,10 +64,7 @@ from remedi_data.bundle import (
     write_bundle,
     write_table_files,
 )
-from remedi_data.bundle import bundle as bundle_module
-
-from remedi_data.chemistry.geometry import GeometryLimits
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.format import table as bundle_module
 from testing import (
     GEOMETRY_LIMITS,
     embed_frame,

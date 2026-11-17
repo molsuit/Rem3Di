@@ -28,8 +28,8 @@ from pydantic import Field
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
-from remedi_data.structures.records import DroppedRecord, StructureRecord
-from remedi_data.structures.source import StructureSourceBase
+from remedi_data.preparation.structures.records import DroppedRecord, StructureRecord
+from remedi_data.preparation.structures.source import StructureSourceBase
 
 SUMMARY_FILENAME = "summary_drugs.json"
 INDEX_FILENAME = "geom_molecules.parquet"

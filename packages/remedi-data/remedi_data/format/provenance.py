@@ -3,7 +3,7 @@
 See ``BENCHMARK_DATA_FORMAT.md`` §4.7 and §4.3. The preparer fills
 ``preparer``, ``source``, ``geometry_limits``, ``smiles_filter``, ``notices`` and
 the parts of ``counts`` only it knows (``source_molecules`` and ``dropped``);
-the writer (:func:`remedi_data.bundle.bundle.write_bundle` or
+the writer (:func:`remedi_data.format.table.write_bundle` or
 ``dataset_build.write_dataset``) fills everything derivable from the data: the
 output hashes, ``final_rows``, ``per_split``, ``per_label_non_null``,
 ``stereoisomer_straddling_constitutions`` and ``prepared_at``.
@@ -109,7 +109,7 @@ class BundleOutputs(BaseModel):
 
     table_parquet: TableOutputRecord = Field(alias="table.parquet")
     #: sha256 over the zarr's ``atomic_numbers``, ``positions``, ``molecule_ptr``,
-    #: ``total_charge`` and ``multiplicity`` (``build.write.structures_sha256``);
+    #: ``total_charge`` and ``multiplicity`` (``format.verify.structures_sha256``);
     #: set on a dataset only. It is the data identity a descriptor cache keys on.
     structures_sha256: str | None = None
 

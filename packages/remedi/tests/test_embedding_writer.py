@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 import pytest
 from pydantic import ValidationError
-from remedi_data.bundle import EvalMetric, LabelColumn, TaskType
 
 from remedi.embedding import (
     EmbedAndEvaluateConfig,
@@ -23,6 +22,7 @@ from remedi.embedding import (
 )
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, ENCODER_WEIGHT_FILES
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.format import EvalMetric, LabelColumn, TaskType
 from remedi_data.yaml_io import read_model
 from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.descriptors import (

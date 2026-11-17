@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from remedi_data.bundle import EvalMetric
+from remedi_data.format import EvalMetric
 from remedi_eval.benchmark.metrics import higher_is_better
 from remedi_eval.framework.plotting import register_plotter
 from remedi_eval.results import FigureResult

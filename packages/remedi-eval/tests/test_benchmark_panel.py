@@ -15,8 +15,8 @@ import pandas as pd
 import pydantic
 import pytest
 import yaml
-from remedi_data.bundle import EvalMetric, LabelColumn, TaskType
 
+from remedi_data.format import EvalMetric, LabelColumn, TaskType
 from remedi_eval.benchmark.learners import Learner, LinearLearner
 from remedi_eval.descriptors import DescriptorConfig, EcfpConfig
 from remedi_eval.framework import (
@@ -329,9 +329,8 @@ def test_a_failing_cell_does_not_lose_the_other_cells_of_its_dataset(
 def test_a_table_read_error_is_not_reported_as_a_missing_split_column(
     tmp_path: Path,
 ) -> None:
-    from remedi_data.bundle import TABLE_FILENAME
-
     from remedi_data.dataset.molecule_dataset import MoleculeDataset
+    from remedi_data.format import TABLE_FILENAME
     from remedi_eval.protocol import read_partition
 
     dataset_dir = build_zarr(tmp_path)

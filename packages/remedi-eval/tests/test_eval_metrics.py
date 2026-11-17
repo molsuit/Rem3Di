@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from remedi_data.bundle import EvalMetric
+from remedi_data.format import EvalMetric
 from remedi_eval.benchmark.metrics import (
     auprc,
     auroc,

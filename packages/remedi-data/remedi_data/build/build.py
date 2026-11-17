@@ -26,19 +26,8 @@ from ase import Atoms
 from pydantic import BaseModel, ConfigDict, Field
 from rdkit import Chem
 
-from remedi_data.build.verify import verify_dataset
+from remedi_data.build.expansion import ENANTIOMER_PARTNER_FAILED, expand_to_structures
 from remedi_data.build.write import write_dataset
-from remedi_data.bundle import (
-    ENANTIOMER_PARTNER_FAILED,
-    Bundle,
-    ConformerGenerationRecord,
-    discover_bundles,
-    discover_datasets,
-    expand_to_structures,
-    read_bundle,
-    read_provenance,
-    stereo_agrees_with_frame,
-)
 from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.conformers import (
     ConformerEmbeddingConfig,
@@ -51,6 +40,16 @@ from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits, frame_geometry_violations
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.format import (
+    Bundle,
+    ConformerGenerationRecord,
+    discover_bundles,
+    discover_datasets,
+    read_bundle,
+    read_provenance,
+    stereo_agrees_with_frame,
+)
+from remedi_data.format.verify import verify_dataset
 from remedi_data.parallel import default_workers
 from remedi_data.runs.results import EvalResult, PydanticResult
 from remedi_data.runs.task_runner import (

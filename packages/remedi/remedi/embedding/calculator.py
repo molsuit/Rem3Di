@@ -31,8 +31,8 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from remedi_data.bundle import sha256_of_file
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.format import sha256_of_file
 from remedi_data.yaml_io import read_yaml
 
 

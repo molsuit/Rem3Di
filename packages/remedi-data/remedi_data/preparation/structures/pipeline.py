@@ -2,7 +2,7 @@
 
 ``prepare_structures`` splits the source's records into shards of
 ``shard_size``. Each shard runs in a worker process, turns every record into a
-kept frame or a counted drop (:func:`~remedi_data.structures.records.prepare_record`)
+kept frame or a counted drop (:func:`~remedi_data.preparation.structures.records.prepare_record`)
 and writes ``shards/<n>.parquet`` (the table rows), ``shards/<n>.npz`` (the
 frames) and, last, ``shards/<n>.yaml`` (its counts; the completion marker). A
 rerun skips every shard whose marker exists, so a crash or a timeout loses at
@@ -29,7 +29,9 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.build.write import write_dataset
-from remedi_data.bundle import (
+from remedi_data.dataset.config import DatasetConfig
+from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.format import (
     BundleCounts,
     BundleProvenance,
     DatasetSpec,
@@ -41,15 +43,13 @@ from remedi_data.bundle import (
     read_provenance,
     sha256_of_file,
 )
-from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.parallel import default_workers
-from remedi_data.structures.records import (
+from remedi_data.preparation.structures.records import (
     DroppedRecord,
     PreparedFrame,
     prepare_record,
 )
-from remedi_data.structures.sources import StructureSource
+from remedi_data.preparation.structures.sources import StructureSource
 from remedi_data.yaml_io import read_model, write_model
 
 logger = logging.getLogger(__name__)
@@ -510,7 +510,7 @@ def prepare_structures(
         dataset_id=source.dataset_id,
         preparer=PreparerRecord(
             repo="Rem3Di",
-            script="packages/remedi-data/remedi_data/structures/pipeline.py",
+            script="packages/remedi-data/remedi_data/preparation/structures/pipeline.py",
             git_sha=git_head_sha(Path(__file__).parent),
         ),
         source=SourceRecord(

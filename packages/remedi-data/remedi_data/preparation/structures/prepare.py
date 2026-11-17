@@ -14,16 +14,16 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from remedi_data.preparation.structures.pipeline import (
+    StructurePreparationSettings,
+    prepare_structures,
+)
+from remedi_data.preparation.structures.sources import StructureSource
 from remedi_data.runs.results import EvalResult, PydanticResult
 from remedi_data.runs.task_runner import (
     RunReport,
     run_and_record,
 )
-from remedi_data.structures.pipeline import (
-    StructurePreparationSettings,
-    prepare_structures,
-)
-from remedi_data.structures.sources import StructureSource
 
 logger = logging.getLogger(__name__)
 

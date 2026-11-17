@@ -16,8 +16,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from remedi.embedding.calculator import RemediConfig
-from remedi_data.bundle import read_spec
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.format import read_spec
 from remedi_eval.descriptors.embeddings_file import ensure_embeddings, producer_record
 
 logger = logging.getLogger(__name__)

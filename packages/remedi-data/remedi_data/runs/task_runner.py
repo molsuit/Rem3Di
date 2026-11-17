@@ -3,7 +3,7 @@
 Every run goes through :func:`run_and_record`:
 :func:`remedi_eval.framework.runner.run_manifest` with an ``EvalContext``,
 :func:`remedi_data.build.build_datasets` with its build and verify tasks and
-:func:`remedi_data.structures.prepare.prepare_structure_datasets` with one task
+:func:`remedi_data.preparation.structures.prepare.prepare_structure_datasets` with one task
 per source. The contexts share the runner, not a base class, so this module
 knows nothing about either: it takes whatever ``ctx`` the caller built and hands
 it to ``task.run``.
@@ -24,7 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from remedi_data.bundle import git_head_sha
+from remedi_data.format import git_head_sha
 from remedi_data.runs.task import (
     RunnableTask,
     TaskStatus,

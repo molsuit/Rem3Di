@@ -9,7 +9,7 @@ import numpy as np
 from matplotlib.lines import Line2D
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi_data.bundle import read_spec, read_table
+from remedi_data.format import read_spec, read_table
 from remedi_eval.framework.tasks.descriptor_analysis.context import (
     DescriptorAnalysisContext,
 )

@@ -1,4 +1,4 @@
-"""The source-row merge every SMILES preparer shares (``bundle/aggregation.py``)."""
+"""The source-row merge every SMILES preparer shares (``preparation/smiles/aggregation.py``)."""
 
 from __future__ import annotations
 
@@ -6,20 +6,20 @@ import math
 
 import pytest
 
-from remedi_data.bundle import (
+from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
+from remedi_data.format import TaskType
+from remedi_data.preparation.smiles import (
     DUPLICATE_LABEL_TIE,
     DUPLICATE_SMILES,
     MISSING_LABEL,
     AggregatedRows,
     LabelAggregationError,
-    TaskType,
     aggregate_by_canonical_smiles,
     aggregate_label,
     check_row_accounting,
     filter_source_smiles,
     merge_source_rows,
 )
-from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
 
 ETHANOL = "CCO"
 PROPANOL = "CCCO"

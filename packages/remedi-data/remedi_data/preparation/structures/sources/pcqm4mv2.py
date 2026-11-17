@@ -19,12 +19,16 @@ import pandas as pd
 from pydantic import Field
 from rdkit import Chem
 
-from remedi_data.bundle import LabelColumn, TaskType
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
-from remedi_data.structures.records import UNREADABLE, DroppedRecord, StructureRecord
-from remedi_data.structures.source import StructureSourceBase
+from remedi_data.format import LabelColumn, TaskType
+from remedi_data.preparation.structures.records import (
+    UNREADABLE,
+    DroppedRecord,
+    StructureRecord,
+)
+from remedi_data.preparation.structures.source import StructureSourceBase
 
 OFFSETS_FILENAME = "sdf_record_offsets.npy"
 GAPS_FILENAME = "homo_lumo_gap.npy"

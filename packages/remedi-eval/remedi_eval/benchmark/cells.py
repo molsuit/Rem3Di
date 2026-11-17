@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel
 
-from remedi_data.bundle import DatasetSpec, EvalMetric, TaskType, discover_datasets
+from remedi_data.format import DatasetSpec, EvalMetric, TaskType, discover_datasets
 from remedi_eval.benchmark.learners import Learner
 from remedi_eval.benchmark.metrics import (
     MulticlassReport,

@@ -10,8 +10,8 @@ from typing import Any, cast
 
 import numpy as np
 import pydantic
-from remedi_data.bundle import EvalMetric, LabelColumn, TaskType
 
+from remedi_data.format import EvalMetric, LabelColumn, TaskType
 from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import EvalContext
 from remedi_eval.projection import PcaConfig, ProjectionConfig, UmapConfig

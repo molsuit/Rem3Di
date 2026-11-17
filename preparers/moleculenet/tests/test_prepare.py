@@ -1,8 +1,8 @@
 """Tests for the MoleculeNet-specific parts of the MoleculeNet preparer.
 
 The shared mechanics (merge, table, spec, report, CLI) are tested with
-``remedi_data.bundle``. Here: the catalog, its source files
-(pinned and downloaded by ``remedi_data.bundle.ensure_pinned_file``), the csv reader on tiny synthetic files, :func:`run` end to end on a
+``remedi_data.preparation.smiles``. Here: the catalog, its source files
+(pinned and downloaded by ``remedi_data.preparation.smiles.ensure_pinned_file``), the csv reader on tiny synthetic files, :func:`run` end to end on a
 synthetic catalog whose pins are computed in the test, and one test on the
 smallest real dataset (freesolv), skipped when the pinned raw file is absent.
 """
@@ -27,15 +27,13 @@ from remedi_prepare_moleculenet.prepare import (
     run,
 )
 
-from remedi_data.bundle import (
+from remedi_data.chemistry.splits import scaffold_test_mask
+from remedi_data.format import EvalMetric, read_bundle, sha256_of_file
+from remedi_data.preparation.smiles import (
     AGGREGATION_NOTICE,
     INVALID_SMILES,
-    EvalMetric,
     PinnedFileError,
-    read_bundle,
-    sha256_of_file,
 )
-from remedi_data.chemistry.splits import scaffold_test_mask
 from remedi_data.yaml_io import read_model
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]

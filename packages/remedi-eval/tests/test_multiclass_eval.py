@@ -17,8 +17,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from remedi_data.bundle import EvalMetric, LabelColumn, TaskType
 
+from remedi_data.format import EvalMetric, LabelColumn, TaskType
 from remedi_data.runs.results import ArrayResult
 from remedi_eval.benchmark.learners import (
     LightGBMLearner,

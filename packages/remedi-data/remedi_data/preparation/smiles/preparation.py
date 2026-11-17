@@ -1,7 +1,7 @@
 """What every SMILES preparer shares: settings, the table, the spec, the run report.
 
 A SMILES preparer (TDC, MoleculeNet, Polaris) reads its source, hands the rows to
-:func:`~remedi_data.bundle.aggregation.merge_source_rows`, makes its
+:func:`~remedi_data.preparation.smiles.aggregation.merge_source_rows`, makes its
 split columns, and writes a bundle. Everything except reading the source and
 making the splits is the same for all of them and lives here, so that a
 preparer module reads as exactly those source-specific steps.
@@ -19,23 +19,14 @@ from typing import Any
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from remedi_data.bundle.aggregation import (
-    AGGREGATION_NOTICE,
-    MEASUREMENT_COUNT_COLUMN,
-    MergedRows,
-)
-from remedi_data.bundle.bundle import (
-    Bundle,
-    BundleValidationError,
-    write_bundle,
-)
-from remedi_data.bundle.provenance import (
+from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
+from remedi_data.format.provenance import (
     BundleCounts,
     BundleProvenance,
     PreparerRecord,
     SourceRecord,
 )
-from remedi_data.bundle.spec import (
+from remedi_data.format.spec import (
     DatasetSpec,
     EvalMetric,
     EvaluationSpec,
@@ -45,8 +36,13 @@ from remedi_data.bundle.spec import (
     TaskType,
     metrics_with_headline,
 )
-from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
+from remedi_data.format.table import Bundle, BundleValidationError, write_bundle
 from remedi_data.logging_setup import setup_logging
+from remedi_data.preparation.smiles.aggregation import (
+    AGGREGATION_NOTICE,
+    MEASUREMENT_COUNT_COLUMN,
+    MergedRows,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -26,15 +26,15 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-from remedi_data.bundle import (
+from remedi_data.chemistry.splits import murcko_scaffold
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.format import (
     is_dataset_directory,
     read_provenance,
     read_spec,
     read_table_polars,
     sha256_of_file,
 )
-from remedi_data.chemistry.splits import murcko_scaffold
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.parallel import process_map
 from remedi_data.selection.config import (
     ConformersPerMolecule,

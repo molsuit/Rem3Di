@@ -2,7 +2,7 @@
 
 A preparer that reads a released file names it as a :class:`PinnedFile` and
 calls :func:`ensure_pinned_file` before reading; the returned
-:class:`~remedi_data.bundle.provenance.FileHash` goes into ``provenance.yaml``.
+:class:`~remedi_data.format.provenance.FileHash` goes into ``provenance.yaml``.
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi_data.bundle.bundle import sha256_of_file
-from remedi_data.bundle.provenance import FileHash
+from remedi_data.format.provenance import FileHash
+from remedi_data.format.table import sha256_of_file
 
 logger = logging.getLogger(__name__)
 

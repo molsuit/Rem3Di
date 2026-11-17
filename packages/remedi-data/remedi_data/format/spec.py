@@ -23,7 +23,7 @@ from pydantic import (
     model_validator,
 )
 
-from remedi_data.dataset.split_codes import SPLIT_CODE_BY_NAME
+from remedi_data.format.split_codes import SPLIT_CODE_BY_NAME
 
 
 class TaskType(str, Enum):

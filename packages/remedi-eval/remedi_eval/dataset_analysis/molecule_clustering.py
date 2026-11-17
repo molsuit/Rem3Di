@@ -20,8 +20,8 @@ import polars as pl
 import torch
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from remedi_data.bundle import read_table_polars
 from remedi_data.chemistry.fingerprints import morgan_fingerprints
+from remedi_data.format import read_table_polars
 from remedi_data.selection import (
     ClusterRecord,
     SelectionError,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from rdkit import Chem
 
-from remedi_data.chemistry.physchem import DESCRIPTORS_2D
+from remedi_eval.dataset_analysis.physchem import DESCRIPTORS_2D
 
 
 def test_2d_descriptors_known_values():

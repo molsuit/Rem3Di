@@ -20,10 +20,10 @@ import pandas as pd
 from ase.data import atomic_numbers
 from pydantic import Field
 
-from remedi_data.bundle import LabelColumn, TaskType
 from remedi_data.chemistry.geometry import GeometryLimits
-from remedi_data.structures.records import DroppedRecord, StructureRecord
-from remedi_data.structures.source import StructureSourceBase
+from remedi_data.format import LabelColumn, TaskType
+from remedi_data.preparation.structures.records import DroppedRecord, StructureRecord
+from remedi_data.preparation.structures.source import StructureSourceBase
 
 #: Columns of ``tmQM_y.csv`` that become labels, all regression, in table order.
 TMQM_LABELS: tuple[str, ...] = (

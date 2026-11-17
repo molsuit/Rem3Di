@@ -10,7 +10,8 @@ import pandas as pd
 import pytest
 import yaml
 from pydantic import ValidationError
-from remedi_data.bundle import (
+
+from remedi_data.format import (
     DatasetSpec,
     EvalMetric,
     IdentityLabelTransform,
@@ -18,7 +19,6 @@ from remedi_data.bundle import (
     Log10LabelTransform,
     TaskType,
 )
-
 from remedi_eval.protocol import (
     apply_label_transforms,
     build_targets_with_nan,

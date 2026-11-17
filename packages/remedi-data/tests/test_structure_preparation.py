@@ -1,4 +1,4 @@
-"""The structure preparers (``remedi_data.structures``) on small synthetic raw files.
+"""The structure preparers (``remedi_data.preparation.structures``) on small synthetic raw files.
 
 Each source is exercised through its real reader on files written here in the
 source's raw format (tmQM xyz.gz + csv, a PCQM-style SDF + csv.gz, a GEOM-style
@@ -22,14 +22,23 @@ import pydantic
 import pytest
 from rdkit import Chem
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
-from remedi_data.bundle import (
+
+from remedi_data.chemistry.elements import ElementSet
+from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.chemistry.smiles_filter import (
+    SmilesFilterConfig,
+    molecule_passes_filter,
+)
+from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.format import (
     assign_identity,
     identity_from_canonical,
     mirror_isomeric_smiles,
     read_bundle,
     read_provenance,
 )
-from remedi_data.structures import (
+from remedi_data.format.verify import verify_dataset
+from remedi_data.preparation.structures import (
     DroppedRecord,
     GeomDrugsSource,
     Pcqm4mv2Source,
@@ -42,24 +51,18 @@ from remedi_data.structures import (
     prepare_structure_datasets,
     prepare_structures,
 )
-from remedi_data.structures.pipeline import run_shards
-from remedi_data.structures.records import (
+from remedi_data.preparation.structures.pipeline import run_shards
+from remedi_data.preparation.structures.records import (
     CONNECTIVITY_DIFFERS_FROM_SOURCE,
     SMILES_FILTER,
     UNREADABLE,
     round_trip_canonical_smiles,
 )
-from remedi_data.structures.sources.pcqm4mv2 import sdf_record_offsets
-from remedi_data.structures.sources.tmqm import iterate_xyz_entries, parse_comment
-
-from remedi_data.build import verify_dataset
-from remedi_data.chemistry.elements import ElementSet
-from remedi_data.chemistry.geometry import GeometryLimits
-from remedi_data.chemistry.smiles_filter import (
-    SmilesFilterConfig,
-    molecule_passes_filter,
+from remedi_data.preparation.structures.sources.pcqm4mv2 import sdf_record_offsets
+from remedi_data.preparation.structures.sources.tmqm import (
+    iterate_xyz_entries,
+    parse_comment,
 )
-from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.yaml_io import read_model
 from testing import SMALL_ZARR_LAYOUT
 

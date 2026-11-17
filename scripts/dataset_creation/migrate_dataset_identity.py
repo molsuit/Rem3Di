@@ -48,8 +48,9 @@ import zarr
 from pydantic import BaseModel, ConfigDict, Field
 from zarr.storage import LocalStore
 
-from remedi_data.build import structures_sha256, verify_dataset
-from remedi_data.bundle import (
+from remedi_data.dataset.config import DatasetConfig
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.format import (
     DATASET_CONFIG_FILENAME,
     PROVENANCE_FILENAME,
     TABLE_FILENAME,
@@ -63,9 +64,8 @@ from remedi_data.bundle import (
     read_table,
     sha256_of_file,
 )
-from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.split_codes import Split, split_codes_from_names
+from remedi_data.format.split_codes import Split, split_codes_from_names
+from remedi_data.format.verify import structures_sha256, verify_dataset
 from remedi_data.logging_setup import setup_logging
 from remedi_data.parallel import default_workers
 from remedi_data.yaml_io import read_yaml, write_model, write_yaml

@@ -17,18 +17,18 @@ from ase import Atoms
 from rdkit import Chem
 from rdkit.Geometry import Point3D
 
-from remedi_data.bundle.spec import (
+from remedi_data.chemistry.geometry import (
+    GeometryLimits,
+    frame_geometry_violations,
+)
+from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.format.spec import (
     SMILES_COLUMNS,
     SPLIT_VALUES,
     DatasetSpec,
     LabelColumn,
     TaskType,
 )
-from remedi_data.chemistry.geometry import (
-    GeometryLimits,
-    frame_geometry_violations,
-)
-from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.parallel import process_map
 
 #: How many offending rows a single message names before it summarises.

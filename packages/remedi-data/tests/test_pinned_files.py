@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from remedi_data.bundle import (
+from remedi_data.format import sha256_of_file
+from remedi_data.preparation.smiles import (
     PinnedFile,
     PinnedFileError,
     ensure_pinned_file,
-    sha256_of_file,
 )
 
 

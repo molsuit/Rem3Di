@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from remedi_data.logging_setup import setup_logging
-from remedi_data.structures import (
+from remedi_data.preparation.structures import (
     StructurePreparationConfig,
     prepare_structure_datasets,
 )

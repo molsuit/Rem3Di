@@ -32,7 +32,15 @@ import pandas as pd
 from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
-from remedi_data.bundle import (
+
+from remedi_data.build import write_dataset
+from remedi_data.chemistry.charge import charge_and_multiplicity
+from remedi_data.chemistry.elements import ElementSet
+from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.dataset.config import DatasetConfig
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.format import (
     Bundle,
     BundleCounts,
     BundleProvenance,
@@ -46,14 +54,6 @@ from remedi_data.bundle import (
     assign_identity,
     write_bundle,
 )
-
-from remedi_data.build import write_dataset
-from remedi_data.chemistry.charge import charge_and_multiplicity
-from remedi_data.chemistry.elements import ElementSet
-from remedi_data.chemistry.geometry import GeometryLimits
-from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.packed_structures import PackedStructures
 
 #: One enantiomer pair, an achiral ring, a meso compound, a lone chiral
 #: molecule and a small achiral molecule: six distinct stereoisomers.

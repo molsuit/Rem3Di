@@ -20,10 +20,10 @@ import zarr
 from zarr.storage import LocalStore
 
 import remedi_data.dataset.molecule_dataset as molecule_dataset_module
-from remedi_data.build import structures_sha256
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.format.verify import structures_sha256
 from testing import write_synthetic_dataset
 
 

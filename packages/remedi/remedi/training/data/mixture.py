@@ -38,10 +38,10 @@ from remedi.training.data.training_dataset import (
     GetItemFn,
     TrainingMoleculeDataset,
 )
-from remedi_data.bundle import read_spec, read_table_polars, table_columns
 from remedi_data.chemistry.elements import D_BLOCK_ATOMIC_NUMBERS, MACE_OFF_ELEMENTS
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.format import read_spec, read_table_polars, table_columns
 from remedi_data.selection import (
     SelectionError,
     dataset_identity,

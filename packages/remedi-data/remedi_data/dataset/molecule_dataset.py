@@ -9,9 +9,9 @@ from zarr import Array
 from zarr.codecs import BloscCodec
 from zarr.storage import LocalStore
 
-from remedi_data.bundle import read_table_polars, table_columns
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.packed_structures import PackedStructures, gather_index
+from remedi_data.format import read_table_polars, table_columns
 from remedi_data.yaml_io import read_model, write_model
 
 

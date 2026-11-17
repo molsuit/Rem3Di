@@ -19,8 +19,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi_data.bundle import read_spec
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.format import read_spec
 from remedi_data.runs.results import EvalResult
 from remedi_eval.framework.context import EvalContext
 from remedi_eval.framework.tasks.descriptor_analysis.analysis_tasks import (

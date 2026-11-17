@@ -15,10 +15,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from remedi_data.bundle import LabelColumn
 from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.chemistry.smiles_filter import SmilesFilterConfig
-from remedi_data.structures.records import DroppedRecord, StructureRecord
+from remedi_data.format import LabelColumn
+from remedi_data.preparation.structures.records import DroppedRecord, StructureRecord
 
 
 class StructureSourceBase(BaseModel):

@@ -25,7 +25,8 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from remedi_data.bundle import (
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.format import (
     TABLE_FILENAME,
     DatasetSpec,
     EvalMetric,
@@ -35,8 +36,7 @@ from remedi_data.bundle import (
     read_table,
     table_columns,
 )
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.split_codes import Split, split_codes_from_names
+from remedi_data.format.split_codes import Split, split_codes_from_names
 
 TaskKind = Literal["regression", "binary", "multilabel", "multiclass"]
 

@@ -2,7 +2,9 @@
 
 :func:`write_dataset` is the one writer every structure dataset goes through;
 :func:`build_datasets` turns SMILES bundles into datasets by generating
-conformers, then verifies every dataset; :func:`verify_dataset` re-checks one.
+conformers, then verifies every dataset
+(:func:`remedi_data.format.verify.verify_dataset`); :func:`expand_to_structures`
+turns a bundle's rows into one row per structure.
 """
 
 from remedi_data.build.build import (
@@ -18,28 +20,27 @@ from remedi_data.build.build import (
     build_datasets,
     embed_bundle,
 )
-from remedi_data.build.verify import VerifyReport, verify_dataset
-from remedi_data.build.write import (
-    structures_sha256,
-    write_dataset,
-    zarr_problems,
+from remedi_data.build.expansion import (
+    ENANTIOMER_PARTNER_FAILED,
+    ExpandedDataset,
+    expand_to_structures,
 )
+from remedi_data.build.write import write_dataset
 
 __all__ = [
     "CONFORMER_EMBEDDING_FAILED",
     "DEFAULT_GEOMETRY_LIMITS",
+    "ENANTIOMER_PARTNER_FAILED",
     "MMFF_NOT_APPLIED",
     "STEREO_MISMATCH_AFTER_EMBEDDING",
     "TIMINGS_FILENAME",
     "BuildDatasetTask",
     "BuildSummary",
     "DatasetBuildConfig",
+    "ExpandedDataset",
     "VerifyDatasetTask",
-    "VerifyReport",
     "build_datasets",
     "embed_bundle",
-    "structures_sha256",
-    "verify_dataset",
+    "expand_to_structures",
     "write_dataset",
-    "zarr_problems",
 ]
