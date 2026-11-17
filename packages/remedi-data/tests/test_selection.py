@@ -34,7 +34,8 @@ from remedi_data.selection import (
 )
 from remedi_data.selection.config import ClusterWeighting
 from remedi_data.selection.select import selection_paths
-from remedi_data.testing import (
+from remedi_data.yaml_io import read_model
+from testing import (
     SMALL_ZARR_LAYOUT,
     embed_frame,
     make_dataset_spec,
@@ -42,7 +43,6 @@ from remedi_data.testing import (
     make_provenance,
     write_small_dataset,
 )
-from remedi_data.yaml_io import read_model
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 

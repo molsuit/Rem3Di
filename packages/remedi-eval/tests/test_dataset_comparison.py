@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 from remedi_data.runs.results import ArrayResult
-from remedi_data.testing import write_synthetic_dataset
 from remedi_eval.dataset_analysis.comparison import (
     DatasetComparison,
     DatasetComparisonSummary,
@@ -21,6 +20,7 @@ from remedi_eval.dataset_analysis.config import (
     NnTanimotoConfig,
     ScaffoldOverlapConfig,
 )
+from testing import write_synthetic_dataset
 
 
 def _written(directory: Path, smiles: list[str]) -> Path:

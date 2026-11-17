@@ -27,26 +27,6 @@ import zarr
 from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdForceFieldHelpers
-
-from remedi_data.build import (
-    CONFORMER_EMBEDDING_FAILED,
-    DEFAULT_GEOMETRY_LIMITS,
-    MMFF_NOT_APPLIED,
-    STEREO_MISMATCH_AFTER_EMBEDDING,
-    TIMINGS_FILENAME,
-    BuildSummary,
-    DatasetBuildConfig,
-    VerifyDatasetTask,
-    VerifyReport,
-    build_datasets,
-    structures_sha256,
-    verify_dataset,
-    write_dataset,
-    zarr_problems,
-)
-from remedi_data.build import build as build_module
-from remedi_data.build import verify as verify_module
-from remedi_data.build import write as write_module
 from remedi_data.bundle import (
     ENANTIOMER_PARTNER_FAILED,
     PROVENANCE_FILENAME,
@@ -67,12 +47,32 @@ from remedi_data.bundle import (
     validate_table,
     write_bundle,
 )
+
+from remedi_data.build import (
+    CONFORMER_EMBEDDING_FAILED,
+    DEFAULT_GEOMETRY_LIMITS,
+    MMFF_NOT_APPLIED,
+    STEREO_MISMATCH_AFTER_EMBEDDING,
+    TIMINGS_FILENAME,
+    BuildSummary,
+    DatasetBuildConfig,
+    VerifyDatasetTask,
+    VerifyReport,
+    build_datasets,
+    structures_sha256,
+    verify_dataset,
+    write_dataset,
+    zarr_problems,
+)
+from remedi_data.build import build as build_module
+from remedi_data.build import verify as verify_module
+from remedi_data.build import write as write_module
 from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.conformers import ConformerEmbeddingConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.runs.results import PydanticResult
-from remedi_data.testing import (
+from testing import (
     ACHIRAL_TEN_SMILES,
     SMALL_ZARR_LAYOUT,
     embed_frame,

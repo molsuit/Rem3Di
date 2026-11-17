@@ -15,7 +15,7 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from remedi_data.testing import (
+from testing import (
     ACHIRAL_TEN_SMILES,
     embed_frame,
     write_ten_structure_dataset,

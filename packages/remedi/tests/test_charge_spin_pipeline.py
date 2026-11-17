@@ -17,7 +17,7 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from remedi_data.testing import write_small_dataset
+from testing import write_small_dataset
 
 
 def test_atoms_getitem_returns_charge_and_spin_per_sample(tmp_path: Path) -> None:

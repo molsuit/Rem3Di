@@ -9,6 +9,7 @@ import polars as pl
 import pytest
 import torch
 import yaml
+from remedi_data.bundle import LabelColumn, TaskType
 from torch.utils.data import DataLoader
 
 from remedi.configuration.training_config import (
@@ -30,10 +31,9 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from remedi_data.bundle import LabelColumn, TaskType
 from remedi_data.selection import RandomMolecules, SelectionConfig, select_structures
-from remedi_data.testing import write_small_dataset
 from remedi_data.yaml_io import read_model
+from testing import write_small_dataset
 
 FIRST = [
     "CCO",

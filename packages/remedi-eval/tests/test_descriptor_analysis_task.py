@@ -10,12 +10,12 @@ from typing import Any, cast
 
 import numpy as np
 import pydantic
-
 from remedi_data.bundle import EvalMetric, LabelColumn, TaskType
-from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
+
 from remedi_eval.descriptors import EcfpConfig
 from remedi_eval.framework import EvalContext
 from remedi_eval.projection import PcaConfig, ProjectionConfig, UmapConfig
+from testing import ACHIRAL_TEN_SMILES, write_small_dataset
 
 
 def test_descriptor_analysis_task_capacity_on_cpu(tmp_path: Path) -> None:

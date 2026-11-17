@@ -19,8 +19,6 @@ import numpy as np
 import pytest
 import yaml
 import zarr
-
-from remedi_data.build import structures_sha256, verify_dataset
 from remedi_data.bundle import (
     EvalMetric,
     LabelColumn,
@@ -28,9 +26,11 @@ from remedi_data.bundle import (
     read_bundle,
     read_provenance,
 )
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.split_codes import Split, split_codes_from_names
-from remedi_data.testing import write_small_dataset
+
+from remedi_data.build import structures_sha256, verify_dataset
+from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from testing import write_small_dataset
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 

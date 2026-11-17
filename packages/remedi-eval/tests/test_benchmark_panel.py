@@ -15,19 +15,19 @@ import pandas as pd
 import pydantic
 import pytest
 import yaml
-
 from remedi_data.bundle import EvalMetric, LabelColumn, TaskType
-from remedi_data.testing import (
-    ACHIRAL_TEN_SMILES,
-    TEN_ROW_SPLIT,
-    write_small_dataset,
-)
+
 from remedi_eval.benchmark.learners import Learner, LinearLearner
 from remedi_eval.descriptors import DescriptorConfig, EcfpConfig
 from remedi_eval.framework import (
     BenchmarkPanelConfig,
     EvalManifest,
     run_manifest,
+)
+from testing import (
+    ACHIRAL_TEN_SMILES,
+    TEN_ROW_SPLIT,
+    write_small_dataset,
 )
 
 N_ROWS = len(ACHIRAL_TEN_SMILES)
@@ -330,6 +330,7 @@ def test_a_table_read_error_is_not_reported_as_a_missing_split_column(
     tmp_path: Path,
 ) -> None:
     from remedi_data.bundle import TABLE_FILENAME
+
     from remedi_data.dataset.molecule_dataset import MoleculeDataset
     from remedi_eval.protocol import read_partition
 

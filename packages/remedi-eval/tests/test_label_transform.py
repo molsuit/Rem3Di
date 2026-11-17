@@ -10,7 +10,6 @@ import pandas as pd
 import pytest
 import yaml
 from pydantic import ValidationError
-
 from remedi_data.bundle import (
     DatasetSpec,
     EvalMetric,
@@ -19,12 +18,13 @@ from remedi_data.bundle import (
     Log10LabelTransform,
     TaskType,
 )
-from remedi_data.testing import write_small_dataset
+
 from remedi_eval.protocol import (
     apply_label_transforms,
     build_targets_with_nan,
     load_benchmark,
 )
+from testing import write_small_dataset
 
 LOG10 = Log10LabelTransform()
 

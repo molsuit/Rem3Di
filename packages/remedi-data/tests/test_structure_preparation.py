@@ -22,8 +22,6 @@ import pydantic
 import pytest
 from rdkit import Chem
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
-
-from remedi_data.build import verify_dataset
 from remedi_data.bundle import (
     assign_identity,
     identity_from_canonical,
@@ -31,13 +29,6 @@ from remedi_data.bundle import (
     read_bundle,
     read_provenance,
 )
-from remedi_data.chemistry.elements import ElementSet
-from remedi_data.chemistry.geometry import GeometryLimits
-from remedi_data.chemistry.smiles_filter import (
-    SmilesFilterConfig,
-    molecule_passes_filter,
-)
-from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.structures import (
     DroppedRecord,
     GeomDrugsSource,
@@ -60,8 +51,17 @@ from remedi_data.structures.records import (
 )
 from remedi_data.structures.sources.pcqm4mv2 import sdf_record_offsets
 from remedi_data.structures.sources.tmqm import iterate_xyz_entries, parse_comment
-from remedi_data.testing import SMALL_ZARR_LAYOUT
+
+from remedi_data.build import verify_dataset
+from remedi_data.chemistry.elements import ElementSet
+from remedi_data.chemistry.geometry import GeometryLimits
+from remedi_data.chemistry.smiles_filter import (
+    SmilesFilterConfig,
+    molecule_passes_filter,
+)
+from remedi_data.dataset.packed_structures import PackedStructures
 from remedi_data.yaml_io import read_model
+from testing import SMALL_ZARR_LAYOUT
 
 SETTINGS = StructurePreparationSettings(shard_size=3, workers=1, zarr=SMALL_ZARR_LAYOUT)
 FILTER = SmilesFilterConfig(

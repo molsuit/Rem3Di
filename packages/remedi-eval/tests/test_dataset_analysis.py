@@ -3,7 +3,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from remedi_data.testing import write_synthetic_dataset
 from remedi_eval.dataset_analysis.analysis import (
     DatasetSummary,
     MoleculeDatasetAnalysis,
@@ -15,6 +14,7 @@ from remedi_eval.dataset_analysis.config import (
     MoleculeDatasetAnalysisConfig,
 )
 from remedi_eval.projection import UmapConfig
+from testing import write_synthetic_dataset
 
 
 def test_compute_descriptors_valid_and_invalid():
@@ -89,8 +89,9 @@ def test_molecule_dataset_analysis_runs(tmp_path: Path):
 
 def test_target_stats_come_from_the_spec_labels_in_the_table(tmp_path: Path):
     from remedi_data.bundle import LabelColumn, TaskType
+
     from remedi_data.dataset.molecule_dataset import MoleculeDataset
-    from remedi_data.testing import write_small_dataset
+    from testing import write_small_dataset
 
     values = np.linspace(0.0, 9.0, 10)
     values[3] = np.nan

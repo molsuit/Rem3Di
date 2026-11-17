@@ -12,11 +12,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-
 from remedi_data.bundle import EvalMetric, LabelColumn, TaskType
+
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.runs.results import TableResult
-from remedi_data.testing import ACHIRAL_TEN_SMILES, write_small_dataset
 from remedi_data.yaml_io import read_model
 from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.descriptors import EcfpConfig
@@ -28,6 +27,7 @@ from remedi_eval.framework import (
     run_manifest,
 )
 from remedi_eval.framework.runner import RunReport
+from testing import ACHIRAL_TEN_SMILES, write_small_dataset
 
 _N_ROWS = len(ACHIRAL_TEN_SMILES)
 

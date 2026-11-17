@@ -1,7 +1,8 @@
 """Test support: synthetic bundles and datasets for the format, build and evaluation tests.
 
-Shipped with ``remedi_data`` (like ``numpy.testing``) so the test suites of all three
-packages and the preparers build fixtures through one module.
+Lives at the workspace root (``tests/support``, on pytest's ``pythonpath`` and ty's
+search path), not in any package, so the test suites of all three packages build
+their fixtures through one module that no wheel ships.
 
 Two families, both written through the real writers so every invariant of the
 format is enforced on the fixture itself:
@@ -31,8 +32,6 @@ import pandas as pd
 from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
-
-from remedi_data.build import write_dataset
 from remedi_data.bundle import (
     Bundle,
     BundleCounts,
@@ -47,6 +46,8 @@ from remedi_data.bundle import (
     assign_identity,
     write_bundle,
 )
+
+from remedi_data.build import write_dataset
 from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits

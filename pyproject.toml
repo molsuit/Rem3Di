@@ -22,8 +22,9 @@ url = "https://download.pytorch.org/whl/cu132"
 explicit = true
 
 [tool.ruff]
-# First-party detection for import sorting: the packages are not at the root.
-src = [".", "packages/*"]
+# First-party detection for import sorting: the packages are not at the root, and
+# tests/support holds the test helpers (`testing`).
+src = [".", "packages/*", "tests/support"]
 # The root has no [project], so requires-python cannot supply these.
 target-version = "py312"
 # Vulture whitelists are name lists, not importable code.
@@ -46,6 +47,9 @@ testpaths = [
     "tests/integration",
 ]
 addopts = ["--import-mode=importlib"]
+# tests/support holds the helpers every test directory imports (`from testing import ...`):
+# synthetic bundles and datasets. It is not part of any package.
+pythonpath = ["tests/support"]
 
 [dependency-groups]
 dev = [
@@ -65,7 +69,7 @@ exclude = ["tools/vulture/*whitelist*.py"]
 [tool.ty.environment]
 python-version = "3.12"
 # preparers/chiralcat/tests before ".", so its `import conftest` does not resolve to the root conftest.
-root = ["packages/remedi-data", "packages/remedi-eval", "packages/remedi", "preparers/chiralcat/tests", "."]
+root = ["packages/remedi-data", "packages/remedi-eval", "packages/remedi", "preparers/chiralcat/tests", "tests/support", "."]
 
 # Dead-code analysis, run by pre-commit through tools/vulture/run_vulture.py,
 # which first regenerates the pydantic-field / enum-member whitelist.

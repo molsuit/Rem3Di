@@ -19,7 +19,6 @@ from remedi_data.selection import (
     read_selection,
     select_structures,
 )
-from remedi_data.testing import write_small_dataset
 from remedi_data.yaml_io import read_model
 from remedi_eval.dataset_analysis.molecule_clustering import (
     MoleculeClusteringConfig,
@@ -27,6 +26,7 @@ from remedi_eval.dataset_analysis.molecule_clustering import (
     cluster_size_summary,
     two_level_butina,
 )
+from testing import write_small_dataset
 
 needs_gpu = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="Butina clustering runs on the GPU"

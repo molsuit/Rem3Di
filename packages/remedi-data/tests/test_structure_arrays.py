@@ -11,7 +11,7 @@ from ase import Atoms
 
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
 from remedi_data.dataset.packed_structures import PackedStructures
-from remedi_data.testing import (
+from testing import (
     ACHIRAL_TEN_SMILES,
     embed_frame,
     write_ten_structure_dataset,
