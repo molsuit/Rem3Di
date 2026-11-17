@@ -59,21 +59,28 @@ mkdir raw_datasets
 bash scripts/dataset_download/download_geomdrugs.sh ./raw_datasets
 ```
 
-## Generating a MoleculeDataset for Training
+## Generating a Dataset for Training
 TL;DR: a preparer writes each corpus once as a dataset (`scripts/dataset_creation/prepare_structures.py`), subsets of it are selections (`scripts/dataset_creation/select_structures.py`), and a pretraining config names a mixture of datasets and selections (`configs/training/mixture_smoke/` has two examples).
 
 
 ### Dataset Overview
-MoleculeDatasets (```packages/remedi-data/remedi_data/dataset/molecule_dataset.py```) is the object that contains all embedding and structural data for our molecular datasets. The datasets can further contain system wide, molecular labels, or atomwise labels, which can be used for training regression models. Our datasets are backed by zarr arrays(Design motivitation: multithreaded read access from disk, when dataset size exceeds memory limit). As the size of molecules varies, the MoleculeDataset contain pointer values that point to the molecules atom limits.
+A dataset is a directory with four files:
+
+- `dataset.yaml`: the spec (`DatasetSpec`): labels, SMILES columns, evaluation settings.
+- `table.parquet`: one row per structure, in `structure_id` order, with the ids (`structure_id`, `molecule_id`, `stereoisomer_id`), `total_charge`, `multiplicity`, the SMILES, the labels and the split columns.
+- `structures.atp`: the frames, one [atompack](https://github.com/LeMaterial/atompack) record per table row (positions as float32, atomic numbers as uint8). The file is memory-mapped, so a single structure reads in microseconds and data-loader workers share it through the page cache.
+- `provenance.yaml`: how the dataset was made, and its hashes.
+
+`remedi_data.dataset.Dataset` (`packages/remedi-data/remedi_data/dataset/`) opens a dataset directory; `Dataset.read_structures()` returns `Structures`, the in-memory form (flat `positions` and `atomic_numbers` with a pointer `ptr`, plus `total_charge` and `multiplicity` from the table).
 
 ### Dataset Generation
-Every corpus has a preparer under `packages/remedi-data/remedi_data/structures/sources/`. `scripts/dataset_creation/prepare_structures.py` runs one from a yaml config (one `kind` per source) and writes the structures (`MoleculeDataset`) plus a `table.parquet` with the ids and SMILES. MACE descriptors are computed during training, not stored.
+Every corpus has a preparer under `packages/remedi-data/remedi_data/preparation/structures/sources/`. `scripts/dataset_creation/prepare_structures.py` runs one from a yaml config (one `kind` per source) and writes the dataset directory. SMILES-only benchmarks are prepared as bundles (a table without structures) and turned into datasets by `scripts/dataset_creation/build_datasets.py`, which generates the conformers. MACE descriptors are computed during training, not stored.
 
 ## Running Pretraining
 1. Write a training config whose `data` section names a mixture of datasets and selections, next to an architecture config (examples in `configs/training/mixture_smoke/`).
 2. Submit it to DAIS: `uv run python scripts/submit_job.py <training_config.yaml> --time 06:00:00`. Each config is frozen into its training directory and runs as one `scripts/pretrain.slurm` job on an H200 or B200. To run in the current shell instead: `uv run python scripts/run_online_embedding_denoising_pretraining.py --training_config <training_config.yaml>`.
 
-Training reads structures through `TrainingMoleculeDataset` (`remedi/training/data/training_dataset.py`), which lets several dataloader workers read the same zarr store at once.
+Training reads structures through `TrainingMoleculeDataset` (`remedi/training/data/training_dataset.py`): each dataloader worker opens its own `StructureFile` on `structures.atp` and reads every sample from disk when it is asked for.
 
 
 ## Using Pretrained Model
@@ -82,10 +89,10 @@ Training reads structures through `TrainingMoleculeDataset` (`remedi/training/da
 from pathlib import Path
 
 from remedi.embedding import RemediConfig
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 
 calculator = RemediConfig(name="my_model", model_dir=Path(model_dir)).build()
-dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_path)
+dataset = Dataset.open(dataset_path)
 descriptors = calculator.calculate(dataset)  # (structures, descriptor length)
 ```
 
