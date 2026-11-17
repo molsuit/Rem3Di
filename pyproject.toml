@@ -61,9 +61,6 @@ dev = [
     "ty>=0.0.32",
     "ruff",
     "vulture>=2.16",
-    # Only for scripts/dataset_creation/convert_zarr_to_atompack.py, which reads the old zarr
-    # datasets; goes once every dataset is converted.
-    "zarr>=3.2",
 ]
 
 [tool.ty.src]

@@ -44,11 +44,10 @@ dependencies = [
     "torch-sim-atomistic",
 ]
 
-# ``polaris-lib`` is intentionally NOT listed here: it pins ``zarr<3`` and so
-# cannot share a venv with this project (whose dev group holds ``zarr>=3.2`` for
-# the conversion of the old zarr datasets). Polaris datasets are dumped out-of-venv by
-# ``preparers/polaris/dump_polaris.py`` (PEP 723 inline deps) and turned into
-# bundles by the ``remedi-prepare-polaris`` workspace member.
+# ``polaris-lib`` is intentionally NOT listed here: it is only needed to download
+# the Polaris datasets, so ``preparers/polaris/dump_polaris.py`` runs it in its own
+# PEP 723 environment, and the ``remedi-prepare-polaris`` workspace member turns the
+# dumped parquets into bundles.
 
 [project.urls]
 Homepage = "https://molsuit.github.io/Rem3Di/"

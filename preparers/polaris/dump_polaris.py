@@ -1,9 +1,9 @@
 """Dump the curated Polaris hub datasets to plain parquets.
 
-Step one of two. ``polaris-lib`` pins ``zarr<3`` whereas this project requires
-``zarr>=3.2``, so the two cannot share a Python env. This script declares its
-dependencies inline (PEP 723), ``uv run`` materialises an ephemeral polaris-only
-env for it, and the project env is never touched. Step two,
+Step one of two. ``polaris-lib`` is kept out of the project env (it pins
+``zarr<3``): this script declares its dependencies inline (PEP 723), ``uv run``
+materialises an ephemeral polaris-only env for it, and the project env is never
+touched. Step two,
 ``prepare-polaris`` (``remedi_prepare_polaris/prepare.py``), runs in the project
 env and turns the parquets into bundles without ever calling polaris.
 
