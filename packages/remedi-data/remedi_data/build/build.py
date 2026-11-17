@@ -39,7 +39,7 @@ from remedi_data.chemistry.conformers import (
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits, frame_geometry_violations
 from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
     Bundle,
     ConformerGenerationRecord,
@@ -348,7 +348,7 @@ class BuildDatasetTask(BaseModel):
         written = write_dataset(
             expanded.spec,
             expanded.table,
-            PackedStructures.from_atoms(expanded.structures),
+            Structures.from_atoms(expanded.structures),
             provenance,
             dataset_path,
             layout=config.zarr,

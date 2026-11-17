@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.build.write import write_dataset
 from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
     BundleCounts,
     BundleProvenance,
@@ -205,7 +205,7 @@ def run_shard(
     _shard_table(source, frames).to_parquet(partial_table, index=False)
     partial_table.replace(stem.with_suffix(".parquet"))
     partial_frames = stem.with_name(f"{stem.name}.partial.npz")
-    PackedStructures.from_frames(
+    Structures.from_frames(
         [(frame.atomic_numbers, frame.positions) for frame in frames]
     ).save_npz(partial_frames)
     partial_frames.replace(stem.with_suffix(".npz"))
@@ -487,9 +487,9 @@ def prepare_structures(
         )
         for summary in summaries
     ]
-    structures = PackedStructures.concatenate(
+    structures = Structures.concatenate(
         [
-            PackedStructures.load_npz(
+            Structures.load_npz(
                 _shard_stem(work_directory, summary.index).with_suffix(".npz")
             )
             for summary in summaries

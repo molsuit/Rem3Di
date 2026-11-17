@@ -1,4 +1,4 @@
-"""``PackedStructures``: many structures as flat arrays, no per-structure objects.
+"""``Structures``: many structures as flat arrays, no per-structure objects.
 
 The in-memory form the writer, the validator, the structure preparers and the
 training data pass around. Structure ``i`` owns atoms ``ptr[i]:ptr[i + 1]`` of
@@ -52,7 +52,7 @@ def _per_structure(values: ArrayLike | None) -> np.ndarray | None:
 
 
 @dataclass(frozen=True)
-class PackedStructures:
+class Structures:
     """``positions`` ``(n_atoms, 3)`` float32, ``atomic_numbers`` ``(n_atoms,)`` uint8,
     ``ptr`` ``(n_structures + 1,)`` int64 starting at 0; optional
     ``total_charge`` and ``multiplicity`` ``(n_structures,)`` float32."""
@@ -93,7 +93,7 @@ class PackedStructures:
         ptr: ArrayLike,
         total_charge: ArrayLike | None = None,
         multiplicity: ArrayLike | None = None,
-    ) -> PackedStructures:
+    ) -> Structures:
         """Cast to the stored dtypes and validate the shapes."""
         return cls(
             positions=np.ascontiguousarray(positions, dtype=POSITION_DTYPE),
@@ -106,9 +106,7 @@ class PackedStructures:
         )
 
     @classmethod
-    def from_frames(
-        cls, frames: Sequence[tuple[np.ndarray, np.ndarray]]
-    ) -> PackedStructures:
+    def from_frames(cls, frames: Sequence[tuple[np.ndarray, np.ndarray]]) -> Structures:
         """From ``(atomic_numbers, positions)`` pairs, one per structure."""
         counts = np.array([len(numbers) for numbers, _ in frames], dtype=np.int64)
         ptr = np.concatenate([[0], np.cumsum(counts)])
@@ -121,7 +119,7 @@ class PackedStructures:
         )
 
     @classmethod
-    def from_atoms(cls, structures: Sequence[Atoms]) -> PackedStructures:
+    def from_atoms(cls, structures: Sequence[Atoms]) -> Structures:
         return cls.from_frames(
             [
                 (atoms.get_atomic_numbers(), atoms.get_positions())
@@ -130,13 +128,13 @@ class PackedStructures:
         )
 
     @classmethod
-    def empty(cls) -> PackedStructures:
+    def empty(cls) -> Structures:
         return cls.from_arrays(
             np.zeros((0, 3)), np.zeros(0), np.zeros(1, dtype=np.int64)
         )
 
     @classmethod
-    def concatenate(cls, parts: Sequence[PackedStructures]) -> PackedStructures:
+    def concatenate(cls, parts: Sequence[Structures]) -> Structures:
         """The structures of ``parts`` in order, as one block.
 
         Raises:
@@ -169,9 +167,9 @@ class PackedStructures:
 
     def with_charges(
         self, total_charge: ArrayLike, multiplicity: ArrayLike
-    ) -> PackedStructures:
+    ) -> Structures:
         """These structures with their total charges and multiplicities."""
-        return PackedStructures.from_arrays(
+        return Structures.from_arrays(
             self.positions, self.atomic_numbers, self.ptr, total_charge, multiplicity
         )
 
@@ -191,19 +189,36 @@ class PackedStructures:
         for index in range(len(self)):
             yield self.frame(index)
 
-    def atoms(self, index: int) -> Atoms:
-        numbers, positions = self.frame(index)
-        return Atoms(numbers=numbers, positions=positions, pbc=[0, 0, 0])
+    def to_atoms(self) -> list[Atoms]:
+        """One ``ase.Atoms`` per structure, in order, not periodic.
 
-    def slice(self, start: int, stop: int) -> PackedStructures:
+        ``Atoms.info`` holds ``total_charge`` and ``multiplicity`` (as floats)
+        whenever these structures carry them, and neither when they do not.
+        """
+        atoms: list[Atoms] = []
+        for index, (numbers, positions) in enumerate(self.frames()):
+            info = (
+                {}
+                if self.total_charge is None or self.multiplicity is None
+                else {
+                    "total_charge": float(self.total_charge[index]),
+                    "multiplicity": float(self.multiplicity[index]),
+                }
+            )
+            atoms.append(
+                Atoms(numbers=numbers, positions=positions, pbc=False, info=info)
+            )
+        return atoms
+
+    def slice(self, start: int, stop: int) -> Structures:
         """Structures ``start:stop``, ``ptr`` rebased to 0."""
         return self.take(np.arange(start, stop))
 
-    def take(self, indices: Sequence[int] | np.ndarray) -> PackedStructures:
+    def take(self, indices: Sequence[int] | np.ndarray) -> Structures:
         """The structures at ``indices``, in that order (copies)."""
         indices = np.asarray(indices, dtype=np.int64)
         ptr, atom_index = gather_index(self.ptr, indices)
-        return PackedStructures(
+        return Structures(
             positions=self.positions[atom_index],
             atomic_numbers=self.atomic_numbers[atom_index],
             ptr=ptr,
@@ -225,7 +240,7 @@ class PackedStructures:
         )
 
     @classmethod
-    def load_npz(cls, path) -> PackedStructures:
+    def load_npz(cls, path) -> Structures:
         with np.load(path) as data:
             return cls.from_arrays(
                 data["positions"], data["atomic_numbers"], data["ptr"]

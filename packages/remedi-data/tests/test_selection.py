@@ -12,7 +12,7 @@ import yaml
 
 from remedi_data.build.write import write_dataset
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from remedi_data.selection import (
     ClusterRecord,
     ConformersPerMolecule,
@@ -77,7 +77,7 @@ def corpus(tmp_path_factory: pytest.TempPathFactory) -> Path:
     write_dataset(
         spec,
         table[spec.expected_columns()],
-        PackedStructures.from_atoms(frames),
+        Structures.from_atoms(frames),
         make_provenance("corpus", source_molecules=len(smiles)),
         directory,
         layout=SMALL_ZARR_LAYOUT,

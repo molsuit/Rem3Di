@@ -28,7 +28,7 @@ from ase import Atoms
 from rdkit import Chem
 
 from remedi_data.chemistry.geometry import GeometryLimits
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
     DATASET_CONFIG_FILENAME,
     PROVENANCE_FILENAME,
@@ -790,7 +790,7 @@ def test_structure_invariants_8_and_9(
     spec, table = make_small_dataset(smiles=smiles)
     frames = mutation([frame.copy() for frame in chiral_frames])
     problems = structure_problems(
-        spec, table, PackedStructures.from_atoms(frames), GEOMETRY_LIMITS
+        spec, table, Structures.from_atoms(frames), GEOMETRY_LIMITS
     )
     if expected is None:
         assert problems == []
@@ -807,7 +807,7 @@ def test_invariant_9_fails_a_row_whose_smiles_does_not_parse(
     table["isomeric_smiles"] = table["isomeric_smiles"].astype(object)
     table.loc[0, "isomeric_smiles"] = unusable
     problems = structure_problems(
-        spec, table, PackedStructures.from_atoms(chiral_frames), GEOMETRY_LIMITS
+        spec, table, Structures.from_atoms(chiral_frames), GEOMETRY_LIMITS
     )
     assert problems == ["9: geometry disagrees with isomeric_smiles for rows [0]"]
 
@@ -864,9 +864,7 @@ def test_each_geometry_limit_fails_invariant_10(
     atoms: Atoms, limits: GeometryLimits, reason: str
 ) -> None:
     spec, table = make_small_dataset(["CCO"], smiles=False)
-    problems = structure_problems(
-        spec, table, PackedStructures.from_atoms([atoms]), limits
-    )
+    problems = structure_problems(spec, table, Structures.from_atoms([atoms]), limits)
     assert len(problems) == 1 and has_problem(problems, f"10:.*{reason}"), problems
 
 
@@ -874,7 +872,7 @@ def test_many_offending_rows_are_summarised() -> None:
     spec, table = make_small_dataset(["CCO", "CCN", "CCC", "CO", "CN", "CS", "CF"])
     frames = [_methane_like("HH") for _ in range(len(table))]
     problems = structure_problems(
-        spec, table, PackedStructures.from_atoms(frames), GeometryLimits()
+        spec, table, Structures.from_atoms(frames), GeometryLimits()
     )
     assert has_problem(problems, r"10:.*7 rows, first \[0, 1, 2, 3, 4\]"), problems
 

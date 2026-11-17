@@ -48,7 +48,7 @@ from remedi_data.build import write as write_module
 from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.conformers import ConformerEmbeddingConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
     PROVENANCE_FILENAME,
     SPEC_FILENAME,
@@ -178,7 +178,7 @@ def write(expanded: ExpandedDataset, directory: Path, **overrides: Any):
         layout=SMALL_ZARR_LAYOUT,
     )
     arguments.update(overrides)
-    arguments["structures"] = PackedStructures.from_atoms(arguments["structures"])
+    arguments["structures"] = Structures.from_atoms(arguments["structures"])
     return write_dataset(**arguments)
 
 
@@ -585,7 +585,7 @@ def test_a_source_dataset_without_smiles_is_written(tmp_path: Path) -> None:
     write_dataset(
         spec,
         table,
-        PackedStructures.from_atoms([embed_frame(smiles) for smiles in smiles_values]),
+        Structures.from_atoms([embed_frame(smiles) for smiles in smiles_values]),
         make_provenance("source_like"),
         directory,
         layout=SMALL_ZARR_LAYOUT,

@@ -22,14 +22,14 @@ from zarr.storage import LocalStore
 import remedi_data.dataset.molecule_dataset as molecule_dataset_module
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from remedi_data.format.verify import structures_sha256
 from testing import write_synthetic_dataset
 
 
-def _carbon_structures(n_molecules: int, atoms_per_molecule: int) -> PackedStructures:
+def _carbon_structures(n_molecules: int, atoms_per_molecule: int) -> Structures:
     n_atoms = n_molecules * atoms_per_molecule
-    return PackedStructures.from_arrays(
+    return Structures.from_arrays(
         np.zeros((n_atoms, 3)),
         np.full(n_atoms, 6),
         np.arange(n_molecules + 1) * atoms_per_molecule,
@@ -40,7 +40,7 @@ def _carbon_structures(n_molecules: int, atoms_per_molecule: int) -> PackedStruc
 
 def _write(
     path: Path,
-    structures: PackedStructures,
+    structures: Structures,
     config: DatasetConfig,
     molecule_ids: np.ndarray | None = None,
 ) -> MoleculeDataset:
@@ -169,7 +169,7 @@ def test_a_wrong_length_id_array_is_refused(tmp_path: Path) -> None:
 
 
 def test_structures_without_charges_are_refused(tmp_path: Path) -> None:
-    structures = PackedStructures.from_arrays(
+    structures = Structures.from_arrays(
         np.zeros((3, 3)), np.full(3, 6), np.array([0, 3])
     )
     with pytest.raises(ValueError, match="charges"):

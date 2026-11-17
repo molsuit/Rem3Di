@@ -9,7 +9,7 @@ from torch.utils.data import Dataset
 
 from remedi.training.data.sample import Sample
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 
 GetItemFn = Callable[["TrainingMoleculeDataset", int], Sample]
 
@@ -67,7 +67,7 @@ class TrainingMoleculeDataset(Dataset):
         get_item: GetItemFn,
         in_memory: bool = False,
         structure_ids: np.ndarray | None = None,
-        arrays: PackedStructures | None = None,
+        arrays: Structures | None = None,
     ):
         self.root = str(root)
         self._get_item = get_item
@@ -117,7 +117,7 @@ class TrainingMoleculeDataset(Dataset):
             self._charge = dataset.total_charge
             self._multiplicity = dataset.multiplicity
 
-    def _set_arrays(self, arrays: PackedStructures) -> None:
+    def _set_arrays(self, arrays: Structures) -> None:
         if arrays.total_charge is None or arrays.multiplicity is None:
             raise ValueError("training structures need charges and multiplicities")
         self._ptr = arrays.ptr

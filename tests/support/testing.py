@@ -39,7 +39,7 @@ from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
     Bundle,
     BundleCounts,
@@ -340,7 +340,7 @@ def write_small_dataset(
     write_dataset(
         spec,
         table,
-        PackedStructures.from_atoms(
+        Structures.from_atoms(
             list(structures)
             if structures is not None
             else [embed_frame(smiles) for smiles in smiles_values]
@@ -373,7 +373,7 @@ def write_synthetic_dataset(
     )
     dataset = MoleculeDataset.write(
         directory,
-        PackedStructures.from_arrays(
+        Structures.from_arrays(
             np.tile(frame, (n_structures, 1)),
             np.tile(species, n_structures),
             np.arange(n_structures + 1, dtype=np.int64) * len(species),

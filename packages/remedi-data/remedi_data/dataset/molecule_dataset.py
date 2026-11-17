@@ -10,7 +10,7 @@ from zarr.codecs import BloscCodec
 from zarr.storage import LocalStore
 
 from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.packed_structures import PackedStructures, gather_index
+from remedi_data.dataset.structures import Structures, gather_index
 from remedi_data.format import read_table_polars, table_columns
 from remedi_data.yaml_io import read_model, write_model
 
@@ -96,7 +96,7 @@ class MoleculeDataset:
     def write(
         cls,
         path: Path,
-        structures: PackedStructures,
+        structures: Structures,
         *,
         structure_ids: np.ndarray,
         molecule_ids: np.ndarray,
@@ -159,9 +159,7 @@ class MoleculeDataset:
         write_model(path / "dataset_config.yaml", config)
         return cls.open_existing_dataset_from_dir(path)
 
-    def read_structures(
-        self, structure_ids: np.ndarray | None = None
-    ) -> PackedStructures:
+    def read_structures(self, structure_ids: np.ndarray | None = None) -> Structures:
         """The structures (with charges and multiplicities) in memory.
 
         ``structure_ids`` (sorted, unique, e.g. from ``read_selection``) reads
@@ -174,7 +172,7 @@ class MoleculeDataset:
         """
         pointer = np.asarray(self.ptr[:], dtype=np.int64)
         if structure_ids is None:
-            return PackedStructures.from_arrays(
+            return Structures.from_arrays(
                 self.positions[:],
                 self.atomic_numbers[:],
                 pointer,
@@ -192,7 +190,7 @@ class MoleculeDataset:
                 f"of {self.path}"
             )
         new_pointer, atom_index = gather_index(pointer, structure_ids)
-        return PackedStructures.from_arrays(
+        return Structures.from_arrays(
             self.positions.oindex[atom_index],
             self.atomic_numbers.oindex[atom_index],
             new_pointer,
@@ -254,39 +252,18 @@ class MoleculeDataset:
         )
 
     def get_all_molecules(self, N_molecules: int | None = None) -> list[Atoms]:
-        n_struct = self.N_structures
-        if n_struct == 0:
-            return []
-
+        """The first ``N_molecules`` structures (all by default) as ``ase.Atoms``,
+        with their charges and multiplicities in ``Atoms.info``."""
+        count = self.N_structures
         if N_molecules is not None:
-            if N_molecules <= 0:
-                return []
-            n_struct = min(n_struct, N_molecules)
-            if n_struct == 0:
-                return []
-
-        ptr = np.asarray(self.ptr[: n_struct + 1], dtype=np.int64, order="C")
-        atomic_numbers = np.asarray(
-            self.atomic_numbers[: ptr[-1]], dtype=np.int64, order="C"
-        )
-        positions = np.asarray(self.positions[: ptr[-1]], dtype=np.float32, order="C")
-        total_charge = np.asarray(self.total_charge[:n_struct])
-        multiplicity = np.asarray(self.multiplicity[:n_struct])
-
-        molecules: list[Atoms] = []
-        append = molecules.append
-        for idx in range(n_struct):
-            start = ptr[idx]
-            end = ptr[idx + 1]
-            append(
-                Atoms(
-                    numbers=atomic_numbers[start:end],
-                    positions=positions[start:end],
-                    info={
-                        "total_charge": float(total_charge[idx]),
-                        "multiplicity": float(multiplicity[idx]),
-                    },
-                )
-            )
-
-        return molecules
+            count = max(0, min(count, N_molecules))
+        if count == 0:
+            return []
+        pointer = np.asarray(self.ptr[: count + 1], dtype=np.int64)
+        return Structures.from_arrays(
+            self.positions[: pointer[-1]],
+            self.atomic_numbers[: pointer[-1]],
+            pointer,
+            self.total_charge[:count],
+            self.multiplicity[:count],
+        ).to_atoms()

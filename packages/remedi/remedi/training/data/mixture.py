@@ -40,7 +40,7 @@ from remedi.training.data.training_dataset import (
 )
 from remedi_data.chemistry.elements import D_BLOCK_ATOMIC_NUMBERS, MACE_OFF_ELEMENTS
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from remedi_data.format import read_spec, read_table_polars, table_columns
 from remedi_data.selection import (
     SelectionError,
@@ -189,7 +189,7 @@ class MixturePart:
 
     dataset: Path
     selected_structure_ids: np.ndarray
-    structures: PackedStructures
+    structures: Structures
     train_structure_ids: np.ndarray
     validation_structure_ids: np.ndarray
     train_atom_counts: np.ndarray
@@ -446,7 +446,7 @@ def _check_rows(rows: pl.DataFrame, deduplicate: bool, name: str) -> None:
 
 def _read_structures(
     dataset: Path, structure_ids: np.ndarray, domain: Domain, name: str
-) -> tuple[PackedStructures, np.ndarray]:
+) -> tuple[Structures, np.ndarray]:
     """Gather the selected structures once; check them against the domain.
 
     Returns the structures and their atom counts.

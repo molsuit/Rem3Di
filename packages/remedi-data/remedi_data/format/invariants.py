@@ -21,7 +21,7 @@ from remedi_data.chemistry.geometry import (
     GeometryLimits,
     frame_geometry_violations,
 )
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from remedi_data.format.spec import (
     SMILES_COLUMNS,
     SPLIT_VALUES,
@@ -438,7 +438,7 @@ _GEOMETRY_REASONS = {
 
 def _frame_problems(
     isomeric_smiles: Sequence[str | None] | None,
-    structures: PackedStructures,
+    structures: Structures,
     limits: GeometryLimits,
     first_row: int,
 ) -> tuple[list[int], dict[str, list[int]]]:
@@ -458,9 +458,7 @@ def _frame_problems(
 
 
 def _frame_problems_of_chunk(
-    arguments: tuple[
-        Sequence[str | None] | None, PackedStructures, GeometryLimits, int
-    ],
+    arguments: tuple[Sequence[str | None] | None, Structures, GeometryLimits, int],
 ) -> tuple[list[int], dict[str, list[int]]]:
     return _frame_problems(*arguments)
 
@@ -468,7 +466,7 @@ def _frame_problems_of_chunk(
 def structure_problems(
     spec: DatasetSpec,
     table: pd.DataFrame,
-    structures: PackedStructures,
+    structures: Structures,
     limits: GeometryLimits,
     *,
     workers: int = 1,

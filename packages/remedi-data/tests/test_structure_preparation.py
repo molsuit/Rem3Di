@@ -29,7 +29,7 @@ from remedi_data.chemistry.smiles_filter import (
     SmilesFilterConfig,
     molecule_passes_filter,
 )
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
     assign_identity,
     identity_from_canonical,
@@ -99,16 +99,16 @@ def prepare(record: StructureRecord, smiles_filter=FILTER, limits=LIMITS):
     )
 
 
-# ------------------------------------------------------------ PackedStructures
+# ------------------------------------------------------------ Structures
 
 
-def test_packed_structures_slice_take_concatenate_and_npz(tmp_path: Path) -> None:
+def test_structures_slice_take_concatenate_and_npz(tmp_path: Path) -> None:
     frames = [
         (np.array([6, 1]), np.arange(6.0).reshape(2, 3)),
         (np.array([8]), np.ones((1, 3))),
         (np.array([7, 1, 1]), np.full((3, 3), 2.0)),
     ]
-    packed = PackedStructures.from_frames(frames)
+    packed = Structures.from_frames(frames)
     assert len(packed) == 3 and packed.ptr.tolist() == [0, 2, 3, 6]
     assert packed.positions.dtype == np.float32
     assert packed.atomic_numbers.dtype == np.uint8
@@ -117,16 +117,16 @@ def test_packed_structures_slice_take_concatenate_and_npz(tmp_path: Path) -> Non
     assert taken.atomic_numbers.tolist() == [7, 1, 1, 6, 1]
     sliced = packed.slice(1, 3)
     assert sliced.ptr.tolist() == [0, 1, 4]
-    joined = PackedStructures.concatenate([packed.slice(0, 1), sliced])
+    joined = Structures.concatenate([packed.slice(0, 1), sliced])
     assert np.array_equal(joined.positions, packed.positions)
     assert joined.ptr.tolist() == packed.ptr.tolist()
     packed.save_npz(tmp_path / "frames.npz")
-    loaded = PackedStructures.load_npz(tmp_path / "frames.npz")
+    loaded = Structures.load_npz(tmp_path / "frames.npz")
     assert np.array_equal(loaded.positions, packed.positions)
-    assert packed.atoms(2).get_chemical_symbols() == ["N", "H", "H"]
-    assert len(PackedStructures.concatenate([])) == 0
+    assert packed.to_atoms()[2].get_chemical_symbols() == ["N", "H", "H"]
+    assert len(Structures.concatenate([])) == 0
     with pytest.raises(ValueError, match="ptr"):
-        PackedStructures.from_arrays(np.zeros((2, 3)), np.zeros(2), np.array([1, 2]))
+        Structures.from_arrays(np.zeros((2, 3)), np.zeros(2), np.array([1, 2]))
 
 
 # ------------------------------------------------------------------- identity

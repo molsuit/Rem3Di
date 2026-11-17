@@ -22,7 +22,7 @@ import pandas as pd
 
 from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
     BundleProvenance,
     BundleValidationError,
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 def _write_zarr(
     path: Path,
     table: pd.DataFrame,
-    structures: PackedStructures,
+    structures: Structures,
     layout: DatasetConfig,
 ) -> None:
     MoleculeDataset.write(
@@ -59,7 +59,7 @@ def _write_zarr(
 def write_dataset(
     spec: DatasetSpec,
     table: pd.DataFrame,
-    structures: PackedStructures,
+    structures: Structures,
     provenance: BundleProvenance,
     directory: Path,
     *,

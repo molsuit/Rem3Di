@@ -10,7 +10,7 @@ import zarr
 from ase import Atoms
 
 from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.packed_structures import PackedStructures
+from remedi_data.dataset.structures import Structures
 from testing import (
     ACHIRAL_TEN_SMILES,
     embed_frame,
@@ -18,7 +18,7 @@ from testing import (
 )
 
 #: What training reads: the attributes of ``MoleculeDataset`` and
-#: ``PackedStructures``, and the array names in the zarr group.
+#: ``Structures``, and the array names in the zarr group.
 STRUCTURE_ARRAYS = {
     "ptr": "molecule_ptr",
     "positions": "positions",
@@ -107,7 +107,7 @@ def test_an_existing_dataset_opens_read_only(ten_structure_dataset: Path) -> Non
 
 
 def test_charges_follow_take_and_concatenate() -> None:
-    structures = PackedStructures.from_frames(
+    structures = Structures.from_frames(
         [(np.array([6]), np.zeros((1, 3))), (np.array([8, 1]), np.ones((2, 3)))]
     ).with_charges(np.array([0.0, -1.0]), np.array([1.0, 2.0]))
     assert structures.total_charge is not None
@@ -115,10 +115,31 @@ def test_charges_follow_take_and_concatenate() -> None:
     taken = structures.take([1])
     assert taken.total_charge is not None and taken.multiplicity is not None
     assert (taken.total_charge.tolist(), taken.multiplicity.tolist()) == ([-1.0], [2.0])
-    joined = PackedStructures.concatenate([structures, taken])
+    joined = Structures.concatenate([structures, taken])
     assert joined.total_charge is not None
     assert joined.total_charge.tolist() == [0.0, -1.0, -1.0]
     with pytest.raises(ValueError, match="only some parts"):
-        PackedStructures.concatenate([structures, PackedStructures.empty()])
+        Structures.concatenate([structures, Structures.empty()])
     with pytest.raises(ValueError, match="total_charge has shape"):
         structures.with_charges(np.zeros(3), np.ones(2))
+
+
+def test_to_atoms_carries_charge_and_multiplicity_only_when_present() -> None:
+    frames = Structures.from_frames(
+        [
+            (np.array([8, 1, 1]), np.arange(9.0).reshape(3, 3)),
+            (np.array([26]), np.zeros((1, 3))),
+        ]
+    )
+    without = frames.to_atoms()
+    assert [atoms.get_chemical_symbols() for atoms in without] == [
+        ["O", "H", "H"],
+        ["Fe"],
+    ]
+    assert all(atoms.info == {} and not atoms.pbc.any() for atoms in without)
+    with_charges = frames.with_charges([0.0, 2.0], [1.0, 5.0]).to_atoms()
+    assert [atoms.info for atoms in with_charges] == [
+        {"total_charge": 0.0, "multiplicity": 1.0},
+        {"total_charge": 2.0, "multiplicity": 5.0},
+    ]
+    assert np.allclose(with_charges[0].get_positions(), np.arange(9.0).reshape(3, 3))

@@ -21,7 +21,7 @@ from remedi_data.chemistry.smiles_filter import (
     SmilesFilterConfig,
     standardized_smiles_for_structure,
 )
-from remedi_data.dataset.packed_structures import (
+from remedi_data.dataset.structures import (
     ATOMIC_NUMBER_DTYPE,
     POSITION_DTYPE,
 )
