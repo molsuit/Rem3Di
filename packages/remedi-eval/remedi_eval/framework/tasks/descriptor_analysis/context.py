@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_eval.projection import ProjectionConfig
 
 if TYPE_CHECKING:
@@ -59,7 +59,7 @@ class DescriptorAnalysisContext:
     exactly those structures, and shared by every task.
     """
 
-    dataset: MoleculeDataset
+    dataset: Dataset
     descriptors: np.ndarray
     descriptors_raw: np.ndarray
     projection: np.ndarray | None = None
@@ -69,7 +69,7 @@ class DescriptorAnalysisContext:
     @classmethod
     def build(
         cls,
-        dataset: MoleculeDataset,
+        dataset: Dataset,
         descriptors: np.ndarray,
         normalization: DescriptorNormalizationConfig | None = None,
         projection_config: ProjectionConfig | None = None,
@@ -103,7 +103,9 @@ class DescriptorAnalysisContext:
         Raises:
             ValueError: if the dataset holds fewer structures than descriptor rows.
         """
-        molecules = self.dataset.get_all_molecules(self.structure_count)
+        molecules = self.dataset.read_structures(
+            np.arange(min(self.structure_count, len(self.dataset)))
+        ).to_atoms()
         if len(molecules) != self.structure_count:
             raise ValueError(
                 f"{self.structure_count} descriptor rows but the dataset holds "

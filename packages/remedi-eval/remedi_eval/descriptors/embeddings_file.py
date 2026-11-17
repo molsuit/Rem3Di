@@ -34,7 +34,7 @@ from typing import Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.format import git_head_sha, sha256_of_file, structures_identity
 from remedi_data.yaml_io import read_model, write_model
 
@@ -227,7 +227,7 @@ def embeddings_aligned_to(
 ) -> np.ndarray:
     """The embedding matrix in the dataset's structure order.
 
-    ``dataset_structure_ids`` is the dataset's ``ids/structure_id`` in zarr
+    ``dataset_structure_ids`` is the dataset's ``structure_id`` column in structure
     order.
 
     Raises:
@@ -261,7 +261,7 @@ def embeddings_aligned_to(
 
 @dataclass(frozen=True)
 class EnsuredEmbeddings:
-    """One dataset's embedding matrix in zarr order, and whether it was computed now."""
+    """One dataset's embedding matrix in structure order, and whether it was computed now."""
 
     embedding: np.ndarray
     computed: bool
@@ -295,7 +295,7 @@ def _up_to_date_embeddings(
     dataset_dir: Path,
     structure_ids: np.ndarray,
 ) -> np.ndarray | None:
-    """The stored matrix in zarr order if the pair matches the request, else ``None``.
+    """The stored matrix in structure order if the pair matches the request, else ``None``.
 
     A pair for other structures or another identity, and a pair that cannot be
     read or does not match its own metadata, are reported and not used.
@@ -328,7 +328,7 @@ def _up_to_date_embeddings(
 
 def ensure_embeddings(
     embeddings_root: Path,
-    dataset: MoleculeDataset,
+    dataset: Dataset,
     *,
     dataset_id: str,
     descriptor_name: str,
@@ -340,7 +340,7 @@ def ensure_embeddings(
 
     Reuses the stored pair when it was made from the dataset's current
     structures (``structures_sha256``) by ``descriptor_identity`` and reads back
-    intact; otherwise calls ``compute`` (the matrix in zarr order) and writes the
+    intact; otherwise calls ``compute`` (the matrix in structure order) and writes the
     pair. Both happen under the pair's file lock, so a second job asking for the
     same pair waits for the first and then reuses its result.
 
@@ -352,7 +352,9 @@ def ensure_embeddings(
     """
     dataset_dir = Path(dataset.path)
     structures_sha256 = structures_identity(dataset_dir)
-    structure_ids = np.asarray(dataset.structure_ids[:], dtype=np.int64)
+    structure_ids = (
+        dataset.table(["structure_id"])["structure_id"].to_numpy().astype(np.int64)
+    )
     with _pair_lock(embeddings_root, dataset_id, descriptor_name):
         stored = _up_to_date_embeddings(
             embeddings_root,

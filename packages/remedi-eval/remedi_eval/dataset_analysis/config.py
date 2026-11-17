@@ -93,9 +93,6 @@ class MoleculeDatasetAnalysisConfig(BaseModel):
     rdkit_n_workers: int = Field(default=8, ge=1)
     """Number of processes for RDKit work (joblib/multiprocessing)."""
 
-    atom_chunk_size: int = 1_000_000
-    """How many atoms to stream from zarr per chunk for atom-level metrics."""
-
     structure_chunk_size: int = 500_000
     """How many structures to process per chunk for structure-level metrics."""
 
@@ -115,7 +112,7 @@ class MoleculeDatasetAnalysisConfig(BaseModel):
 
 
 class DatasetEntry(BaseModel):
-    """One named on-disk MoleculeDataset, tagged by role for the comparison."""
+    """One named on-disk dataset, tagged by role for the comparison."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -127,8 +124,7 @@ class DatasetEntry(BaseModel):
     queried against the pooled pretrain set for nearest-neighbor Tanimoto."""
 
     path: Path
-    """Directory of the zarr-backed MoleculeDataset
-    (``MoleculeDataset.open_existing_dataset_from_dir``)."""
+    """The dataset directory (``Dataset.open``)."""
 
     max_molecules: int | None = None
     """Optional uniform-random subsample cap per dataset (deduped SMILES).

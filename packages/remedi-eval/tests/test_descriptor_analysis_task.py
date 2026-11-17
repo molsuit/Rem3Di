@@ -169,7 +169,7 @@ def test_max_structures_cuts_every_per_structure_analysis(
     """With ``max_structures`` every analysis sees the same first rows: colours,
     chemiscope frames, top-norm panels and the scorecard's chemistry all have
     as many entries as there are descriptor rows, read from the dataset once."""
-    from remedi_data.dataset.molecule_dataset import MoleculeDataset
+    from remedi_data.dataset import Dataset
     from remedi_eval.framework.tasks.descriptor_analysis import (
         ChemiscopeClusterTask,
         ChemiscopeProjectionTask,
@@ -187,15 +187,13 @@ def test_max_structures_cuts_every_per_structure_analysis(
     ctx, out = _context(tmp_path)
 
     reads: list[int | None] = []
-    original = MoleculeDataset.get_all_molecules
+    original = Dataset.read_structures
 
-    def counting_get_all_molecules(self, *args, **kwargs):
-        reads.append(args[0] if args else kwargs.get("N_molecules"))
-        return original(self, *args, **kwargs)
+    def counting_read_structures(self, structure_ids=None):
+        reads.append(None if structure_ids is None else len(structure_ids))
+        return original(self, structure_ids)
 
-    monkeypatch.setattr(
-        MoleculeDataset, "get_all_molecules", counting_get_all_molecules
-    )
+    monkeypatch.setattr(Dataset, "read_structures", counting_read_structures)
 
     task = DescriptorAnalysisConfig(
         dataset_path=dataset_path,

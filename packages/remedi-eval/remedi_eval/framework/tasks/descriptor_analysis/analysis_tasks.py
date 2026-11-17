@@ -301,7 +301,9 @@ class TopNormDescriptorsTask(_BaseAnalysisTask):
             squeeze=False,
         )
 
-        structure_ids = np.asarray(ctx.dataset.structure_ids[: ctx.structure_count])
+        structure_ids = ctx.dataset.table(["structure_id"])["structure_id"].to_numpy()[
+            : ctx.structure_count
+        ]
         entries: list[_TopNormEntry] = []
 
         for panel, index in enumerate(top_indices.tolist()):

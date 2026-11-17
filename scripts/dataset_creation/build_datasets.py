@@ -1,4 +1,4 @@
-"""Build datasets from SMILES bundles (conformers -> zarr) and verify every dataset.
+"""Build datasets from SMILES bundles (conformers -> structures.atp) and verify every dataset.
 
 One YAML (``DatasetBuildConfig``) describes one run. Each bundle is one task, so
 a dataset that fails is recorded in ``status.yaml`` while the rest still finish.

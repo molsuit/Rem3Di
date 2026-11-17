@@ -1,7 +1,7 @@
 """Precomputed embeddings: the npz + sidecar yaml pair, and the descriptor that reads it.
 
 The pair is the entry point for every frozen model (``BENCHMARK_DATA_FORMAT.md``
-§7.5). These tests pin what the reader refuses, that it reorders to the zarr's
+§7.5). These tests pin what the reader refuses, that it reorders to the dataset's
 structure order, and that a panel scored on precomputed embeddings gives the
 same numbers as the same matrix computed in-process.
 """
@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.format import EvalMetric, LabelColumn, TaskType, structures_identity
 from remedi_eval.benchmark.learners import LinearLearner
 from remedi_eval.descriptors import (
@@ -67,11 +67,11 @@ def _write(
 
 
 def _structure_ids(dataset_dir: Path) -> np.ndarray:
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
-    return np.asarray(dataset.structure_ids[:], dtype=np.int64)
+    table = Dataset.open(dataset_dir).table(["structure_id"])
+    return table["structure_id"].to_numpy().astype(np.int64)
 
 
-def test_a_shuffled_file_is_returned_in_zarr_order(tmp_path: Path) -> None:
+def test_a_shuffled_file_is_returned_in_structure_order(tmp_path: Path) -> None:
     dataset_dir = _dataset(tmp_path)
     ids = _structure_ids(dataset_dir)
     matrix = np.arange(N_ROWS * 3, dtype=np.float32).reshape(N_ROWS, 3)
@@ -202,7 +202,7 @@ def test_a_panel_on_precomputed_embeddings_matches_the_in_process_descriptor(
     in_process = _panel(tmp_path, ecfp, "in_process")
 
     # The same matrix, written by "another package" in shuffled order.
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
+    dataset = Dataset.open(dataset_dir)
     matrix = ecfp.calculate(dataset)
     ids = _structure_ids(dataset_dir)
     order = np.random.default_rng(1).permutation(N_ROWS)

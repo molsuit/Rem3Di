@@ -1,4 +1,4 @@
-"""Round trip: preparer -> bundle -> ``build_datasets`` -> zarr -> ``MoleculeDataset``.
+"""Round trip: preparer -> bundle -> ``build_datasets`` -> dataset -> ``Dataset``.
 
 A bundle written by the shared SMILES preparer path goes through the real
 dataset build (conformer embedding included), and every structure of the
@@ -17,7 +17,7 @@ import pytest
 
 from remedi_data.build import DatasetBuildConfig, build_datasets
 from remedi_data.chemistry.splits import fixed_test_seeded_split_columns
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.format import (
     EvalMetric,
     PreparerRecord,
@@ -99,7 +99,7 @@ def round_trip(tmp_path_factory: pytest.TempPathFactory) -> tuple[pd.DataFrame, 
     report = build_datasets(
         DatasetBuildConfig(
             bundle_root=root / "bundles",
-            zarr_root=root / "datasets",
+            dataset_root=root / "datasets",
             dataset_ids=[DATASET_ID],
             n_workers=1,
         )
@@ -145,17 +145,19 @@ def test_every_structure_carries_its_bundle_row(
     )
 
 
-def test_the_zarr_matches_the_table_row_for_row(
+def test_the_structures_match_the_table_row_for_row(
     round_trip: tuple[pd.DataFrame, Path],
 ) -> None:
     _, directory = round_trip
     table = read_bundle(directory).table
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(directory)
-    assert np.array_equal(dataset.structure_ids[:], table["structure_id"])
-    assert np.array_equal(dataset.isomer_ids[:], table["stereoisomer_id"])
-    assert np.array_equal(dataset.molecule_ids[:], table["molecule_id"])
-    assert np.array_equal(dataset.total_charge[:], table["total_charge"])
-    assert np.array_equal(dataset.multiplicity[:], table["multiplicity"])
-    frames = dataset.get_all_molecules()
+    dataset = Dataset.open(directory)
+    assert len(dataset) == len(table)
+    structures = dataset.read_structures()
+    assert np.array_equal(structures.total_charge, table["total_charge"])
+    assert np.array_equal(structures.multiplicity, table["multiplicity"])
+    frames = structures.to_atoms()
     assert len(frames) == len(table)
-    assert dataset.get_smiles_per_structure() == table["isomeric_smiles"].tolist()
+    assert all(
+        atoms.info["total_charge"] == charge
+        for atoms, charge in zip(frames, table["total_charge"], strict=True)
+    )

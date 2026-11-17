@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 from ase import Atoms
 
+from remedi_data.dataset import Structures
 from remedi_data.runs.results import ChemiscopeResult, PydanticResult
 from remedi_eval.framework.tasks.descriptor_analysis import analysis_tasks
 from remedi_eval.framework.tasks.descriptor_analysis.analysis_tasks import (
@@ -200,8 +201,11 @@ def test_mixed_cluster_is_not_mislabeled():
 
 def _make_ctx(molecules: list[Atoms]) -> DescriptorAnalysisContext:
     class _FakeDataset:
-        def get_all_molecules(self, count=None):
-            return molecules[:count]
+        def __len__(self) -> int:
+            return len(molecules)
+
+        def read_structures(self, structure_ids):
+            return Structures.from_atoms(molecules).take(structure_ids)
 
     n = len(molecules)
     return DescriptorAnalysisContext(

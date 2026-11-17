@@ -11,7 +11,7 @@ import pytest
 import yaml
 
 from remedi_data.build.write import write_dataset
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.dataset.structures import Structures
 from remedi_data.selection import (
     ClusterRecord,
@@ -36,7 +36,6 @@ from remedi_data.selection.config import ClusterWeighting
 from remedi_data.selection.select import selection_paths
 from remedi_data.yaml_io import read_model
 from testing import (
-    SMALL_ZARR_LAYOUT,
     embed_frame,
     make_dataset_spec,
     make_dataset_table,
@@ -77,10 +76,9 @@ def corpus(tmp_path_factory: pytest.TempPathFactory) -> Path:
     write_dataset(
         spec,
         table[spec.expected_columns()],
-        Structures.from_atoms(frames),
+        [Structures.from_atoms(frames)],
         make_provenance("corpus", source_molecules=len(smiles)),
         directory,
-        layout=SMALL_ZARR_LAYOUT,
     )
     return directory
 
@@ -256,10 +254,9 @@ def test_steps_chain_and_their_counts_are_recorded(
         (3, 3),
     ]
     assert record.structures == 3
-    pointer = np.asarray(MoleculeDataset.open_existing_dataset_from_dir(corpus).ptr[:])
     structure_ids = read_selection(corpus, "chained")
     assert record.atoms == int(
-        np.sum(pointer[structure_ids + 1] - pointer[structure_ids])
+        Dataset.open(corpus).structures.atom_counts(structure_ids).sum()
     )
     identity = dataset_identity(corpus)
     assert record.table_content_sha256 == identity.table_content_sha256
@@ -471,7 +468,7 @@ def test_the_hierarchical_order_is_a_seeded_permutation() -> None:
 
 
 def test_gathered_structures_match_the_full_arrays(corpus: Path) -> None:
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(corpus)
+    dataset = Dataset.open(corpus)
     full = dataset.read_structures()
     structure_ids = np.array([0, 5, 6, 13, 22, 23])
     gathered = dataset.read_structures(structure_ids)
@@ -500,9 +497,7 @@ def test_unsorted_repeated_or_out_of_range_ids_are_refused(
     corpus: Path, structure_ids: list[int]
 ) -> None:
     with pytest.raises(ValueError, match="structure_ids"):
-        MoleculeDataset.open_existing_dataset_from_dir(corpus).read_structures(
-            np.array(structure_ids)
-        )
+        Dataset.open(corpus).read_structures(np.array(structure_ids))
 
 
 def test_a_batch_reports_every_failure_after_trying_all(corpus: Path) -> None:

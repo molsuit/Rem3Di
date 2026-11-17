@@ -6,10 +6,12 @@ kept frame or a counted drop (:func:`~remedi_data.preparation.structures.records
 and writes ``shards/<n>.parquet`` (the table rows), ``shards/<n>.npz`` (the
 frames) and, last, ``shards/<n>.yaml`` (its counts; the completion marker). A
 rerun skips every shard whose marker exists, so a crash or a timeout loses at
-most the shards in flight. The final step concatenates the shards, assigns the
-ids (factorising only: the canonical and mirror SMILES were computed per
-shard) and writes the dataset through
-:func:`~remedi_data.build.write.write_dataset`, which re-checks every invariant.
+most the shards in flight. The final step concatenates the shard tables,
+assigns the ids (factorising only: the canonical and mirror SMILES were
+computed per shard) and writes the dataset through
+:func:`~remedi_data.build.write.write_dataset`, which re-checks every invariant;
+the shards' frames are streamed into it one shard at a time, never concatenated
+in memory.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ import json
 import logging
 import multiprocessing
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -29,7 +31,6 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.build.write import write_dataset
-from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
     BundleCounts,
@@ -72,7 +73,6 @@ class StructurePreparationSettings(BaseModel):
 
     shard_size: int = Field(default=100_000, ge=1)
     workers: int = Field(default_factory=default_workers, ge=1)
-    zarr: DatasetConfig = Field(default_factory=DatasetConfig)
 
 
 class ShardSummary(BaseModel):
@@ -487,14 +487,13 @@ def prepare_structures(
         )
         for summary in summaries
     ]
-    structures = Structures.concatenate(
-        [
-            Structures.load_npz(
+
+    def shard_frames() -> Iterator[Structures]:
+        for summary in summaries:
+            yield Structures.load_npz(
                 _shard_stem(work_directory, summary.index).with_suffix(".npz")
             )
-            for summary in summaries
-        ]
-    )
+
     table = assemble_table(source, shard_tables)
     dropped: dict[str, int] = {}
     for summary in summaries:
@@ -531,10 +530,9 @@ def prepare_structures(
     write_dataset(
         dataset_spec(source),
         table,
-        structures,
+        shard_frames(),
         provenance,
         output_directory,
-        layout=settings.zarr,
         workers=settings.workers,
     )
     marker.write_text(fingerprint + "\n")

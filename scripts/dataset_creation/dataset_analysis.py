@@ -11,7 +11,7 @@ import argparse
 import logging
 from pathlib import Path
 
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import read_model
 from remedi_eval.dataset_analysis.analysis import MoleculeDatasetAnalysis
@@ -54,7 +54,7 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     logging.info("Opening dataset at %s", args.dataset_dir)
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(args.dataset_dir)
+    dataset = Dataset.open(args.dataset_dir)
 
     analysis = MoleculeDatasetAnalysis(dataset, config=config)
     summary = analysis.run()

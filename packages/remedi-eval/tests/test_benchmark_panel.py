@@ -32,7 +32,7 @@ from testing import (
 
 N_ROWS = len(ACHIRAL_TEN_SMILES)
 #: A second, deliberately differently *sized* partition that exists only in the
-#: table, never in the zarr's ``tasks/split`` array: two train, two valid, six
+#: table: two train, two valid, six
 #: test, so the fold counts alone say which column was read.
 ALTERNATIVE_SPLIT = ["train"] * 2 + ["valid"] * 2 + ["test"] * 6
 #: Alternating labels, so the two test rows carry both classes (AUROC needs it).
@@ -43,7 +43,7 @@ def _labels(task_type: TaskType, *names: str) -> list[LabelColumn]:
     return [LabelColumn(name=name, task_type=task_type) for name in names]
 
 
-def build_zarr(
+def build_dataset(
     tmp_path: Path,
     dataset_id: str = "toy_reg",
     *,
@@ -115,7 +115,7 @@ def _with_nan_holes(targets: np.ndarray) -> np.ndarray:
 
 
 def test_panel_cross_product_and_cell_identity(tmp_path: Path) -> None:
-    build_zarr(tmp_path)
+    build_dataset(tmp_path)
 
     rows = run_panel(
         tmp_path,
@@ -169,7 +169,7 @@ def test_panel_scores_one_row_per_target(
     targets: np.ndarray | None,
     expected_target_columns: set[str | None],
 ) -> None:
-    build_zarr(tmp_path, labels=labels, metrics=(metric,), targets=targets)
+    build_dataset(tmp_path, labels=labels, metrics=(metric,), targets=targets)
 
     rows = run_panel(tmp_path)
 
@@ -185,9 +185,9 @@ def test_panel_scores_one_row_per_target(
 
 
 def test_split_column_selection(tmp_path: Path) -> None:
-    """The zarr stores only the default split; the rest come from the table, and
+    """Every split column comes from the table, and
     an unknown column fails that benchmark into ``failures.yaml``."""
-    build_zarr(
+    build_dataset(
         tmp_path,
         splits={"split": list(TEN_ROW_SPLIT), "split__seed1": ALTERNATIVE_SPLIT},
     )
@@ -205,8 +205,8 @@ def test_split_column_selection(tmp_path: Path) -> None:
 
 def test_panel_keeps_going_when_one_benchmark_fails(tmp_path: Path) -> None:
     """A mixed-task-type benchmark is recorded in failures.yaml and skipped."""
-    build_zarr(tmp_path, "toy_ok")
-    build_zarr(
+    build_dataset(tmp_path, "toy_ok")
+    build_dataset(
         tmp_path,
         "toy_mixed",
         labels=[
@@ -224,9 +224,9 @@ def test_panel_keeps_going_when_one_benchmark_fails(tmp_path: Path) -> None:
 
 def test_discovery_scores_only_benchmarks(tmp_path: Path) -> None:
     """A corpus (no evaluation block) and the build run's own directories and
-    ``status.yaml`` under ``zarr_root`` are skipped, not failures."""
-    build_zarr(tmp_path)
-    build_zarr(tmp_path, "toy_corpus", metrics=None)
+    ``status.yaml`` under the dataset root are skipped, not failures."""
+    build_dataset(tmp_path)
+    build_dataset(tmp_path, "toy_corpus", metrics=None)
     (tmp_path / "datasets" / "build").mkdir(exist_ok=True)
     (tmp_path / "datasets" / "verify").mkdir(exist_ok=True)
     (tmp_path / "datasets" / "status.yaml").write_text("n_tasks: 1\n")
@@ -241,7 +241,7 @@ def test_discovery_scores_only_benchmarks(tmp_path: Path) -> None:
 
 
 def test_learners_of_one_kind_are_told_apart_by_name(tmp_path: Path) -> None:
-    build_zarr(tmp_path)
+    build_dataset(tmp_path)
 
     rows = run_panel(
         tmp_path,
@@ -272,8 +272,8 @@ def test_failures_are_written_before_the_panel_finishes(
     """A job killed mid-panel still leaves the failures recorded so far."""
     import remedi_eval.framework.tasks.benchmark as benchmark_task
 
-    build_zarr(tmp_path, "toy_a", splits={"split": list(TEN_ROW_SPLIT)})
-    build_zarr(tmp_path, "toy_b")
+    build_dataset(tmp_path, "toy_a", splits={"split": list(TEN_ROW_SPLIT)})
+    build_dataset(tmp_path, "toy_b")
     original = benchmark_task.evaluate_cell
 
     def fail_then_get_killed(*args, **kwargs):
@@ -296,7 +296,7 @@ def test_a_failing_cell_does_not_lose_the_other_cells_of_its_dataset(
 ) -> None:
     import remedi_eval.framework.tasks.benchmark as benchmark_task
 
-    build_zarr(tmp_path)
+    build_dataset(tmp_path)
     original = benchmark_task.evaluate_cell
 
     def fail_for_one_learner(*args, **kwargs):
@@ -329,14 +329,14 @@ def test_a_failing_cell_does_not_lose_the_other_cells_of_its_dataset(
 def test_a_table_read_error_is_not_reported_as_a_missing_split_column(
     tmp_path: Path,
 ) -> None:
-    from remedi_data.dataset.molecule_dataset import MoleculeDataset
+    from remedi_data.dataset import Dataset
     from remedi_data.format import TABLE_FILENAME
     from remedi_eval.protocol import read_partition
 
-    dataset_dir = build_zarr(tmp_path)
+    dataset_dir = build_dataset(tmp_path)
     table_path = dataset_dir / TABLE_FILENAME
     pd.read_parquet(table_path).drop(columns=["structure_id"]).to_parquet(table_path)
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
+    dataset = Dataset.open(dataset_dir)
 
     with pytest.raises(ValueError, match="structure_id") as error:
         read_partition(dataset_dir, dataset, "split")
@@ -349,7 +349,7 @@ def test_a_table_read_error_is_not_reported_as_a_missing_split_column(
 def test_without_keep_going_the_first_failure_is_recorded_and_raised(
     tmp_path: Path,
 ) -> None:
-    build_zarr(tmp_path)
+    build_dataset(tmp_path)
     manifest = EvalManifest(
         model=EcfpConfig(name="ecfp_128", fingerprint_size=128),
         output_root=tmp_path / "eval_out",

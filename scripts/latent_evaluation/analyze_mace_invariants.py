@@ -149,9 +149,7 @@ def main() -> None:
     write_model(cfg.output_dir / "analysis_config.yaml", cfg)
 
     logger.info("Opening dataset at %s", cfg.dataset_path)
-    dataset = TrainingMoleculeDataset(
-        cfg.dataset_path, get_item=atoms_getitem, in_memory=True
-    )
+    dataset = TrainingMoleculeDataset(cfg.dataset_path, get_item=atoms_getitem)
     logger.info("Dataset size: %d molecules", len(dataset))
 
     loader = DataLoader(

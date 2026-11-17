@@ -2,13 +2,13 @@
 
 ``expand_to_structures`` does the row bookkeeping (dense ``structure_id``, id,
 label and split carry-through, the orphan rule, charges); ``write_dataset``
-validates and writes a zarr with the three table files beside it;
+validates and writes ``structures.atp`` and the three table files;
 ``build_datasets`` embeds conformers for every bundle, gates every frame and
 writes and verifies each dataset; ``verify_dataset`` re-checks one on disk.
 
 Embedding runs in-process (``n_workers=1``) over at most six small molecules,
 so the monkeypatched ``embed_one_smiles`` and ``stereochemistry_from_frame``
-are the ones actually called. The preparer -> build -> ``MoleculeDataset``
+are the ones actually called. The preparer -> build -> ``Dataset``
 carry-through of ids, labels and splits lives in ``test_bundle_round_trip.py``.
 """
 
@@ -21,9 +21,9 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 import yaml
-import zarr
 from ase import Atoms
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdForceFieldHelpers
@@ -47,11 +47,12 @@ from remedi_data.build import build as build_module
 from remedi_data.build import write as write_module
 from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.conformers import ConformerEmbeddingConfig
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset, StructureFile, write_structures
 from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
     PROVENANCE_FILENAME,
     SPEC_FILENAME,
+    STRUCTURES_FILENAME,
     TABLE_FILENAME,
     Bundle,
     BundleValidationError,
@@ -67,16 +68,10 @@ from remedi_data.format import (
     write_bundle,
 )
 from remedi_data.format import verify as verify_module
-from remedi_data.format.verify import (
-    VerifyReport,
-    structures_sha256,
-    verify_dataset,
-    zarr_problems,
-)
+from remedi_data.format.verify import VerifyReport, verify_dataset
 from remedi_data.runs.results import PydanticResult
 from testing import (
     ACHIRAL_TEN_SMILES,
-    SMALL_ZARR_LAYOUT,
     embed_frame,
     make_bundle,
     make_dataset_spec,
@@ -153,16 +148,15 @@ def expand(
 def build_config(tmp_path: Path, **overrides: Any) -> DatasetBuildConfig:
     defaults: dict[str, Any] = dict(
         bundle_root=tmp_path / "bundles",
-        zarr_root=tmp_path / "zarrs",
+        dataset_root=tmp_path / "datasets",
         n_workers=1,
-        zarr=SMALL_ZARR_LAYOUT,
     )
     return DatasetBuildConfig(**{**defaults, **overrides})
 
 
 def read_summary(config: DatasetBuildConfig, dataset_id: str) -> BuildSummary:
     document = yaml.safe_load(
-        (Path(config.zarr_root) / "build" / f"{dataset_id}.yaml").read_text()
+        (Path(config.dataset_root) / "build" / f"{dataset_id}.yaml").read_text()
     )
     return BuildSummary.model_validate(document)
 
@@ -175,10 +169,10 @@ def write(expanded: ExpandedDataset, directory: Path, **overrides: Any):
         structures=expanded.structures,
         provenance=expanded.provenance,
         directory=directory,
-        layout=SMALL_ZARR_LAYOUT,
     )
     arguments.update(overrides)
-    arguments["structures"] = Structures.from_atoms(arguments["structures"])
+    frames = arguments.pop("structures")
+    arguments["structure_parts"] = [Structures.from_atoms(frames)]
     return write_dataset(**arguments)
 
 
@@ -308,7 +302,7 @@ def test_expanding_a_dataset_is_refused() -> None:
 # --------------------------------------------------------------- write_dataset
 
 
-def test_write_dataset_writes_a_zarr_and_the_three_files(
+def test_write_dataset_writes_the_structures_and_the_three_files(
     tmp_path: Path, expanded: ExpandedDataset
 ) -> None:
     directory = tmp_path / DATASET_ID
@@ -316,8 +310,12 @@ def test_write_dataset_writes_a_zarr_and_the_three_files(
     written = write(expanded, directory)
 
     names = {path.name for path in directory.iterdir()}
-    assert {SPEC_FILENAME, TABLE_FILENAME, PROVENANCE_FILENAME} <= names
-    assert {"dataset_config.yaml", "positions", "atomic_numbers", "ids"} <= names
+    assert names == {
+        SPEC_FILENAME,
+        TABLE_FILENAME,
+        PROVENANCE_FILENAME,
+        STRUCTURES_FILENAME,
+    }
     assert [path for path in tmp_path.iterdir() if path.suffix == ".partial"] == []
     reloaded = read_bundle(directory)
     assert reloaded.spec == expanded.spec
@@ -329,15 +327,14 @@ def test_write_dataset_writes_a_zarr_and_the_three_files(
         "test": 1,
         "unassigned": 1,
     }
-    assert zarr_problems(directory, reloaded.table) == []
 
     assert written.outputs is not None
     assert structures_identity(directory) == written.outputs.structures_sha256
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(directory)
-    assert written.outputs.structures_sha256 == structures_sha256(dataset)
-    assert dataset.N_structures == 6
+    dataset = Dataset.open(directory)
+    assert written.outputs.structures_sha256 == dataset.structures_sha256()
+    assert len(dataset) == 6
     for atoms, expected in zip(
-        dataset.get_all_molecules(), expanded.structures, strict=True
+        dataset.read_structures().to_atoms(), expanded.structures, strict=True
     ):
         assert list(atoms.get_atomic_numbers()) == list(expected.get_atomic_numbers())
         np.testing.assert_allclose(
@@ -497,32 +494,39 @@ def test_structures_sha256_moves_with_the_coordinates(
     )
 
 
-def test_zarr_problems_compares_the_zarr_to_the_table_row_for_row(
+def test_write_dataset_refuses_a_frame_count_that_is_not_the_row_count(
     tmp_path: Path, expanded: ExpandedDataset
 ) -> None:
     directory = tmp_path / DATASET_ID
-    write(expanded, directory)
-    table = read_bundle(directory).table
+    with pytest.raises(BundleValidationError, match="8: 5 structures for 6 table rows"):
+        write(expanded, directory, structures=expanded.structures[:5])
+    assert not directory.exists()
+    assert list(tmp_path.iterdir()) == []
 
-    assert zarr_problems(directory, table.iloc[:-1]) == [
-        "8: the zarr holds 6 structures for 5 rows"
-    ]
-    changes: list[tuple[str, Any, str]] = [
-        ("molecule_id", table["molecule_id"][::-1].to_numpy(), "ids/molecule_id"),
-        ("total_charge", 1.0, "total_charge"),
-        ("multiplicity", 3.0, "multiplicity"),
-    ]
-    for column, value, expected in changes:
-        changed = table.copy()
-        if column == "molecule_id":
-            changed[column] = value
-        else:
-            changed.loc[0, column] = value
-        (problem,) = zarr_problems(directory, changed)
-        assert problem.startswith("8:") and expected in problem
-    # Labels and splits are not in the zarr, so the table alone holds them.
-    relabelled = table.assign(logp=99.0, split="test")
-    assert zarr_problems(directory, relabelled) == []
+
+def test_write_dataset_streams_parts_into_one_file_and_one_row_group_each(
+    tmp_path: Path, expanded: ExpandedDataset
+) -> None:
+    whole = write(expanded, tmp_path / "whole")
+    frames = Structures.from_atoms(expanded.structures)
+    streamed = write_dataset(
+        expanded.spec,
+        expanded.table,
+        (frames.slice(start, start + 2) for start in range(0, len(frames), 2)),
+        expanded.provenance,
+        tmp_path / "streamed",
+    )
+    assert whole.outputs is not None and streamed.outputs is not None
+    assert streamed.outputs.structures_sha256 == whole.outputs.structures_sha256
+    assert (
+        streamed.outputs.table_parquet.content_sha256
+        == whole.outputs.table_parquet.content_sha256
+    )
+    metadata = pq.ParquetFile(tmp_path / "streamed" / TABLE_FILENAME).metadata
+    assert [
+        metadata.row_group(index).num_rows for index in range(metadata.num_row_groups)
+    ] == [2, 2, 2]
+    assert verify_dataset(tmp_path / "streamed").problems == []
 
 
 def test_labels_and_splits_live_only_in_the_spec_and_the_table(
@@ -535,14 +539,15 @@ def test_labels_and_splits_live_only_in_the_spec_and_the_table(
         metrics=[EvalMetric.mae],
         targets=np.linspace(0.0, 1.0, 10),
     )
-    assert not (directory / "tasks").exists()
-    config = yaml.safe_load((directory / "dataset_config.yaml").read_text())
-    assert set(config) == {
-        "atom_chunk",
-        "molecule_chunk",
-        "atom_chunks_per_shard",
-        "molecule_chunks_per_shard",
+    # The structure file holds frames only; ids, charges, labels and splits
+    # are columns of the table.
+    assert {path.name for path in directory.iterdir()} == {
+        SPEC_FILENAME,
+        TABLE_FILENAME,
+        PROVENANCE_FILENAME,
+        STRUCTURES_FILENAME,
     }
+    assert len(StructureFile.open(directory / STRUCTURES_FILENAME)) == 10
 
 
 def test_a_labelled_corpus_without_evaluation_is_written(
@@ -585,10 +590,9 @@ def test_a_source_dataset_without_smiles_is_written(tmp_path: Path) -> None:
     write_dataset(
         spec,
         table,
-        Structures.from_atoms([embed_frame(smiles) for smiles in smiles_values]),
+        [Structures.from_atoms([embed_frame(smiles) for smiles in smiles_values])],
         make_provenance("source_like"),
         directory,
-        layout=SMALL_ZARR_LAYOUT,
     )
     reloaded = read_bundle(directory)
     assert reloaded.table["csd_code"].tolist() == ["AAAA", "BBBB", "CCCC", "DDDD"]
@@ -623,17 +627,17 @@ def test_build_datasets_builds_and_verifies_every_bundle(tmp_path: Path) -> None
         ("2_verify_dataset_second", True),
         ("3_verify_dataset_synthetic6", True),
     ]
-    zarr_root = tmp_path / "zarrs"
-    status = yaml.safe_load((zarr_root / "status.yaml").read_text())
+    dataset_root = tmp_path / "datasets"
+    status = yaml.safe_load((dataset_root / "status.yaml").read_text())
     assert status["n_tasks"] == 4 and status["n_failed"] == 0
     assert (
         DatasetBuildConfig.model_validate(
-            yaml.safe_load((zarr_root / "manifest.yaml").read_text())
+            yaml.safe_load((dataset_root / "manifest.yaml").read_text())
         )
         == config
     )
 
-    directory = zarr_root / DATASET_ID
+    directory = dataset_root / DATASET_ID
     dataset = read_bundle(directory)
     assert dataset.spec.geometry_origin == "etkdg_mmff"
     assert len(dataset.table) == 6
@@ -662,26 +666,25 @@ def test_build_datasets_builds_and_verifies_every_bundle(tmp_path: Path) -> None
         == dataset.provenance.outputs.table_parquet.content_sha256
     )
     report_document = yaml.safe_load(
-        (zarr_root / "verify" / f"{DATASET_ID}.yaml").read_text()
+        (dataset_root / "verify" / f"{DATASET_ID}.yaml").read_text()
     )
     assert VerifyReport.model_validate(report_document).problems == []
 
-    # the charge is taken from each SMILES and carried into the zarr
-    charged = read_bundle(zarr_root / "second").table
+    # the charge is taken from each SMILES and read back with the frames
+    charged = read_bundle(dataset_root / "second").table
     assert charged["total_charge"].tolist() == [
         1.0 if smiles == "NCC[NH3+]" else 0.0 for smiles in charged["isomeric_smiles"]
     ]
-    molecule_dataset = MoleculeDataset.open_existing_dataset_from_dir(
-        zarr_root / "second"
-    )
-    total_charge = np.asarray(molecule_dataset.total_charge[:]).tolist()
+    read_back = Dataset.open(dataset_root / "second").read_structures()
+    assert read_back.total_charge is not None
+    total_charge = read_back.total_charge.tolist()
     assert total_charge == charged["total_charge"].tolist()
     assert 1.0 in total_charge
 
 
 @pytest.fixture(scope="module")
 def built_once(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A bundle root and the zarr root built from it; copy before changing."""
+    """A bundle root and the dataset root built from it; copy before changing."""
     root = tmp_path_factory.mktemp("built_once")
     write_smiles_bundle(root / "bundles", dataset_id=DATASET_ID)
     assert build_datasets(build_config(root)).n_failed == 0
@@ -723,7 +726,7 @@ def test_a_rerun_rebuilds_only_when_something_changed(
 ) -> None:
     """``rows=None`` means the rerun must skip and leave the dataset untouched."""
     shutil.copytree(built_once, tmp_path, dirs_exist_ok=True)
-    table_path = tmp_path / "zarrs" / DATASET_ID / TABLE_FILENAME
+    table_path = tmp_path / "datasets" / DATASET_ID / TABLE_FILENAME
     before = table_path.stat().st_mtime_ns
     if rewrite_bundle:
         write_smiles_bundle(
@@ -739,7 +742,7 @@ def test_a_rerun_rebuilds_only_when_something_changed(
         assert table_path.stat().st_mtime_ns == before
         return
     assert not summary.skipped and summary.structures_out == rows
-    dataset = read_bundle(tmp_path / "zarrs" / DATASET_ID)
+    dataset = read_bundle(tmp_path / "datasets" / DATASET_ID)
     assert len(dataset.table) == rows
     assert dataset.provenance.conformers is not None
     assert dataset.provenance.conformers.settings == config.conformers
@@ -762,8 +765,8 @@ def test_dataset_ids_select_nested_bundles_by_their_relative_path(
 
     assert report.n_failed == 0
     assert [status.name for status in report.statuses] == ["0_build_dataset_tdc__AMES"]
-    assert read_bundle(tmp_path / "zarrs" / "tdc" / "AMES").spec.dataset_id == "AMES"
-    assert not (tmp_path / "zarrs" / "ignored").exists()
+    assert read_bundle(tmp_path / "datasets" / "tdc" / "AMES").spec.dataset_id == "AMES"
+    assert not (tmp_path / "datasets" / "ignored").exists()
 
 
 @pytest.mark.parametrize("keep_going", [True, False])
@@ -786,9 +789,9 @@ def test_a_failing_bundle_and_keep_going(tmp_path: Path, keep_going: bool) -> No
     else:
         with pytest.raises(ValueError, match="smiles: false"):
             build_datasets(config)
-    assert (tmp_path / "zarrs" / DATASET_ID).exists() == keep_going
-    assert not (tmp_path / "zarrs" / "a_without_smiles").exists()
-    status = yaml.safe_load((tmp_path / "zarrs" / "status.yaml").read_text())
+    assert (tmp_path / "datasets" / DATASET_ID).exists() == keep_going
+    assert not (tmp_path / "datasets" / "a_without_smiles").exists()
+    status = yaml.safe_load((tmp_path / "datasets" / "status.yaml").read_text())
     assert status["n_failed"] == 1
 
 
@@ -797,7 +800,7 @@ def test_verify_covers_datasets_a_preparer_wrote_directly(
     tmp_path: Path, tampered: bool
 ) -> None:
     directory = write_small_dataset(
-        tmp_path / "zarrs",
+        tmp_path / "datasets",
         dataset_id="direct",
         labels=REGRESSION_LABEL,
         metrics=[EvalMetric.mae],
@@ -813,7 +816,7 @@ def test_verify_covers_datasets_a_preparer_wrote_directly(
     (status,) = report.statuses
     assert status.name == "0_verify_dataset_direct"
     assert ("structures_sha256" in (status.error or "")) == tampered
-    assert (tmp_path / "zarrs" / "verify" / "direct.yaml").is_file()
+    assert (tmp_path / "datasets" / "verify" / "direct.yaml").is_file()
 
 
 def test_a_stereo_mismatch_after_embedding_is_dropped_and_counted(
@@ -838,7 +841,7 @@ def test_a_stereo_mismatch_after_embedding_is_dropped_and_counted(
 
     assert build_datasets(config).n_failed == 0
 
-    dataset = read_bundle(tmp_path / "zarrs" / DATASET_ID)
+    dataset = read_bundle(tmp_path / "datasets" / DATASET_ID)
     assert len(dataset.table) == 5
     dropped = dataset.provenance.counts.dropped
     assert dropped[STEREO_MISMATCH_AFTER_EMBEDDING] == 1
@@ -875,7 +878,7 @@ def test_one_raising_molecule_does_not_sink_the_dataset(
 
     assert build_datasets(build_config(tmp_path)).n_failed == 0
 
-    directory = tmp_path / "zarrs" / DATASET_ID
+    directory = tmp_path / "datasets" / DATASET_ID
     dataset = read_bundle(directory)
     assert dataset.provenance.counts.dropped[CONFORMER_EMBEDDING_FAILED] == 1
     # L-alanine is first: its partner D-alanine survives as an orphan
@@ -910,7 +913,7 @@ def test_a_frame_mmff_could_not_relax_is_dropped_and_counted(
 
     assert build_datasets(config).n_failed == 0
 
-    directory = tmp_path / "zarrs" / DATASET_ID
+    directory = tmp_path / "datasets" / DATASET_ID
     dataset = read_bundle(directory)
     assert len(dataset.table) == 5
     dropped = dataset.provenance.counts.dropped
@@ -933,18 +936,21 @@ def test_the_build_checks_with_its_workers_and_reuses_the_bundle_hash(
     """Invariants 9 and 10 run with ``n_workers`` at write and at verify, and the
     bundle's content hash is the one ``read_bundle`` already checked."""
     workers_seen: list[int] = []
-    real_structure_problems = write_module.structure_problems
+    real_structure_problems = verify_module.structure_problems
+    real_checker = write_module.StructureChecker
 
     def recording_structure_problems(*args, workers: int, **kwargs) -> list[str]:
         workers_seen.append(workers)
         return real_structure_problems(*args, workers=1, **kwargs)
 
+    def recording_checker(*args, workers: int, **kwargs):
+        workers_seen.append(workers)
+        return real_checker(*args, workers=1, **kwargs)
+
     def recomputing_the_bundle_hash(table: pd.DataFrame) -> str:
         raise AssertionError("the build recomputed the bundle's content hash")
 
-    monkeypatch.setattr(
-        write_module, "structure_problems", recording_structure_problems
-    )
+    monkeypatch.setattr(write_module, "StructureChecker", recording_checker)
     monkeypatch.setattr(
         verify_module, "structure_problems", recording_structure_problems
     )
@@ -981,7 +987,7 @@ REAL_EMBED_MANY = build_module.embed_many
 
 @pytest.fixture
 def ten_row_dataset(tmp_path: Path) -> Path:
-    """Ten rows, so the small zarr layout spreads them over several batches and shards."""
+    """Ten rows with one regression label."""
     return write_small_dataset(
         tmp_path,
         dataset_id="ten",
@@ -998,16 +1004,33 @@ def tamper_provenance_structures_hash(directory: Path) -> None:
     provenance_path.write_text(yaml.safe_dump(document, sort_keys=False))
 
 
+def rewrite_the_structures(
+    directory: Path, change: Callable[[Structures], Structures]
+) -> None:
+    """Replace ``structures.atp`` by ``change`` of its frames (a tampered file)."""
+    path = directory / STRUCTURES_FILENAME
+    frames = StructureFile.open(path).read()
+    path.unlink()
+    write_structures(path, [change(frames)])
+
+
 def overlap_two_atoms(directory: Path) -> None:
-    positions = zarr.open_array(directory / "positions", mode="r+")
-    shifted = np.asarray(positions[:])
-    shifted[1] = shifted[0]  # two atoms of the first molecule on top of each other
-    positions[:] = shifted
+    def overlapped(frames: Structures) -> Structures:
+        positions = frames.positions.copy()
+        positions[1] = positions[0]  # two atoms of the first molecule on top
+        return Structures.from_arrays(positions, frames.atomic_numbers, frames.ptr)
+
+    rewrite_the_structures(directory, overlapped)
 
 
-def reverse_molecule_ids(directory: Path) -> None:
-    molecule_ids = zarr.open_array(directory / "ids" / "molecule_id", mode="r+")
-    molecule_ids[:] = np.asarray(molecule_ids[:])[::-1]
+def swap_two_structures(directory: Path) -> None:
+    order = np.arange(10)
+    order[[0, 1]] = order[[1, 0]]
+    rewrite_the_structures(directory, lambda frames: frames.take(order))
+
+
+def drop_the_last_structure(directory: Path) -> None:
+    rewrite_the_structures(directory, lambda frames: frames.slice(0, 9))
 
 
 def change_a_label_in_the_table(directory: Path) -> None:
@@ -1020,31 +1043,27 @@ def delete_the_table(directory: Path) -> None:
     (directory / TABLE_FILENAME).unlink()
 
 
-def delete_an_array(directory: Path) -> None:
-    shutil.rmtree(directory / "multiplicity")
+def delete_the_structures(directory: Path) -> None:
+    (directory / STRUCTURES_FILENAME).unlink()
 
 
-def overwrite_a_charge(directory: Path) -> None:
-    total_charge = zarr.open_array(directory / "total_charge", mode="r+")
-    total_charge[0] = 3.0
-
-
-def overwrite_a_multiplicity(directory: Path) -> None:
-    multiplicity = zarr.open_array(directory / "multiplicity", mode="r+")
-    multiplicity[0] = 2.0
+def overwrite_a_charge_in_the_table(directory: Path) -> None:
+    table = pd.read_parquet(directory / TABLE_FILENAME)
+    table.loc[0, "total_charge"] = 3.0
+    table.to_parquet(directory / TABLE_FILENAME, index=False)
 
 
 @pytest.mark.parametrize(
     ("tamper", "expected"),
     [
         (overlap_two_atoms, ["structures_sha256", "10:"]),
-        (reverse_molecule_ids, ["8: ids/molecule_id does not match the table"]),
+        (swap_two_structures, ["structures_sha256"]),
+        (drop_the_last_structure, ["9 structures for 10 table rows"]),
         (change_a_label_in_the_table, ["content_sha256"]),
         (tamper_provenance_structures_hash, ["structures_sha256"]),
         (delete_the_table, [TABLE_FILENAME]),
-        (delete_an_array, ["multiplicity"]),
-        (overwrite_a_charge, ["structures_sha256", "8: total_charge"]),
-        (overwrite_a_multiplicity, ["structures_sha256", "8: multiplicity"]),
+        (delete_the_structures, [STRUCTURES_FILENAME]),
+        (overwrite_a_charge_in_the_table, ["content_sha256"]),
     ],
 )
 def test_verify_catches_tampering(

@@ -21,6 +21,7 @@ from remedi_data.format.identity import (
     mirror_isomeric_smiles,
 )
 from remedi_data.format.invariants import (
+    StructureChecker,
     count_stereoisomer_straddling_constitutions,
     stereo_agrees_with_frame,
     stereochemistry_from_frame,
@@ -56,10 +57,10 @@ from remedi_data.format.spec import (
     metrics_with_headline,
 )
 from remedi_data.format.table import (
-    DATASET_CONFIG_FILENAME,
     FORMAT_VERSION,
     PROVENANCE_FILENAME,
     SPEC_FILENAME,
+    STRUCTURES_FILENAME,
     TABLE_FILENAME,
     Bundle,
     BundleValidationError,
@@ -76,17 +77,18 @@ from remedi_data.format.table import (
     sha256_of_file,
     structures_identity,
     table_columns,
+    table_row_count,
     write_bundle,
     write_table_files,
 )
 
 __all__ = [
-    "DATASET_CONFIG_FILENAME",
     "FORMAT_VERSION",
     "METRICS_BY_TASK_TYPE",
     "PROVENANCE_FILENAME",
     "SPEC_FILENAME",
     "SPLIT_VALUES",
+    "STRUCTURES_FILENAME",
     "TABLE_FILENAME",
     "Bundle",
     "BundleCounts",
@@ -109,6 +111,7 @@ __all__ = [
     "SmilesParseError",
     "SourceRecord",
     "SplitGroup",
+    "StructureChecker",
     "TableOutputRecord",
     "TaskType",
     "assign_identity",
@@ -135,6 +138,7 @@ __all__ = [
     "structure_problems",
     "structures_identity",
     "table_columns",
+    "table_row_count",
     "tetrahedral_stereo_smiles",
     "validate_table",
     "write_bundle",

@@ -1,9 +1,9 @@
-"""Discovering benchmark datasets by the ``dataset.yaml`` beside their zarr.
+"""Discovering benchmark datasets by the ``dataset.yaml`` beside their structures.
 
 A dataset is self-describing: the evaluation side reads the metrics, the labels
 and the split columns from its ``dataset.yaml`` and never imports a registry.
 This module pins that contract: :func:`discover_benchmarks` must find exactly
-the directories that carry *both* a spec and a ``dataset_config.yaml`` *and*
+the directories that carry *both* a spec and a ``structures.atp`` *and*
 whose spec declares an evaluation block.
 """
 
@@ -15,8 +15,8 @@ import pytest
 import yaml
 
 from remedi_data.format import (
-    DATASET_CONFIG_FILENAME,
     SPEC_FILENAME,
+    STRUCTURES_FILENAME,
     DatasetSpec,
     EvalMetric,
     EvaluationSpec,
@@ -49,12 +49,12 @@ def make_spec(dataset_id: str = "esol", *, evaluation: bool = True) -> DatasetSp
     )
 
 
-def write_zarr_dir(
+def write_dataset_dir(
     root: Path,
     dataset_id: str,
     *,
     with_spec: bool = True,
-    with_dataset_config: bool = True,
+    with_structures: bool = True,
     evaluation: bool = True,
 ) -> Path:
     """A directory that looks like a dataset to discovery, and nothing more."""
@@ -65,15 +65,15 @@ def write_zarr_dir(
         (directory / SPEC_FILENAME).write_text(
             yaml.safe_dump(spec.model_dump(mode="json", exclude_none=True))
         )
-    if with_dataset_config:
-        (directory / DATASET_CONFIG_FILENAME).write_text("atom_chunk: 8192\n")
+    if with_structures:
+        (directory / STRUCTURES_FILENAME).write_bytes(b"")
     return directory
 
 
 def test_the_evaluation_block_is_read_back_from_a_dataset_directory(
     tmp_path: Path,
 ) -> None:
-    spec = read_spec(write_zarr_dir(tmp_path, "esol"))
+    spec = read_spec(write_dataset_dir(tmp_path, "esol"))
     assert spec == make_spec("esol")
     evaluation = evaluation_of(spec)
     assert evaluation.metrics[0] is EvalMetric.rmse
@@ -83,15 +83,15 @@ def test_the_evaluation_block_is_read_back_from_a_dataset_directory(
 
 
 def test_discovery_finds_only_benchmarks_sorted(tmp_path: Path) -> None:
-    write_zarr_dir(tmp_path, "zeta")
-    write_zarr_dir(tmp_path, "alpha")
+    write_dataset_dir(tmp_path, "zeta")
+    write_dataset_dir(tmp_path, "alpha")
     # a corpus is a dataset, but not a benchmark
-    write_zarr_dir(tmp_path, "corpus", evaluation=False)
-    write_zarr_dir(tmp_path, "pretraining_zarr", with_spec=False)
-    # A bundle has a dataset.yaml but no dataset_config.yaml; pointing eval_root
+    write_dataset_dir(tmp_path, "corpus", evaluation=False)
+    write_dataset_dir(tmp_path, "structures_without_spec", with_spec=False)
+    # A bundle has a dataset.yaml but no structures.atp; pointing eval_root
     # at a bundle_root must therefore find nothing rather than crash on a
-    # directory that holds no zarr arrays.
-    write_zarr_dir(tmp_path, "bundle_only", with_dataset_config=False)
+    # directory that holds no structures.
+    write_dataset_dir(tmp_path, "bundle_only", with_structures=False)
 
     discovered = discover_benchmarks(tmp_path)
 

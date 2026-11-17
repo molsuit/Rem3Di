@@ -16,7 +16,7 @@ from typing import Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_eval.descriptors.embeddings_file import (
     embeddings_aligned_to,
     read_embeddings,
@@ -41,9 +41,9 @@ class PrecomputedEmbeddingsConfig(BaseModel):
         return hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()
 
     def load_matrix(
-        self, dataset: MoleculeDataset, dataset_id: str, cache_root: Path
+        self, dataset: Dataset, dataset_id: str, cache_root: Path
     ) -> np.ndarray:
-        """The embeddings in zarr order; ``cache_root`` is unused (the files are the cache).
+        """The embeddings in structure order; ``cache_root`` is unused (the files are the cache).
 
         Raises:
             FileNotFoundError: if there are no embeddings for this dataset.
@@ -55,5 +55,5 @@ class PrecomputedEmbeddingsConfig(BaseModel):
         return embeddings_aligned_to(
             embeddings,
             Path(dataset.path),
-            np.asarray(dataset.structure_ids[:], dtype=np.int64),
+            dataset.table(["structure_id"])["structure_id"].to_numpy().astype(np.int64),
         )

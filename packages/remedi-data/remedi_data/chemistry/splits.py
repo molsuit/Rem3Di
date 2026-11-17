@@ -9,7 +9,7 @@ junior eval001 panel: a faithful, deterministic re-implementation of
 ``deepchem.splits.ScaffoldSplitter.split`` (no 300 MB deepchem / TF dep). It
 matches the MolCLR / Uni-Mol / GraphMVP / GEM / MoLFormer-XL scaffold-split
 convention. Splits are computed once at ingest from the canonical SMILES that
-go into the zarr and stored in the per-structure ``split`` column.
+go into the dataset and stored in the table's split columns.
 """
 
 from __future__ import annotations

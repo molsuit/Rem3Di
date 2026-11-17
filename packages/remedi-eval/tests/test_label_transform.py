@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import numpy as np
@@ -106,7 +105,7 @@ def test_apply_label_transforms_per_column() -> None:
         ]
     )
     targets = np.array([[1.0, 9.0], [np.nan, -3.0], [2.0, np.nan]])
-    # Column order of the zarr need not match the spec's label order.
+    # Column order of the table need not match the spec's label order.
     result = apply_label_transforms(targets[:, ::-1], ["logged", "raw"], spec)
     np.testing.assert_allclose(
         result, [[1.0, 1.0], [0.0, np.nan], [np.nan, 2.0]], equal_nan=True
@@ -146,7 +145,7 @@ def test_build_targets_reads_the_label_columns_then_transforms() -> None:
 def test_a_benchmark_reads_its_labels_from_the_spec_and_the_table(
     tmp_path: Path,
 ) -> None:
-    """The zarr holds no label arrays and no label names; the protocol takes the
+    """The structures hold no labels and no label names; the protocol takes the
     names and task types from ``dataset.yaml`` and the values from the table."""
     labels = [
         LabelColumn(name="active", task_type=TaskType.classification),
@@ -160,12 +159,6 @@ def test_a_benchmark_reads_its_labels_from_the_spec_and_the_table(
         metrics=[EvalMetric.macro_auroc],
         targets=targets,
     )
-    shutil.rmtree(directory / "tasks", ignore_errors=True)
-    config_path = directory / "dataset_config.yaml"
-    config = yaml.safe_load(config_path.read_text())
-    config.pop("tasks", None)
-    config_path.write_text(yaml.safe_dump(config))
-
     benchmark = load_benchmark(directory)
 
     assert benchmark.task_kind == "multilabel"

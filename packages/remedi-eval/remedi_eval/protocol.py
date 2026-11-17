@@ -5,14 +5,14 @@ fine-tuning run, another group's model):
 
 .. code-block:: python
 
-    benchmark = load_benchmark(dataset_dir)        # spec + zarr + table, validated
+    benchmark = load_benchmark(dataset_dir)        # spec + structures + table, validated
     benchmark.task_kind, benchmark.target_columns, benchmark.headline_metric
     partition = benchmark.partition("split__seed3")  # train / valid / test structure ids
     targets = benchmark.targets(partition.train)     # NaN for missing, transforms applied
 
-Structure ids are the rows of the dataset's ``table.parquet`` and of its zarr
-(invariant 1), so a ``Partition``'s sorted id arrays index descriptor matrices
-in zarr order directly.
+Structure ids are the rows of the dataset's ``table.parquet`` and the records of
+its ``structures.atp`` (invariant 1), so a ``Partition``'s sorted id arrays
+index descriptor matrices in structure order directly.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.format import (
     TABLE_FILENAME,
     DatasetSpec,
@@ -138,31 +138,29 @@ def build_targets_with_nan(table: pd.DataFrame, spec: DatasetSpec) -> np.ndarray
     return apply_label_transforms(targets, column_names, spec)
 
 
-def read_partition(
-    dataset_dir: Path, dataset: MoleculeDataset, split_column: str
-) -> Partition:
+def read_partition(dataset_dir: Path, dataset: Dataset, split_column: str) -> Partition:
     """The train / valid / test structure ids of one split column.
 
-    The split is read by name from the ``table.parquet`` beside the zarr, whose
+    The split is read by name from the dataset's ``table.parquet``, whose
     row ``i`` is structure ``i`` (invariant 1), so any of the dataset's split
     columns can be scored.
 
     Raises:
         ValueError: if the dataset carries no table, if ``split_column`` or
             ``structure_id`` is not one of its columns, if its ``structure_id``
-            column is not the row index or does not match the zarr, or if a
+            column is not the row index or does not match the structures, or if a
             split value is not a known split name. A table that cannot be read
             at all raises the parquet reader's own error.
     """
     dataset_dir = Path(dataset_dir)
-    n_structures = dataset.N_structures
+    n_structures = len(dataset)
     table_path = dataset_dir / TABLE_FILENAME
     try:
         column_names = table_columns(dataset_dir)
     except FileNotFoundError as error:
         raise ValueError(
             f"{dataset_dir} has no {TABLE_FILENAME}; rebuild it with build_datasets, "
-            "which writes the table beside the zarr"
+            "which writes the table beside the structures"
         ) from error
     if split_column not in column_names:
         available = [name for name in column_names if name.startswith("split")]
@@ -173,7 +171,7 @@ def read_partition(
     if "structure_id" not in column_names:
         raise ValueError(
             f"{table_path} has no structure_id column, so its rows cannot be "
-            "joined to the zarr's structures"
+            "joined to the dataset's structures"
         )
     table = read_table(dataset_dir, columns=["structure_id", split_column])
 
@@ -186,7 +184,7 @@ def read_partition(
     if len(table) != n_structures:
         raise ValueError(
             f"{dataset_dir / TABLE_FILENAME} has {len(table)} rows for "
-            f"{n_structures} structures in the zarr"
+            f"{n_structures} structures in the dataset"
         )
     codes = split_codes_from_names(table[split_column].to_numpy(dtype=object))
     return Partition(
@@ -199,11 +197,11 @@ def read_partition(
 
 @dataclass
 class Benchmark:
-    """One built benchmark dataset: its spec, its zarr and its table."""
+    """One built benchmark dataset: its spec, its structures and its table."""
 
     path: Path
     spec: DatasetSpec
-    dataset: MoleculeDataset
+    dataset: Dataset
 
     @property
     def dataset_id(self) -> str:
@@ -231,7 +229,7 @@ class Benchmark:
 
     @property
     def n_structures(self) -> int:
-        return self.dataset.N_structures
+        return len(self.dataset)
 
     @cached_property
     def _all_targets(self) -> np.ndarray:
@@ -242,7 +240,7 @@ class Benchmark:
         """``(n, n_target_columns)`` targets, NaN for missing, transforms applied.
 
         Read from the table (row ``i`` is structure ``i``, invariant 1).
-        ``None`` returns every structure in zarr order.
+        ``None`` returns every structure in structure order.
         """
         if structure_ids is None:
             return self._all_targets
@@ -273,7 +271,7 @@ class Benchmark:
         )
 
     def stereoisomers(self) -> pd.DataFrame:
-        """Per-structure ``stereoisomer_id`` and ``enantiomer_of``, in zarr order.
+        """Per-structure ``stereoisomer_id`` and ``enantiomer_of``, in structure order.
 
         Read from the table (row ``i`` is structure ``i``, invariant 1).
         ``enantiomer_of`` is the nullable ``Int64`` id of the mirror-image
@@ -287,18 +285,18 @@ def load_benchmark(dataset_dir: Path) -> Benchmark:
 
     Raises:
         ValueError: if the dataset declares no evaluation block or no labels,
-            or its zarr ``structure_id`` is not the row index.
+            or its table's ``structure_id`` is not the row index.
     """
     dataset_dir = Path(dataset_dir)
     spec = read_spec(dataset_dir)
     evaluation_of(spec)
     if not spec.labels:
         raise ValueError(f"{dataset_dir} declares no labels; it is not a benchmark")
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
-    structure_ids = np.asarray(dataset.structure_ids[:], dtype=np.int64)
+    dataset = Dataset.open(dataset_dir)
+    structure_ids = dataset.table(["structure_id"])["structure_id"].to_numpy()
     if not np.array_equal(structure_ids, np.arange(len(structure_ids))):
         raise ValueError(
-            f"{dataset_dir} violates invariant 1: the zarr's structure_id is not "
+            f"{dataset_dir} violates invariant 1: the table's structure_id is not "
             "the row index"
         )
     return Benchmark(path=dataset_dir, spec=spec, dataset=dataset)

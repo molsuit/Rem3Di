@@ -30,9 +30,9 @@ from rdkit import Chem
 from remedi_data.chemistry.geometry import GeometryLimits
 from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
-    DATASET_CONFIG_FILENAME,
     PROVENANCE_FILENAME,
     SPEC_FILENAME,
+    STRUCTURES_FILENAME,
     TABLE_FILENAME,
     Bundle,
     BundleValidationError,
@@ -559,10 +559,10 @@ def test_a_failed_rewrite_keeps_the_previous_bundle(
     directory = write_smiles_bundle(tmp_path)
     before = {path.name: path.read_bytes() for path in directory.iterdir()}
 
-    def failing_to_parquet(*args, **kwargs) -> None:
+    def failing_parquet_write(*args, **kwargs) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr(pd.DataFrame, "to_parquet", failing_to_parquet)
+    monkeypatch.setattr(bundle_module, "write_parquet_table", failing_parquet_write)
     with pytest.raises(OSError):
         write_bundle(make_bundle(), directory)
     monkeypatch.undo()
@@ -790,7 +790,7 @@ def test_structure_invariants_8_and_9(
     spec, table = make_small_dataset(smiles=smiles)
     frames = mutation([frame.copy() for frame in chiral_frames])
     problems = structure_problems(
-        spec, table, Structures.from_atoms(frames), GEOMETRY_LIMITS
+        spec, table, [Structures.from_atoms(frames)], GEOMETRY_LIMITS
     )
     if expected is None:
         assert problems == []
@@ -807,7 +807,7 @@ def test_invariant_9_fails_a_row_whose_smiles_does_not_parse(
     table["isomeric_smiles"] = table["isomeric_smiles"].astype(object)
     table.loc[0, "isomeric_smiles"] = unusable
     problems = structure_problems(
-        spec, table, Structures.from_atoms(chiral_frames), GEOMETRY_LIMITS
+        spec, table, [Structures.from_atoms(chiral_frames)], GEOMETRY_LIMITS
     )
     assert problems == ["9: geometry disagrees with isomeric_smiles for rows [0]"]
 
@@ -864,7 +864,7 @@ def test_each_geometry_limit_fails_invariant_10(
     atoms: Atoms, limits: GeometryLimits, reason: str
 ) -> None:
     spec, table = make_small_dataset(["CCO"], smiles=False)
-    problems = structure_problems(spec, table, Structures.from_atoms([atoms]), limits)
+    problems = structure_problems(spec, table, [Structures.from_atoms([atoms])], limits)
     assert len(problems) == 1 and has_problem(problems, f"10:.*{reason}"), problems
 
 
@@ -872,9 +872,29 @@ def test_many_offending_rows_are_summarised() -> None:
     spec, table = make_small_dataset(["CCO", "CCN", "CCC", "CO", "CN", "CS", "CF"])
     frames = [_methane_like("HH") for _ in range(len(table))]
     problems = structure_problems(
-        spec, table, Structures.from_atoms(frames), GeometryLimits()
+        spec, table, [Structures.from_atoms(frames)], GeometryLimits()
     )
     assert has_problem(problems, r"10:.*7 rows, first \[0, 1, 2, 3, 4\]"), problems
+
+
+def test_structure_problems_number_rows_across_parts() -> None:
+    """Parts are checked in record order: row numbers continue across them, and a
+    frame count that is not the row count is the only problem reported."""
+    spec, table = make_small_dataset(["CCO", "CCN", "CCC", "CO", "CN", "CS", "CF"])
+    frames = [_methane_like("CH3") for _ in range(len(table))]
+    frames[5] = _methane_like("HH")
+    parts = [Structures.from_atoms(frames[:2]), Structures.from_atoms(frames[2:])]
+    problems = structure_problems(spec, table, parts, GeometryLimits())
+    assert problems == structure_problems(
+        spec, table, [Structures.from_atoms(frames)], GeometryLimits()
+    )
+    assert has_problem(problems, r"10:.*rows \[5\]"), problems
+    assert structure_problems(spec, table, parts[:1], GeometryLimits()) == [
+        "8: 2 structures for 7 table rows"
+    ]
+    assert structure_problems(spec, table, [*parts, parts[0]], GeometryLimits()) == [
+        "8: 9 structures for 7 table rows"
+    ]
 
 
 # --- invariant 9 only compares what the SMILES actually specifies -----------
@@ -973,15 +993,15 @@ def test_a_rewrite_of_the_same_bundle_records_the_same_content_hash(
 
 
 def test_discovery_tells_bundles_from_datasets(tmp_path: Path) -> None:
-    """A dataset is a bundle directory plus a ``dataset_config.yaml``."""
+    """A dataset is a bundle directory plus a ``structures.atp``."""
     write_smiles_bundle(tmp_path, dataset_id="zeta")
     write_smiles_bundle(tmp_path / "tdc", dataset_id="AMES")
     write_smiles_bundle(tmp_path, dataset_id="alpha")
     for root, dataset_id in [("", "omega"), ("", "beta"), ("nested", "too_deep")]:
         directory = write_smiles_bundle(tmp_path / root, dataset_id=dataset_id)
-        (directory / DATASET_CONFIG_FILENAME).write_text("atom_chunk: 8192\n")
-    (tmp_path / "config_only").mkdir()
-    (tmp_path / "config_only" / DATASET_CONFIG_FILENAME).write_text("{}\n")
+        (directory / STRUCTURES_FILENAME).write_bytes(b"")
+    (tmp_path / "structures_only").mkdir()
+    (tmp_path / "structures_only" / STRUCTURES_FILENAME).write_bytes(b"")
     (tmp_path / "status.yaml").write_text("n_tasks: 0\n")
 
     # bundles are found at any depth; datasets only directly under the root
@@ -995,7 +1015,7 @@ def test_discovery_tells_bundles_from_datasets(tmp_path: Path) -> None:
     assert [spec.dataset_id for _, spec in discovered] == ["beta", "omega"]
     assert is_dataset_directory(tmp_path / "beta")
     assert not is_dataset_directory(tmp_path / "zeta")
-    assert not is_dataset_directory(tmp_path / "config_only")
+    assert not is_dataset_directory(tmp_path / "structures_only")
     assert discover_bundles(tmp_path / "missing") == []
     assert discover_datasets(tmp_path / "missing") == []
 
@@ -1004,7 +1024,7 @@ def test_discover_datasets_raises_on_an_unreadable_spec(tmp_path: Path) -> None:
     directory = tmp_path / "broken"
     directory.mkdir()
     (directory / SPEC_FILENAME).write_text("format_version: 99\n")
-    (directory / DATASET_CONFIG_FILENAME).write_text("{}\n")
+    (directory / STRUCTURES_FILENAME).write_bytes(b"")
     with pytest.raises(BundleValidationError, match="format_version"):
         discover_datasets(tmp_path)
 

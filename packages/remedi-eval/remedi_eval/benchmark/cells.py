@@ -212,7 +212,7 @@ def evaluate_pairwise_cell(
     ordinary regression; the test-fold predictions are then handed to
     :func:`pair_ranking_accuracy`, which pools conformers per stereoisomer and
     ranks each enantiomer pair. ``stereoisomers`` is the per-structure
-    ``stereoisomer_id`` / ``enantiomer_of`` frame in zarr order
+    ``stereoisomer_id`` / ``enantiomer_of`` frame in structure order
     (:meth:`Benchmark.stereoisomers`). One result row, with ``n_test`` carrying
     the number of enantiomer pairs scored (not conformers).
     """

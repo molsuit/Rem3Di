@@ -1,10 +1,10 @@
-# The 22 TDC ADMET datasets: bundles from `prepare-tdc` -> conformers -> zarrs.
+# The 22 TDC ADMET datasets: bundles from `prepare-tdc` -> conformers -> datasets.
 # Paths are relative to the repository root; run from there:
 #
 #   uv run --no-sync python scripts/dataset_creation/build_datasets.py \
 #       --config configs/dataset_creation/build_tdc_panel.yaml
 bundle_root: benchmark_data/bundles
-zarr_root: benchmark_data/datasets
+dataset_root: benchmark_data/datasets
 dataset_ids:
   - Caco2_Wang
   - HIA_Hou

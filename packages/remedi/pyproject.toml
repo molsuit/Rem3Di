@@ -36,8 +36,6 @@ dependencies = [
     # The polar extra (mace-torch >= 0.3.17) brings graph_longrange for the MACE-POLAR models.
     "mace-torch[polar]>=0.3.17",
     "matplotlib",
-    # Blosc threads of the zarr reads in the data-loader workers.
-    "numcodecs",
     "numpy",
     "polars",
     "pydantic",
@@ -47,8 +45,8 @@ dependencies = [
 ]
 
 # ``polaris-lib`` is intentionally NOT listed here: it pins ``zarr<3`` and so
-# cannot share a venv with this project (which requires ``zarr>=3.2`` for the
-# MoleculeDataset store). Polaris datasets are dumped out-of-venv by
+# cannot share a venv with this project (whose dev group holds ``zarr>=3.2`` for
+# the conversion of the old zarr datasets). Polaris datasets are dumped out-of-venv by
 # ``preparers/polaris/dump_polaris.py`` (PEP 723 inline deps) and turned into
 # bundles by the ``remedi-prepare-polaris`` workspace member.
 

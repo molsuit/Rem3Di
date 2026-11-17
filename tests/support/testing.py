@@ -16,8 +16,8 @@ enantiomer pairs, because invariant 4 refuses a null ``enantiomer_of`` when that
 flag is set. ``smiles=False`` drops the SMILES columns and ``evaluation=False``
 drops the evaluation block and its split columns (a corpus).
 
-**Datasets** (``write_small_dataset``): a zarr with the three table files
-beside it, written by ``write_dataset`` from one seeded ETKDG frame per SMILES
+**Datasets** (``write_small_dataset``): ``structures.atp`` with the three table
+files beside it, written by ``write_dataset`` from one seeded ETKDG frame per SMILES
 (or caller-supplied frames). Every evaluation test reads a dataset made this
 way, so the writer and the evaluation side cannot drift apart.
 """
@@ -37,9 +37,7 @@ from remedi_data.build import write_dataset
 from remedi_data.chemistry.charge import charge_and_multiplicity
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits
-from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.structures import Structures
+from remedi_data.dataset import Dataset, Structures, write_structures
 from remedi_data.format import (
     Bundle,
     BundleCounts,
@@ -54,6 +52,8 @@ from remedi_data.format import (
     assign_identity,
     write_bundle,
 )
+from remedi_data.format.table import SPEC_FILENAME, STRUCTURES_FILENAME
+from remedi_data.yaml_io import write_model
 
 #: One enantiomer pair, an achiral ring, a meso compound, a lone chiral
 #: molecule and a small achiral molecule: six distinct stereoisomers.
@@ -82,15 +82,6 @@ GEOMETRY_LIMITS = GeometryLimits(
     reject_zero_hydrogen=True,
     min_hydrogen_heavy_ratio=0.0,
     min_interatomic_distance=0.5,
-)
-
-#: Small chunks and shards, so a ten-structure zarr already spans several
-#: chunks and shards.
-SMALL_ZARR_LAYOUT = DatasetConfig(
-    atom_chunk=8,
-    molecule_chunk=4,
-    atom_chunks_per_shard=4,
-    molecule_chunks_per_shard=4,
 )
 
 #: Which split each ``molecule_id`` lands in, so invariant 6 holds by
@@ -340,28 +331,31 @@ def write_small_dataset(
     write_dataset(
         spec,
         table,
-        Structures.from_atoms(
-            list(structures)
-            if structures is not None
-            else [embed_frame(smiles) for smiles in smiles_values]
-        ),
+        [
+            Structures.from_atoms(
+                list(structures)
+                if structures is not None
+                else [embed_frame(smiles) for smiles in smiles_values]
+            )
+        ],
         make_provenance(dataset_id, source_molecules=len(smiles_values)),
         directory,
-        layout=SMALL_ZARR_LAYOUT,
     )
     return directory
 
 
 def write_synthetic_dataset(
     directory: Path, smiles: Sequence[str], structures_per_molecule: int = 1
-) -> MoleculeDataset:
-    """A zarr of synthetic frames with a ``table.parquet`` naming their SMILES.
+) -> Dataset:
+    """Synthetic frames in ``structures.atp`` with a ``table.parquet`` naming their SMILES.
 
     Every structure is the same five-atom frame (C, O, N, H, H), so atom and
     heteroatom counts are known whatever the SMILES; ``structures_per_molecule``
-    copies per SMILES. The table holds ``structure_id``, ``molecule_id`` and
-    ``isomeric_smiles``, which is what the SMILES-based analyses read. It does
-    not satisfy the dataset invariants (the frames do not match the SMILES).
+    copies per SMILES. The table holds ``structure_id``, ``molecule_id``,
+    ``isomeric_smiles``, ``total_charge`` (0) and ``multiplicity`` (1), which is
+    what the analyses read, and ``dataset.yaml`` a minimal spec. It does not
+    satisfy the dataset invariants (the frames do not match the SMILES, and
+    there is no provenance).
     """
     directory = Path(directory)
     species = np.array([6, 8, 7, 1, 1], dtype=np.uint8)
@@ -371,19 +365,16 @@ def write_synthetic_dataset(
     molecule_ids = np.repeat(
         np.arange(n_molecules, dtype=np.int64), structures_per_molecule
     )
-    dataset = MoleculeDataset.write(
-        directory,
-        Structures.from_arrays(
-            np.tile(frame, (n_structures, 1)),
-            np.tile(species, n_structures),
-            np.arange(n_structures + 1, dtype=np.int64) * len(species),
-            np.zeros(n_structures),
-            np.ones(n_structures),
-        ),
-        structure_ids=np.arange(n_structures, dtype=np.int64),
-        molecule_ids=molecule_ids,
-        stereoisomer_ids=np.zeros(n_structures, dtype=np.int64),
-        config=DatasetConfig(atom_chunk=64, molecule_chunk=16),
+    directory.mkdir(parents=True, exist_ok=True)
+    write_structures(
+        directory / STRUCTURES_FILENAME,
+        [
+            Structures.from_arrays(
+                np.tile(frame, (n_structures, 1)),
+                np.tile(species, n_structures),
+                np.arange(n_structures + 1, dtype=np.int64) * len(species),
+            )
+        ],
     )
     pd.DataFrame(
         {
@@ -392,9 +383,21 @@ def write_synthetic_dataset(
             "isomeric_smiles": np.repeat(
                 np.asarray(list(smiles), dtype=object), structures_per_molecule
             ),
+            "total_charge": np.zeros(n_structures),
+            "multiplicity": np.ones(n_structures),
         }
     ).to_parquet(directory / "table.parquet", index=False)
-    return dataset
+    write_model(
+        directory / SPEC_FILENAME,
+        DatasetSpec(
+            dataset_id=directory.name,
+            smiles=True,
+            geometry_origin="source",
+            source_kind="synthetic",
+        ),
+        exclude_none=True,
+    )
+    return Dataset.open(directory)
 
 
 def write_ten_structure_dataset(directory: Path, frames: Sequence[Atoms]) -> Path:

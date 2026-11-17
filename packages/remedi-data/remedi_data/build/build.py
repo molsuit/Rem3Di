@@ -5,8 +5,8 @@ One YAML (:class:`DatasetBuildConfig`) drives one run. Each bundle under
 :func:`~remedi_data.chemistry.conformers.embed_many`, every frame is gated on
 MMFF having run, invariant 9 (stereochemistry survived MMFF) and invariant 10
 (geometry limits), the bundle is expanded to one row per structure, and
-:func:`~remedi_data.build.write.write_dataset` writes the zarr with the table
-beside it. Each dataset under ``zarr_root`` (built here or
+:func:`~remedi_data.build.write.write_dataset` writes its structures and
+table. Each dataset under ``dataset_root`` (built here or
 written directly by a preparer) is then verified. One failing dataset is one
 failed row in ``status.yaml``; the rest still finish.
 """
@@ -38,7 +38,6 @@ from remedi_data.chemistry.conformers import (
 )
 from remedi_data.chemistry.elements import ElementSet
 from remedi_data.chemistry.geometry import GeometryLimits, frame_geometry_violations
-from remedi_data.dataset.config import DatasetConfig
 from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
     Bundle,
@@ -96,20 +95,19 @@ class DatasetBuildConfig(BaseModel):
     #: Where the SMILES bundles are read.
     bundle_root: Path
     #: Where the datasets are written, and ``manifest.yaml`` / ``status.yaml``.
-    zarr_root: Path
+    dataset_root: Path
     #: ``None`` means every bundle under ``bundle_root``.
     dataset_ids: list[str] | None = None
     conformers: ConformerEmbeddingConfig = Field(
         default_factory=ConformerEmbeddingConfig
     )
     geometry_limits: GeometryLimits = DEFAULT_GEOMETRY_LIMITS
-    zarr: DatasetConfig = Field(default_factory=DatasetConfig)
     #: ``None`` means every CPU; ``1`` embeds in-process.
     n_workers: int | None = Field(default=None, ge=1)
     #: False skips a dataset already built from the same bundle content with the
     #: same conformer settings.
     overwrite: bool = False
-    #: Verify every dataset under ``zarr_root`` after building.
+    #: Verify every dataset under ``dataset_root`` after building.
     verify: bool = True
     #: False re-raises the first failure instead of recording it.
     keep_going: bool = True
@@ -238,11 +236,7 @@ def _already_built(
     conformers: ConformerEmbeddingConfig,
     limits: GeometryLimits,
 ) -> bool:
-    """Whether ``dataset_path`` was built from this bundle content with these settings.
-
-    The zarr layout is not compared: it changes how the data is stored, not
-    which data it is.
-    """
+    """Whether ``dataset_path`` was built from this bundle content with these settings."""
     try:
         provenance = read_provenance(dataset_path)
     except FileNotFoundError:
@@ -279,7 +273,7 @@ class BuildDatasetTask(BaseModel):
         started = time.monotonic()
         config = self.config
         bundle = read_bundle(Path(config.bundle_root) / self.dataset_id)
-        dataset_path = Path(config.zarr_root) / self.dataset_id
+        dataset_path = Path(config.dataset_root) / self.dataset_id
         # ``read_bundle`` checked the recorded hash against the table.
         bundle_hash = bundle.content_sha256
         if not config.overwrite and _already_built(
@@ -348,10 +342,9 @@ class BuildDatasetTask(BaseModel):
         written = write_dataset(
             expanded.spec,
             expanded.table,
-            Structures.from_atoms(expanded.structures),
+            [Structures.from_atoms(expanded.structures)],
             provenance,
             dataset_path,
-            layout=config.zarr,
             workers=workers,
         )
         write_timings_jsonl(outcome.timings, dataset_path / TIMINGS_FILENAME)
@@ -377,7 +370,7 @@ class BuildDatasetTask(BaseModel):
 
 
 class VerifyDatasetTask(BaseModel):
-    """Re-check one dataset directory: table, structures and zarr."""
+    """Re-check one dataset directory: table, structures and recorded hashes."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -404,12 +397,12 @@ class VerifyDatasetTask(BaseModel):
 
 
 def build_datasets(config: DatasetBuildConfig) -> RunReport:
-    """Build every selected bundle, then verify every dataset under ``zarr_root``.
+    """Build every selected bundle, then verify every dataset under ``dataset_root``.
 
-    Always writes ``manifest.yaml`` and ``status.yaml`` under ``zarr_root``,
+    Always writes ``manifest.yaml`` and ``status.yaml`` under ``dataset_root``,
     also when a task fails and ``keep_going`` is False.
     """
-    output_root = Path(config.zarr_root)
+    output_root = Path(config.dataset_root)
 
     def task_groups() -> Iterator[list[BuildDatasetTask] | list[VerifyDatasetTask]]:
         yield [

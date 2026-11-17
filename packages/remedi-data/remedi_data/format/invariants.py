@@ -9,7 +9,8 @@ message is prefixed with its invariant number; an empty list means valid.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -21,7 +22,6 @@ from remedi_data.chemistry.geometry import (
     GeometryLimits,
     frame_geometry_violations,
 )
-from remedi_data.dataset.structures import Structures
 from remedi_data.format.spec import (
     SMILES_COLUMNS,
     SPLIT_VALUES,
@@ -30,6 +30,11 @@ from remedi_data.format.spec import (
     TaskType,
 )
 from remedi_data.parallel import process_map
+
+if TYPE_CHECKING:
+    # Only annotations: remedi_data.dataset reads the format, so importing it
+    # here at run time would be circular.
+    from remedi_data.dataset.structures import Structures
 
 #: How many offending rows a single message names before it summarises.
 _MAX_REPORTED_ROWS = 5
@@ -466,54 +471,99 @@ def _frame_problems_of_chunk(
 def structure_problems(
     spec: DatasetSpec,
     table: pd.DataFrame,
-    structures: Structures,
+    parts: Iterable[Structures],
     limits: GeometryLimits,
     *,
     workers: int = 1,
 ) -> list[str]:
     """The per-frame invariants of a dataset: 8 (one frame per row), 9 and 10.
 
-    Invariant 9 applies to a dataset that declares ``smiles: true``: a row whose
-    ``isomeric_smiles`` is null or does not parse fails it, and a row whose
-    SMILES assigns a tetrahedral centre fails it when the frame disagrees. With
-    ``workers > 1`` the rows are checked in chunks in a process pool.
+    ``parts`` are the structures in record order, in any number of pieces
+    (one :class:`Structures`, or the shards of a corpus streamed one at a
+    time); :class:`StructureChecker` runs over them.
     """
-    if len(structures) != len(table):
-        return [f"8: {len(structures)} structures for {len(table)} table rows"]
-    smiles = (
-        [
-            value if isinstance(value, str) else None
-            for value in table["isomeric_smiles"]
+    checker = StructureChecker(spec, table, limits, workers=workers)
+    for part in parts:
+        checker.check(part)
+    return checker.problems()
+
+
+class StructureChecker:
+    """Invariants 8 (one frame per row), 9 and 10 over structures that arrive in parts.
+
+    :meth:`check` takes the next part (its rows follow the previous parts'),
+    :meth:`problems` reports. Invariant 9 applies to a dataset that declares
+    ``smiles: true``: a row whose ``isomeric_smiles`` is null or does not parse
+    fails it, and a row whose SMILES assigns a tetrahedral centre fails it when
+    the frame disagrees. With ``workers > 1`` each part is checked in chunks in
+    a process pool.
+    """
+
+    def __init__(
+        self,
+        spec: DatasetSpec,
+        table: pd.DataFrame,
+        limits: GeometryLimits,
+        *,
+        workers: int = 1,
+    ) -> None:
+        self._smiles = (
+            [
+                value if isinstance(value, str) else None
+                for value in table["isomeric_smiles"]
+            ]
+            if spec.smiles
+            else None
+        )
+        self._rows = len(table)
+        self._limits = limits
+        self._workers = workers
+        self._checked = 0
+        self._mismatched: list[int] = []
+        self._offenders: dict[str, list[int]] = {name: [] for name in _GEOMETRY_REASONS}
+
+    def check(self, part: Structures) -> None:
+        """Check the next ``len(part)`` rows against their frames."""
+        first_row = self._checked
+        self._checked += len(part)
+        if self._checked > self._rows:
+            return  # more frames than rows; problems() reports the count
+        count = len(part)
+        chunk_size = max(1, -(-count // max(1, self._workers * 8)))
+        arguments = [
+            (
+                None
+                if self._smiles is None
+                else self._smiles[first_row + start : first_row + stop],
+                part.slice(start, stop),
+                self._limits,
+                first_row + start,
+            )
+            for start, stop in (
+                (start, min(start + chunk_size, count))
+                for start in range(0, count, chunk_size)
+            )
         ]
-        if spec.smiles
-        else None
-    )
-    rows = len(table)
-    chunk_size = max(1, -(-rows // max(1, workers * 8)))
-    bounds = [
-        (start, min(start + chunk_size, rows)) for start in range(0, rows, chunk_size)
-    ]
-    arguments = [
-        (
-            None if smiles is None else smiles[start:stop],
-            structures.slice(start, stop),
-            limits,
-            start,
+        results = process_map(
+            _frame_problems_of_chunk, arguments, workers=self._workers, chunk_size=1
         )
-        for start, stop in bounds
-    ]
-    results = process_map(
-        _frame_problems_of_chunk, arguments, workers=workers, chunk_size=1
-    )
-    mismatched = [row for chunk_mismatched, _ in results for row in chunk_mismatched]
-    problems: list[str] = []
-    if mismatched:
-        problems.append(
-            "9: geometry disagrees with isomeric_smiles for "
-            f"{_summarise_rows(mismatched)}"
-        )
-    for name, reason in _GEOMETRY_REASONS.items():
-        offending_rows = [row for _, offenders in results for row in offenders[name]]
-        if offending_rows:
-            problems.append(f"10: {reason} in {_summarise_rows(offending_rows)}")
-    return problems
+        for mismatched, offenders in results:
+            self._mismatched += mismatched
+            for name, rows in offenders.items():
+                self._offenders[name] += rows
+
+    def problems(self) -> list[str]:
+        if self._checked != self._rows:
+            return [f"8: {self._checked} structures for {self._rows} table rows"]
+        problems: list[str] = []
+        if self._mismatched:
+            problems.append(
+                "9: geometry disagrees with isomeric_smiles for "
+                f"{_summarise_rows(self._mismatched)}"
+            )
+        for name, reason in _GEOMETRY_REASONS.items():
+            if self._offenders[name]:
+                problems.append(
+                    f"10: {reason} in {_summarise_rows(self._offenders[name])}"
+                )
+        return problems

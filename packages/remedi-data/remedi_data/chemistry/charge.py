@@ -1,4 +1,4 @@
-"""Total charge and spin multiplicity of a molecule, as the zarr stores them."""
+"""Total charge and spin multiplicity of a molecule, as a dataset table stores them."""
 
 from __future__ import annotations
 

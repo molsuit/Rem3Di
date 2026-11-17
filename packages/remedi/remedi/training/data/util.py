@@ -1,16 +1,10 @@
 import statistics as stats
 from time import perf_counter
 
-import numcodecs.blosc as blosc
 import torch
 
 
 def worker_init_fn(_worker_id: int) -> None:
-    # One Blosc thread per worker prevents CPU oversubscription on shared nodes.
-    try:
-        blosc.set_nthreads(1)
-    except Exception:
-        pass
     # Runtime equivalent of OMP_NUM_THREADS=1 — env vars are read at
     # library-init, which is too late for the already-forked worker.
     torch.set_num_threads(1)

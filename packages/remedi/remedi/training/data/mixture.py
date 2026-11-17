@@ -14,10 +14,12 @@ selected structure is seen once per epoch. At start-up :func:`resolve_mixture`
    fixed key per molecule, so the validation molecules of a smaller nested
    selection are those of the larger one that it contains.
 
-The selected structures of each dataset are read once, in step 1, and
-:meth:`PretrainingData.open_datasets` concatenates the training parts of them; validation stays per component so its
-loss is reported per component. Ids are
-never rewritten: a structure is ``(dataset, structure_id)``.
+Step 1 reads the selected frames once, in pieces, for the domain check and
+their atom counts, and keeps only the counts. :meth:`PretrainingData.open_datasets`
+concatenates the training parts; every sample is then read from
+``structures.atp`` when the loader asks for it. Validation stays per component
+so its loss is reported per component. Ids are never rewritten: a structure is
+``(dataset, structure_id)``.
 """
 
 from __future__ import annotations
@@ -39,9 +41,14 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
 )
 from remedi_data.chemistry.elements import D_BLOCK_ATOMIC_NUMBERS, MACE_OFF_ELEMENTS
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.structures import Structures
-from remedi_data.format import read_spec, read_table_polars, table_columns
+from remedi_data.dataset import StructureFile
+from remedi_data.dataset.structure_file import READ_CHUNK_STRUCTURES
+from remedi_data.format import (
+    STRUCTURES_FILENAME,
+    read_spec,
+    read_table_polars,
+    table_columns,
+)
 from remedi_data.selection import (
     SelectionError,
     dataset_identity,
@@ -183,13 +190,12 @@ class MixtureRecord(BaseModel):
 class MixturePart:
     """One dataset of a component, with its training and validation structures.
 
-    ``structures`` holds the selected structures (``selected_structure_ids``,
-    sorted), read once; training and validation are subsets of them.
+    Training and validation are subsets of ``selected_structure_ids`` (sorted);
+    the frames stay on disk.
     """
 
     dataset: Path
     selected_structure_ids: np.ndarray
-    structures: Structures
     train_structure_ids: np.ndarray
     validation_structure_ids: np.ndarray
     train_atom_counts: np.ndarray
@@ -214,7 +220,7 @@ class ProbeSet:
 
 @dataclass(frozen=True)
 class OpenedPart:
-    """A part's structures, read once; training and validation index into them."""
+    """A part's selected structures; training and validation index into them."""
 
     part: MixturePart
     dataset: TrainingMoleculeDataset
@@ -285,8 +291,8 @@ class PretrainingData:
     record: MixtureRecord
 
     def open_datasets(self, get_item: GetItemFn) -> MixtureDatasets:
-        """Training datasets over the structures read by :func:`resolve_mixture`
-        (in this process, so forked loader workers inherit them)."""
+        """Training datasets over the selected structures of every part; each
+        loader worker reads their frames from its own open structure file."""
         opened: list[list[OpenedPart]] = []
         for component in self.components:
             opened_parts = []
@@ -296,10 +302,7 @@ class PretrainingData:
                     OpenedPart(
                         part=part,
                         dataset=TrainingMoleculeDataset(
-                            part.dataset,
-                            get_item,
-                            structure_ids=structure_ids,
-                            arrays=part.structures,
+                            part.dataset, get_item, structure_ids=structure_ids
                         ),
                         train_positions=np.searchsorted(
                             structure_ids, part.train_structure_ids
@@ -360,29 +363,41 @@ def _component_datasets(component: DatasetComponent | DatasetGroupComponent):
         raise MixtureError(f"component {component.name}: {error}") from error
 
 
-def _check_domain(
-    domain: Domain, atomic_numbers: np.ndarray, atom_counts: np.ndarray, name: str
-) -> None:
-    """Raise if the structures (atoms concatenated) do not belong to ``domain``."""
-    present = set(np.unique(atomic_numbers).tolist())
+@dataclass
+class _DomainEvidence:
+    """What the domain check needs, gathered over the pieces of a selection."""
+
+    present: set[int]
+    structures: int = 0
+    structures_without_metal: int = 0
+
+    def add(self, atomic_numbers: np.ndarray, atom_counts: np.ndarray) -> None:
+        """Add the structures of one piece (atoms concatenated)."""
+        self.present.update(np.unique(atomic_numbers).tolist())
+        self.structures += len(atom_counts)
+        # A transition-metal complex holds a d-block metal (groups 3-12); a
+        # lanthanide or actinide on its own does not count.
+        is_metal = np.isin(atomic_numbers, list(D_BLOCK_ATOMIC_NUMBERS))
+        cumulative = np.concatenate([[0], np.cumsum(is_metal, dtype=np.int64)])
+        ends = np.cumsum(atom_counts)
+        metals_per_structure = cumulative[ends] - cumulative[ends - atom_counts]
+        self.structures_without_metal += int(np.sum(metals_per_structure == 0))
+
+
+def _check_domain(domain: Domain, evidence: _DomainEvidence, name: str) -> None:
+    """Raise if the structures do not belong to ``domain``."""
     if domain == "drug_like":
-        outside = sorted(present - _MACE_OFF_ATOMIC_NUMBERS)
+        outside = sorted(evidence.present - _MACE_OFF_ATOMIC_NUMBERS)
         if outside:
             raise MixtureError(
                 f"{name} has atomic numbers {outside}, outside the drug-like "
                 "(MACE-OFF) elements; is it a transition-metal corpus?"
             )
         return
-    # A transition-metal complex holds a d-block metal (groups 3-12); a
-    # lanthanide or actinide on its own does not count.
-    is_metal = np.isin(atomic_numbers, list(D_BLOCK_ATOMIC_NUMBERS))
-    starts = np.concatenate([[0], np.cumsum(atom_counts)[:-1]])
-    metals_per_structure = np.add.reduceat(is_metal.astype(np.int64), starts)
-    without = int(np.sum(metals_per_structure == 0))
-    if without:
+    if evidence.structures_without_metal:
         raise MixtureError(
-            f"{name}: {without} of {len(atom_counts)} structures hold no "
-            "transition metal; is it a drug-like corpus?"
+            f"{name}: {evidence.structures_without_metal} of {evidence.structures} "
+            "structures hold no transition metal; is it a drug-like corpus?"
         )
 
 
@@ -444,22 +459,28 @@ def _check_rows(rows: pl.DataFrame, deduplicate: bool, name: str) -> None:
         )
 
 
-def _read_structures(
+def _check_structures(
     dataset: Path, structure_ids: np.ndarray, domain: Domain, name: str
-) -> tuple[Structures, np.ndarray]:
-    """Gather the selected structures once; check them against the domain.
+) -> np.ndarray:
+    """Check the selected structures against the domain; returns their atom counts.
 
-    Returns the structures and their atom counts.
+    The frames are read in pieces of ``READ_CHUNK_STRUCTURES`` and dropped, so
+    memory stays bounded for any selection.
     """
     try:
-        structures = MoleculeDataset.open_existing_dataset_from_dir(
-            Path(dataset)
-        ).read_structures(structure_ids)
-    except ValueError as error:
+        structure_file = StructureFile.open(Path(dataset) / STRUCTURES_FILENAME)
+        evidence = _DomainEvidence(present=set())
+        atom_counts = []
+        for start in range(0, len(structure_ids), READ_CHUNK_STRUCTURES):
+            piece = structure_file.read(
+                structure_ids[start : start + READ_CHUNK_STRUCTURES]
+            )
+            evidence.add(piece.atomic_numbers, piece.atom_counts)
+            atom_counts.append(piece.atom_counts)
+    except (OSError, ValueError) as error:
         raise MixtureError(f"{name}: {error}") from error
-    atom_counts = structures.atom_counts
-    _check_domain(domain, structures.atomic_numbers, atom_counts, name)
-    return structures, atom_counts
+    _check_domain(domain, evidence, name)
+    return np.concatenate(atom_counts) if atom_counts else np.zeros(0, np.int64)
 
 
 def _resolve_part(
@@ -474,9 +495,7 @@ def _resolve_part(
     selected = _select_rows(dataset, selection, config, name)
     rows = selected.rows
     structure_ids = selected.structure_ids
-    structure_arrays, atom_counts = _read_structures(
-        dataset, structure_ids, config.domain, name
-    )
+    atom_counts = _check_structures(dataset, structure_ids, config.domain, name)
 
     selected_molecules = rows["molecule_id"].n_unique()
     selected_structures = len(rows)
@@ -506,7 +525,6 @@ def _resolve_part(
     part = MixturePart(
         dataset=Path(dataset),
         selected_structure_ids=structure_ids,
-        structures=structure_arrays,
         train_structure_ids=train_ids,
         validation_structure_ids=validation_ids,
         train_atom_counts=counts(train_ids),

@@ -1,4 +1,4 @@
-"""The zarr structure arrays as ``remedi_data`` exposes them to training code."""
+"""A dataset's structures as ``remedi_data`` exposes them to training code."""
 
 from __future__ import annotations
 
@@ -6,26 +6,24 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import zarr
 from ase import Atoms
 
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.structures import Structures
+from remedi_data.dataset import Dataset, Structures, write_structures
+from remedi_data.format import STRUCTURES_FILENAME, BundleValidationError
 from testing import (
     ACHIRAL_TEN_SMILES,
     embed_frame,
     write_ten_structure_dataset,
 )
 
-#: What training reads: the attributes of ``MoleculeDataset`` and
-#: ``Structures``, and the array names in the zarr group.
-STRUCTURE_ARRAYS = {
-    "ptr": "molecule_ptr",
-    "positions": "positions",
-    "atomic_numbers": "atomic_numbers",
-    "total_charge": "total_charge",
-    "multiplicity": "multiplicity",
-}
+#: What training reads from ``Structures``.
+STRUCTURE_ARRAYS = (
+    "ptr",
+    "positions",
+    "atomic_numbers",
+    "total_charge",
+    "multiplicity",
+)
 
 
 @pytest.fixture
@@ -38,39 +36,39 @@ def ten_structure_dataset(tmp_path: Path, frames: list[Atoms]) -> Path:
     return write_ten_structure_dataset(tmp_path, frames)
 
 
-def test_the_structure_arrays_are_in_the_zarr(ten_structure_dataset: Path) -> None:
-    group = zarr.open_group(ten_structure_dataset, mode="r")
-    for array_name in STRUCTURE_ARRAYS.values():
-        assert array_name in group, f"{array_name} is not an array in the zarr"
-
-
-@pytest.mark.parametrize("in_memory", [True, False])
-def test_the_structure_arrays_hold_the_written_structures(
-    ten_structure_dataset: Path, frames: list[Atoms], in_memory: bool
+def test_a_dataset_is_the_table_files_and_one_structure_file(
+    ten_structure_dataset: Path,
 ) -> None:
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(ten_structure_dataset)
-    arrays = dataset.read_structures() if in_memory else dataset
-    for attribute in STRUCTURE_ARRAYS:
-        assert isinstance(getattr(arrays, attribute), np.ndarray) is in_memory
+    assert sorted(path.name for path in ten_structure_dataset.iterdir()) == [
+        "dataset.yaml",
+        "provenance.yaml",
+        STRUCTURES_FILENAME,
+        "table.parquet",
+    ]
 
-    pointer = np.asarray(arrays.ptr[:])
-    assert pointer.tolist() == np.cumsum([0] + [len(f) for f in frames]).tolist()
+
+def test_the_structures_hold_the_written_frames_and_the_table_charges(
+    ten_structure_dataset: Path, frames: list[Atoms]
+) -> None:
+    dataset = Dataset.open(ten_structure_dataset)
+    assert len(dataset) == len(frames)
+    structures = dataset.read_structures()
+    assert structures.ptr.tolist() == np.cumsum([0] + [len(f) for f in frames]).tolist()
     for index, frame in enumerate(frames):
-        start, end = pointer[index], pointer[index + 1]
-        np.testing.assert_array_equal(
-            arrays.positions[start:end], frame.positions.astype(np.float32)
-        )
-        np.testing.assert_array_equal(
-            arrays.atomic_numbers[start:end], frame.numbers.astype(np.uint8)
-        )
-    np.testing.assert_array_equal(arrays.total_charge[:], np.zeros(10, np.float32))
-    np.testing.assert_array_equal(arrays.multiplicity[:], np.ones(10, np.float32))
+        numbers, positions = structures.frame(index)
+        np.testing.assert_array_equal(positions, frame.positions.astype(np.float32))
+        np.testing.assert_array_equal(numbers, frame.numbers.astype(np.uint8))
+        file_numbers, file_positions = dataset.structures.frame(index)
+        np.testing.assert_array_equal(file_positions, positions)
+        np.testing.assert_array_equal(file_numbers, numbers)
+    np.testing.assert_array_equal(structures.total_charge, np.zeros(10, np.float32))
+    np.testing.assert_array_equal(structures.multiplicity, np.ones(10, np.float32))
 
 
 def test_a_selection_is_gathered_and_renumbered(
     ten_structure_dataset: Path, frames: list[Atoms]
 ) -> None:
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(ten_structure_dataset)
+    dataset = Dataset.open(ten_structure_dataset)
     chosen = np.array([1, 4, 5, 9])
     gathered = dataset.read_structures(chosen)
     expected = dataset.read_structures().take(chosen)
@@ -79,31 +77,45 @@ def test_a_selection_is_gathered_and_renumbered(
             getattr(gathered, attribute), getattr(expected, attribute)
         )
     assert gathered.atom_counts.tolist() == [len(frames[i]) for i in chosen]
+    assert (
+        dataset.structures.atom_counts(chosen).tolist() == gathered.atom_counts.tolist()
+    )
 
 
 @pytest.mark.parametrize("structure_ids", [[2, 1], [1, 1], [-1], [10]])
 def test_a_selection_must_be_sorted_unique_and_in_range(
     ten_structure_dataset: Path, structure_ids: list[int]
 ) -> None:
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(ten_structure_dataset)
+    dataset = Dataset.open(ten_structure_dataset)
     with pytest.raises(ValueError, match="structure_ids"):
         dataset.read_structures(np.array(structure_ids))
 
 
-def test_a_directory_without_the_structure_arrays_is_refused(tmp_path: Path) -> None:
-    zarr.open_group(tmp_path / "empty", mode="w")
-    with pytest.raises(KeyError):
-        MoleculeDataset.open_existing_dataset_from_dir(tmp_path / "empty")
+def test_a_directory_without_a_structure_file_is_refused(
+    ten_structure_dataset: Path,
+) -> None:
+    (ten_structure_dataset / STRUCTURES_FILENAME).unlink()
+    with pytest.raises(FileNotFoundError, match=STRUCTURES_FILENAME):
+        Dataset.open(ten_structure_dataset)
 
 
-def test_an_existing_dataset_opens_read_only(ten_structure_dataset: Path) -> None:
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(ten_structure_dataset)
-    with pytest.raises(ValueError, match="read-only"):
-        dataset.positions[0] = np.zeros(3)
-    with pytest.raises(ValueError, match="read-only"):
-        dataset.molecule_ids[0] = 99
-    with pytest.raises(ValueError, match="read-only"):
-        dataset.total_charge[0] = 5.0
+def test_a_structure_file_with_another_record_count_is_refused(
+    ten_structure_dataset: Path, frames: list[Atoms]
+) -> None:
+    (ten_structure_dataset / STRUCTURES_FILENAME).unlink()
+    write_structures(
+        ten_structure_dataset / STRUCTURES_FILENAME,
+        [Structures.from_atoms(frames[:9])],
+    )
+    with pytest.raises(BundleValidationError, match="9 structures for 10 table rows"):
+        Dataset.open(ten_structure_dataset)
+
+
+def test_the_table_is_read_whole_or_by_column(ten_structure_dataset: Path) -> None:
+    dataset = Dataset.open(ten_structure_dataset)
+    assert dataset.table().columns[:2] == ["structure_id", "stereoisomer_id"]
+    assert dataset.table(["y"]).columns == ["y"]
+    assert dataset.spec.dataset_id == "ten"
 
 
 def test_charges_follow_take_and_concatenate() -> None:

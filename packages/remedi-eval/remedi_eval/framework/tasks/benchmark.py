@@ -1,4 +1,4 @@
-"""Benchmark-panel task: descriptor x learner cross-product over benchmark zarrs.
+"""Benchmark-panel task: descriptor x learner cross-product over benchmark datasets.
 
 The one panel loop. It opens each benchmark through
 :mod:`remedi_eval.protocol` (partition, targets, task kind), scores it with the
@@ -67,7 +67,7 @@ class _FailureBundle(BaseModel):
 
 
 class BenchmarkPanelConfig(BaseModel):
-    """Property-prediction panel: every benchmark zarr x descriptor x learner."""
+    """Property-prediction panel: every benchmark dataset x descriptor x learner."""
 
     kind: Literal["benchmark_panel"] = "benchmark_panel"
     eval_root: Path
@@ -82,7 +82,7 @@ class BenchmarkPanelConfig(BaseModel):
     # benchmark under ``eval_root``.
     split_column: str | None = None
     # Restrict the panel to these dataset ids; ``None`` scores every benchmark
-    # under ``eval_root``. An id with no zarr under ``eval_root`` is an error.
+    # under ``eval_root``. An id with no dataset under ``eval_root`` is an error.
     dataset_ids: list[str] | None = None
 
     @field_validator("learners")
@@ -98,7 +98,7 @@ class BenchmarkPanelConfig(BaseModel):
         return learners
 
     def selected_benchmarks(self) -> list[tuple[Path, DatasetSpec]]:
-        """The ``(zarr_path, spec)`` pairs this panel scores, in discovery order.
+        """The ``(dataset_path, spec)`` pairs this panel scores, in discovery order.
 
         Raises:
             ValueError: if a requested dataset id is not under ``eval_root``.
@@ -119,10 +119,10 @@ class BenchmarkPanelConfig(BaseModel):
         record = _PanelRecord(keep_going=ctx.keep_going)
         descriptors = [ctx.model, *self.baseline_descriptors]
 
-        for zarr_path, spec in self.selected_benchmarks():
-            logger.info("--- %s @ %s ---", spec.dataset_id, zarr_path)
+        for dataset_path, spec in self.selected_benchmarks():
+            logger.info("--- %s @ %s ---", spec.dataset_id, dataset_path)
             try:
-                opened = self._open_benchmark(ctx, zarr_path, spec)
+                opened = self._open_benchmark(ctx, dataset_path, spec)
             except Exception as error:
                 yield from record.fail(
                     BenchmarkFailure(dataset_id=spec.dataset_id, error=repr(error)),
@@ -168,14 +168,14 @@ class BenchmarkPanelConfig(BaseModel):
             yield record.table()
 
     def _open_benchmark(
-        self, ctx: EvalContext, zarr_path: Path, spec: DatasetSpec
+        self, ctx: EvalContext, dataset_path: Path, spec: DatasetSpec
     ) -> _OpenedBenchmark:
         """Everything one benchmark's cells share: targets, partition, cell identity.
 
         Raises whatever makes the whole benchmark unscorable (no table, an
         unknown split column, mixed task types) before any cell is fitted.
         """
-        benchmark = load_benchmark(zarr_path)
+        benchmark = load_benchmark(dataset_path)
         n_classes, class_names = multiclass_labelling(spec)
         partition = benchmark.partition(self.split_column)
         cell = BenchmarkCell(

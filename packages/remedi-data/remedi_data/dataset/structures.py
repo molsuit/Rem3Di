@@ -5,9 +5,9 @@ training data pass around. Structure ``i`` owns atoms ``ptr[i]:ptr[i + 1]`` of
 ``positions`` and ``atomic_numbers``; ``total_charge`` and ``multiplicity``, one
 per structure, are there when the structures were read from a dataset (or are
 about to be written to one) and ``None`` where only the frames are known. The
-dtypes are the ones the zarr stores (float32 positions, charges and
-multiplicities, uint8 atomic numbers), so whatever is checked in memory is
-exactly what is written.
+dtypes are the ones a dataset stores (float32 positions, uint8 atomic numbers in
+``structures.atp``; charges and multiplicities, hashed as float32, in the table),
+so whatever is checked in memory is exactly what is written.
 """
 
 from __future__ import annotations
@@ -32,8 +32,7 @@ def gather_index(
 
     Returns:
         ``(new_ptr, atom_index)``: ``atom_index`` lists the atoms of the chosen
-        structures, so ``positions[atom_index]`` (or a zarr array's
-        ``oindex[atom_index]``) holds them back to back, and ``new_ptr`` is
+        structures, so ``positions[atom_index]`` holds them back to back, and ``new_ptr`` is
         their pointer, starting at 0.
     """
     structure_indices = np.asarray(structure_indices, dtype=np.int64)
@@ -211,8 +210,9 @@ class Structures:
         return atoms
 
     def slice(self, start: int, stop: int) -> Structures:
-        """Structures ``start:stop``, ``ptr`` rebased to 0."""
-        return self.take(np.arange(start, stop))
+        """Structures ``start:stop``, ``ptr`` rebased to 0; ``stop`` past the end
+        is clamped, as in a Python slice."""
+        return self.take(np.arange(start, min(stop, len(self))))
 
     def take(self, indices: Sequence[int] | np.ndarray) -> Structures:
         """The structures at ``indices``, in that order (copies)."""

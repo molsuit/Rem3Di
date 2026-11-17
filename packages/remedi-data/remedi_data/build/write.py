@@ -1,13 +1,15 @@
-"""``write_dataset``: structures + table -> a zarr with the table files beside it.
+"""``write_dataset``: table + structures -> a dataset directory.
 
 The one writer every structure dataset goes through (§4.1): the preparer of a
 source that ships structures calls it directly, and ``dataset_build`` calls it
-after generating conformers for a SMILES bundle. It validates the table and
-every structure (invariants 1-10), writes the zarr
-(:meth:`MoleculeDataset.write`, chunked and sharded as ``layout`` says) into a
-staging directory, checks the zarr against
-the table (invariant 8), and only then moves the directory into place and
-writes ``dataset.yaml``, ``table.parquet`` and ``provenance.yaml`` beside it.
+after generating conformers for a SMILES bundle. It validates the table, then
+streams the structures part by part (a shard of a corpus, or all frames of a
+benchmark at once): each part is checked (invariants 9 and 10) and appended to
+``structures.atp`` and dropped, so memory holds the table and one part. Into a
+staging directory it writes ``structures.atp`` (flushed once), then
+``dataset.yaml``, ``table.parquet`` (one row group per part) and, last,
+``provenance.yaml`` with the hashes, and only then moves the directory into
+place.
 """
 
 from __future__ import annotations
@@ -15,68 +17,52 @@ from __future__ import annotations
 import logging
 import shutil
 import uuid
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
-from remedi_data.dataset.config import DatasetConfig
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.dataset import structures_sha256
+from remedi_data.dataset.structure_file import StructureFile, write_structures
 from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
+    STRUCTURES_FILENAME,
     BundleProvenance,
     BundleValidationError,
     DatasetSpec,
+    StructureChecker,
     normalize_table,
-    structure_problems,
     validate_table,
     write_table_files,
 )
-from remedi_data.format.verify import structures_sha256, zarr_problems
 
 logger = logging.getLogger(__name__)
-
-
-def _write_zarr(
-    path: Path,
-    table: pd.DataFrame,
-    structures: Structures,
-    layout: DatasetConfig,
-) -> None:
-    MoleculeDataset.write(
-        path,
-        structures.with_charges(
-            table["total_charge"].to_numpy(dtype=np.float64),
-            table["multiplicity"].to_numpy(dtype=np.float64),
-        ),
-        structure_ids=table["structure_id"].to_numpy(dtype=np.int64),
-        molecule_ids=table["molecule_id"].to_numpy(dtype=np.int64),
-        stereoisomer_ids=table["stereoisomer_id"].to_numpy(dtype=np.int64),
-        config=layout,
-    )
 
 
 def write_dataset(
     spec: DatasetSpec,
     table: pd.DataFrame,
-    structures: Structures,
+    structure_parts: Iterable[Structures],
     provenance: BundleProvenance,
     directory: Path,
     *,
-    layout: DatasetConfig | None = None,
     workers: int = 1,
 ) -> BundleProvenance:
     """Validate and write one dataset; returns the provenance as written.
 
-    The geometry limits checked (invariant 10) are ``provenance.geometry_limits``.
-    ``workers`` processes check invariants 9 and 10.
-    An existing dataset at ``directory`` is replaced only after the new one has
-    been written and checked in full (see :func:`_move_into_place`).
+    ``structure_parts`` are the frames of the table's rows in order, in any
+    number of parts (charges and multiplicities come from the table; a part's
+    own are ignored). They are consumed once, one at a time. The geometry
+    limits checked (invariant 10) are ``provenance.geometry_limits``;
+    ``workers`` processes check invariants 9 and 10. An existing dataset at
+    ``directory`` is replaced only after the new one has been written and
+    checked in full (see :func:`_move_into_place`).
 
     Raises:
         BundleValidationError: if the spec declares no structures, or any
-            invariant fails on the table, the structures or the written zarr.
-            Nothing is left at ``directory`` in that case beyond what was there.
+            invariant fails on the table or the structures (all problems are
+            listed). Nothing is left at ``directory`` in that case beyond what
+            was there.
     """
     directory = Path(directory)
     if not spec.has_structures:
@@ -84,25 +70,48 @@ def write_dataset(
             directory, ["a dataset must declare geometry_origin"]
         )
     table = normalize_table(table, spec)
-    problems = validate_table(spec, table)
-    problems += structure_problems(
-        spec, table, structures, provenance.geometry_limits, workers=workers
-    )
-    if problems:
-        raise BundleValidationError(directory, problems)
+    table_problems = validate_table(spec, table)
+    checker = StructureChecker(spec, table, provenance.geometry_limits, workers=workers)
+    part_sizes: list[int] = []
+
+    def checked_parts() -> Iterator[Structures]:
+        for part in structure_parts:
+            checker.check(part)
+            part_sizes.append(len(part))
+            yield part
 
     staging = directory.with_name(f".{directory.name}.partial")
     if staging.exists():
         shutil.rmtree(staging)  # left by an earlier run that died mid-write
+    staging.mkdir(parents=True)
     try:
-        _write_zarr(staging, table, structures, layout or DatasetConfig())
-        problems = zarr_problems(staging, table)
+        structures_path = staging / STRUCTURES_FILENAME
+        write_structures(structures_path, checked_parts())
+        problems = table_problems + checker.problems()
         if problems:
             raise BundleValidationError(directory, problems)
-        dataset = MoleculeDataset.open_existing_dataset_from_dir(staging)
-        structure_hash = structures_sha256(dataset)
+        structure_file = StructureFile.open(structures_path)
+        if len(structure_file) != len(table):
+            raise BundleValidationError(
+                directory,
+                [
+                    f"8: {STRUCTURES_FILENAME} holds {len(structure_file)} "
+                    f"structures for {len(table)} table rows"
+                ],
+            )
+        structure_hash = structures_sha256(
+            structure_file,
+            table["total_charge"].to_numpy(dtype="float64"),
+            table["multiplicity"].to_numpy(dtype="float64"),
+        )
+        del structure_file
         written = write_table_files(
-            staging, spec, table, provenance, structures_sha256=structure_hash
+            staging,
+            spec,
+            table,
+            provenance,
+            structures_sha256=structure_hash,
+            row_group_sizes=part_sizes,
         )
         _move_into_place(staging, directory)
     finally:

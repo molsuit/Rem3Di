@@ -3,11 +3,13 @@ from __future__ import annotations
 import logging
 import os
 from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+import polars as pl
 from ase.data import chemical_symbols
 from ase.visualize.plot import plot_atoms
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,7 +18,7 @@ from rdkit.Chem import rdMolDescriptors as rdMD
 
 from remedi_data.chemistry.fingerprints import morgan_fingerprints
 from remedi_data.chemistry.splits import murcko_scaffold
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset, Structures
 from remedi_data.format import SPEC_FILENAME, read_spec, read_table
 from remedi_data.parallel import process_map
 from remedi_data.runs.results import (
@@ -159,13 +161,30 @@ class DatasetSummary(BaseModel):
     timings_seconds: dict[str, float] = Field(default_factory=dict)
 
 
+def unique_isomeric_smiles(dataset: Dataset) -> list[str]:
+    """The distinct non-empty ``isomeric_smiles`` of the table, in first-seen order.
+
+    Empty for a dataset without SMILES (such as tmQM).
+    """
+    try:
+        smiles = dataset.table(["isomeric_smiles"])
+    except pl.exceptions.ColumnNotFoundError:
+        return []
+    present = pl.col("isomeric_smiles").is_not_null() & (
+        pl.col("isomeric_smiles") != ""
+    )
+    return (
+        smiles.filter(present)["isomeric_smiles"].unique(maintain_order=True).to_list()
+    )
+
+
 # ---------- MoleculeDatasetAnalysis ----------
 
 
 class MoleculeDatasetAnalysis:
     def __init__(
         self,
-        dataset: MoleculeDataset,
+        dataset: Dataset,
         config: MoleculeDatasetAnalysisConfig | None = None,
     ):
         self.dataset = dataset
@@ -176,84 +195,33 @@ class MoleculeDatasetAnalysis:
 
     # ----- Atom-/structure-level metrics (chunked) -----
 
+    def _structure_chunks(self) -> Iterator[Structures]:
+        """The frames in pieces of ``structure_chunk_size``, so RAM stays bounded."""
+        chunk = max(1, self.config.structure_chunk_size)
+        for start in range(0, len(self.dataset), chunk):
+            yield self.dataset.structures.slice(start, start + chunk)
+
     def molecule_sizes(self) -> np.ndarray:
-        """Per-structure atom counts streamed from ragged pointer."""
-        n_struct = self.dataset.N_structures
-        if n_struct == 0:
-            return np.asarray([], dtype=np.int64)
-
-        ptr = self.dataset.ptr
-        chunk_len = getattr(ptr, "chunks", (n_struct + 1,))[0]
-        chunk_len = max(1, min(chunk_len, n_struct))
-
-        sizes = np.empty(n_struct, dtype=np.int64)
-        offset = 0
-        while offset < n_struct:
-            end = min(offset + chunk_len, n_struct)
-            ptr_chunk = np.asarray(ptr[offset : end + 1], dtype=np.int64)
-            sizes[offset:end] = np.diff(ptr_chunk)
-            offset = end
-        return sizes
+        """Atoms per structure."""
+        return self.dataset.structures.atom_counts()
 
     def atom_species(self) -> dict[int, int]:
-        n_atoms = self.dataset.N_atoms
-        if n_atoms == 0:
-            return {}
-
-        atomic_numbers = self.dataset.atomic_numbers
-        chunk_len = max(
-            1,
-            min(self.config.atom_chunk_size, n_atoms),
-        )
-
         counts: Counter[int] = Counter()
-        offset = 0
-        while offset < n_atoms:
-            end = min(offset + chunk_len, n_atoms)
-            chunk = np.asarray(atomic_numbers[offset:end], dtype=np.int64)
-            if chunk.size:
-                unique, c = np.unique(chunk, return_counts=True)
+        for part in self._structure_chunks():
+            if part.atomic_numbers.size:
+                unique, c = np.unique(part.atomic_numbers, return_counts=True)
                 counts.update(dict(zip(unique.tolist(), c.tolist(), strict=False)))
-            offset = end
         return {int(z): int(c) for z, c in counts.items()}
 
     def heteroatom_counts_per_structure(self) -> np.ndarray:
-        """Stream atomic_numbers + ptr in chunks so we never hold all atoms in RAM."""
-        n_struct = self.dataset.N_structures
-        if n_struct == 0:
-            return np.asarray([], dtype=np.int64)
-
-        ptr_arr = self.dataset.ptr
-        atomic_numbers = self.dataset.atomic_numbers
-        atom_chunk = max(1, self.config.atom_chunk_size)
-
-        out = np.zeros(n_struct, dtype=np.int64)
-        struct_chunk = max(1, self.config.structure_chunk_size)
-
-        offset = 0
-        while offset < n_struct:
-            end = min(offset + struct_chunk, n_struct)
-            ptr_chunk = np.asarray(ptr_arr[offset : end + 1], dtype=np.int64)
-            atom_start = int(ptr_chunk[0])
-            atom_end = int(ptr_chunk[-1])
-            if atom_end == atom_start:
-                offset = end
-                continue
-            # Stream atoms for this structure chunk in atom_chunk slices,
-            # then combine with reduceat over the local ptr.
-            local_ptr = ptr_chunk - atom_start
-            mask = np.empty(atom_end - atom_start, dtype=np.int8)
-            sub = 0
-            while sub < atom_end - atom_start:
-                sub_end = min(sub + atom_chunk, atom_end - atom_start)
-                a_chunk = np.asarray(
-                    atomic_numbers[atom_start + sub : atom_start + sub_end]
-                )
-                mask[sub:sub_end] = ((a_chunk != 1) & (a_chunk != 6)).astype(np.int8)
-                sub = sub_end
-            out[offset:end] = np.add.reduceat(mask.astype(np.int64), local_ptr[:-1])
-            offset = end
-        return out
+        """Atoms other than H and C per structure, streamed in structure chunks."""
+        counts = [np.zeros(0, dtype=np.int64)]
+        for part in self._structure_chunks():
+            numbers = part.atomic_numbers
+            hetero = ((numbers != 1) & (numbers != 6)).astype(np.int64)
+            cumulative = np.concatenate([[0], np.cumsum(hetero)])
+            counts.append(cumulative[part.ptr[1:]] - cumulative[part.ptr[:-1]])
+        return np.concatenate(counts)
 
     # ----- SMILES / RDKit metrics -----
 
@@ -321,12 +289,14 @@ class MoleculeDatasetAnalysis:
             FigureResult(figure=fig, file_name=Path("heteroatom_distribution.png"))
         )
 
+    def _charges_and_multiplicities(self) -> tuple[np.ndarray, np.ndarray]:
+        table = self.dataset.table(["total_charge", "multiplicity"])
+        return table["total_charge"].to_numpy(), table["multiplicity"].to_numpy()
+
     def plot_charge_multiplicity(self) -> None:
-        n_struct = self.dataset.N_structures
-        if n_struct == 0:
+        if len(self.dataset) == 0:
             return
-        charges = np.asarray(self.dataset.total_charge[:n_struct])
-        mults = np.asarray(self.dataset.multiplicity[:n_struct])
+        charges, mults = self._charges_and_multiplicities()
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 4))
         if charges.size:
@@ -386,7 +356,9 @@ class MoleculeDatasetAnalysis:
 
     def plot_relaxed_atoms(self, n_max: int | None = None) -> None:
         n_max = n_max or self.config.max_example_molecules
-        molecules = self.dataset.get_all_molecules(N_molecules=n_max)
+        molecules = self.dataset.read_structures(
+            np.arange(min(n_max, len(self.dataset)))
+        ).to_atoms()
         if not molecules:
             return
         n_horizontal = 3
@@ -572,9 +544,9 @@ class MoleculeDatasetAnalysis:
         timings = self._timings
         ds = self.dataset
 
-        n_struct = ds.N_structures
-        n_mols = ds.N_molecules
-        n_atoms = ds.N_atoms
+        n_struct = len(ds)
+        n_mols = ds.table(["molecule_id"])["molecule_id"].n_unique()
+        n_atoms = int(ds.structures.atom_counts().sum())
         log.info(
             "Analysing dataset: N_structures=%d, N_molecules=%d, N_atoms=%d",
             n_struct,
@@ -610,7 +582,7 @@ class MoleculeDatasetAnalysis:
         bb_summary: BitBirchSummary | None = None
 
         with timed("collect_unique_smiles", timings):
-            unique_smiles = ds.unique_smiles()
+            unique_smiles = unique_isomeric_smiles(ds)
             log.info("Collected %d unique SMILES", len(unique_smiles))
 
         if unique_smiles:
@@ -646,8 +618,7 @@ class MoleculeDatasetAnalysis:
         with timed("targets", timings):
             label_stats = self.target_stats()
 
-        charges = np.asarray(ds.total_charge[:n_struct]) if n_struct else np.asarray([])
-        mults = np.asarray(ds.multiplicity[:n_struct]) if n_struct else np.asarray([])
+        charges, mults = self._charges_and_multiplicities()
 
         summary = DatasetSummary(
             n_structures=n_struct,

@@ -1,7 +1,10 @@
-"""``TrainingMoleculeDataset`` reads the zarr through ``MoleculeDataset``."""
+"""``TrainingMoleculeDataset`` reads samples from ``structures.atp``, one process at a time."""
 
 from __future__ import annotations
 
+import multiprocessing
+import os
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -58,20 +61,20 @@ def assert_same_batches(left: list[Sample], right: list[Sample]) -> None:
             )
 
 
-@pytest.mark.parametrize("in_memory", [True, False])
 def test_samples_are_the_written_structures(
-    ten_structure_dataset: Path, frames: list[Atoms], in_memory: bool
+    ten_structure_dataset: Path, frames: list[Atoms]
 ) -> None:
-    dataset = TrainingMoleculeDataset(
-        ten_structure_dataset, atoms_getitem, in_memory=in_memory
-    )
+    dataset = TrainingMoleculeDataset(ten_structure_dataset, atoms_getitem)
     assert len(dataset) == len(frames)
+    assert dataset.atom_counts().tolist() == [len(frame) for frame in frames]
     for index, frame in enumerate(frames):
         sample = dataset[index]
         assert sample.atomic_positions is not None
         assert sample.atomic_numbers is not None
         assert sample.total_charge is not None
         assert sample.multiplicity is not None
+        assert sample.atomic_positions.dtype == torch.float32
+        assert sample.atomic_numbers.dtype == torch.uint8
         np.testing.assert_array_equal(
             sample.atomic_positions.numpy(), frame.positions.astype(np.float32)
         )
@@ -80,19 +83,64 @@ def test_samples_are_the_written_structures(
         assert float(sample.multiplicity) == 1.0
 
 
-def test_lazy_in_memory_and_worker_loaders_yield_identical_batches(
+def test_a_subset_is_indexed_in_its_own_order(
+    ten_structure_dataset: Path, frames: list[Atoms]
+) -> None:
+    chosen = np.array([2, 5, 9])
+    dataset = TrainingMoleculeDataset(
+        ten_structure_dataset, atoms_getitem, structure_ids=chosen
+    )
+    assert len(dataset) == 3
+    assert dataset.atom_counts().tolist() == [len(frames[i]) for i in chosen]
+    for index, structure_id in enumerate(chosen):
+        sample = dataset[index]
+        assert sample.atomic_numbers is not None
+        np.testing.assert_array_equal(
+            sample.atomic_numbers.numpy(), frames[structure_id].numbers
+        )
+
+
+def test_loaders_with_and_without_workers_yield_identical_batches(
     ten_structure_dataset: Path,
 ) -> None:
-    in_memory = batches(
-        TrainingMoleculeDataset(ten_structure_dataset, atoms_getitem, in_memory=True), 0
+    in_process = batches(
+        TrainingMoleculeDataset(ten_structure_dataset, atoms_getitem), 0
     )
-    lazy = batches(TrainingMoleculeDataset(ten_structure_dataset, atoms_getitem), 0)
-    # Workers receive a pickled dataset, which drops its arrays and reopens them.
-    with_workers = batches(
-        TrainingMoleculeDataset(ten_structure_dataset, atoms_getitem), 2
-    )
-    assert_same_batches(in_memory, lazy)
-    assert_same_batches(in_memory, with_workers)
+    # Two workers each open their own structure file and read through it.
+    opened = TrainingMoleculeDataset(ten_structure_dataset, atoms_getitem).open()
+    with_workers = batches(opened, 2)
+    assert_same_batches(in_process, with_workers)
+    # A pickled dataset (a spawned worker) reopens the file in its process.
+    unpickled = pickle.loads(pickle.dumps(opened))
+    assert unpickled._file is None
+    assert_same_batches(in_process, batches(unpickled, 0))
+
+
+#: The dataset a forked child inherits (not pickled) in the test below.
+_INHERITED: list[TrainingMoleculeDataset] = []
+
+
+def _file_process_seen_by_the_child(_: int) -> tuple[int, int | None]:
+    (dataset,) = _INHERITED
+    dataset._structure_file()
+    return os.getpid(), dataset._file_process
+
+
+def test_a_forked_process_opens_its_own_structure_file(
+    ten_structure_dataset: Path,
+) -> None:
+    """A fork inherits the parent's open file; the dataset notices the new
+    process and opens another before the first read."""
+    dataset = TrainingMoleculeDataset(ten_structure_dataset, atoms_getitem).open()
+    parent_file = dataset._structure_file()
+    _INHERITED[:] = [dataset]
+    try:
+        with multiprocessing.get_context("fork").Pool(1) as pool:
+            child, opened_by = pool.apply(_file_process_seen_by_the_child, (0,))
+    finally:
+        _INHERITED.clear()
+    assert child != os.getpid() and opened_by == child
+    assert dataset._structure_file() is parent_file
 
 
 def test_worker_init_leaves_the_random_streams_alone() -> None:

@@ -17,7 +17,7 @@ from rdkit import RDLogger
 
 from remedi_data.chemistry.fingerprints import morgan_fingerprints
 from remedi_data.chemistry.splits import murcko_scaffold
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.parallel import process_map
 from remedi_data.runs.results import (
     ArrayResult,
@@ -27,6 +27,7 @@ from remedi_data.runs.results import (
 from remedi_eval.dataset_analysis.analysis import (
     RDKIT_CHUNK_SIZE,
     SCAFFOLD_INCLUDE_CHIRALITY,
+    unique_isomeric_smiles,
 )
 from remedi_eval.dataset_analysis.bitbirch import (
     BitBirchSummary,
@@ -309,8 +310,7 @@ class DatasetComparison:
 
     def load_datasets(self) -> None:
         for entry in self._entries:
-            ds = MoleculeDataset.open_existing_dataset_from_dir(entry.path)
-            smiles = ds.unique_smiles()
+            smiles = unique_isomeric_smiles(Dataset.open(entry.path))
             if entry.max_molecules is not None and len(smiles) > entry.max_molecules:
                 idx = self._rng.choice(
                     len(smiles), size=entry.max_molecules, replace=False

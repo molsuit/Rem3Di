@@ -1,4 +1,4 @@
-"""Datasets: structures in a zarr with the table files beside it (§4.1, §6).
+"""Datasets: the table files with ``structures.atp`` beside them (§4.1, §6).
 
 :func:`write_dataset` is the one writer every structure dataset goes through;
 :func:`build_datasets` turns SMILES bundles into datasets by generating

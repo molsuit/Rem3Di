@@ -30,7 +30,7 @@ def test_atoms_getitem_returns_charge_and_spin_per_sample(tmp_path: Path) -> Non
         targets=None,
         smiles=["C[NH3+]", "[CH3]"],
     )
-    train_ds = TrainingMoleculeDataset(dataset, atoms_getitem, in_memory=True)
+    train_ds = TrainingMoleculeDataset(dataset, atoms_getitem)
     assert len(train_ds) == 2
     cation, radical = train_ds[0], train_ds[1]
     torch.testing.assert_close(cation.total_charge, torch.tensor(1.0))

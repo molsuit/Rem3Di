@@ -68,5 +68,5 @@ get_descriptor_channel_distribution  # .../descriptor_analysis/capacity_diagnost
 write_report  # remedi/latent_evaluation/mace_invariant_stats.py
 
 # --- Public API without an in-repository caller -----------------------------------------------
-_.embed_atoms  # RemediCalculator: embed molecules that are not in a zarr
+_.embed_atoms  # RemediCalculator: embed molecules that are not in a dataset
 registered_kinds  # remedi_eval.framework.plotting: lists the plotter registry

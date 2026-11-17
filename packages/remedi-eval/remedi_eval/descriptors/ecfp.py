@@ -16,11 +16,26 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import polars as pl
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi_data.chemistry.fingerprints import morgan_fingerprints
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_eval.descriptors.embeddings_file import ensure_embeddings, producer_record
+
+
+def smiles_per_structure(dataset: Dataset) -> list[str]:
+    """One isomeric SMILES per structure, in structure order, from the table.
+
+    Raises:
+        KeyError: if the table has no ``isomeric_smiles`` (a corpus without
+            SMILES, such as tmQM).
+    """
+    try:
+        table = dataset.table(["structure_id", "isomeric_smiles"])
+    except pl.exceptions.ColumnNotFoundError as error:
+        raise KeyError(f"{dataset.path} has no isomeric_smiles") from error
+    return table.sort("structure_id")["isomeric_smiles"].to_list()
 
 
 class EcfpConfig(BaseModel):
@@ -44,10 +59,10 @@ class EcfpConfig(BaseModel):
         """
         return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
 
-    def calculate(self, dataset: MoleculeDataset) -> np.ndarray:
+    def calculate(self, dataset: Dataset) -> np.ndarray:
         """``(N, fingerprint_size)`` float32 bits, one row per structure."""
         bits = morgan_fingerprints(
-            dataset.get_smiles_per_structure(),
+            smiles_per_structure(dataset),
             layout="dense",
             radius=self.radius,
             size=self.fingerprint_size,
@@ -55,9 +70,9 @@ class EcfpConfig(BaseModel):
         return bits.astype(np.float32)
 
     def load_matrix(
-        self, dataset: MoleculeDataset, dataset_id: str, cache_root: Path
+        self, dataset: Dataset, dataset_id: str, cache_root: Path
     ) -> np.ndarray:
-        """The fingerprint matrix in zarr order, cached under ``cache_root``.
+        """The fingerprint matrix in structure order, cached under ``cache_root``.
 
         Raises:
             FileNotFoundError: if the dataset directory carries no

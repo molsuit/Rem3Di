@@ -108,9 +108,9 @@ class BundleOutputs(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     table_parquet: TableOutputRecord = Field(alias="table.parquet")
-    #: sha256 over the zarr's ``atomic_numbers``, ``positions``, ``molecule_ptr``,
-    #: ``total_charge`` and ``multiplicity`` (``format.verify.structures_sha256``);
-    #: set on a dataset only. It is the data identity a descriptor cache keys on.
+    #: sha256 over the pointer, ``atomic_numbers`` and ``positions`` of
+    #: ``structures.atp`` and the table's ``total_charge`` and ``multiplicity``, in
+    #: record order (``remedi_data.dataset.structures_sha256``); set on a dataset only. It is the data identity a descriptor cache keys on.
     structures_sha256: str | None = None
 
 

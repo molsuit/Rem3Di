@@ -14,10 +14,11 @@ from pathlib import Path
 from typing import cast
 
 import numpy as np
+import polars as pl
 import pytest
 import yaml
 
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.format import (
     PROVENANCE_FILENAME,
     BundleOutputs,
@@ -36,27 +37,30 @@ from remedi_eval.descriptors import (
 
 
 class _StubDataset:
-    """Minimal duck for the SMILES path; the runner uses a real MoleculeDataset."""
+    """Minimal duck for the SMILES path; the runner uses a real Dataset."""
 
     def __init__(self, smiles: list[str], path: Path) -> None:
         self._smiles = smiles
         self.path = path
-        self.structure_ids = np.arange(len(smiles), dtype=np.int64)
 
-    def get_smiles_per_structure(self) -> list[str]:
-        return self._smiles
+    def table(self, columns: list[str] | None = None) -> pl.DataFrame:
+        table = pl.DataFrame(
+            {
+                "structure_id": np.arange(len(self._smiles), dtype=np.int64),
+                "isomeric_smiles": self._smiles,
+            }
+        )
+        return table if columns is None else table.select(columns)
 
 
 _SMILES = ["CCO", "c1ccccc1", "CC(=O)O", "CCN", "O=C(O)c1ccccc1"]
 
 
-def stub_dataset(directory: Path) -> MoleculeDataset:
-    return cast(MoleculeDataset, _StubDataset(_SMILES, directory))
+def stub_dataset(directory: Path) -> Dataset:
+    return cast(Dataset, _StubDataset(_SMILES, directory))
 
 
-def write_stub_dataset(
-    directory: Path, structures_sha256: str | None
-) -> MoleculeDataset:
+def write_stub_dataset(directory: Path, structures_sha256: str | None) -> Dataset:
     """A directory that looks, to the cache key, like a dataset.
 
     ``structures_sha256=None`` stands for a bundle: no structures, so the
@@ -185,7 +189,7 @@ class _SlowCountingDescriptor:
         return np.ones((len(_SMILES), 4), dtype=np.float32)
 
     def load_matrix(
-        self, dataset: MoleculeDataset, dataset_id: str, cache_root: Path
+        self, dataset: Dataset, dataset_id: str, cache_root: Path
     ) -> np.ndarray:
         return ensure_embeddings(
             cache_root,

@@ -11,8 +11,8 @@
 
 # Where the SMILES bundles written by the preparers live.
 bundle_root: <PLACEHOLDER>/Rem3Di/benchmark_data/bundles
-# Where the datasets (zarr + table files), manifest.yaml and status.yaml go.
-zarr_root: <PLACEHOLDER>/datasets/benchmarks
+# Where the datasets (structures.atp + table files), manifest.yaml and status.yaml go.
+dataset_root: <PLACEHOLDER>/datasets/benchmarks
 # null means every bundle under bundle_root.
 dataset_ids: null
 
@@ -34,15 +34,9 @@ geometry_limits:
   min_hydrogen_heavy_ratio: 0.0
   min_interatomic_distance: 0.5
 
-zarr:
-  atom_chunk: 8192
-  molecule_chunk: 4096
-  atom_chunks_per_shard: 64
-  molecule_chunks_per_shard: 256
-
 # null means every CPU; 1 embeds in-process without a worker pool.
 n_workers: null
 overwrite: false
-# Verify every dataset under zarr_root after building.
+# Verify every dataset under dataset_root after building.
 verify: true
 keep_going: true

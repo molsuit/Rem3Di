@@ -35,7 +35,6 @@ from remedi.configuration.architecture_config import ArchitectureConfig
 from remedi.configuration.training_config import ClassifierTrainingConfig
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, load_checkpoint
 from remedi.training.data.sample import yield_molecules_supervised_collate_fn
-from remedi.training.data.samplers import lengths_from_ptr
 from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
@@ -105,10 +104,8 @@ def evaluate_run(
     partition = benchmark.partition(split_column)
     idx = partition.valid if fold == "valid" else partition.test
 
-    ds = TrainingMoleculeDataset(
-        dataset_path, get_item=make_supervised_getitem(labels), in_memory=True
-    )
-    all_lengths = lengths_from_ptr(np.asarray(benchmark.dataset.ptr[:]))
+    ds = TrainingMoleculeDataset(dataset_path, get_item=make_supervised_getitem(labels))
+    all_lengths = benchmark.dataset.structures.atom_counts()
     loader = training_config.dataloader.build(
         Subset(ds, idx),
         lengths=all_lengths[idx],

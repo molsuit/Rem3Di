@@ -31,7 +31,7 @@ target-version = "py312"
 extend-exclude = ["tools/vulture/*whitelist*.py"]
 lint.select = ["I", "UP", "F", "E", "W", "C90", "B", "A", "RUF"]
 # UP042 (str + Enum -> StrEnum) changes str(member), and these enums are stored in
-# zarr configs and yaml; switch deliberately, not as a lint fix.
+# configs and yaml; switch deliberately, not as a lint fix.
 lint.ignore = ["E501", "B008", "UP042"]
 
 # Tests live next to their package (packages/<name>/tests); tests/integration
@@ -61,6 +61,9 @@ dev = [
     "ty>=0.0.32",
     "ruff",
     "vulture>=2.16",
+    # Only for scripts/dataset_creation/convert_zarr_to_atompack.py, which reads the old zarr
+    # datasets; goes once every dataset is converted.
+    "zarr>=3.2",
 ]
 
 [tool.ty.src]

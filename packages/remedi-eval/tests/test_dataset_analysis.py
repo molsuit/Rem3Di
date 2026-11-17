@@ -62,7 +62,6 @@ def test_molecule_dataset_analysis_runs(tmp_path: Path):
     config = MoleculeDatasetAnalysisConfig(
         rdkit_subsample=None,
         rdkit_n_workers=1,
-        atom_chunk_size=32,
         structure_chunk_size=4,
         max_example_molecules=4,
         bitbirch=BitBirchConfig(enabled=False),
@@ -88,7 +87,7 @@ def test_molecule_dataset_analysis_runs(tmp_path: Path):
 
 
 def test_target_stats_come_from_the_spec_labels_in_the_table(tmp_path: Path):
-    from remedi_data.dataset.molecule_dataset import MoleculeDataset
+    from remedi_data.dataset import Dataset
     from remedi_data.format import LabelColumn, TaskType
     from testing import write_small_dataset
 
@@ -101,9 +100,7 @@ def test_target_stats_come_from_the_spec_labels_in_the_table(tmp_path: Path):
         metrics=None,
         targets=values.reshape(-1, 1),
     )
-    analysis = MoleculeDatasetAnalysis(
-        MoleculeDataset.open_existing_dataset_from_dir(directory)
-    )
+    analysis = MoleculeDatasetAnalysis(Dataset.open(directory))
 
     (stats,) = analysis.target_stats()
 
@@ -111,7 +108,7 @@ def test_target_stats_come_from_the_spec_labels_in_the_table(tmp_path: Path):
     assert stats.coverage == pytest.approx(0.9)
     assert stats.distribution.n == 9
     assert stats.distribution.mean == pytest.approx(np.nanmean(values))
-    # A dataset without dataset.yaml (no declared labels) has no target stats.
+    # A dataset without declared labels has no target stats.
     synthetic = write_synthetic_dataset(tmp_path / "synthetic", ["CCO"])
     assert MoleculeDatasetAnalysis(synthetic).target_stats() == []
 
@@ -125,7 +122,6 @@ def test_heteroatom_chunking_matches_naive(tmp_path: Path):
     config = MoleculeDatasetAnalysisConfig(
         rdkit_subsample=0,
         rdkit_n_workers=1,
-        atom_chunk_size=3,
         structure_chunk_size=2,
         bitbirch=BitBirchConfig(enabled=False),
     )
@@ -133,7 +129,7 @@ def test_heteroatom_chunking_matches_naive(tmp_path: Path):
     chunked = analysis.heteroatom_counts_per_structure()
 
     # Naive reference: all 5-atom structures have O+N=2 heteroatoms.
-    expected = np.full(dataset.N_structures, 2, dtype=np.int64)
+    expected = np.full(len(dataset), 2, dtype=np.int64)
     np.testing.assert_array_equal(chunked, expected)
 
 

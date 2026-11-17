@@ -21,7 +21,7 @@ from remedi.embedding import (
     embed_datasets,
 )
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, ENCODER_WEIGHT_FILES
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.format import EvalMetric, LabelColumn, TaskType
 from remedi_data.yaml_io import read_model
 from remedi_eval.benchmark.learners import LinearLearner
@@ -42,7 +42,7 @@ class _EcfpStandIn:
 
     calls: list[str] = []  # noqa: RUF012 - shared on purpose, reset per test
 
-    def calculate(self, dataset: MoleculeDataset) -> np.ndarray:
+    def calculate(self, dataset: Dataset) -> np.ndarray:
         _EcfpStandIn.calls.append(Path(dataset.path).name)
         return EcfpConfig(name="ecfp_128", fingerprint_size=128).calculate(dataset)
 

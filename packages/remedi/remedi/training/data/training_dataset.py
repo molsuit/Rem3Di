@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -8,23 +10,29 @@ import torch
 from torch.utils.data import Dataset
 
 from remedi.training.data.sample import Sample
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
-from remedi_data.dataset.structures import Structures
+from remedi_data.dataset import StructureFile
+from remedi_data.format import STRUCTURES_FILENAME, read_table_polars
 
 GetItemFn = Callable[["TrainingMoleculeDataset", int], Sample]
 
 
+@dataclass(frozen=True)
+class TrainingStructure:
+    """One structure as training reads it."""
+
+    atomic_numbers: np.ndarray
+    positions: np.ndarray
+    total_charge: float
+    multiplicity: float
+
+
 def atoms_getitem(ds: TrainingMoleculeDataset, i: int) -> Sample:
-    a0, a1 = ds._ptr[i : i + 2].tolist()
-    pos = torch.from_numpy(np.asarray(ds._pos[a0:a1]))
-    num = torch.from_numpy(np.asarray(ds._atom_num[a0:a1]))
-    charge = torch.tensor(float(ds._charge[i]))
-    mult = torch.tensor(float(ds._multiplicity[i]))
+    structure = ds.structure(i)
     return Sample(
-        atomic_positions=pos,
-        atomic_numbers=num,
-        total_charge=charge,
-        multiplicity=mult,
+        atomic_positions=torch.from_numpy(structure.positions),
+        atomic_numbers=torch.from_numpy(structure.atomic_numbers),
+        total_charge=torch.tensor(structure.total_charge),
+        multiplicity=torch.tensor(structure.multiplicity),
     )
 
 
@@ -35,7 +43,7 @@ def make_supervised_getitem(
     supervised label.
 
     ``labels`` is indexed by the same structure index the dataset uses (the
-    TrainingMoleculeDataset shares the source zarr's ordering), so
+    TrainingMoleculeDataset shares the dataset's structure order), so
     ``labels[i]`` is the target for structure ``i``. The label is attached as a
     scalar ``Sample.regression_targets`` tensor (``long`` for classification
     class indices, ``float`` for regression), which
@@ -53,93 +61,83 @@ def make_supervised_getitem(
 class TrainingMoleculeDataset(Dataset):
     """The structures of one dataset, or of a subset of it, as training samples.
 
-    ``structure_ids`` (sorted, unique) restricts the dataset to those structures,
-    gathered into compact in-memory arrays and indexed ``0..len - 1`` in that
-    order. Call :meth:`open` before handing the dataset to a forking data
-    loader, so the workers inherit the arrays instead of each reading them.
-    ``arrays`` hands over structures already gathered for ``structure_ids``
-    (they are re-gathered only after pickling).
+    ``structure_ids`` (sorted, unique) restricts the dataset to those
+    structures, indexed ``0..len - 1`` in that order. Every sample is read
+    from ``structures.atp`` when it is asked for (a memory-mapped record, a few
+    microseconds); each process (each data-loader worker) opens its own
+    :class:`StructureFile`. The charges and multiplicities of the structures
+    (8 bytes each) are read from the table once per dataset and travel with it
+    to the workers.
     """
 
     def __init__(
         self,
         root: Path,
         get_item: GetItemFn,
-        in_memory: bool = False,
         structure_ids: np.ndarray | None = None,
-        arrays: Structures | None = None,
     ):
-        self.root = str(root)
+        self.root = Path(root)
         self._get_item = get_item
-        self._in_memory = in_memory
         self._structure_ids = (
             None if structure_ids is None else np.asarray(structure_ids, np.int64)
         )
-
-        # process-local handles / arrays
-        self._ptr = None
-        self._pos = None
-        self._atom_num = None
-        self._charge = None
-        self._multiplicity = None
-        if arrays is not None:
-            if self._structure_ids is None:
-                raise ValueError("arrays need the structure_ids they were gathered for")
-            self._set_arrays(arrays)
+        # Per process: the open file and the process that opened it.
+        self._file: StructureFile | None = None
+        self._file_process: int | None = None
+        self._total_charge: np.ndarray | None = None
+        self._multiplicity: np.ndarray | None = None
 
     def __getstate__(self):
-        d = dict(self.__dict__)
-        d.update(
-            _ptr=None,
-            _pos=None,
-            _atom_num=None,
-            _charge=None,
-            _multiplicity=None,
-        )
-        return d
+        state = dict(self.__dict__)
+        state.update(_file=None, _file_process=None)
+        return state
 
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        self._ensure_open()
+    def _structure_file(self) -> StructureFile:
+        if self._file is None or self._file_process != os.getpid():
+            self._file = StructureFile.open(self.root / STRUCTURES_FILENAME)
+            self._file_process = os.getpid()
+        return self._file
 
-    def _ensure_open(self):
-        if self._ptr is not None:
-            return
-
-        dataset = MoleculeDataset.open_existing_dataset_from_dir(Path(self.root))
-        if self._in_memory or self._structure_ids is not None:
-            self._set_arrays(dataset.read_structures(self._structure_ids))
-        else:
-            # Lazy: the zarr arrays themselves, read per sample.
-            self._ptr = dataset.ptr
-            self._pos = dataset.positions
-            self._atom_num = dataset.atomic_numbers
-            self._charge = dataset.total_charge
-            self._multiplicity = dataset.multiplicity
-
-    def _set_arrays(self, arrays: Structures) -> None:
-        if arrays.total_charge is None or arrays.multiplicity is None:
-            raise ValueError("training structures need charges and multiplicities")
-        self._ptr = arrays.ptr
-        self._pos = arrays.positions
-        self._atom_num = arrays.atomic_numbers
-        self._charge = arrays.total_charge
-        self._multiplicity = arrays.multiplicity
+    def _charges(self) -> tuple[np.ndarray, np.ndarray]:
+        if self._total_charge is None or self._multiplicity is None:
+            table = read_table_polars(
+                self.root, columns=["total_charge", "multiplicity"]
+            )
+            total_charge = table["total_charge"].to_numpy().astype(np.float32)
+            multiplicity = table["multiplicity"].to_numpy().astype(np.float32)
+            if self._structure_ids is not None:
+                total_charge = total_charge[self._structure_ids]
+                multiplicity = multiplicity[self._structure_ids]
+            self._total_charge, self._multiplicity = total_charge, multiplicity
+        return self._total_charge, self._multiplicity
 
     def open(self) -> TrainingMoleculeDataset:
-        """Read the arrays now (in this process); returns the dataset."""
-        self._ensure_open()
+        """Open the structure file and read the charges now (in this process);
+        returns the dataset."""
+        self._structure_file()
+        self._charges()
         return self
 
     def atom_counts(self) -> np.ndarray:
         """Atoms per structure, in dataset order."""
-        self._ensure_open()
-        return np.diff(np.asarray(self._ptr)).astype(np.int64)
+        return self._structure_file().atom_counts(self._structure_ids)
+
+    def structure(self, index: int) -> TrainingStructure:
+        """Structure ``index`` of this dataset (``structure_ids[index]`` of the file)."""
+        record = index if self._structure_ids is None else self._structure_ids[index]
+        atomic_numbers, positions = self._structure_file().frame(int(record))
+        total_charge, multiplicity = self._charges()
+        return TrainingStructure(
+            atomic_numbers=atomic_numbers,
+            positions=positions,
+            total_charge=float(total_charge[index]),
+            multiplicity=float(multiplicity[index]),
+        )
 
     def __len__(self):
-        self._ensure_open()
-        return int(self._ptr.shape[0] - 1)
+        if self._structure_ids is not None:
+            return len(self._structure_ids)
+        return len(self._structure_file())
 
     def __getitem__(self, idx: int) -> Sample:
-        self._ensure_open()
         return self._get_item(self, int(idx))

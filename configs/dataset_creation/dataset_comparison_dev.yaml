@@ -1,10 +1,10 @@
-# Dev config for `DatasetComparison`. Compares two small benchmark zarrs so
+# Dev config for `DatasetComparison`. Compares two small benchmark datasets so
 # the full pipeline (BitBIRCH, NN Tanimoto, scaffold overlap) finishes in
 # seconds instead of the hours needed for a full pcqm4m vs benchmarks
 # comparison. The role labels are nominal here -- it's two benchmarks role-
 # tagged so the pretrain/eval code paths exercise. For the real comparison,
-# point one entry at the pcqm4m zarr with role=pretrain and the rest at the
-# benchmark zarrs with role=eval.
+# point one entry at the pcqm4m dataset with role=pretrain and the rest at the
+# benchmark datasets with role=eval.
 
 output_dir: /path/to/datasets/comparisons/dev_freesolv_vs_bace
 

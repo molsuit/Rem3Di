@@ -19,7 +19,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.format import read_spec
 from remedi_data.runs.results import EvalResult
 from remedi_eval.framework.context import EvalContext
@@ -58,7 +58,7 @@ class DescriptorAnalysisConfig(BaseModel):
 
     def run(self, ctx: EvalContext) -> Iterator[EvalResult]:
         ctx.task_dir("descriptor_analysis")
-        dataset = MoleculeDataset.open_existing_dataset_from_dir(self.dataset_path)
+        dataset = Dataset.open(self.dataset_path)
         descriptors = ctx.descriptor_matrix(
             ctx.model, dataset, read_spec(self.dataset_path).dataset_id
         )

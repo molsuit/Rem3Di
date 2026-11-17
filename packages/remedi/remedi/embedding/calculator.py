@@ -1,6 +1,6 @@
 """The Rem3Di descriptor calculator: a trained encoder over a dataset's structures.
 
-:class:`RemediCalculator` streams a :class:`MoleculeDataset`'s positions and
+:class:`RemediCalculator` streams a :class:`Dataset`'s positions and
 atomic numbers through :class:`TrainingMoleculeDataset` and a PyTorch
 :class:`DataLoader` into an ``(N, D)`` matrix aligned with the dataset's
 structure order. :class:`RemediConfig` is its yaml form and carries the
@@ -31,7 +31,7 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
 )
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.format import sha256_of_file
 from remedi_data.yaml_io import read_yaml
 
@@ -83,9 +83,7 @@ class RemediCalculator:
             )
         return torch.device(self.device_str)
 
-    def calculate(
-        self, dataset: MoleculeDataset, *, limit: int | None = None
-    ) -> np.ndarray:
+    def calculate(self, dataset: Dataset, *, limit: int | None = None) -> np.ndarray:
         """Embed the dataset into ``(N, D)`` (or ``(limit, D)`` for a prefix).
 
         ``limit`` embeds only the first ``limit`` structures — used for cheap
@@ -96,10 +94,8 @@ class RemediCalculator:
         device = self._resolve_device()
         model = self._model.to(device)
 
-        # Read the structure arrays once: item-wise reads from the sharded zarr
-        # cost a shard decompression per structure (tmQM: > 45 min on one core).
         train_ds: TrainingMoleculeDataset | Subset = TrainingMoleculeDataset(
-            Path(dataset.path), get_item=atoms_getitem, in_memory=True
+            Path(dataset.path), get_item=atoms_getitem
         ).open()
         if limit is not None and limit < len(train_ds):
             train_ds = Subset(train_ds, range(limit))
@@ -123,7 +119,7 @@ class RemediCalculator:
         """Embed an explicit list of ASE :class:`Atoms` into ``(len(atoms), D)``.
 
         This is the ad-hoc counterpart to :meth:`calculate` (which streams a
-        whole on-disk dataset): it takes molecules that are *not* in the zarr —
+        whole on-disk dataset): it takes molecules that are *not* in a dataset —
         e.g. a brand-new query molecule conformer — and pushes them through the
         same encoder so the resulting vectors live in the same space as the
         cached matrix :meth:`calculate` produces.

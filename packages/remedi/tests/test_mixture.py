@@ -23,6 +23,7 @@ from remedi.training.data.mixture import (
     MoleculeFractionValidation,
     PretrainingDataConfig,
     _check_domain,
+    _DomainEvidence,
     resolve_mixture,
 )
 from remedi.training.data.sample import yield_molecules_collate_fn
@@ -216,11 +217,24 @@ def test_a_dataset_group_takes_every_dataset_under_the_root(tmp_path: Path) -> N
     )
 
 
+def check_pieces(
+    domain, atomic_numbers: np.ndarray, atom_counts: np.ndarray, name: str
+) -> None:
+    """The domain check of structures that arrive as one piece per structure."""
+    evidence = _DomainEvidence(present=set())
+    starts = np.concatenate([[0], np.cumsum(atom_counts)])
+    for index, count in enumerate(atom_counts):
+        evidence.add(
+            atomic_numbers[starts[index] : starts[index + 1]], np.array([count])
+        )
+    _check_domain(domain, evidence, name)
+
+
 def test_a_drug_like_mixture_refuses_other_elements() -> None:
     carbon, hydrogen, silicon = 6, 1, 14
-    _check_domain("drug_like", np.array([carbon, hydrogen]), np.array([2]), "ok")
+    check_pieces("drug_like", np.array([carbon, hydrogen]), np.array([2]), "ok")
     with pytest.raises(MixtureError, match=r"\[14\], outside the drug-like"):
-        _check_domain(
+        check_pieces(
             "drug_like",
             np.array([carbon, silicon, hydrogen]),
             np.array([1, 2]),
@@ -230,14 +244,14 @@ def test_a_drug_like_mixture_refuses_other_elements() -> None:
 
 def test_a_transition_metal_mixture_needs_a_metal_in_every_structure() -> None:
     iron, carbon, hydrogen = 26, 6, 1
-    _check_domain(
+    check_pieces(
         "transition_metal_complex",
         np.array([iron, carbon, hydrogen, carbon, iron]),
         np.array([3, 2]),
         "complexes",
     )
     with pytest.raises(MixtureError, match="1 of 2 structures"):
-        _check_domain(
+        check_pieces(
             "transition_metal_complex",
             np.array([iron, carbon, hydrogen, carbon, hydrogen]),
             np.array([3, 2]),
@@ -341,20 +355,28 @@ def test_a_molecule_without_smiles_is_refused_under_deduplication(
 def test_each_part_reads_its_selected_structures_once(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """The structures are gathered once per part, for the selection only, and
-    reused by the domain check, the atom counts and the training datasets; the
-    table is read with the needed columns only."""
-    from remedi_data.dataset.molecule_dataset import MoleculeDataset
+    """The selected frames are read once per part, for the domain check and the
+    atom counts, and not kept; the training datasets read each sample from the
+    structure file when it is asked for; the table is read with the needed
+    columns only."""
+    from remedi_data.dataset import StructureFile
 
     dataset = corpus(tmp_path, "first", FIRST)
     calls: list[np.ndarray | None] = []
-    original_read = MoleculeDataset.read_structures
+    frames_read: list[int] = []
+    original_read = StructureFile.read
+    original_frame = StructureFile.frame
 
     def recording_read(self, structure_ids=None):
         calls.append(None if structure_ids is None else np.asarray(structure_ids))
         return original_read(self, structure_ids)
 
-    monkeypatch.setattr(MoleculeDataset, "read_structures", recording_read)
+    def recording_frame(self, index):
+        frames_read.append(index)
+        return original_frame(self, index)
+
+    monkeypatch.setattr(StructureFile, "read", recording_read)
+    monkeypatch.setattr(StructureFile, "frame", recording_frame)
     columns_read: list[object] = []
     original_read_parquet = pl.read_parquet
 
@@ -370,8 +392,10 @@ def test_each_part_reads_its_selected_structures_once(
 
     assert len(calls) == 1
     assert calls[0] is not None and len(calls[0]) == len(FIRST)
-    assert columns_read and all(columns is not None for columns in columns_read)
+    assert frames_read == []
     samples = [datasets.training[i] for i in range(data.record.train_structures)]
+    assert len(frames_read) == len(samples)
+    assert columns_read and all(columns is not None for columns in columns_read)
     assert len(datasets.training_atom_counts) == len(samples)
     assert [len(sample.atomic_positions) for sample in samples] == (
         datasets.training_atom_counts.tolist()

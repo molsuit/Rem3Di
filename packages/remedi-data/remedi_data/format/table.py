@@ -7,8 +7,9 @@ A **bundle** directory is exactly::
         table.parquet      # one row per stereoisomer
         provenance.yaml    # BundleProvenance
 
-A **dataset** directory is a zarr (written by ``dataset_build.write_dataset``)
-with the same three files beside it, its table holding one row per structure.
+A **dataset** directory holds the same three files plus ``structures.atp``
+(the frames, written by ``remedi_data.build.write_dataset``), its table holding
+one row per structure.
 ``write_bundle`` refuses to write an invalid bundle and ``read_bundle`` (which
 reads either kind) re-validates the table and its recorded hash on every open.
 """
@@ -17,12 +18,15 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from remedi_data.format.invariants import (
     count_stereoisomer_straddling_constitutions,
@@ -39,9 +43,9 @@ from remedi_data.yaml_io import read_model, read_yaml, write_model
 SPEC_FILENAME = "dataset.yaml"
 TABLE_FILENAME = "table.parquet"
 PROVENANCE_FILENAME = "provenance.yaml"
-#: Written by ``MoleculeDataset.create_empty_dataset``; its presence is what
-#: distinguishes a dataset directory from a bundle directory.
-DATASET_CONFIG_FILENAME = "dataset_config.yaml"
+#: The frames of a dataset (``remedi_data.dataset.structure_file``); its presence
+#: is what distinguishes a dataset directory from a bundle directory.
+STRUCTURES_FILENAME = "structures.atp"
 #: The format version this reader understands.
 FORMAT_VERSION = 1
 
@@ -199,6 +203,33 @@ def fill_derived_provenance(
 # ------------------------------------------------------------------------ io
 
 
+def write_parquet_table(
+    path: Path, table: pd.DataFrame, row_group_sizes: Sequence[int] | None = None
+) -> None:
+    """Write ``table`` to ``path`` as parquet, one row group per entry of
+    ``row_group_sizes`` (one row group for the whole table by default).
+
+    A dataset passes the sizes of its structure parts, so row group ``k`` holds
+    the rows of part ``k``. The columns, dtypes and pandas metadata are those
+    of ``DataFrame.to_parquet``, so the table reads back the same.
+
+    Raises:
+        ValueError: if ``row_group_sizes`` does not add up to the table's rows.
+    """
+    sizes = [len(table)] if row_group_sizes is None else list(row_group_sizes)
+    if sum(sizes) != len(table) or any(size < 0 for size in sizes):
+        raise ValueError(
+            f"row groups of {sizes} rows do not cover the {len(table)} table rows"
+        )
+    arrow_table = pa.Table.from_pandas(table, preserve_index=False)
+    with pq.ParquetWriter(path, arrow_table.schema) as writer:
+        start = 0
+        for size in sizes:
+            if size:
+                writer.write_table(arrow_table.slice(start, size), row_group_size=size)
+            start += size
+
+
 def write_table_files(
     directory: Path,
     spec: DatasetSpec,
@@ -206,6 +237,7 @@ def write_table_files(
     provenance: BundleProvenance,
     *,
     structures_sha256: str | None = None,
+    row_group_sizes: Sequence[int] | None = None,
 ) -> BundleProvenance:
     """Write ``dataset.yaml``, ``table.parquet`` and ``provenance.yaml`` atomically.
 
@@ -213,6 +245,7 @@ def write_table_files(
     under a temporary name in ``directory`` and renamed into place (atomic per
     file on one filesystem), ``provenance.yaml``, which carries the hashes of
     the others, last; a concurrent reader never sees a half-written table.
+    ``row_group_sizes`` sets the table's row groups (:func:`write_parquet_table`).
     Returns the provenance as written.
     """
     directory = Path(directory)
@@ -224,7 +257,7 @@ def write_table_files(
         write_model(spec_staging, spec, exclude_none=True)
         staged.append((spec_staging, directory / SPEC_FILENAME))
         table_staging = directory / f".{TABLE_FILENAME}.partial"
-        table.to_parquet(table_staging, index=False)
+        write_parquet_table(table_staging, table, row_group_sizes)
         staged.append((table_staging, directory / TABLE_FILENAME))
         written.outputs = BundleOutputs(
             table_parquet=TableOutputRecord(
@@ -339,6 +372,15 @@ def read_table_polars(
     return pl.read_parquet(_table_path(directory), columns=columns)
 
 
+def table_row_count(directory: Path) -> int:
+    """The number of rows of ``table.parquet``, read from its metadata alone.
+
+    Raises:
+        FileNotFoundError: if the directory holds no ``table.parquet``.
+    """
+    return pq.ParquetFile(_table_path(directory)).metadata.num_rows
+
+
 def table_columns(directory: Path) -> list[str]:
     """The column names of ``table.parquet``, read from its schema alone.
 
@@ -389,8 +431,8 @@ def read_provenance(directory: Path) -> BundleProvenance:
 def structures_identity(directory: Path) -> str:
     """The hash identifying the *data* anything derived from a directory saw (§4.7).
 
-    For a dataset that is ``structures_sha256``, the hash of the zarr's
-    structures; for a bundle, the table's ``content_sha256``. A descriptor cache
+    For a dataset that is ``structures_sha256``, the hash of its structures
+    (frames, charges and multiplicities); for a bundle, the table's ``content_sha256``. A descriptor cache
     key must carry it: two builds of one ``dataset_id`` that dropped a different
     number of rows are different data under the same name.
 
@@ -414,10 +456,10 @@ def structures_identity(directory: Path) -> str:
 
 
 def is_dataset_directory(directory: Path) -> bool:
-    """A dataset directory holds a zarr (``dataset_config.yaml``) and ``dataset.yaml``."""
+    """A dataset directory holds ``dataset.yaml`` and ``structures.atp``."""
     directory = Path(directory)
     return (directory / SPEC_FILENAME).is_file() and (
-        directory / DATASET_CONFIG_FILENAME
+        directory / STRUCTURES_FILENAME
     ).is_file()
 
 
@@ -436,7 +478,7 @@ def discover_bundles(root: Path) -> list[Path]:
 def discover_datasets(root: Path) -> list[tuple[Path, DatasetSpec]]:
     """Every dataset directly under ``root``, with its spec, sorted by path.
 
-    Anything else under ``root`` (run files, a bundle, a zarr without a spec)
+    Anything else under ``root`` (run files, a bundle, structures without a spec)
     is skipped, so one directory can hold a whole panel.
     """
     root = Path(root)

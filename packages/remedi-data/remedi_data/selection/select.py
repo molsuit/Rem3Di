@@ -27,8 +27,9 @@ import numpy as np
 import polars as pl
 
 from remedi_data.chemistry.splits import murcko_scaffold
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset.structure_file import StructureFile
 from remedi_data.format import (
+    STRUCTURES_FILENAME,
     is_dataset_directory,
     read_provenance,
     read_spec,
@@ -325,20 +326,17 @@ def _apply_step(
 
 
 def _read_rows(dataset: Path) -> pl.DataFrame:
-    """The table with an ``atom_count`` column from the zarr's atom pointer."""
+    """The table with an ``atom_count`` column from the structure file."""
     rows = read_table_polars(dataset)
-    pointer = np.asarray(
-        MoleculeDataset.open_existing_dataset_from_dir(Path(dataset)).ptr[:],
-        dtype=np.int64,
-    )
-    if len(pointer) != rows.height + 1:
+    structures = StructureFile.open(Path(dataset) / STRUCTURES_FILENAME)
+    if len(structures) != rows.height:
         raise SelectionError(
-            f"{dataset}: the zarr holds {len(pointer) - 1} structures, "
+            f"{dataset}: {STRUCTURES_FILENAME} holds {len(structures)} structures, "
             f"the table {rows.height}"
         )
     if ATOM_COUNT_COLUMN in rows.columns:
         raise SelectionError(f"{dataset}: the table already has {ATOM_COUNT_COLUMN!r}")
-    atom_counts = np.diff(pointer)[rows["structure_id"].to_numpy()]
+    atom_counts = structures.atom_counts()[rows["structure_id"].to_numpy()]
     return rows.with_columns(pl.Series(ATOM_COUNT_COLUMN, atom_counts))
 
 

@@ -18,6 +18,7 @@ from typing import ClassVar
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 import pydantic
 import pytest
 from rdkit import Chem
@@ -31,6 +32,7 @@ from remedi_data.chemistry.smiles_filter import (
 )
 from remedi_data.dataset.structures import Structures
 from remedi_data.format import (
+    TABLE_FILENAME,
     assign_identity,
     identity_from_canonical,
     mirror_isomeric_smiles,
@@ -64,9 +66,8 @@ from remedi_data.preparation.structures.sources.tmqm import (
     parse_comment,
 )
 from remedi_data.yaml_io import read_model
-from testing import SMALL_ZARR_LAYOUT
 
-SETTINGS = StructurePreparationSettings(shard_size=3, workers=1, zarr=SMALL_ZARR_LAYOUT)
+SETTINGS = StructurePreparationSettings(shard_size=3, workers=1)
 FILTER = SmilesFilterConfig(
     max_atoms=100, element_set=ElementSet.mace_off, neutralize=False, dedupe=False
 )
@@ -382,6 +383,13 @@ def test_pcqm_source_end_to_end(tmp_path: Path, pcqm_files) -> None:
     assert set(provenance.source.files) == {"train.sdf", "data.csv.gz"}
     assert bundle.spec.smiles and bundle.spec.geometry_origin == "source"
     assert verify_dataset(output).problems == []
+    # The shards were streamed into the dataset: one table row group per shard
+    # (3, 2 after the dropped record, 1 rows), records in shard order.
+    row_groups = pq.ParquetFile(output / TABLE_FILENAME).metadata
+    assert [
+        row_groups.row_group(index).num_rows
+        for index in range(row_groups.num_row_groups)
+    ] == [3, 2, 1]
     # A second call with the same config does nothing.
     assert prepare_structures(source, SETTINGS, output, tmp_path / "work").skipped
 
@@ -516,7 +524,6 @@ sources:
 """
     )
     config = read_model(config_path, StructurePreparationConfig)
-    config.settings.zarr = SMALL_ZARR_LAYOUT
     report = prepare_structure_datasets(config)
     assert report.n_failed == 0, report.statuses[0].traceback
     output = tmp_path / "datasets" / "tmqm"

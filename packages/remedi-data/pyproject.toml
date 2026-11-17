@@ -19,17 +19,19 @@ classifiers = [
 # the model stack (BENCHMARK_DATA_FORMAT.md §3).
 dependencies = [
     "ase>=3.24.0",
+    # The frames of a dataset (structures.atp); only remedi_data.dataset.structure_file
+    # imports it. Pinned exactly: the project and its file format are young.
+    "atompack-db==0.4.1",
     "rdkit>=2024.9.4",
     "numpy",
     "pandas",
     # Preferred for new dataframe code.
     "polars",
-    # Every bundle and dataset table is a parquet: pandas' parquet engine,
-    # never imported by name.
+    # Every bundle and dataset table is a parquet: pandas' parquet engine, and the
+    # writer of a dataset table's row groups.
     "pyarrow",
     "pydantic",
     "pyyaml",
-    "zarr>=3.2",
 ]
 
 [project.urls]
@@ -42,7 +44,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["remedi_data"]
-
-# Declared and imported dependencies agree (tests/integration/test_declared_dependencies.py).
-[tool.deptry.per_rule_ignores]
-DEP002 = ["pyarrow"]

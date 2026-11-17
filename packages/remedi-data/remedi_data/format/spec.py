@@ -2,8 +2,8 @@
 
 See ``BENCHMARK_DATA_FORMAT.md`` §4.3. The same spec heads two kinds of
 directory: a **bundle** (a table with one row per stereoisomer, before any
-structures exist; ``geometry_origin`` unset) and a **dataset** (a zarr with the
-table beside it, one row per structure; ``geometry_origin`` set). Labels are
+structures exist; ``geometry_origin`` unset) and a **dataset** (the table with
+``structures.atp`` beside it, one row per structure; ``geometry_origin`` set). Labels are
 top level, because a pretraining corpus has labels too; everything only scoring
 needs lives in the optional ``evaluation`` block.
 """
@@ -40,7 +40,7 @@ class TaskType(str, Enum):
 IDENTITY_COLUMNS: tuple[str, ...] = ("stereoisomer_id", "molecule_id", "enantiomer_of")
 #: Present iff the spec declares ``smiles: true``.
 SMILES_COLUMNS: tuple[str, ...] = ("isomeric_smiles", "nonisomeric_smiles")
-#: The per-structure physics a dataset table carries and the zarr stores.
+#: The per-structure physics a dataset table carries (the model reads them with the frames).
 CHARGE_COLUMNS: tuple[str, ...] = ("total_charge", "multiplicity")
 
 #: The only values a split column may hold (invariant 5): the ``Split`` names.

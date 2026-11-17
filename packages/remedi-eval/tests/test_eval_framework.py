@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.format import EvalMetric, LabelColumn, TaskType
 from remedi_data.runs.results import TableResult
 from remedi_data.yaml_io import read_model
@@ -32,7 +32,7 @@ from testing import ACHIRAL_TEN_SMILES, write_small_dataset
 _N_ROWS = len(ACHIRAL_TEN_SMILES)
 
 
-def _build_reg_zarr(tmp_path: Path, dataset_id: str, targets: np.ndarray) -> Path:
+def _build_reg_dataset(tmp_path: Path, dataset_id: str, targets: np.ndarray) -> Path:
     """One regression dataset at ``tmp_path/datasets/<dataset_id>``."""
     return write_small_dataset(
         tmp_path / "datasets",
@@ -45,8 +45,8 @@ def _build_reg_zarr(tmp_path: Path, dataset_id: str, targets: np.ndarray) -> Pat
 
 def _manifest(tmp_path: Path) -> EvalManifest:
     eval_root = tmp_path / "datasets"
-    _build_reg_zarr(tmp_path, "toy_a", np.linspace(0, 1, _N_ROWS))
-    _build_reg_zarr(tmp_path, "toy_b", np.linspace(1, 0, _N_ROWS))
+    _build_reg_dataset(tmp_path, "toy_a", np.linspace(0, 1, _N_ROWS))
+    _build_reg_dataset(tmp_path, "toy_b", np.linspace(1, 0, _N_ROWS))
     return EvalManifest(
         model=EcfpConfig(name="ecfp_256", fingerprint_size=256),
         output_root=tmp_path / "eval_out" / "model_x",
@@ -65,7 +65,7 @@ def _failing_panel_task(tmp_path: Path) -> BenchmarkPanelConfig:
     broken = broken_root / "broken_dataset"
     broken.mkdir(parents=True, exist_ok=True)
     (broken / "dataset.yaml").write_text("format_version: 99\n")
-    (broken / "dataset_config.yaml").write_text("{}\n")
+    (broken / "structures.atp").write_bytes(b"")
     return BenchmarkPanelConfig(
         eval_root=broken_root, learners=[LinearLearner(ridge_alpha=1.0)]
     )
@@ -108,8 +108,8 @@ def test_a_descriptor_matrix_is_loaded_once_per_run(
 ) -> None:
     """Keyed on the descriptor's identity and the structures, not the dataset id
     or the descriptor's name."""
-    zarr_path = _build_reg_zarr(tmp_path, "toy_a", np.linspace(0, 1, _N_ROWS))
-    dataset = MoleculeDataset.open_existing_dataset_from_dir(zarr_path)
+    dataset_path = _build_reg_dataset(tmp_path, "toy_a", np.linspace(0, 1, _N_ROWS))
+    dataset = Dataset.open(dataset_path)
     descriptor = EcfpConfig(name="ecfp_256", fingerprint_size=256)
     loads: list[str] = []
     original = EcfpConfig.load_matrix

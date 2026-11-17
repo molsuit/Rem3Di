@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.format import structures_identity
 from remedi_eval.descriptors import DescriptorConfig
 
@@ -45,9 +45,9 @@ class EvalContext:
         return d
 
     def descriptor_matrix(
-        self, descriptor: DescriptorConfig, dataset: MoleculeDataset, dataset_id: str
+        self, descriptor: DescriptorConfig, dataset: Dataset, dataset_id: str
     ) -> np.ndarray:
-        """``descriptor``'s ``(N, D)`` matrix over ``dataset`` in zarr order,
+        """``descriptor``'s ``(N, D)`` matrix over ``dataset`` in structure order,
         loaded at most once per run for one descriptor and one set of structures.
 
         Raises:

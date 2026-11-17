@@ -45,7 +45,6 @@ from remedi.configuration.architecture_config import (
 from remedi.configuration.training_config import ClassifierTrainingConfig
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
 from remedi.training.data.sample import yield_molecules_supervised_collate_fn
-from remedi.training.data.samplers import lengths_from_ptr
 from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
@@ -153,10 +152,8 @@ def main() -> None:
         np.bincount(labels[train_idx], minlength=n_classes).tolist(),
     )
 
-    ds = TrainingMoleculeDataset(
-        dataset_path, get_item=make_supervised_getitem(labels), in_memory=True
-    )
-    all_lengths = lengths_from_ptr(np.asarray(full_dataset.ptr[:]))
+    ds = TrainingMoleculeDataset(dataset_path, get_item=make_supervised_getitem(labels))
+    all_lengths = full_dataset.structures.atom_counts()
     train_loader = training_config.dataloader.build(
         Subset(ds, train_idx),
         lengths=all_lengths[train_idx],

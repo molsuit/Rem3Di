@@ -16,7 +16,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from remedi.embedding.calculator import RemediConfig
-from remedi_data.dataset.molecule_dataset import MoleculeDataset
+from remedi_data.dataset import Dataset
 from remedi_data.format import read_spec
 from remedi_eval.descriptors.embeddings_file import ensure_embeddings, producer_record
 
@@ -57,7 +57,7 @@ def embed_datasets(
         dataset_id = dataset_dir.name
         try:
             dataset_id = read_spec(dataset_dir).dataset_id
-            dataset = MoleculeDataset.open_existing_dataset_from_dir(dataset_dir)
+            dataset = Dataset.open(dataset_dir)
             result = ensure_embeddings(
                 embeddings_root,
                 dataset,
