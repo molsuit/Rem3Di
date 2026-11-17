@@ -58,7 +58,6 @@ def _write_training_config(
             components=[DatasetComponent(dataset=dataset_path)],
             validation=MoleculeFractionValidation(fraction=0.02),
         ),
-        noise_level=0.3,
         model_config_path=arch,
         output_base=output_base,
     )

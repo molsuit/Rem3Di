@@ -68,6 +68,14 @@ class RMSLayerNorm(nn.Module):
 
 
 class PrecomputedInvariantNormalization(nn.Module):
+    """Standardises the invariants with fixed per-channel statistics.
+
+    The statistics are set once (``set_stats``; the training scripts estimate
+    them from the training data) and travel with the checkpoint. ``forward``
+    refuses to run before they are set: zero mean and unit deviation would
+    silently pass the raw MACE features through.
+    """
+
     def __init__(self, invariant_dimension: int, eps: float = 1e-6):
         super().__init__()
         self.eps = eps
@@ -80,8 +88,9 @@ class PrecomputedInvariantNormalization(nn.Module):
             "std", torch.ones(1, 1, invariant_dimension), persistent=True
         )
 
-        # Track whether stats were set; not persisted (purely runtime convenience).
-        self.register_buffer("_stats_set", torch.tensor(False), persistent=False)
+        # Whether the statistics were set; saved with them, so a loaded
+        # checkpoint knows it carries real statistics.
+        self.register_buffer("stats_set", torch.tensor(False), persistent=True)
 
     @torch.no_grad()
     def set_stats(
@@ -102,7 +111,7 @@ class PrecomputedInvariantNormalization(nn.Module):
         overwrite : allow changing stats after they were set once
         device, dtype : (optional) explicit casting targets
         """
-        if not overwrite and bool(self._stats_set.item()):
+        if not overwrite and bool(self.stats_set.item()):
             raise RuntimeError(
                 "Normalization stats are already set. "
                 "Pass overwrite=True to replace them."
@@ -134,12 +143,17 @@ class PrecomputedInvariantNormalization(nn.Module):
         # Avoid zero std -> add eps when used (or clamp here).
         self.mean.data.copy_(mean)
         self.std.data.copy_(std)
-        self._stats_set.fill_(True)
+        self.stats_set.fill_(True)
 
     def forward(
         self, x: torch.Tensor, padding_mask: torch.Tensor | None
     ) -> torch.Tensor:
         # x: (B, N, dim), padding_mask: (B, N) with True = pad
+        if not bool(self.stats_set):
+            raise RuntimeError(
+                "PrecomputedInvariantNormalization has no statistics: call "
+                "set_stats (see ensure_invariant_statistics) or load a checkpoint."
+            )
         x = (x - self.mean) / (self.std + self.eps)
 
         if padding_mask is not None:
@@ -235,17 +249,18 @@ class AtomicDescriptorPreprocessor(nn.Module):
       1. (optional) slice channels to a subset of MACE message-passing layers,
       2. split into invariants / equivariants,
       3. normalize invariants and equivariants,
-      4. (optional) apply an atomwise projection (linear / MLP) to the
-         normalized invariants,
-      5. (optional) compute a chiral pseudoscalar embedding from invariants +
-         equivariants and concatenate it with the projected invariants.
+      4. (optional) compute a chiral pseudoscalar embedding from invariants +
+         equivariants and concatenate it with the normalized invariants.
+
+    The normalized invariants have no learnable parameters in their path: they
+    are the fixed target of the denoising pretraining. Learned projections to
+    the model width live in the encoder and the decoder.
     """
 
     def __init__(
         self,
         preprocess_config: EmbeddingPreprocessConfig,
         invariant_normalization: InvariantNormalization,
-        invariant_projection: nn.Module | None = None,
         selected_channel_indices: list[int] | None = None,
     ):
         super().__init__()
@@ -272,10 +287,6 @@ class AtomicDescriptorPreprocessor(nn.Module):
             self.selected_channel_indices = None
 
         self.invariant_normalization = invariant_normalization
-
-        self.invariant_projection = (
-            invariant_projection if invariant_projection is not None else nn.Identity()
-        )
 
         # The chiral embedding (and the RMS norm of the l=1 blocks feeding it)
         # exists only when pseudoscalars are requested: without them the
@@ -306,6 +317,14 @@ class AtomicDescriptorPreprocessor(nn.Module):
             return embeddings
         return embeddings.index_select(-1, self.selected_channel_indices)
 
+    def select_invariants(self, embeddings: torch.Tensor) -> torch.Tensor:
+        """The raw (unnormalised) invariants of the selected layers, from MACE
+        node features ``(B, N, C)``."""
+        invariants, _ = split_invariants_equivariants(
+            self._select_layers(embeddings), self.invariant_indices
+        )
+        return invariants
+
     def forward(
         self, embeddings: torch.Tensor, padding_mask: torch.Tensor | None = None
     ) -> PreprocessedSample:
@@ -329,25 +348,25 @@ class AtomicDescriptorPreprocessor(nn.Module):
                 normalized_invariants, normalized_equivariants, padding_mask
             )
 
-        # Projection runs in the module's working dtype (float64 in the
-        # encoder/regression paths, where the atomic preprocessor is .double()'d
-        # after build). Cast to float32 only at the boundary that hands data to
-        # the downstream encoder.
-        projected_invariants = self.invariant_projection(normalized_invariants).to(
-            dtype=torch.float32
-        )
-
+        # Normalisation runs in the module's working dtype (float64: the atomic
+        # preprocessor is .double()'d after build). Cast to float32 only at the
+        # boundary that hands data to the downstream encoder.
+        normalized_invariants = normalized_invariants.to(dtype=torch.float32)
         if padding_mask is not None:
-            projected_invariants = projected_invariants.masked_fill(
+            normalized_invariants = normalized_invariants.masked_fill(
                 padding_mask[..., None], 0.0
             )
 
         if chiral_embedding is not None:
             return PreprocessedSample(
                 preprocessed_atomic_embeddings=torch.cat(
-                    (projected_invariants, chiral_embedding), dim=-1
+                    (normalized_invariants, chiral_embedding), dim=-1
                 ),
+                normalized_invariants=normalized_invariants,
                 chiral_embeddings=chiral_embedding,
             )
 
-        return PreprocessedSample(preprocessed_atomic_embeddings=projected_invariants)
+        return PreprocessedSample(
+            preprocessed_atomic_embeddings=normalized_invariants,
+            normalized_invariants=normalized_invariants,
+        )

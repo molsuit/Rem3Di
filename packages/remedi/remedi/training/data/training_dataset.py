@@ -66,8 +66,12 @@ class TrainingMoleculeDataset(Dataset):
     from ``structures.atp`` when it is asked for (a memory-mapped record, a few
     microseconds); each process (each data-loader worker) opens its own
     :class:`StructureFile`. The charges and multiplicities of the structures
-    (8 bytes each) are read from the table once per dataset and travel with it
-    to the workers.
+    (8 bytes each) are read from the table here, in the constructing process,
+    and travel with the dataset to the workers.
+
+    No table is read on the sample path: a forked loader worker that calls
+    polars deadlocks, because the parent's polars thread pool (and the locks
+    it holds) are not carried into the child.
     """
 
     def __init__(
@@ -84,8 +88,14 @@ class TrainingMoleculeDataset(Dataset):
         # Per process: the open file and the process that opened it.
         self._file: StructureFile | None = None
         self._file_process: int | None = None
-        self._total_charge: np.ndarray | None = None
-        self._multiplicity: np.ndarray | None = None
+        table = read_table_polars(self.root, columns=["total_charge", "multiplicity"])
+        total_charge = table["total_charge"].to_numpy().astype(np.float32)
+        multiplicity = table["multiplicity"].to_numpy().astype(np.float32)
+        if self._structure_ids is not None:
+            total_charge = total_charge[self._structure_ids]
+            multiplicity = multiplicity[self._structure_ids]
+        self._total_charge = total_charge
+        self._multiplicity = multiplicity
 
     def __getstate__(self):
         state = dict(self.__dict__)
@@ -98,24 +108,9 @@ class TrainingMoleculeDataset(Dataset):
             self._file_process = os.getpid()
         return self._file
 
-    def _charges(self) -> tuple[np.ndarray, np.ndarray]:
-        if self._total_charge is None or self._multiplicity is None:
-            table = read_table_polars(
-                self.root, columns=["total_charge", "multiplicity"]
-            )
-            total_charge = table["total_charge"].to_numpy().astype(np.float32)
-            multiplicity = table["multiplicity"].to_numpy().astype(np.float32)
-            if self._structure_ids is not None:
-                total_charge = total_charge[self._structure_ids]
-                multiplicity = multiplicity[self._structure_ids]
-            self._total_charge, self._multiplicity = total_charge, multiplicity
-        return self._total_charge, self._multiplicity
-
     def open(self) -> TrainingMoleculeDataset:
-        """Open the structure file and read the charges now (in this process);
-        returns the dataset."""
+        """Open the structure file now (in this process); returns the dataset."""
         self._structure_file()
-        self._charges()
         return self
 
     def atom_counts(self) -> np.ndarray:
@@ -126,12 +121,11 @@ class TrainingMoleculeDataset(Dataset):
         """Structure ``index`` of this dataset (``structure_ids[index]`` of the file)."""
         record = index if self._structure_ids is None else self._structure_ids[index]
         atomic_numbers, positions = self._structure_file().frame(int(record))
-        total_charge, multiplicity = self._charges()
         return TrainingStructure(
             atomic_numbers=atomic_numbers,
             positions=positions,
-            total_charge=float(total_charge[index]),
-            multiplicity=float(multiplicity[index]),
+            total_charge=float(self._total_charge[index]),
+            multiplicity=float(self._multiplicity[index]),
         )
 
     def __len__(self):
@@ -139,5 +133,5 @@ class TrainingMoleculeDataset(Dataset):
             return len(self._structure_ids)
         return len(self._structure_file())
 
-    def __getitem__(self, idx: int) -> Sample:
-        return self._get_item(self, int(idx))
+    def __getitem__(self, index: int) -> Sample:
+        return self._get_item(self, int(index))

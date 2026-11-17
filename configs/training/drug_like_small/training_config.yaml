@@ -1,8 +1,9 @@
 # First production pretraining run on the closed-shell drug-like corpora: PCQM4Mv2
 # diverse_100k (Butina-cluster draw) plus the lowest-energy conformer of every GEOM
-# entry, benchmark molecules included. Architecture: the pcqm_ablation_novicreg
-# baseline. Submit with a --time measured from a short run:
+# entry, benchmark molecules included. Submit with a --time measured from a short run:
 #   uv run python scripts/submit_job.py configs/training/drug_like_small/training_config.yaml --time HH:MM:SS
+# A job that ran out of time continues from its last finished epoch:
+#   sbatch scripts/pretrain.slurm <run directory>/training_config.yaml
 compile:
   dynamo_cache_size_limit: 16
   enabled: false
@@ -33,7 +34,11 @@ epochs: 15
 learning_rate: 0.0003
 max_grad_norm: 1.0
 model_config_path: /dais/u/wedigs/descriptors/Rem3Di/configs/training/drug_like_small/architecture_config.yaml
-noise_level: 0.3
+noise:
+  kind: log_normal
+  median: 0.5
+  log_standard_deviation: 1.2
+normalization_batches: 200
 output_base: /dais/fs/scratch/wedigs/remedi/training_runs/drug_like_small
 run_group: drug_like_small
 training_name: drug_like_small_baseline
@@ -41,11 +46,6 @@ training_directory: null
 # No WANDB_API_KEY on DAIS yet (no .env); losses go to training_losses.yaml.
 wandb_active: false
 weight_decay: 0.001
-vicreg:
-  covariance_weight: 1.0
-  enabled: false
-  target_std: 1.0
-  variance_weight: 25.0
 probe:
   enabled: true
   every_n_steps: 500

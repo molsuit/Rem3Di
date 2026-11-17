@@ -100,6 +100,11 @@ class BucketBatchSampler(Sampler[list[int]]):
                 bounds.append((start, bucket_stop))
         return bounds
 
+    def set_epoch(self, epoch: int) -> None:
+        """Make the next iteration draw epoch ``epoch``'s order (used to resume
+        a run and after iterations that were not a training epoch)."""
+        self.epoch = int(epoch)
+
     def __iter__(self) -> Iterator[list[int]]:
         generator = np.random.default_rng([self.seed, self.epoch])
         self.epoch += 1

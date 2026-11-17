@@ -1,109 +1,101 @@
+import math
+
+import torch
 import torch.nn as nn
+from torch import Tensor
 
 from remedi.configuration.architecture_config import DecoderConfig, ModelDimensions
 from remedi.model.molecular_descriptor import MolecularDescriptor
-from remedi.model.multihead_self_attention import MultiHeadCrossAttention
-from remedi.model.pair_biased_attention import (
-    PairBiasedSelfAttention,
-    PairOuterProdUpdate,
-)
-from remedi.model.pair_block import FeedForward, PairFFN
+from remedi.model.pair_block import PairBlock
 from remedi.training.data.sample import PreprocessedSample
 
 
-class DecoderPairBlock(nn.Module):
-    def __init__(
-        self,
-        embedding_dim: int,
-        num_heads: int,
-        dim_feedforward,
-        d_pair: int,
-        d_descriptor,
-        d_geo,
-        dropout=0.1,
-        update_pair: bool = True,
-    ):
-        """``update_pair=False`` (the last layer) leaves the pair tensor as it
-        is: nothing after the last layer reads it."""
+class NoiseLevelEmbedding(nn.Module):
+    """Embeds a per-molecule noise level: sinusoidal features of its logarithm,
+    then a two-layer MLP."""
+
+    def __init__(self, embedding_dim: int, number_of_frequencies: int = 16):
         super().__init__()
-
-        # 1 attention sub-layer
-        self.layer_norm_0 = nn.LayerNorm(embedding_dim)
-        self.attn = PairBiasedSelfAttention(embedding_dim, num_heads, d_pair, dropout)
-
-        # Cross Attention layer to the molecular descriptor
-        self.cross_attention = MultiHeadCrossAttention(
-            embedding_dim, d_descriptor, num_heads, dropout
+        frequencies = torch.exp(
+            torch.linspace(math.log(0.25), math.log(16.0), number_of_frequencies)
         )
-        self.layer_norm_1 = nn.LayerNorm(embedding_dim)
-
-        # Two-layer MLP
-        self.ffn = FeedForward(embedding_dim, d_hidden=dim_feedforward, dropout=dropout)
-        self.layer_norm_2 = nn.LayerNorm(embedding_dim)
-
-        # Pair Representation update
-        self.pair_update = (
-            PairOuterProdUpdate(embedding_dim, d_pair, d_geo) if update_pair else None
+        self.register_buffer("frequencies", frequencies)
+        self.mlp = nn.Sequential(
+            nn.Linear(2 * number_of_frequencies, embedding_dim),
+            nn.SiLU(),
+            nn.Linear(embedding_dim, embedding_dim),
         )
-        self.pair_ffn = PairFFN(d_pair, dropout) if update_pair else None
 
-    def forward(self, S, P, M, p_geo, padding_mask, mask_pair):
-        # Self Attention based update
-        S = S + self.attn(self.layer_norm_0(S), P, padding_mask)
-
-        S = S + self.cross_attention(self.layer_norm_1(S), M)
-
-        S = S + self.ffn(self.layer_norm_2(S))
-
-        # Both pair updates are residual already (they return P + delta).
-        if self.pair_update is not None and self.pair_ffn is not None:
-            P = self.pair_update(S, P, p_geo, mask_pair)  # Outer product update
-            P = self.pair_ffn(P)
-
-        return S, P
+    def forward(self, noise_level: Tensor) -> Tensor:
+        """``noise_level`` (B,) > 0 -> (B, embedding_dim)."""
+        phases = torch.log(noise_level)[:, None] * self.frequencies
+        return self.mlp(torch.cat((torch.sin(phases), torch.cos(phases)), dim=-1))
 
 
 class TransformerPairDecoder(nn.Module):
+    """Noised atomic descriptors + molecular descriptor -> denoising output.
+
+    The noised descriptors are projected to the decoder width and the noise
+    level embedding is added to every atom. Each block cross-attends to the
+    descriptor tokens. The output head is zero-initialised and maps back to the
+    width of the denoising target.
+    """
+
     def __init__(self, decoder_config: DecoderConfig, dimensions: ModelDimensions):
         super().__init__()
 
         self.config = decoder_config
         attention = decoder_config.attention_layer_config
+        embedding_dimension = decoder_config.embedding_dimension
+
+        self.input_projection = nn.Linear(
+            dimensions.target_dimension, embedding_dimension
+        )
+        self.noise_level_embedding = NoiseLevelEmbedding(embedding_dimension)
         self.layers = nn.ModuleList(
             [
-                DecoderPairBlock(
-                    embedding_dim=dimensions.embedding_dimension,
+                PairBlock(
+                    embedding_dim=embedding_dimension,
                     num_heads=attention.num_heads,
                     dim_feedforward=attention.dim_feedforward,
                     dropout=attention.dropout,
-                    d_descriptor=dimensions.descriptor_dimension,
                     d_pair=dimensions.pair_dimension,
                     d_geo=dimensions.radial_basis_dimension,
-                    update_pair=index < decoder_config.N_layers - 1,
+                    descriptor_dimension=dimensions.descriptor_dimension,
+                    update_pair=(
+                        attention.update_pair and index < decoder_config.N_layers - 1
+                    ),
                 )
                 for index in range(decoder_config.N_layers)
             ]
         )
+        self.final_norm = nn.LayerNorm(embedding_dimension)
+        self.output_head = nn.Linear(embedding_dimension, dimensions.target_dimension)
+        nn.init.zeros_(self.output_head.weight)
+        nn.init.zeros_(self.output_head.bias)
 
     def forward(
         self,
-        preprocessed_sample: PreprocessedSample,
+        noised_sample: PreprocessedSample,
         molecular_descriptor: MolecularDescriptor,
-    ):
-        S = preprocessed_sample.preprocessed_atomic_embeddings
-        P = preprocessed_sample.initial_pair_representation
-
-        # Cross-attention attends over the full seed sequence (B, L, D).
-        descriptor_tokens = molecular_descriptor.tokens
+        noise_level: Tensor,
+    ) -> Tensor:
+        """``noised_sample.preprocessed_atomic_embeddings`` (B, N, target) holds
+        the (input-scaled) noised descriptors, ``noise_level`` (B,) the noise
+        level of each molecule. Returns (B, N, target)."""
+        S = self.input_projection(noised_sample.preprocessed_atomic_embeddings)
+        S = S + self.noise_level_embedding(noise_level)[:, None, :]
+        P = noised_sample.initial_pair_representation
 
         for layer in self.layers:
             S, P = layer(
                 S,
+                noised_sample.padding_mask,
                 P,
-                descriptor_tokens,
-                preprocessed_sample.geometrical_encoding,
-                preprocessed_sample.padding_mask,
-                preprocessed_sample.pair_mask,
+                noised_sample.geometrical_encoding,
+                noised_sample.pair_mask,
+                # Cross-attention attends over the full seed sequence (B, L, D).
+                descriptor_tokens=molecular_descriptor.tokens,
             )
 
-        return S
+        return self.output_head(self.final_norm(S))

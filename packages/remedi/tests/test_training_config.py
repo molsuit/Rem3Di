@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import torch
 from pydantic import BaseModel, ValidationError
 
 from remedi.configuration.dataloader_config import (
@@ -15,9 +16,10 @@ from remedi.configuration.dataloader_config import (
 from remedi.configuration.training_config import (
     ClassificationConfig,
     CompileConfig,
+    FixedNoiseLevelConfig,
+    LogNormalNoiseLevelConfig,
     PretrainingConfig,
     ProbeConfig,
-    VICRegConfig,
 )
 from remedi.training.data.mixture import (
     DatasetComponent,
@@ -42,7 +44,6 @@ def _pretraining_config(tmp_path: Path, **overrides) -> PretrainingConfig:
             components=[DatasetComponent(dataset=tmp_path / "corpus")],
             validation=MoleculeFractionValidation(fraction=0.1),
         ),
-        "noise_level": 0.3,
     }
     values.update(overrides)
     return PretrainingConfig.model_validate(values)
@@ -53,7 +54,8 @@ def _pretraining_config(tmp_path: Path, **overrides) -> PretrainingConfig:
     [
         (ProbeConfig, {"every_n_step": 10}),
         (CompileConfig, {"enable": False}),
-        (VICRegConfig, {"variance_weigth": 1.0}),
+        (LogNormalNoiseLevelConfig, {"mean": 1.0}),
+        (FixedNoiseLevelConfig, {"level": 0.3, "noise_level": 0.3}),
         (ClassificationConfig, {"focal_gama": 1.0}),
         (RandomShuffleSamplingConfig, {"batch_size": 2, "shufle": True}),
         (BucketBatchSamplingConfig, {"max_atoms_per_batch": 10, "bucket": 4}),
@@ -109,3 +111,41 @@ def test_an_explicit_training_directory_is_used(tmp_path: Path) -> None:
     assert config.create_run_directory() == directory
     assert directory.is_dir()
     assert config.create_run_directory() == directory
+
+
+def test_the_noise_level_is_log_normal_by_default(tmp_path: Path) -> None:
+    assert isinstance(_pretraining_config(tmp_path).noise, LogNormalNoiseLevelConfig)
+
+
+def test_the_noise_kind_is_chosen_in_the_config(tmp_path: Path) -> None:
+    config = _pretraining_config(tmp_path, noise={"kind": "fixed", "level": 0.3})
+    assert config.noise == FixedNoiseLevelConfig(level=0.3)
+    with pytest.raises(ValidationError):
+        _pretraining_config(tmp_path, noise={"kind": "fixed", "level": 0.0})
+
+
+def test_vicreg_and_the_single_noise_level_are_gone(tmp_path: Path) -> None:
+    for removed in ({"vicreg": {"enabled": False}}, {"noise_level": 0.3}):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            _pretraining_config(tmp_path, **removed)
+
+
+def test_fixed_noise_levels_are_all_the_level() -> None:
+    levels = FixedNoiseLevelConfig(level=0.3).sample(4, device="cpu")
+    assert torch.equal(levels, torch.full((4,), 0.3))
+
+
+def test_log_normal_noise_levels_follow_the_generator_and_the_median() -> None:
+    noise = LogNormalNoiseLevelConfig(median=0.5, log_standard_deviation=1.2)
+
+    def draw(seed: int) -> torch.Tensor:
+        return noise.sample(
+            20_000, device="cpu", generator=torch.Generator().manual_seed(seed)
+        )
+
+    levels = draw(0)
+    assert torch.equal(levels, draw(0))
+    assert not torch.equal(levels, draw(1))
+    assert (levels > 0).all()
+    assert levels.median().item() == pytest.approx(0.5, rel=0.05)
+    assert levels.log().std().item() == pytest.approx(1.2, rel=0.05)

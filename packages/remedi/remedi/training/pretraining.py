@@ -1,101 +1,46 @@
+"""Denoising pretraining: the encoder summarises the clean atomic descriptors
+into the molecular descriptor; the decoder gets noised descriptors and the
+molecular descriptor and must recover the clean ones.
+
+The target is the standardised MACE invariants (unit variance per channel, no
+learnable parameter in their path). Every molecule draws its own noise level,
+and the decoder is preconditioned as in EDM (Karras et al. 2022) with a data
+deviation of 1, so its regression target has unit variance at every noise
+level:
+
+    noised   = target + level * noise
+    denoised = skip * noised + output_scale * decoder(input_scale * noised, level)
+    skip = 1 / (1 + level^2), output_scale = level / sqrt(1 + level^2),
+    input_scale = 1 / sqrt(1 + level^2)
+
+The loss is the mean squared error of the decoder output against
+``(target - skip * noised) / output_scale``. A decoder that outputs zero (its
+initialisation) scores 1.0: the best a per-channel linear denoiser can do on
+unit-variance data. Anything below 1.0 is structure the model has learned.
+"""
+
 from dataclasses import dataclass
 
 import torch
-import torch.nn.functional as F
 from torch import nn
 
+from remedi.configuration.training_config import NoiseLevelConfig
 from remedi.model.molecular_descriptor import MolecularDescriptor
 from remedi.training.data.sample import PreprocessedSample, Sample
-
-
-def get_random_mask(padding_mask, masking_probability=0.15):
-    # Padding mask denotes the padded atoms that should not be masked during pretraining
-    random_numbers = torch.where(
-        torch.logical_not(padding_mask.bool()),
-        torch.rand_like(padding_mask),
-        torch.ones_like(padding_mask),
-    )
-    reconstruction_mask = random_numbers < masking_probability
-    return reconstruction_mask
-
-
-def atomic_embedding_loss(decoder_prediction, atomic_embedding, reconstruction_mask):
-    """
-    decoder_prediction: torch.Tensor of shape (batch_size, set_dim, embedding_dim)
-    atomic_embedding: torch.Tensor of shape (batch_size, set_dim, embedding_dim)
-    reconstruction_mask: torch.Tensor of shape (batch_size, set_dim)
-    """
-
-    mask = reconstruction_mask.unsqueeze(-1).type_as(decoder_prediction)
-
-    # Compute squared differences
-    squared_diff = (decoder_prediction - atomic_embedding) ** 2
-
-    # Apply the mask
-    masked_squared_diff = squared_diff * mask
-
-    # Compute the mean loss over the masked elements
-    loss = masked_squared_diff.sum() / mask.sum()
-    return loss
-
-
-def atom_denoising_loss(
-    input_atomic_embeddings, denoised_embeddings, padding_mask, noise_level
-):
-    # Compute squared differences
-    squared_diff = (denoised_embeddings - input_atomic_embeddings) ** 2
-    # Apply the mask
-
-    masked_squared_diff = squared_diff * ~padding_mask[:, :, None]
-
-    atoms_in_batch = torch.sum((~padding_mask).to(torch.float32))
-
-    loss = 1 / atoms_in_batch * torch.sum(masked_squared_diff) * 1 / noise_level**2
-    return loss
-
-
-def vicreg_descriptor_loss(
-    descriptor: torch.Tensor,
-    *,
-    target_std: float = 1.0,
-    eps: float = 1e-4,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """VICReg variance + covariance regularizers on a (B, D) descriptor batch.
-
-    Returns the *unweighted* (variance_loss, covariance_loss); the caller
-    applies weights so each component can be logged separately.
-    """
-    if descriptor.dim() != 2:
-        raise ValueError(
-            f"vicreg_descriptor_loss expects a (B, D) tensor, got {descriptor.shape}"
-        )
-    if descriptor.shape[0] < 2:
-        zero = descriptor.new_zeros(())
-        return zero, zero
-
-    std = descriptor.std(dim=0) + eps
-    variance_loss = F.relu(target_std - std).mean()
-
-    centered = descriptor - descriptor.mean(dim=0, keepdim=True)
-    cov = (centered.T @ centered) / (descriptor.shape[0] - 1)
-    off_diag = cov - torch.diag(torch.diagonal(cov))
-    covariance_loss = off_diag.pow(2).sum() / descriptor.shape[1]
-
-    return variance_loss, covariance_loss
 
 
 def add_noise(
     embeddings: torch.Tensor,
     padding_mask: torch.Tensor,
-    noise_level: float,
+    noise_level: torch.Tensor,
     generator: torch.Generator | None = None,
 ) -> torch.Tensor:
-    """Gaussian noise of standard deviation ``noise_level`` on the real atoms.
+    """Gaussian noise on the real atoms, one standard deviation per molecule.
 
     ``embeddings`` is ``(B, N, D)``, ``padding_mask`` ``(B, N)`` (True = padding,
-    left unchanged). The result is detached from ``embeddings``. ``generator``
-    (on the embeddings' device) fixes the noise; None draws from torch's global
-    generator.
+    left unchanged), ``noise_level`` ``(B,)``. The result is detached from
+    ``embeddings``. ``generator`` (on the embeddings' device) fixes the noise;
+    None draws from torch's global generator.
     """
     noise = torch.randn(
         embeddings.shape,
@@ -104,15 +49,45 @@ def add_noise(
         dtype=embeddings.dtype,
     )
     noise = noise.masked_fill(padding_mask.unsqueeze(-1), 0.0)
-    return embeddings.detach() + noise_level * noise
+    return embeddings.detach() + noise_level[:, None, None] * noise
+
+
+def descriptor_statistics(descriptors: torch.Tensor) -> dict[str, float]:
+    """Collapse diagnostics of a ``(M, D)`` set of molecular descriptors.
+
+    ``descriptor_standard_deviation``: mean per-dimension deviation (0 when
+    every molecule gets the same descriptor). ``descriptor_effective_rank``:
+    participation ratio of the covariance spectrum, between 1 (one direction
+    carries all variance) and D.
+    """
+    if descriptors.dim() != 2 or descriptors.shape[0] < 2:
+        raise ValueError(
+            "descriptor_statistics needs (M >= 2, D) descriptors, got "
+            f"{tuple(descriptors.shape)}"
+        )
+    descriptors = descriptors.to(torch.float64)
+    centred = descriptors - descriptors.mean(dim=0, keepdim=True)
+    covariance = centred.T @ centred / (descriptors.shape[0] - 1)
+    eigenvalues = torch.linalg.eigvalsh(covariance).clamp_min(0.0)
+    total = eigenvalues.sum()
+    effective_rank = (
+        (total.square() / eigenvalues.square().sum()).item() if total > 0 else 0.0
+    )
+    return {
+        "descriptor_standard_deviation": descriptors.std(dim=0).mean().item(),
+        "descriptor_effective_rank": float(effective_rank),
+    }
 
 
 @dataclass(frozen=True)
 class DenoisingStepResult:
     denoising_loss: torch.Tensor
+    """Mean over real atoms and channels; 1.0 for a decoder that outputs zero."""
     molecular_descriptor: MolecularDescriptor
     atom_count: int
     """Real atoms in the batch."""
+    noise_level: torch.Tensor
+    """The noise level drawn for each molecule, ``(B,)``."""
 
 
 def denoising_step(
@@ -121,50 +96,57 @@ def denoising_step(
     preprocessor: nn.Module,
     encoder: nn.Module,
     decoder: nn.Module,
-    noise_level: float,
+    noise: NoiseLevelConfig,
     generator: torch.Generator | None = None,
 ) -> DenoisingStepResult:
     """One denoising pass, shared by training and validation.
 
-    The encoder sees the clean atomic embeddings and summarises them into the
-    molecular descriptor; the decoder gets the noised embeddings and the
-    descriptor and must recover the clean ones. Pair and geometric inputs are
-    detached for the decoder. Gradients flow as the caller's grad mode allows.
+    ``generator`` fixes both the noise levels and the noise. Pair and geometric
+    inputs are detached for the decoder. Gradients flow as the caller's grad
+    mode allows; none reaches the target.
     """
     if samples.atomic_positions is None:
         raise ValueError("denoising_step needs atomic_positions on the samples")
     # Before the preprocessor: it pads the flat atom arrays in place.
     atom_count = int(samples.atomic_positions.shape[0])
     preprocessed: PreprocessedSample = preprocessor(samples)
-    embeddings = preprocessed.preprocessed_atomic_embeddings
     padding_mask = preprocessed.padding_mask
-    if embeddings is None or padding_mask is None:
-        raise ValueError("the preprocessor returned no atomic embeddings or mask")
+    if preprocessed.normalized_invariants is None or padding_mask is None:
+        raise ValueError("the preprocessor returned no normalised invariants or mask")
     if (
         preprocessed.initial_pair_representation is None
         or preprocessed.geometrical_encoding is None
     ):
         raise ValueError("the preprocessor returned no pair or geometric encoding")
-    clean_embeddings = embeddings.clone()
-    noised_embeddings = add_noise(embeddings, padding_mask, noise_level, generator)
+    target = preprocessed.normalized_invariants.detach()
+
+    noise_level = noise.sample(
+        target.shape[0], device=target.device, generator=generator
+    )
+    noised = add_noise(target, padding_mask, noise_level, generator)
+    level = noise_level[:, None, None]
+    input_scale = 1.0 / torch.sqrt(1.0 + level.square())
+    skip_scale = 1.0 / (1.0 + level.square())
+    output_scale = level / torch.sqrt(1.0 + level.square())
 
     molecular_descriptor = encoder(preprocessed)
     noised_sample = PreprocessedSample(
-        preprocessed_atomic_embeddings=noised_embeddings,
+        preprocessed_atomic_embeddings=input_scale * noised,
         initial_pair_representation=preprocessed.initial_pair_representation.detach(),
         geometrical_encoding=preprocessed.geometrical_encoding.detach(),
         padding_mask=padding_mask,
         pair_mask=preprocessed.pair_mask,
     )
-    denoised_embeddings = decoder(noised_sample, molecular_descriptor)
-    denoising_loss = atom_denoising_loss(
-        clean_embeddings,
-        denoised_embeddings,
-        padding_mask=padding_mask,
-        noise_level=noise_level,
-    )
+    decoder_output = decoder(noised_sample, molecular_descriptor, noise_level)
+    decoder_target = (target - skip_scale * noised) / output_scale
+
+    real_atoms = ~padding_mask
+    squared_error = (decoder_output - decoder_target).square()
+    squared_error = squared_error * real_atoms[:, :, None]
+    denoising_loss = squared_error.sum() / (real_atoms.sum() * target.shape[-1])
     return DenoisingStepResult(
         denoising_loss=denoising_loss,
         molecular_descriptor=molecular_descriptor,
         atom_count=atom_count,
+        noise_level=noise_level,
     )

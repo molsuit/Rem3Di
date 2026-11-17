@@ -2,7 +2,7 @@
 
 A model is written as ``model.model_dump(mode="json")`` through PyYAML's safe
 dumper with the fields in declaration order (``sort_keys=False``), so a file
-reads like its model; it is read back with ``Model.model_validate``. Writes go
+reads like its model; it is read back through a pydantic ``TypeAdapter``. Writes go
 to a uniquely named temporary file next to the target and are renamed over it,
 so a reader never sees half a file and concurrent writers do not collide.
 """
@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 
 class YamlFileError(ValueError):
@@ -26,8 +26,21 @@ def read_yaml(path: Path | str) -> Any:
     return yaml.safe_load(Path(path).read_text(encoding="utf-8"))
 
 
-def read_model[Model: BaseModel](path: Path | str, model_class: type[Model]) -> Model:
+@overload
+def read_model[Model: BaseModel](
+    path: Path | str, model_class: type[Model]
+) -> Model: ...
+
+
+@overload
+def read_model(path: Path | str, model_class: Any) -> Any: ...
+
+
+def read_model(path: Path | str, model_class: Any) -> Any:
     """``model_class`` validated from the yaml mapping in ``path``.
+
+    ``model_class`` is a model or an ``Annotated`` discriminated union of models
+    (the mapping's ``kind`` then picks the member).
 
     Raises:
         FileNotFoundError: if ``path`` does not exist.
@@ -37,9 +50,10 @@ def read_model[Model: BaseModel](path: Path | str, model_class: type[Model]) -> 
     content = read_yaml(path)
     if not isinstance(content, dict):
         raise YamlFileError(
-            f"{path} holds {type(content).__name__}, not a {model_class.__name__} mapping"
+            f"{path} holds {type(content).__name__}, not a "
+            f"{getattr(model_class, '__name__', 'model')} mapping"
         )
-    return model_class.model_validate(content)
+    return TypeAdapter(model_class).validate_python(content)
 
 
 def yaml_text(content: Any) -> str:

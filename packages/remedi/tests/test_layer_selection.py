@@ -1,5 +1,5 @@
-"""Tests for the per-layer selection + invariant projection extension to
-``EmbeddingPreprocessConfig`` / ``AtomicDescriptorPreprocessor``.
+"""Tests for the per-layer selection of ``EmbeddingPreprocessConfig`` /
+``AtomicDescriptorPreprocessor`` and the fixed normalised invariants it emits.
 
 These tests intentionally avoid loading a real MACE checkpoint: they construct
 a preprocess config with explicit per-layer irreps, mirroring what the cascade
@@ -15,9 +15,6 @@ from e3nn.o3 import Irreps
 
 from remedi.configuration.architecture_config import (
     EmbeddingPreprocessConfig,
-    IdentityInvariantProjectionConfig,
-    LinearInvariantProjectionConfig,
-    MLPInvariantProjectionConfig,
     PrecomputedInvariantNormalizationConfig,
 )
 from remedi_data.yaml_io import yaml_text
@@ -31,7 +28,6 @@ FULL_INPUT_IRREPS = PER_LAYER_IRREPS[0] + PER_LAYER_IRREPS[1]
 def _make_config(
     *,
     layer_indices: list[int] | None,
-    projection,
     pseudoscalars: bool = False,
 ):
     return EmbeddingPreprocessConfig(
@@ -41,7 +37,6 @@ def _make_config(
         chiral_embedding_dimension=0,
         pseudoscalars=pseudoscalars,
         invariant_normalization_config=PrecomputedInvariantNormalizationConfig(),
-        invariant_projection_config=projection,
     )
 
 
@@ -51,10 +46,7 @@ def _make_config(
 
 
 def test_selected_input_irreps_all_layers_default():
-    cfg = _make_config(
-        layer_indices=None,
-        projection=IdentityInvariantProjectionConfig(),
-    )
+    cfg = _make_config(layer_indices=None)
     assert cfg.input_irreps == FULL_INPUT_IRREPS
     assert cfg.selected_input_irreps == FULL_INPUT_IRREPS
     assert cfg.selected_channel_indices is None
@@ -70,10 +62,7 @@ def test_selected_input_irreps_all_layers_default():
     ],
 )
 def test_selected_channel_indices(layer_indices, expected_channels):
-    cfg = _make_config(
-        layer_indices=layer_indices,
-        projection=IdentityInvariantProjectionConfig(),
-    )
+    cfg = _make_config(layer_indices=layer_indices)
     assert cfg.selected_channel_indices == expected_channels
 
 
@@ -87,63 +76,44 @@ def test_selected_channel_indices(layer_indices, expected_channels):
     ],
 )
 def test_selected_invariant_dimension(layer_indices, expected_inv_dim):
-    cfg = _make_config(
-        layer_indices=layer_indices,
-        projection=IdentityInvariantProjectionConfig(),
-    )
+    cfg = _make_config(layer_indices=layer_indices)
     assert cfg.selected_invariant_dimension == expected_inv_dim
 
 
 def test_invalid_layer_index_raises():
     with pytest.raises(ValueError, match="out of range"):
-        _make_config(
-            layer_indices=[5],
-            projection=IdentityInvariantProjectionConfig(),
-        )
+        _make_config(layer_indices=[5])
 
 
 def test_unsorted_layer_indices_raises():
     with pytest.raises(ValueError, match="sorted ascending"):
-        _make_config(
-            layer_indices=[1, 0],
-            projection=IdentityInvariantProjectionConfig(),
-        )
+        _make_config(layer_indices=[1, 0])
 
 
 # --------------------------------------------------------------------------- #
-# Output dim reflects the projection                                          #
+# Output dim                                                                  #
 # --------------------------------------------------------------------------- #
 
 
-def test_output_dim_identity_no_projection():
-    cfg = _make_config(
-        layer_indices=None,
-        projection=IdentityInvariantProjectionConfig(),
-    )
-    assert cfg.projected_invariant_dimension == cfg.selected_invariant_dimension
+@pytest.mark.parametrize("layer_indices", [None, [0], [1]])
+def test_output_dim_is_the_selected_invariant_dimension(layer_indices):
+    cfg = _make_config(layer_indices=layer_indices)
     assert cfg.output_irreps_dim == cfg.selected_invariant_dimension
 
 
-def test_output_dim_linear_projection():
-    cfg = _make_config(
-        layer_indices=None,
-        projection=LinearInvariantProjectionConfig(output_dim=4),
-    )
-    assert cfg.projected_invariant_dimension == 4
-    assert cfg.output_irreps_dim == 4
-
-
-def test_output_dim_mlp_projection():
-    cfg = _make_config(
-        layer_indices=[0],
-        projection=MLPInvariantProjectionConfig(
-            output_dim=6, hidden_dimensions=[12, 6]
-        ),
-    )
-    # First layer alone has 8 invariants; MLP projects to 6.
-    assert cfg.selected_invariant_dimension == 8
-    assert cfg.projected_invariant_dimension == 6
-    assert cfg.output_irreps_dim == 6
+def test_a_projection_is_no_longer_a_preprocessing_option():
+    """The preprocessor output is the denoising target: nothing learnable may
+    sit in its path (learned projections belong to the encoder and decoder)."""
+    with pytest.raises(ValueError, match="invariant_projection_config"):
+        EmbeddingPreprocessConfig.model_validate(
+            {
+                "mace_per_layer_irreps": [LAYER_IRREPS_STR],
+                "pseudoscalar_dimension": 0,
+                "chiral_embedding_dimension": 0,
+                "pseudoscalars": False,
+                "invariant_projection_config": {"kind": "linear", "output_dim": 4},
+            }
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -156,16 +126,8 @@ def _random_embedding(batch: int, n_atoms: int) -> torch.Tensor:
 
 
 @pytest.mark.parametrize("layer_indices", [None, [0], [1], [0, 1]])
-@pytest.mark.parametrize(
-    "projection",
-    [
-        IdentityInvariantProjectionConfig(),
-        LinearInvariantProjectionConfig(output_dim=5),
-        MLPInvariantProjectionConfig(output_dim=7, hidden_dimensions=[16]),
-    ],
-)
-def test_atomic_preprocessor_forward(layer_indices, projection):
-    cfg = _make_config(layer_indices=layer_indices, projection=projection)
+def test_atomic_preprocessor_forward(layer_indices):
+    cfg = _make_config(layer_indices=layer_indices)
     pre = cfg.build().double()
 
     # Pretend stats were precomputed for the selected invariants.
@@ -179,6 +141,35 @@ def test_atomic_preprocessor_forward(layer_indices, projection):
     out = pre(embeddings, padding_mask)
     assert out.preprocessed_atomic_embeddings.shape == (2, 3, cfg.output_irreps_dim)
     assert out.preprocessed_atomic_embeddings.dtype == torch.float32
+    assert out.normalized_invariants.shape == (2, 3, sel_dim)
+
+
+def test_the_normalised_invariants_have_no_trainable_parameter():
+    """Regression: a trainable projection in the target's path let the
+    denoising loss shrink its own target to zero."""
+    cfg = _make_config(layer_indices=None)
+    pre = cfg.build().double()
+    pre.invariant_normalization.set_stats(mean=torch.zeros(16), std=torch.ones(16))
+    assert list(pre.parameters()) == []
+    out = pre(_random_embedding(batch=2, n_atoms=3), None)
+    assert not out.normalized_invariants.requires_grad
+
+
+def test_forward_without_statistics_raises():
+    """Regression: unset statistics (mean 0, deviation 1) silently passed the
+    raw MACE features through."""
+    pre = _make_config(layer_indices=None).build().double()
+    with pytest.raises(RuntimeError, match="has no statistics"):
+        pre(_random_embedding(batch=2, n_atoms=3), None)
+
+
+def test_select_invariants_returns_the_raw_selected_invariants():
+    pre = _make_config(layer_indices=[1]).build().double()
+    embeddings = _random_embedding(batch=2, n_atoms=3)
+    # Layer 1 starts at channel 20; its 8 invariants come first.
+    torch.testing.assert_close(
+        pre.select_invariants(embeddings), embeddings[..., 20:28]
+    )
 
 
 def test_atomic_preprocessor_layer_slice_matches_manual():
@@ -188,10 +179,7 @@ def test_atomic_preprocessor_layer_slice_matches_manual():
 
     layer_idx = 1
 
-    cfg_sliced = _make_config(
-        layer_indices=[layer_idx],
-        projection=IdentityInvariantProjectionConfig(),
-    )
+    cfg_sliced = _make_config(layer_indices=[layer_idx])
     pre_sliced = cfg_sliced.build()
     sel_dim = cfg_sliced.selected_invariant_dimension
     pre_sliced.invariant_normalization.set_stats(
@@ -204,7 +192,6 @@ def test_atomic_preprocessor_layer_slice_matches_manual():
         pseudoscalar_dimension=0,
         chiral_embedding_dimension=0,
         pseudoscalars=False,
-        invariant_projection_config=IdentityInvariantProjectionConfig(),
     )
     pre_manual = cfg_manual.build()
     pre_manual.invariant_normalization.set_stats(
@@ -227,10 +214,7 @@ def test_atomic_preprocessor_layer_slice_matches_manual():
 def test_stats_autoslice_from_full_invariants():
     """build() should accept stats sized for the full invariants and slice
     them down to the selected layer's channels."""
-    cfg = _make_config(
-        layer_indices=[0],
-        projection=IdentityInvariantProjectionConfig(),
-    )
+    cfg = _make_config(layer_indices=[0])
     full_inv_dim = cfg.invariant_irreps.dim  # 16 (both layers)
     sel_inv_dim = cfg.selected_invariant_dimension  # 8 (first layer)
     assert full_inv_dim == 16 and sel_inv_dim == 8
@@ -257,13 +241,8 @@ def test_stats_autoslice_from_full_invariants():
 # --------------------------------------------------------------------------- #
 
 
-def test_yaml_roundtrip_with_projection():
-    cfg = _make_config(
-        layer_indices=[0],
-        projection=MLPInvariantProjectionConfig(
-            output_dim=6, hidden_dimensions=[16, 8], dropout=0.1
-        ),
-    )
+def test_yaml_roundtrip():
+    cfg = _make_config(layer_indices=[0])
     config_str = yaml_text(cfg.model_dump(mode="json"))
     reconstructed = EmbeddingPreprocessConfig.model_validate(yaml.safe_load(config_str))
     assert yaml_text(reconstructed.model_dump(mode="json")) == config_str
@@ -286,6 +265,7 @@ def test_scalar_only_layer_without_pseudoscalars_builds():
         pseudoscalars=False,
     )
     pre = cfg.build()
+    pre.invariant_normalization.set_stats(mean=torch.zeros(8), std=torch.ones(8))
     assert pre.chiral_embedding_model is None
     assert pre.equivariant_rms_norm is None
     out = pre(torch.randn(2, 3, 28, dtype=torch.float64), None)
@@ -301,7 +281,10 @@ def test_pseudoscalars_build_the_chiral_embedding():
         pseudoscalars=True,
     )
     pre = cfg.build().double()
+    pre.invariant_normalization.set_stats(mean=torch.zeros(8), std=torch.ones(8))
     assert pre.chiral_embedding_model is not None
     out = pre(torch.randn(2, 3, 20, dtype=torch.float64), None)
     assert out.preprocessed_atomic_embeddings.shape == (2, 3, 8 + 3)
     assert out.chiral_embeddings.shape == (2, 3, 3)
+    # The denoising target is the invariants alone, without the chiral part.
+    assert out.normalized_invariants.shape == (2, 3, 8)

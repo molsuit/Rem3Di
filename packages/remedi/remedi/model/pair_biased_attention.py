@@ -74,8 +74,17 @@ class PairBiasedSelfAttention(nn.Module):
 
 
 class PairOuterProdUpdate(nn.Module):
+    """Residual pair update from the atoms: a symmetrised, distance-gated
+    product of two projections of the (layer-normalised) atom embeddings.
+
+    The atoms are normalised first (as in AlphaFold's outer product mean), so
+    the update, which is quadratic in them, does not grow with the norm of the
+    residual stream.
+    """
+
     def __init__(self, d_model: int, d_pair: int, d_geo: int):
         super().__init__()
+        self.norm = nn.LayerNorm(d_model)
         # atom → pair part
         self.W_L = nn.Linear(d_model, d_pair, bias=False)
         self.W_R = nn.Linear(d_model, d_pair, bias=False)
@@ -83,7 +92,7 @@ class PairOuterProdUpdate(nn.Module):
         self.p_geo_filter = RadialFilter(d_geo, d_pair)
 
     def forward(self, S, P, p_geo, mask_pair):
-        # The outer product of atomic descriptors thats gated by the rbf
+        S = self.norm(S)
         L = self.W_L(S)
         R = self.W_R(S)
 

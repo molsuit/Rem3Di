@@ -36,6 +36,7 @@ def _minimal_shared_parts():
 
     encoder_config = EncoderConfig(
         N_layers=2,
+        embedding_dimension=96,
         attention_layer_config=AttentionLayerConfig(
             num_heads=8, dim_feedforward=512, dropout=0.3
         ),
@@ -88,6 +89,7 @@ def _build_minimal_encoder_decoder_config() -> EncoderDecoderArchitectureConfig:
 
     decoder_config = DecoderConfig(
         N_layers=2,
+        embedding_dimension=48,
         attention_layer_config=AttentionLayerConfig(
             num_heads=8, dim_feedforward=512, dropout=0.3
         ),
@@ -139,13 +141,48 @@ def test_dimensions_are_derived():
     cfg = _build_minimal_regression_config()
     dimensions = cfg.dimensions
 
-    # pseudoscalars=False -> only the even invariants: 128 + 128.
-    assert dimensions.embedding_dimension == 256
+    # pseudoscalars=False -> only the even invariants: 128 + 128. They are
+    # both what the encoder reads and what the decoder reconstructs.
+    assert dimensions.atomic_descriptor_dimension == 256
+    assert dimensions.target_dimension == 256
+    # The encoder width is configured, not tied to the descriptor width.
+    assert dimensions.embedding_dimension == 96
     assert dimensions.pair_dimension == 64
     assert dimensions.radial_basis_dimension == 16
-    # output_dim None -> descriptor width is the embedding width.
-    assert dimensions.descriptor_dimension == 256
-    assert dimensions.descriptor_flat_dimension == 256
+    # output_dim None -> descriptor width is the encoder width.
+    assert dimensions.descriptor_dimension == 96
+    assert dimensions.descriptor_flat_dimension == 96
+
+
+def test_the_chiral_embedding_is_encoder_input_but_not_denoising_target():
+    data = _build_minimal_encoder_decoder_config().model_dump(mode="json")
+    data["embedding_preprocess_config"]["mace_layer_indices"] = [0]
+    data["embedding_preprocess_config"]["pseudoscalars"] = True
+    data["embedding_preprocess_config"]["pseudoscalar_dimension"] = 8
+    dimensions = EncoderDecoderArchitectureConfig.model_validate(data).dimensions
+    assert dimensions.atomic_descriptor_dimension == 128 + 16
+    assert dimensions.target_dimension == 128
+
+
+def test_denoising_needs_fixed_normalisation_statistics():
+    data = _build_minimal_encoder_decoder_config().model_dump(mode="json")
+    data["embedding_preprocess_config"]["invariant_normalization_config"] = {
+        "kind": "on_the_fly_normalization",
+        "momentum": 0.1,
+        "warm_up_batches": 10,
+    }
+    with pytest.raises(ValidationError, match="move the denoising target"):
+        EncoderDecoderArchitectureConfig.model_validate(data)
+
+
+def test_the_encoder_and_decoder_have_their_own_widths():
+    bundle_config = _build_minimal_encoder_decoder_config()
+    decoder = bundle_config.decoder_config.build(bundle_config.dimensions)
+    encoder = bundle_config._build_encoder()
+    assert encoder.input_projection.out_features == 96
+    assert decoder.input_projection.in_features == 256
+    assert decoder.input_projection.out_features == 48
+    assert decoder.output_head.out_features == 256
 
 
 @pytest.mark.parametrize(
@@ -249,6 +286,7 @@ def test_encoder_decoder_yaml_parses_against_current_schema():
     assert isinstance(cfg, EncoderDecoderArchitectureConfig)
     assert cfg.dimensions.embedding_dimension == 256
     assert cfg.dimensions.descriptor_dimension == 256
+    assert cfg.decoder_config.embedding_dimension == 128
 
 
 def test_encoder_only_from_encoder_yaml_strips_decoder(tmp_path):

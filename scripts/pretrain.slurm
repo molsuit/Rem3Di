@@ -17,6 +17,10 @@
 # which snapshots each config into its training directory and submits one job per
 # config. Arguments after the config (e.g. --max_train_batches 20) are passed on
 # to the training script.
+#
+# A run saves training_state.pth after every epoch. To continue a job that hit
+# its time limit, submit its snapshot again (same run directory):
+#     sbatch scripts/pretrain.slurm <run directory>/training_config.yaml
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
@@ -40,8 +44,19 @@ if [ -f .env ]; then
     ENV_FILE=(--env-file .env)
 fi
 
+RUN_DIRECTORY="$(dirname "${CONFIG}")"
 nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
+# GPU utilisation and memory every 10 s for the whole job (the job sees only
+# its own GPU), next to the run's checkpoints.
+nvidia-smi --query-gpu=timestamp,utilization.gpu,utilization.memory,memory.used,power.draw \
+    --format=csv -l 10 >> "${RUN_DIRECTORY}/gpu_utilization_${SLURM_JOB_ID}.csv" &
+GPU_MONITOR=$!
+trap 'kill "${GPU_MONITOR}" 2>/dev/null || true' EXIT
+
+# The datasets are copied to the job's private /tmp (node-local, removed with
+# the job) so the loader workers' random reads stay off GPFS.
 # Keep wandb's files next to the run's checkpoints.
-WANDB_DIR="$(dirname "${CONFIG}")" uv run --no-sync "${ENV_FILE[@]}" python \
+WANDB_DIR="${RUN_DIRECTORY}" uv run --no-sync "${ENV_FILE[@]}" python \
     scripts/run_online_embedding_denoising_pretraining.py \
-    --training_config "${CONFIG}" "$@"
+    --training_config "${CONFIG}" \
+    --stage_directory "/tmp/remedi_datasets_${SLURM_JOB_ID}" "$@"

@@ -25,6 +25,7 @@ from remedi.training.data.mixture import (
     _check_domain,
     _DomainEvidence,
     resolve_mixture,
+    stage_datasets,
 )
 from remedi.training.data.sample import yield_molecules_collate_fn
 from remedi.training.data.training_dataset import (
@@ -322,7 +323,6 @@ def test_a_pretraining_config_is_not_a_classifier_config() -> None:
                 "weight_decay": 0.0,
                 "model_config_path": "x.yaml",
                 "output_base": "runs",
-                "noise_level": 0.3,
             }
         )
 
@@ -400,3 +400,52 @@ def test_each_part_reads_its_selected_structures_once(
     assert [len(sample.atomic_positions) for sample in samples] == (
         datasets.training_atom_counts.tolist()
     )
+
+
+def test_staged_datasets_yield_the_same_samples(tmp_path: Path) -> None:
+    """Staging copies what training reads to another directory; the samples,
+    the split and the record (the original datasets) stay the same."""
+    first = corpus(tmp_path / "corpora", "first", FIRST)
+    second = corpus(tmp_path / "corpora", "second", SECOND)
+    data = resolve_mixture(
+        mixture(DatasetComponent(dataset=first), DatasetComponent(dataset=second))
+    )
+    staged = stage_datasets(data, tmp_path / "staged")
+    assert set(staged.staged_directories) == {first.resolve(), second.resolve()}
+    for copy in staged.staged_directories.values():
+        assert copy.parent == tmp_path / "staged"
+        assert sorted(path.name for path in copy.iterdir()) == [
+            "dataset.yaml",
+            "structures.atp",
+            "table.parquet",
+        ]
+    assert staged.copied_bytes > 0
+    assert staged.data.record == data.record
+    for component in staged.data.components:
+        for part in component.parts:
+            assert Path(part.dataset).parent == tmp_path / "staged"
+
+    original = data.open_datasets(atoms_getitem)
+    copied = staged.data.open_datasets(atoms_getitem)
+    np.testing.assert_array_equal(
+        original.training_atom_counts, copied.training_atom_counts
+    )
+    for index in range(len(original.training)):
+        left, right = original.training[index], copied.training[index]
+        torch.testing.assert_close(left.atomic_positions, right.atomic_positions)
+        torch.testing.assert_close(left.atomic_numbers, right.atomic_numbers)
+        torch.testing.assert_close(left.total_charge, right.total_charge)
+
+
+def test_staging_refuses_a_directory_without_space(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import shutil
+    from collections import namedtuple
+
+    first = corpus(tmp_path / "corpora", "first", FIRST)
+    data = resolve_mixture(mixture(DatasetComponent(dataset=first)))
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(shutil, "disk_usage", lambda _: usage(10, 10, 0))
+    with pytest.raises(OSError, match="Staging needs"):
+        stage_datasets(data, tmp_path / "staged")

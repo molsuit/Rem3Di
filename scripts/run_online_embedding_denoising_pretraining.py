@@ -1,7 +1,6 @@
 import argparse
 import logging
 from pathlib import Path
-from time import perf_counter
 
 import numpy as np
 import torch
@@ -13,12 +12,25 @@ from remedi.configuration.architecture_config import (
 )
 from remedi.configuration.training_config import PretrainingConfig, ProbeConfig
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
-from remedi.training.data.mixture import MixtureDatasets, resolve_mixture
+from remedi.model.preprocessing.invariant_statistics import (
+    ensure_invariant_statistics,
+)
+from remedi.training.data.mixture import (
+    MixtureDatasets,
+    resolve_mixture,
+    stage_datasets,
+)
 from remedi.training.data.sample import yield_molecules_collate_fn
+from remedi.training.data.samplers import BucketBatchSampler
 from remedi.training.data.training_dataset import atoms_getitem
 from remedi.training.linear_probe import LinearProbeMonitor
-from remedi.training.pretraining import denoising_step, vicreg_descriptor_loss
-from remedi.training.telemetry import TrainingTelemetry
+from remedi.training.pretraining import denoising_step, descriptor_statistics
+from remedi.training.telemetry import ThroughputWindow, TrainingTelemetry
+from remedi.training.training_state import (
+    TRAINING_STATE_FILENAME,
+    load_training_state,
+    save_training_state,
+)
 from remedi_data.yaml_io import read_model, write_model
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -78,6 +90,15 @@ def parse_args():
         type=int,
         default=None,
         help="Optional cap on validation batches per epoch for smoke runs.",
+    )
+    parser.add_argument(
+        "--stage_directory",
+        type=Path,
+        default=None,
+        help=(
+            "Copy the datasets' files into this directory (node-local disk) "
+            "before training and read them from there."
+        ),
     )
     return parser.parse_args()
 
@@ -142,10 +163,11 @@ def first(dataset: Dataset, lengths: np.ndarray, count: int | None):
 
 
 def setup_logging(filename, level: int = logging.INFO) -> logging.Logger:
+    """Log to ``filename``, appending: a resumed run continues the same log."""
     logger = logging.getLogger("remedi")
     if not logger.handlers:
         logger.setLevel(level)
-        h = logging.FileHandler(filename=filename, mode="w")
+        h = logging.FileHandler(filename=filename, mode="a")
         fmt = "[%(asctime)s] [%(levelname)s] %(message)s"
         h.setFormatter(logging.Formatter(fmt))
         logger.addHandler(h)
@@ -180,6 +202,16 @@ def main():  # noqa: C901 - one training loop
 
     data = resolve_mixture(training_config.data)
     data.write_record(training_data_dir)
+    if args.stage_directory is not None:
+        staged = stage_datasets(data, args.stage_directory)
+        data = staged.data
+        logger.info(
+            "Staged %.2f GiB of %d datasets to %s in %.1f s",
+            staged.copied_bytes / 2**30,
+            len(staged.staged_directories),
+            args.stage_directory,
+            staged.seconds,
+        )
     datasets = data.open_datasets(atoms_getitem)
     train_dataset, train_lengths = first(
         datasets.training, datasets.training_atom_counts, args.max_train
@@ -195,7 +227,7 @@ def main():  # noqa: C901 - one training loop
         {name: len(lengths) for name, (_, lengths) in validation_sets.items()},
     )
 
-    noise_level = training_config.noise_level
+    noise = training_config.noise
     training_loader = training_config.dataloader.build(
         train_dataset,
         lengths=train_lengths,
@@ -230,11 +262,13 @@ def main():  # noqa: C901 - one training loop
     if hasattr(preprocessor, "pad_multiple"):
         preprocessor.pad_multiple = compile_cfg.pad_multiple
 
-    all_params = (
-        list(encoder.parameters())
-        + list(decoder.parameters())
-        + list(preprocessor.parameters())
-    )
+    # MACE is frozen: only the parameters that train go to the optimizer.
+    all_params = [
+        parameter
+        for module in (encoder, decoder, preprocessor)
+        for parameter in module.parameters()
+        if parameter.requires_grad
+    ]
 
     optimizer = torch.optim.AdamW(
         all_params,
@@ -242,10 +276,11 @@ def main():  # noqa: C901 - one training loop
         weight_decay=training_config.weight_decay,
     )
 
+    total_steps = training_config.epochs * len(training_loader)
     lr_scheduler = OneCycleLR(
         optimizer,
         max_lr=[training_config.learning_rate],
-        total_steps=training_config.epochs * len(training_loader),
+        total_steps=total_steps,
     )
 
     write_model(
@@ -267,36 +302,69 @@ def main():  # noqa: C901 - one training loop
         decoder.to(device, dtype=torch.float32)
         preprocessor.to(device)
 
+        # Every trained module, as the training state saves and restores them.
+        # (The preprocessor's MACE model is frozen and not saved.)
+        state_modules = {
+            "encoder": encoder,
+            "decoder": decoder,
+            "atomic_preprocessor": preprocessor.atomic_preprocessor,
+            "geometric_preprocessor": preprocessor.geometric_preprocessor,
+        }
+        resumed = load_training_state(
+            training_data_dir,
+            modules=state_modules,
+            optimizer=optimizer,
+            scheduler=lr_scheduler,
+            telemetry=telemetry,
+            map_location=device,
+        )
+        start_epoch, global_step = resumed if resumed is not None else (0, 0)
+        if resumed is not None:
+            if lr_scheduler.total_steps != total_steps:
+                raise ValueError(
+                    f"{training_data_dir} holds a run planned for "
+                    f"{lr_scheduler.total_steps} steps, this config gives "
+                    f"{total_steps}: a run resumes only with the epochs, data and "
+                    "batching it was started with."
+                )
+            logger.info(
+                "Resumed from %s: %d epochs and %d steps done",
+                TRAINING_STATE_FILENAME,
+                start_epoch,
+                global_step,
+            )
+
+        # The denoising target is the standardised invariants: their statistics
+        # are estimated once, before the first epoch, and saved with the weights
+        # (a resumed run has loaded them above).
+        statistics = ensure_invariant_statistics(
+            preprocessor,
+            training_loader,
+            max_batches=training_config.normalization_batches,
+            device=device,
+        )
+        if statistics is not None:
+            logger.info(
+                "Invariant statistics from %d atoms; %d constant channels",
+                statistics.atom_count,
+                statistics.constant_channel_count,
+            )
+
         if compile_cfg.enabled:
             encoder = torch.compile(encoder, dynamic=True)
             decoder = torch.compile(decoder, dynamic=True)
 
         print("Training Start")
 
-        vicreg_cfg = training_config.vicreg
-
-        # Rolling throughput counters. Logged every WINDOW_STEPS batches so we
-        # have a real atoms/sec number to A/B against, instead of squinting at
-        # the wandb GPU-util plot. The first window includes compile warmup —
-        # ignore it.
+        # Throughput every WINDOW_STEPS batches: atoms/s, step time, the share
+        # spent waiting for the loader, GPU utilisation and peak memory. The
+        # first window includes compile warm-up and the workers' start.
         WINDOW_STEPS = 50
-        global_step = 0
-        window_atoms = 0
-        window_t0 = perf_counter()
-        # Rolling VICReg accumulators, reset each throughput window so the
-        # mid-epoch flush shows the var/cov *trajectory* rather than an
-        # epoch-cumulative average that smooths over early collapse.
-        window_var = torch.zeros((), device=device)
-        window_cov = torch.zeros((), device=device)
-        window_vc_steps = 0
+        window = ThroughputWindow(device)
 
-        for epoch in range(training_config.epochs):
-            # Initialize task and total train losses
-
+        for epoch in range(start_epoch, training_config.epochs):
             running = torch.zeros((), device=device)
-            running_var = torch.zeros((), device=device)
-            running_cov = torch.zeros((), device=device)
-            running_zmax = torch.zeros((), device=device)
+            training_batches = 0
 
             encoder.train()
             decoder.train()
@@ -304,81 +372,64 @@ def main():  # noqa: C901 - one training loop
 
             optimizer.zero_grad()
 
+            # Epoch e always draws the same batches, also in a resumed run and
+            # whatever iterated the loader before (the statistics estimate).
+            if isinstance(training_loader.batch_sampler, BucketBatchSampler):
+                training_loader.batch_sampler.set_epoch(epoch)
+
             for batch_index, samples in enumerate(training_loader):
                 if (
                     args.max_train_batches is not None
                     and batch_index >= args.max_train_batches
                 ):
                     break
+                window.batch_ready()
                 samples.to_(device)
                 step = denoising_step(
                     samples,
                     preprocessor=preprocessor,
                     encoder=encoder,
                     decoder=decoder,
-                    noise_level=noise_level,
+                    noise=noise,
                 )
                 batch_atoms = step.atom_count
-                molecular_descriptor = step.molecular_descriptor
                 denoising_loss = step.denoising_loss
-
-                if vicreg_cfg.enabled:
-                    var_loss, cov_loss = vicreg_descriptor_loss(
-                        molecular_descriptor.flat, target_std=vicreg_cfg.target_std
-                    )
-                    total_loss = (
-                        denoising_loss
-                        + vicreg_cfg.variance_weight * var_loss
-                        + vicreg_cfg.covariance_weight * cov_loss
-                    )
-                    running_var += var_loss.detach()
-                    running_cov += cov_loss.detach()
-                    window_var += var_loss.detach()
-                    window_cov += cov_loss.detach()
-                    window_vc_steps += 1
-                else:
-                    total_loss = denoising_loss
-
-                with torch.no_grad():
-                    running_zmax = torch.maximum(
-                        running_zmax,
-                        molecular_descriptor.flat.norm(dim=-1).max().detach(),
+                if not torch.isfinite(denoising_loss):
+                    raise FloatingPointError(
+                        f"Non-finite denoising loss ({denoising_loss.item()}) at "
+                        f"epoch {epoch}, batch {batch_index}, step {global_step}. "
+                        f"The last good state is {TRAINING_STATE_FILENAME}."
                     )
 
-                total_loss.backward()
+                denoising_loss.backward()
 
                 torch.nn.utils.clip_grad_norm_(
-                    all_params, max_norm=training_config.max_grad_norm
+                    all_params,
+                    max_norm=training_config.max_grad_norm,
+                    error_if_nonfinite=True,
                 )
 
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
                 running += denoising_loss.detach()
+                training_batches += 1
 
-                window_atoms += batch_atoms
+                window.step_done(batch_atoms)
                 global_step += 1
                 if global_step % WINDOW_STEPS == 0:
-                    dt = perf_counter() - window_t0
-                    window_metrics: dict[str, float] = {
-                        "atoms_per_s": window_atoms / dt,
-                        "step_ms": 1000.0 * dt / WINDOW_STEPS,
+                    throughput = {
                         "global_step": global_step,
                         "epoch_idx": epoch,
+                        "denoising_train_loss_step": denoising_loss.item(),
+                        **window.metrics(),
                     }
-                    if vicreg_cfg.enabled and window_vc_steps > 0:
-                        window_metrics["vicreg_variance_train_window"] = float(
-                            (window_var / window_vc_steps).item()
-                        )
-                        window_metrics["vicreg_covariance_train_window"] = float(
-                            (window_cov / window_vc_steps).item()
-                        )
-                    telemetry.log_metrics(window_metrics)
-                    window_atoms = 0
-                    window_t0 = perf_counter()
-                    window_var = torch.zeros((), device=device)
-                    window_cov = torch.zeros((), device=device)
-                    window_vc_steps = 0
+                    telemetry.log_throughput(throughput)
+                    logger.info(
+                        "step %d: %s",
+                        global_step,
+                        {k: round(v, 3) for k, v in throughput.items()},
+                    )
 
                 if probe_monitor is not None:
                     probe_metrics = probe_monitor.maybe_run(
@@ -392,28 +443,23 @@ def main():  # noqa: C901 - one training loop
                             {k: round(v, 4) for k, v in probe_metrics.items()},
                         )
 
-            avg_train_loss = (
-                running
-                / (
-                    (batch_index + 1)
-                    * architecture_config.embedding_preprocess_config.output_irreps_dim
-                )
-            ).item()
+            if training_batches == 0:
+                raise RuntimeError("The training loader yielded no batches.")
+            # Already a mean over atoms and channels: 1.0 is a decoder that
+            # outputs zero, lower is learned structure.
+            avg_train_loss = (running / training_batches).item()
 
-            normaliser = (
-                architecture_config.embedding_preprocess_config.output_irreps_dim
-            )
             validation_loss_sum = torch.zeros((), device=device)
             validation_batches = 0
-            running_var_val = torch.zeros((), device=device)
-            running_cov_val = torch.zeros((), device=device)
+            validation_descriptors: list[torch.Tensor] = []
             per_component_metrics: dict[str, float] = {}
             encoder.eval()
             decoder.eval()
             preprocessor.eval()
 
-            # The same noise every validation pass, so the epochs' validation
-            # losses (and the best-epoch checkpoint) compare like with like.
+            # The same noise levels and noise every validation pass, so the
+            # epochs' validation losses (and the best-epoch checkpoint) compare
+            # like with like.
             validation_generator = torch.Generator(device=device).manual_seed(
                 training_config.seed
             )
@@ -433,50 +479,37 @@ def main():  # noqa: C901 - one training loop
                             preprocessor=preprocessor,
                             encoder=encoder,
                             decoder=decoder,
-                            noise_level=noise_level,
+                            noise=noise,
                             generator=validation_generator,
                         )
-
-                        if vicreg_cfg.enabled:
-                            var_loss_val, cov_loss_val = vicreg_descriptor_loss(
-                                validation_step.molecular_descriptor.flat,
-                                target_std=vicreg_cfg.target_std,
-                            )
-                            running_var_val += var_loss_val
-                            running_cov_val += cov_loss_val
-
+                        validation_descriptors.append(
+                            validation_step.molecular_descriptor.flat.cpu()
+                        )
                         component_loss += validation_step.denoising_loss.detach()
                         component_batches += 1
 
                     validation_loss_sum += component_loss
                     validation_batches += component_batches
                     per_component_metrics[f"denoising_val_loss/{component_name}"] = (
-                        component_loss / (max(component_batches, 1) * normaliser)
+                        component_loss / max(component_batches, 1)
                     ).item()
 
                 # Every validation batch weighs the same, whichever component
                 # it comes from.
                 avg_validation_loss = (
-                    validation_loss_sum / (max(validation_batches, 1) * normaliser)
+                    validation_loss_sum / max(validation_batches, 1)
                 ).item()
+                if not np.isfinite(avg_validation_loss):
+                    raise FloatingPointError(
+                        f"Non-finite validation loss in epoch {epoch}."
+                    )
 
-                extra_metrics: dict[str, float] = {
-                    "descriptor_norm_max_train": float(running_zmax.item()),
-                    **per_component_metrics,
-                }
-                if vicreg_cfg.enabled:
-                    extra_metrics["vicreg_variance_train"] = float(
-                        (running_var / (batch_index + 1)).item()
-                    )
-                    extra_metrics["vicreg_covariance_train"] = float(
-                        (running_cov / (batch_index + 1)).item()
-                    )
-                    extra_metrics["vicreg_variance_val"] = float(
-                        (running_var_val / max(validation_batches, 1)).item()
-                    )
-                    extra_metrics["vicreg_covariance_val"] = float(
-                        (running_cov_val / max(validation_batches, 1)).item()
-                    )
+                # Collapse check on the descriptors themselves, over the whole
+                # validation set (training batches are too uniform in size).
+                extra_metrics: dict[str, float] = dict(per_component_metrics)
+                all_descriptors = torch.cat(validation_descriptors)
+                if all_descriptors.shape[0] >= 2:
+                    extra_metrics.update(descriptor_statistics(all_descriptors))
 
                 telemetry.log_pretraining_epoch(
                     epoch,
@@ -491,15 +524,21 @@ def main():  # noqa: C901 - one training loop
                     # parameters with the torch.compile wrapper trained above.
                     save_checkpoint(bundle, training_data_dir)
 
-            # Throw out the partial window so the first window of the next
-            # training epoch isn't polluted with validation/checkpointing time.
-            window_atoms = 0
-            window_t0 = perf_counter()
+            # After the checkpoint: a job killed from here on resumes at the
+            # next epoch with the best-epoch files already in place.
+            save_training_state(
+                training_data_dir,
+                completed_epochs=epoch + 1,
+                global_step=global_step,
+                modules=state_modules,
+                optimizer=optimizer,
+                scheduler=lr_scheduler,
+                telemetry=telemetry,
+            )
 
-    write_model(
-        training_data_dir / ARCHITECTURE_FILENAME,
-        architecture_config,
-    )
+            # A fresh window, so the next epoch's first window does not count
+            # validation and checkpointing time.
+            window = ThroughputWindow(device)
 
 
 if __name__ == "__main__":

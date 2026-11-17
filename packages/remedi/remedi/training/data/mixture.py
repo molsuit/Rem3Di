@@ -25,9 +25,12 @@ so its loss is reported per component. Ids are never rewritten: a structure is
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import os
+import shutil
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Annotated, Any, Literal
 
 import numpy as np
@@ -44,7 +47,9 @@ from remedi_data.chemistry.elements import D_BLOCK_ATOMIC_NUMBERS, MACE_OFF_ELEM
 from remedi_data.dataset import StructureFile
 from remedi_data.dataset.structure_file import READ_CHUNK_STRUCTURES
 from remedi_data.format import (
+    SPEC_FILENAME,
     STRUCTURES_FILENAME,
+    TABLE_FILENAME,
     read_spec,
     read_table_polars,
     table_columns,
@@ -351,6 +356,91 @@ class PretrainingData:
         path = Path(directory) / RECORD_NAME
         write_model(path, self.record)
         return path
+
+
+#: What training reads from a dataset directory after the mixture is resolved:
+#: the frames, the table (charges, probe labels) and the spec (label names).
+STAGED_FILENAMES = (STRUCTURES_FILENAME, TABLE_FILENAME, SPEC_FILENAME)
+
+
+@dataclass(frozen=True)
+class StagedData:
+    data: PretrainingData
+    """The mixture with every part reading from its staged copy; the record
+    still names the original datasets."""
+    staged_directories: dict[Path, Path]
+    """Original dataset directory -> its copy."""
+    copied_bytes: int
+    seconds: float
+
+
+def stage_datasets(data: PretrainingData, directory: Path) -> StagedData:
+    """Copy the files training reads from every dataset of ``data`` into
+    ``directory`` (node-local disk), so that the loader workers' random reads
+    do not go to the shared file system.
+
+    Each file is copied to a ``.partial`` name and renamed when complete, and
+    its size is checked against the original.
+
+    Raises:
+        OSError: if ``directory`` has too little free space, or a copy fails or
+            comes out at the wrong size.
+    """
+    started = perf_counter()
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    sources = list(
+        dict.fromkeys(
+            Path(part.dataset).resolve()
+            for component in data.components
+            for part in component.parts
+        )
+    )
+    files = [
+        (source, name, (source / name).stat().st_size)
+        for source in sources
+        for name in STAGED_FILENAMES
+        if (source / name).exists()
+    ]
+    needed = sum(size for _, _, size in files)
+    free = shutil.disk_usage(directory).free
+    if needed > 0.95 * free:
+        raise OSError(
+            f"Staging needs {needed / 2**30:.2f} GiB but {directory} has "
+            f"{free / 2**30:.2f} GiB free."
+        )
+    staged_directories = {
+        source: directory / f"{index}_{source.name}"
+        for index, source in enumerate(sources)
+    }
+    for source, name, size in files:
+        target_directory = staged_directories[source]
+        target_directory.mkdir(exist_ok=True)
+        target = target_directory / name
+        partial = target.with_name(target.name + ".partial")
+        shutil.copyfile(source / name, partial)
+        copied = partial.stat().st_size
+        if copied != size:
+            raise OSError(
+                f"Staged copy of {source / name} has {copied} bytes, expected {size}."
+            )
+        os.replace(partial, target)
+    components = [
+        replace(
+            component,
+            parts=[
+                replace(part, dataset=staged_directories[Path(part.dataset).resolve()])
+                for part in component.parts
+            ],
+        )
+        for component in data.components
+    ]
+    return StagedData(
+        data=replace(data, components=components),
+        staged_directories=staged_directories,
+        copied_bytes=needed,
+        seconds=perf_counter() - started,
+    )
 
 
 def _component_datasets(component: DatasetComponent | DatasetGroupComponent):

@@ -1,6 +1,9 @@
+import math
 from datetime import datetime
 from pathlib import Path
+from typing import Annotated, Literal
 
+import torch
 from pydantic import BaseModel, ConfigDict, Field
 
 from remedi.configuration.dataloader_config import DataLoaderConfig
@@ -21,19 +24,58 @@ class CompileConfig(BaseModel):
     dynamo_cache_size_limit: int = Field(default=16, gt=0)
 
 
-class VICRegConfig(BaseModel):
-    """Optional VICReg variance + covariance regularizers on the descriptor.
+class FixedNoiseLevelConfig(BaseModel):
+    """The same noise level for every molecule."""
 
-    Defaults follow Bardes et al. 2022 (variance_weight=25, covariance_weight=1,
-    target_std=1.0).
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["fixed"] = "fixed"
+    level: float = Field(gt=0)
+
+    def sample(
+        self,
+        count: int,
+        *,
+        device: torch.device | str,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
+        """``(count,)`` noise levels; ``generator`` is unused (nothing is drawn)."""
+        return torch.full((count,), self.level, device=device)
+
+
+class LogNormalNoiseLevelConfig(BaseModel):
+    """A log-normal noise level, drawn per molecule.
+
+    Levels are in units of the standardised descriptors' deviation (1). The
+    defaults put 95 % of the levels between about 0.05 and 5: from "the noised
+    descriptor still identifies its atom" to "only the molecular descriptor
+    tells what the atom is".
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = False
-    variance_weight: float = 25.0
-    covariance_weight: float = 1.0
-    target_std: float = 1.0
+    kind: Literal["log_normal"] = "log_normal"
+    median: float = Field(default=0.5, gt=0)
+    log_standard_deviation: float = Field(default=1.2, gt=0)
+
+    def sample(
+        self,
+        count: int,
+        *,
+        device: torch.device | str,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
+        """``(count,)`` noise levels; ``generator`` (on ``device``) fixes them."""
+        standard_normal = torch.randn(count, generator=generator, device=device)
+        return torch.exp(
+            math.log(self.median) + self.log_standard_deviation * standard_normal
+        )
+
+
+NoiseLevelConfig = Annotated[
+    FixedNoiseLevelConfig | LogNormalNoiseLevelConfig,
+    Field(discriminator="kind"),
+]
 
 
 class ProbeConfig(BaseModel):
@@ -93,6 +135,9 @@ class TrainingRunConfig(BaseModel):
     """Gradients are clipped to this total norm every step."""
     seed: int = 0
     """Seeds torch, numpy and the data loaders (order and grouping of batches)."""
+    normalization_batches: int = Field(default=200, gt=0)
+    """Training batches the invariant normalisation statistics are estimated
+    from, once, before the first epoch (precomputed normalisation only)."""
     model_config_path: Path
     output_base: Path
     training_directory: Path | None = None
@@ -121,8 +166,7 @@ class PretrainingConfig(TrainingRunConfig):
     """Self-supervised denoising pretraining on a mixture of corpora."""
 
     data: PretrainingDataConfig
-    noise_level: float
-    vicreg: VICRegConfig = VICRegConfig()
+    noise: NoiseLevelConfig = LogNormalNoiseLevelConfig()
     probe: ProbeConfig = ProbeConfig()
 
 

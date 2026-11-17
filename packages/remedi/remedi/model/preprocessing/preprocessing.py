@@ -261,13 +261,30 @@ class PreprocessorWithAtomicEmbedding(Preprocessor):
             self.torch_sim_mace_model, state, self.node_feature_irreps
         )
 
-    def forward(self, sample: Sample) -> PreprocessedSample:
+    def _atomic_embeddings(
+        self, sample: Sample
+    ) -> tuple[torch.Tensor, SimState, torch.Tensor]:
+        """MACE node features of the flat batch ``(atoms, C)``, with the
+        SimState they were computed on and the per-system atom counts."""
         state, lengths = _sample_to_simstate(
             sample, r_max=float(self.torch_sim_mace_model.r_max)
         )
-
         with torch.inference_mode():
             atomic_embeddings = self._run_mace(state).detach()
+        return atomic_embeddings, state, lengths
+
+    def raw_invariants(self, sample: Sample) -> torch.Tensor:
+        """The unnormalised invariants ``(atoms, D)`` of a flat batch: what the
+        invariant normalisation statistics are estimated from. Leaves
+        ``sample`` untouched."""
+        atomic_embeddings, _, _ = self._atomic_embeddings(sample)
+        # A plain copy: inference tensors cannot enter later autograd-tracked math.
+        return self.atomic_preprocessor.select_invariants(
+            atomic_embeddings.clone()[None]
+        )[0]
+
+    def forward(self, sample: Sample) -> PreprocessedSample:
+        atomic_embeddings, state, lengths = self._atomic_embeddings(sample)
 
         n_systems = lengths.shape[0]
         max_atoms = int(lengths.max().item()) if lengths.numel() > 0 else 0

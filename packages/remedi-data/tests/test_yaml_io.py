@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from enum import StrEnum
 from pathlib import Path
+from typing import Annotated, Literal
 
 import pytest
 from pydantic import BaseModel, Field, ValidationError
@@ -73,3 +74,32 @@ def test_an_invalid_mapping_raises_the_validation_error(tmp_path: Path) -> None:
     write_yaml(path, {"zeta": "not a number"})
     with pytest.raises(ValidationError):
         read_model(path, Outer)
+
+
+class _Circle(BaseModel):
+    kind: Literal["circle"] = "circle"
+    radius: float
+
+
+class _Square(BaseModel):
+    kind: Literal["square"] = "square"
+    side: float
+
+
+_Shape = Annotated[_Circle | _Square, Field(discriminator="kind")]
+
+
+def test_a_discriminated_union_is_read_as_the_member_its_kind_names(
+    tmp_path: Path,
+) -> None:
+    # Regression: read_model called ``model_validate`` on the union itself,
+    # which is not a model (the architecture config could not be loaded).
+    path = tmp_path / "shape.yaml"
+    write_model(path, _Square(side=2.0))
+    assert read_model(path, _Shape) == _Square(side=2.0)
+    write_yaml(path, {"kind": "triangle"})
+    with pytest.raises(ValidationError):
+        read_model(path, _Shape)
+    write_yaml(path, [1, 2])
+    with pytest.raises(YamlFileError, match="not a"):
+        read_model(path, _Shape)

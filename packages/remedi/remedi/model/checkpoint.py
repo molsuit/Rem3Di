@@ -16,7 +16,9 @@ The frozen MACE foundation model is not saved; the architecture yaml names it.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from typing import Any
 
 import torch
 from torch import nn
@@ -68,10 +70,19 @@ def _parts(model: object) -> dict[str, nn.Module]:
     return parts
 
 
+def atomic_torch_save(content: Any, path: Path) -> None:
+    """``torch.save`` to a temporary file next to ``path``, renamed over it: a
+    job killed while saving leaves the previous file, never half a file."""
+    temporary = path.with_name(f"{path.name}.tmp")
+    torch.save(content, temporary)
+    os.replace(temporary, path)
+
+
 def save_checkpoint(model: object, directory: Path) -> None:
     """Write the weights of ``model`` into ``directory`` in the checkpoint layout.
 
     The architecture yaml is written by the caller, which knows the config.
+    Each file is replaced atomically.
 
     Raises:
         TypeError: if ``model`` lacks one of the parts (see :func:`_parts`).
@@ -79,7 +90,7 @@ def save_checkpoint(model: object, directory: Path) -> None:
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     for filename, part in _parts(model).items():
-        torch.save(part.state_dict(), directory / filename)
+        atomic_torch_save(part.state_dict(), directory / filename)
 
 
 def load_checkpoint(

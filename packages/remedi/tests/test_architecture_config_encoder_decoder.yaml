@@ -8,6 +8,7 @@ embedding_preprocess_config:
   pseudoscalars: false
 encoder_config:
   N_layers: 5
+  embedding_dimension: 256
   attention_layer_config:
     dim_feedforward: 1024
     dropout: 0.3
@@ -21,6 +22,7 @@ global_aggregator_config:
     kind: mean
 decoder_config:
   N_layers: 2
+  embedding_dimension: 128
   attention_layer_config:
     dim_feedforward: 1024
     dropout: 0.3

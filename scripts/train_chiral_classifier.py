@@ -44,6 +44,10 @@ from remedi.configuration.architecture_config import (
 )
 from remedi.configuration.training_config import ClassifierTrainingConfig
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
+from remedi.model.preprocessing.invariant_statistics import (
+    ensure_invariant_statistics,
+)
+from remedi.model.preprocessing.preprocessing import PreprocessorWithAtomicEmbedding
 from remedi.training.data.sample import yield_molecules_supervised_collate_fn
 from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
@@ -174,6 +178,13 @@ def main() -> None:
 
     model = architecture_config.build()
     model.to(device)
+    if isinstance(model.preprocessor, PreprocessorWithAtomicEmbedding):
+        ensure_invariant_statistics(
+            model.preprocessor,
+            train_loader,
+            max_batches=training_config.normalization_batches,
+            device=device,
+        )
 
     cls_cfg = training_config.classification
     alpha = (

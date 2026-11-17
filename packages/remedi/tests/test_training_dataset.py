@@ -116,6 +116,36 @@ def test_loaders_with_and_without_workers_yield_identical_batches(
     assert_same_batches(in_process, batches(unpickled, 0))
 
 
+def test_forked_workers_read_no_table(
+    ten_structure_dataset: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: the charges were read with polars on the first sample, i.e.
+    inside every forked loader worker. With the parent's polars thread pool
+    already running, the workers deadlocked (pretraining job 915077 hung
+    before its first batch). Construction reads the table; nothing after it
+    may."""
+    import remedi.training.data.training_dataset as training_dataset
+
+    in_process = batches(
+        TrainingMoleculeDataset(ten_structure_dataset, atoms_getitem), 0
+    )
+    dataset = TrainingMoleculeDataset(ten_structure_dataset, atoms_getitem)
+
+    def no_table_read(*args, **kwargs):
+        raise AssertionError("a table was read on the sample path")
+
+    monkeypatch.setattr(training_dataset, "read_table_polars", no_table_read)
+    loader = DataLoader(
+        dataset,
+        batch_size=3,
+        shuffle=False,
+        num_workers=2,
+        multiprocessing_context="fork",
+        collate_fn=yield_molecules_collate_fn,
+    )
+    assert_same_batches(in_process, list(loader))
+
+
 #: The dataset a forked child inherits (not pickled) in the test below.
 _INHERITED: list[TrainingMoleculeDataset] = []
 

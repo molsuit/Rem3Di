@@ -7,6 +7,13 @@ from remedi.training.data.sample import PreprocessedSample
 
 
 class TransformerPairEncoder(nn.Module):
+    """Atomic descriptors -> molecular descriptor.
+
+    A learned linear projection takes the (fixed) preprocessed atomic
+    descriptors to the model width; the pair blocks follow, then a final layer
+    norm and the aggregator.
+    """
+
     def __init__(
         self,
         encoder_config: EncoderConfig,
@@ -18,6 +25,9 @@ class TransformerPairEncoder(nn.Module):
         self.encoder_config = encoder_config
         attention = encoder_config.attention_layer_config
 
+        self.input_projection = nn.Linear(
+            dimensions.atomic_descriptor_dimension, dimensions.embedding_dimension
+        )
         self.layers = nn.ModuleList(
             [
                 PairBlock(
@@ -27,16 +37,19 @@ class TransformerPairEncoder(nn.Module):
                     dropout=attention.dropout,
                     d_pair=dimensions.pair_dimension,
                     d_geo=dimensions.radial_basis_dimension,
-                    update_pair=index < encoder_config.N_layers - 1,
+                    update_pair=(
+                        attention.update_pair and index < encoder_config.N_layers - 1
+                    ),
                 )
                 for index in range(encoder_config.N_layers)
             ]
         )
+        self.final_norm = nn.LayerNorm(dimensions.embedding_dimension)
 
         self.aggregator = aggregator
 
     def forward(self, preprocessed_sample: PreprocessedSample) -> MolecularDescriptor:
-        S = preprocessed_sample.preprocessed_atomic_embeddings
+        S = self.input_projection(preprocessed_sample.preprocessed_atomic_embeddings)
         P = preprocessed_sample.initial_pair_representation
 
         for layer in self.layers:
@@ -48,5 +61,5 @@ class TransformerPairEncoder(nn.Module):
                 preprocessed_sample.pair_mask,
             )
 
-        tokens = self.aggregator(S, preprocessed_sample.padding_mask)
+        tokens = self.aggregator(self.final_norm(S), preprocessed_sample.padding_mask)
         return MolecularDescriptor(tokens=tokens)

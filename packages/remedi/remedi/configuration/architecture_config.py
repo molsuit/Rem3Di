@@ -60,7 +60,9 @@ class ModelDimensions:
     letting the yaml repeat it only allowed mismatches that failed in forward.
     """
 
-    embedding_dimension: int  # atomic embedding width after preprocessing
+    atomic_descriptor_dimension: int  # preprocessed atomic descriptor width
+    target_dimension: int  # denoising target width (the normalised invariants)
+    embedding_dimension: int  # encoder width
     pair_dimension: int  # pair representation width (d_projection)
     radial_basis_dimension: int  # number of radial basis functions
     descriptor_dimension: int  # width of one descriptor token
@@ -75,10 +77,15 @@ class AttentionLayerConfig(StrictBaseModel):
     num_heads: int
     dim_feedforward: int
     dropout: float
+    # False: the initial (distance) pair representation is a static attention
+    # bias; no layer updates it from the atoms.
+    update_pair: bool = True
 
 
 class EncoderConfig(StrictBaseModel):
     N_layers: int
+    # Width of the atom stream; the atomic descriptors are projected to it.
+    embedding_dimension: int = Field(gt=0)
     attention_layer_config: AttentionLayerConfig
 
     def build(
@@ -91,6 +98,8 @@ class EncoderConfig(StrictBaseModel):
 
 class DecoderConfig(StrictBaseModel):
     N_layers: int
+    # Width of the decoder's atom stream (independent of the encoder's).
+    embedding_dimension: int = Field(gt=0)
     attention_layer_config: AttentionLayerConfig
 
     def build(self, dimensions: ModelDimensions) -> nn.Module:
@@ -162,65 +171,6 @@ InvNormConfig = Annotated[
 ]
 
 
-class IdentityInvariantProjectionConfig(StrictBaseModel):
-    """Pass invariants through unchanged."""
-
-    kind: Literal["identity"] = "identity"
-
-    def output_dim_for(self, input_dim: int) -> int:
-        return input_dim
-
-    def build(self, input_dim: int) -> nn.Module:
-        return nn.Identity()
-
-
-class LinearInvariantProjectionConfig(StrictBaseModel):
-    """Single linear down (or up) projection applied atomwise to the invariants."""
-
-    kind: Literal["linear"] = "linear"
-    output_dim: int
-    bias: bool = True
-
-    def output_dim_for(self, input_dim: int) -> int:
-        return self.output_dim
-
-    def build(self, input_dim: int) -> nn.Module:
-        return nn.Linear(input_dim, self.output_dim, bias=self.bias)
-
-
-class MLPInvariantProjectionConfig(StrictBaseModel):
-    """Multi-layer perceptron projection applied atomwise to the invariants."""
-
-    kind: Literal["mlp"] = "mlp"
-    output_dim: int
-    hidden_dimensions: list[int]
-    activation: ActivationName = "silu"
-    dropout: float = 0.0
-
-    def output_dim_for(self, input_dim: int) -> int:
-        return self.output_dim
-
-    def build(self, input_dim: int) -> nn.Module:
-        layers: list[nn.Module] = []
-        previous_dimension = input_dim
-        for hidden_dimension in self.hidden_dimensions:
-            layers.append(nn.Linear(previous_dimension, hidden_dimension))
-            layers.append(build_activation(self.activation))
-            if self.dropout > 0:
-                layers.append(nn.Dropout(self.dropout))
-            previous_dimension = hidden_dimension
-        layers.append(nn.Linear(previous_dimension, self.output_dim))
-        return nn.Sequential(*layers)
-
-
-InvariantProjectionConfig = Annotated[
-    IdentityInvariantProjectionConfig
-    | LinearInvariantProjectionConfig
-    | MLPInvariantProjectionConfig,
-    Field(discriminator="kind"),
-]
-
-
 class EmbeddingPreprocessConfig(StrictBaseModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
@@ -239,9 +189,6 @@ class EmbeddingPreprocessConfig(StrictBaseModel):
     pseudoscalars: bool = True
     invariant_normalization_config: InvNormConfig = (
         PrecomputedInvariantNormalizationConfig()
-    )
-    invariant_projection_config: InvariantProjectionConfig = (
-        IdentityInvariantProjectionConfig()
     )
 
     def check_layer_selection(self) -> None:
@@ -328,19 +275,12 @@ class EmbeddingPreprocessConfig(StrictBaseModel):
         )
 
     @property
-    def projected_invariant_dimension(self) -> int:
-        return self.invariant_projection_config.output_dim_for(
-            self.selected_invariant_dimension
-        )
-
-    @property
     def output_irreps(self) -> Irreps:
-        # Output is purely l=0: the (projected) even invariants, then the odd
+        # Output is purely l=0: the normalised even invariants, then the odd
         # chiral embedding. The e3nn tuples are (l, parity): (0, 1) = 0e,
         # (0, -1) = 0o. MACE's l>=1 channels are consumed internally by the
-        # chiral embedding model. After projection the invariants no longer
-        # follow MACE's invariant block structure, so they form one 0e block.
-        even_invariants = Irreps([(self.projected_invariant_dimension, (0, 1))])
+        # chiral embedding model.
+        even_invariants = Irreps([(self.selected_invariant_dimension, (0, 1))])
         if not self.pseudoscalars:
             return even_invariants
         return even_invariants + Irreps([(self.chiral_embedding_dimension, (0, -1))])
@@ -410,14 +350,9 @@ class EmbeddingPreprocessConfig(StrictBaseModel):
                 std=self._slice_stats_to_selection(std_atomic_embedding),
             )
 
-        invariant_projection = self.invariant_projection_config.build(
-            input_dim=selected_invariant_dimension
-        )
-
         return AtomicDescriptorPreprocessor(
             preprocess_config=self,
             invariant_normalization=invariant_normalization,
-            invariant_projection=invariant_projection,
             selected_channel_indices=self.selected_channel_indices,
         )
 
@@ -509,7 +444,7 @@ AggUnion = Annotated[
 
 class GlobalAggregatorConfig(StrictBaseModel):
     aggregator_config: AggUnion
-    # Width of one descriptor token. None: the atomic embedding width.
+    # Width of one descriptor token. None: the encoder width.
     output_dim: int | None = None
     global_molecular_descriptor_dropout: float | None = None
 
@@ -609,9 +544,15 @@ class _BaseArchitectureConfig(StrictBaseModel):
 
     @property
     def dimensions(self) -> ModelDimensions:
-        embedding_dimension = self.embedding_preprocess_config.output_irreps_dim
+        embedding_dimension = self.encoder_config.embedding_dimension
         output_dim = self.global_aggregator_config.output_dim
         return ModelDimensions(
+            atomic_descriptor_dimension=(
+                self.embedding_preprocess_config.output_irreps_dim
+            ),
+            target_dimension=(
+                self.embedding_preprocess_config.selected_invariant_dimension
+            ),
             embedding_dimension=embedding_dimension,
             pair_dimension=self.positional_encoding_config.d_projection,
             radial_basis_dimension=(
@@ -739,6 +680,19 @@ class EncoderOnlyArchitectureConfig(_BaseArchitectureConfig):
 class EncoderDecoderArchitectureConfig(_BaseArchitectureConfig):
     kind: Literal["encoder_decoder"] = "encoder_decoder"
     decoder_config: DecoderConfig
+
+    @model_validator(mode="after")
+    def _denoising_target_is_fixed(self) -> Self:
+        """The decoder reconstructs the normalised invariants: their statistics
+        must not move during training."""
+        normalization = self.embedding_preprocess_config.invariant_normalization_config
+        if not isinstance(normalization, PrecomputedInvariantNormalizationConfig):
+            raise ValueError(
+                "An encoder_decoder architecture needs "
+                "invariant_normalization_config kind 'precomputed_normalization': "
+                "on-the-fly statistics would move the denoising target."
+            )
+        return self
 
     def build(
         self,

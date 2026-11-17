@@ -142,7 +142,10 @@ def yield_molecules_supervised_collate_fn(batch: list[Sample]) -> Sample:
 
 @dataclass
 class PreprocessedSample:
+    # What the encoder reads: normalised invariants (+ chiral embedding).
     preprocessed_atomic_embeddings: torch.Tensor | None = None
+    # The fixed (parameter-free) normalised invariants: the denoising target.
+    normalized_invariants: torch.Tensor | None = None
     padding_mask: torch.Tensor | None = None
     initial_pair_representation: torch.Tensor | None = None
     geometrical_encoding: torch.Tensor | None = None

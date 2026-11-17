@@ -20,6 +20,7 @@ from scipy.spatial.transform import Rotation
 from remedi.configuration.architecture_config import EncoderOnlyArchitectureConfig
 from remedi.embedding.calculator import RemediCalculator
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
+from remedi.model.pair_block import PairTransition
 from remedi.training.data.sample import Sample, yield_molecules_collate_fn
 from remedi_data.yaml_io import yaml_text
 
@@ -62,6 +63,7 @@ def _architecture(
             },
             "encoder_config": {
                 "N_layers": 2,
+                "embedding_dimension": 32,
                 "attention_layer_config": {
                     "num_heads": 2,
                     "dim_feedforward": 32,
@@ -102,13 +104,13 @@ def architecture(mace_off_medium: Path) -> EncoderOnlyArchitectureConfig:
 def model(architecture):
     torch.manual_seed(0)
     built = architecture.build()
-    # The pair bias and the pair-FFN gate are zero-initialised; randomise them
-    # so the pair representation actually reaches the descriptor.
+    # The pair bias and the pair transition output are zero-initialised;
+    # randomise them so the pair representation actually reaches the descriptor.
     for module in built.modules():
         if hasattr(module, "pair2bias"):
             torch.nn.init.normal_(module.pair2bias.weight)
-        if isinstance(getattr(module, "gate", None), torch.nn.Linear):
-            torch.nn.init.normal_(module.gate.weight)
+        if isinstance(module, PairTransition):
+            torch.nn.init.normal_(module.proj_out.weight)
     return built.eval()
 
 

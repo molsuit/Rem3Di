@@ -14,8 +14,10 @@ epochs: 30
 learning_rate: 0.0003
 weight_decay: 0.001
 max_grad_norm: 1.0
-noise_level: 0.3
-total_steps: null
+noise:
+  kind: log_normal
+  median: 0.5
+  log_standard_deviation: 1.2
 data:
   domain: transition_metal_complex
   components:
@@ -29,10 +31,5 @@ model_config_path: /path/to/3DMolecularDescriptors/training_runs/example_dir/arc
 output_base: /path/to/training_runs
 training_directory: null
 wandb_active: true
-vicreg:
-  enabled: true
-  variance_weight: 25.0
-  covariance_weight: 1.0
-  target_std: 1.0
 compile:
   enabled: false
