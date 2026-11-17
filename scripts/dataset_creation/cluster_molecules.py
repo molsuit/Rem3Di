@@ -9,12 +9,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from remedi.training.data.molecule_clustering import (
+from remedi_data.logging_setup import setup_logging
+from remedi_data.yaml_io import read_model
+from remedi_eval.dataset_analysis.molecule_clustering import (
     MoleculeClusteringBatchConfig,
     cluster_batch,
 )
-from remedi_data.logging_setup import setup_logging
-from remedi_data.yaml_io import read_model
 
 
 def main() -> None:

@@ -90,7 +90,7 @@ def butina(fingerprints: torch.Tensor, cutoff: float) -> np.ndarray:
         from nvmolkit.clustering import OutputMode, fused_butina
     except ImportError as error:
         raise RuntimeError(
-            "Butina clustering needs nvmolkit (uv sync --extra cuda) and a GPU"
+            "Butina clustering needs nvmolkit (the remedi-eval[cuda] extra) and a GPU"
         ) from error
     result = fused_butina(
         fingerprints, cutoff=cutoff, metric="tanimoto", output=OutputMode.DEVICE

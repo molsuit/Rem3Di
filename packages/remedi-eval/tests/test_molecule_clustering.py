@@ -9,12 +9,6 @@ import polars as pl
 import pytest
 import torch
 
-from remedi.training.data.molecule_clustering import (
-    MoleculeClusteringConfig,
-    cluster_molecules,
-    cluster_size_summary,
-    two_level_butina,
-)
 from remedi_data.chemistry.fingerprints import (
     morgan_fingerprints,
     tanimoto_similarity,
@@ -27,6 +21,12 @@ from remedi_data.selection import (
 )
 from remedi_data.testing import write_small_dataset
 from remedi_data.yaml_io import read_model
+from remedi_eval.dataset_analysis.molecule_clustering import (
+    MoleculeClusteringConfig,
+    cluster_molecules,
+    cluster_size_summary,
+    two_level_butina,
+)
 
 needs_gpu = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="Butina clustering runs on the GPU"
@@ -121,7 +121,9 @@ def test_cluster_molecules_writes_a_file_selections_can_draw_from(
 
 def test_the_production_clustering_config_parses() -> None:
 
-    from remedi.training.data.molecule_clustering import MoleculeClusteringBatchConfig
+    from remedi_eval.dataset_analysis.molecule_clustering import (
+        MoleculeClusteringBatchConfig,
+    )
 
     config = read_model(
         Path(__file__).resolve().parents[3]
