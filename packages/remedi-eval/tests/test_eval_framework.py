@@ -194,3 +194,13 @@ def test_benchmark_plotter_gives_each_descriptor_and_learner_its_own_bar() -> No
         patch.get_width() for patch in axes.patches if isinstance(patch, Rectangle)
     )
     assert bar_widths == [1.0, 2.0, 3.0, 4.0]
+
+
+def test_a_manifest_takes_one_benchmark_panel(tmp_path: Path) -> None:
+    """Regression: two panels both wrote ``benchmark/results.csv`` and the
+    second silently replaced the first one's results."""
+    manifest = _manifest(tmp_path)
+    with pytest.raises(ValueError, match="one panel"):
+        EvalManifest.model_validate(
+            {**manifest.model_dump(), "tasks": [manifest.tasks[0]] * 2}
+        )

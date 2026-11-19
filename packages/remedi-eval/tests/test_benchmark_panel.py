@@ -68,7 +68,7 @@ def run_panel(
     *,
     descriptors: list[DescriptorConfig] | None = None,
     learners: list[Learner] | None = None,
-    split_column: str | None = None,
+    split_columns: list[str] | None = None,
     seed: int = 0,
 ) -> pd.DataFrame:
     """Run one panel over ``tmp_path/datasets``; its ``results.csv`` as a frame.
@@ -88,7 +88,7 @@ def run_panel(
                     eval_root=tmp_path / "datasets",
                     learners=learners or [LinearLearner(ridge_alpha=1.0)],
                     baseline_descriptors=baselines,
-                    split_column=split_column,
+                    split_columns=split_columns,
                 )
             ],
         )
@@ -192,12 +192,38 @@ def test_split_column_selection(tmp_path: Path) -> None:
         splits={"split": list(TEN_ROW_SPLIT), "split__seed1": ALTERNATIVE_SPLIT},
     )
 
-    (row,) = run_panel(tmp_path, split_column="split__seed1").to_dict("records")
+    (row,) = run_panel(tmp_path, split_columns=["split__seed1"]).to_dict("records")
     assert (row["n_train"], row["n_val"], row["n_test"]) == (2, 2, 6)
     assert row["split_column"] == "split__seed1"
 
-    assert run_panel(tmp_path, split_column="split__nope").empty
+    assert run_panel(tmp_path, split_columns=["split__nope"]).empty
     assert "split__nope" in failures_text(tmp_path)
+
+
+def test_every_split_column_is_a_cell_with_its_own_seed(tmp_path: Path) -> None:
+    """Several split columns: one row per split, the i-th fitted with seed
+    ``manifest seed + i``."""
+    build_dataset(
+        tmp_path,
+        splits={"split": list(TEN_ROW_SPLIT), "split__seed1": ALTERNATIVE_SPLIT},
+    )
+    rows = run_panel(tmp_path, split_columns=["split", "split__seed1"], seed=7)
+    assert rows[["split_column", "seed"]].values.tolist() == [
+        ["split", 7],
+        ["split__seed1", 8],
+    ]
+    assert rows["n_train"].tolist() != [rows["n_train"].iloc[0]] * 2 or (
+        rows["n_val"].tolist() != [rows["n_val"].iloc[0]] * 2
+    )
+
+
+def test_split_columns_must_not_repeat() -> None:
+    with pytest.raises(ValueError, match="repeat"):
+        BenchmarkPanelConfig(
+            eval_root=Path("datasets"),
+            learners=[LinearLearner()],
+            split_columns=["split__seed1", "split__seed1"],
+        )
 
 
 # ---------------------------------------------------------- fault tolerance
@@ -358,7 +384,7 @@ def test_without_keep_going_the_first_failure_is_recorded_and_raised(
             BenchmarkPanelConfig(
                 eval_root=tmp_path / "datasets",
                 learners=[LinearLearner()],
-                split_column="split__nope",
+                split_columns=["split__nope"],
             )
         ],
     )

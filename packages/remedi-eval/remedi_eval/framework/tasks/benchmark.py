@@ -77,13 +77,23 @@ class BenchmarkPanelConfig(BaseModel):
     # Descriptors evaluated in addition to the run's model (e.g. an ECFP
     # baseline). The run's model (``ctx.model``) is always evaluated first.
     baseline_descriptors: list[DescriptorConfig] = Field(default_factory=list)
-    # Which split column of the bundle table to score on. ``None`` uses each
-    # benchmark's own ``default_split``; a name here must exist in every
-    # benchmark under ``eval_root``.
-    split_column: str | None = None
+    # The split columns of the bundle table to score on, each a separate cell
+    # (e.g. ``split__seed1`` .. ``split__seed5``: a fixed test fold with five
+    # train/valid partitions). The learner fitted on the i-th split runs with
+    # seed ``manifest seed + i``, so the cells vary split and model seed
+    # together. ``None`` scores each benchmark's own ``default_split`` once; a
+    # name here must exist in every benchmark under ``eval_root``.
+    split_columns: list[str] | None = Field(default=None, min_length=1)
     # Restrict the panel to these dataset ids; ``None`` scores every benchmark
     # under ``eval_root``. An id with no dataset under ``eval_root`` is an error.
     dataset_ids: list[str] | None = None
+
+    @field_validator("split_columns")
+    @classmethod
+    def _split_columns_are_unique(cls, columns: list[str] | None) -> list[str] | None:
+        if columns is not None and len(set(columns)) != len(columns):
+            raise ValueError(f"split_columns {columns} repeat a column")
+        return columns
 
     @field_validator("learners")
     @classmethod
@@ -147,23 +157,24 @@ class BenchmarkPanelConfig(BaseModel):
                     )
                     continue
                 for learner in self.learners:
-                    try:
-                        rows, results = _evaluate_one_cell(
-                            opened, features, descriptor.name, learner
-                        )
-                    except Exception as error:
-                        yield from record.fail(
-                            BenchmarkFailure(
-                                dataset_id=spec.dataset_id,
-                                descriptor_name=descriptor.name,
-                                learner_name=learner.name,
-                                error=repr(error),
-                            ),
-                            error,
-                        )
-                        continue
-                    yield record.add(rows)
-                    yield from results
+                    for split in opened.splits:
+                        try:
+                            rows, results = _evaluate_one_cell(
+                                opened, split, features, descriptor.name, learner
+                            )
+                        except Exception as error:
+                            yield from record.fail(
+                                BenchmarkFailure(
+                                    dataset_id=spec.dataset_id,
+                                    descriptor_name=descriptor.name,
+                                    learner_name=learner.name,
+                                    error=repr(error),
+                                ),
+                                error,
+                            )
+                            continue
+                        yield record.add(rows)
+                        yield from results
         if not record.rows:
             yield record.table()
 
@@ -177,29 +188,39 @@ class BenchmarkPanelConfig(BaseModel):
         """
         benchmark = load_benchmark(dataset_path)
         n_classes, class_names = multiclass_labelling(spec)
-        partition = benchmark.partition(self.split_column)
-        cell = BenchmarkCell(
-            dataset_id=benchmark.dataset_id,
-            metric=benchmark.headline_metric,
-            split_column=partition.split_column,
-            seed=ctx.seed,
-            n_classes=n_classes,
-            class_names=class_names,
-        )
-        is_pairwise = cell.metric == EvalMetric.pair_ranking_accuracy
+        splits = []
+        for index, split_column in enumerate(self.split_columns or [None]):
+            partition = benchmark.partition(split_column)
+            cell = BenchmarkCell(
+                dataset_id=benchmark.dataset_id,
+                metric=benchmark.headline_metric,
+                split_column=partition.split_column,
+                seed=ctx.seed + index,
+                n_classes=n_classes,
+                class_names=class_names,
+            )
+            splits.append(_ScoredSplit(partition=partition, cell=cell))
+        is_pairwise = benchmark.headline_metric == EvalMetric.pair_ranking_accuracy
         return _OpenedBenchmark(
             benchmark=benchmark,
             task_kind=benchmark.task_kind,
             targets=benchmark.targets(),
-            partition=partition,
-            cell=cell,
+            splits=splits,
             stereoisomers=benchmark.stereoisomers() if is_pairwise else None,
         )
 
 
 @dataclass(frozen=True)
+class _ScoredSplit:
+    """One split column of a benchmark and the identity of its cells."""
+
+    partition: Partition
+    cell: BenchmarkCell
+
+
+@dataclass(frozen=True)
 class _OpenedBenchmark:
-    """One opened benchmark and what every one of its cells is scored on.
+    """One opened benchmark and the splits its cells are scored on.
 
     ``stereoisomers`` is set for the pairwise-ranking benchmark only.
     """
@@ -207,8 +228,7 @@ class _OpenedBenchmark:
     benchmark: Benchmark
     task_kind: TaskKind
     targets: np.ndarray
-    partition: Partition
-    cell: BenchmarkCell
+    splits: list[_ScoredSplit]
     stereoisomers: pd.DataFrame | None
 
 
@@ -255,6 +275,7 @@ class _PanelRecord:
 
 def _evaluate_one_cell(
     opened: _OpenedBenchmark,
+    split: _ScoredSplit,
     features: np.ndarray,
     descriptor_name: str,
     learner: Learner,
@@ -264,29 +285,33 @@ def _evaluate_one_cell(
     if opened.stereoisomers is not None:
         rows = evaluate_pairwise_cell(
             learner=learner,
-            partition=opened.partition,
+            partition=split.partition,
             X=features,
             Y=opened.targets,
             stereoisomers=opened.stereoisomers,
             col_name=benchmark.target_columns[0],
-            cell=opened.cell,
+            cell=split.cell,
             descriptor_name=descriptor_name,
         )
         return rows, []
     evaluation = evaluate_cell(
         learner=learner,
         kind=opened.task_kind,
-        partition=opened.partition,
+        partition=split.partition,
         X=features,
         Y=opened.targets,
         col_names=benchmark.target_columns,
-        cell=opened.cell,
+        cell=split.cell,
         descriptor_name=descriptor_name,
     )
     if evaluation.report is None:
         return evaluation.rows, []
     return evaluation.rows, _multiclass_artifacts(
-        evaluation.report, benchmark.dataset_id, descriptor_name, learner.name
+        evaluation.report,
+        benchmark.dataset_id,
+        descriptor_name,
+        learner.name,
+        split.cell.split_column,
     )
 
 
@@ -295,16 +320,23 @@ def _multiclass_artifacts(
     dataset_id: str,
     descriptor_name: str,
     learner_name: str,
+    split_column: str,
 ) -> list[EvalResult]:
     """The three per-cell artifacts of a multiclass cell's report.
 
-    They land under ``benchmark/<dataset_id>/<descriptor>__<learner name>/`` so one
-    panel run can hold a report per cell without any of them colliding. The
+    They land under
+    ``benchmark/<dataset_id>/<descriptor>__<learner name>/<split column>/`` so
+    one panel run can hold a report per cell without any of them colliding. The
     confusion-matrix CSV is the human-readable form (a leading ``true_class``
     column, one column per predicted class); the npz is the machine-readable
     one the heatmap plotter re-renders from.
     """
-    out_rel = Path("benchmark") / dataset_id / f"{descriptor_name}__{learner_name}"
+    out_rel = (
+        Path("benchmark")
+        / dataset_id
+        / f"{descriptor_name}__{learner_name}"
+        / split_column
+    )
     names = report.class_names
     confusion_frame = pd.DataFrame(report.confusion_matrix, columns=names)
     confusion_frame.insert(0, "true_class", names)

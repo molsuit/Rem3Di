@@ -126,6 +126,12 @@ class DatasetEntry(BaseModel):
     path: Path
     """The dataset directory (``Dataset.open``)."""
 
+    selection: str | None = None
+    """Restrict the dataset to one of its selections, by name. A pretraining
+    mixture trains on a selection (``diverse_100k``), not on the whole corpus,
+    so comparing against the whole corpus would overstate the coverage.
+    None uses every structure."""
+
     max_molecules: int | None = None
     """Optional uniform-random subsample cap per dataset (deduped SMILES).
     None = use all unique SMILES."""

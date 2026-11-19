@@ -161,15 +161,22 @@ class DatasetSummary(BaseModel):
     timings_seconds: dict[str, float] = Field(default_factory=dict)
 
 
-def unique_isomeric_smiles(dataset: Dataset) -> list[str]:
+def unique_isomeric_smiles(
+    dataset: Dataset, structure_ids: np.ndarray | None = None
+) -> list[str]:
     """The distinct non-empty ``isomeric_smiles`` of the table, in first-seen order.
+
+    ``structure_ids`` restricts the rows to a selection of the dataset; by
+    default every structure counts.
 
     Empty for a dataset without SMILES (such as tmQM).
     """
     try:
-        smiles = dataset.table(["isomeric_smiles"])
+        smiles = dataset.table(["structure_id", "isomeric_smiles"])
     except pl.exceptions.ColumnNotFoundError:
         return []
+    if structure_ids is not None:
+        smiles = smiles.filter(pl.col("structure_id").is_in(structure_ids))
     present = pl.col("isomeric_smiles").is_not_null() & (
         pl.col("isomeric_smiles") != ""
     )

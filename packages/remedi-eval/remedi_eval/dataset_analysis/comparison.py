@@ -24,6 +24,7 @@ from remedi_data.runs.results import (
     EvalResult,
     PydanticResult,
 )
+from remedi_data.selection import read_selection
 from remedi_eval.dataset_analysis.analysis import (
     RDKIT_CHUNK_SIZE,
     SCAFFOLD_INCLUDE_CHIRALITY,
@@ -310,7 +311,12 @@ class DatasetComparison:
 
     def load_datasets(self) -> None:
         for entry in self._entries:
-            smiles = unique_isomeric_smiles(Dataset.open(entry.path))
+            structure_ids = (
+                None
+                if entry.selection is None
+                else read_selection(entry.path, entry.selection)
+            )
+            smiles = unique_isomeric_smiles(Dataset.open(entry.path), structure_ids)
             if entry.max_molecules is not None and len(smiles) > entry.max_molecules:
                 idx = self._rng.choice(
                     len(smiles), size=entry.max_molecules, replace=False

@@ -1,0 +1,69 @@
+# The 64-d descriptor of the decoder ablation run per_atom_high_noise (3 epochs).
+# Same panel as configs/evaluation/drug_like_small: 37 datasets, linear /
+# LightGBM / MLP, five splits.
+#   sbatch --time=00:45:00 scripts/evaluation/embed_and_evaluate.slurm configs/evaluation/decoder_ablation/per_atom_high_noise.yaml
+embedding:
+  kind: remedi
+  name: decoder_ablation_per_atom_high_noise
+  model_dir: /dais/fs/scratch/wedigs/remedi/training_runs/decoder_ablation/5-2026_11_18_12_25_54-per_atom_high_noise
+manifest:
+  model:
+    kind: precomputed
+    name: decoder_ablation_per_atom_high_noise
+    embeddings_root: /dais/fs/scratch/wedigs/remedi/eval_runs/embeddings
+  output_root: /dais/fs/scratch/wedigs/remedi/eval_runs/decoder_ablation/per_atom_high_noise
+  tasks:
+  - kind: benchmark_panel
+    eval_root: benchmark_data/datasets
+    dataset_ids:
+    - Caco2_Wang
+    - HIA_Hou
+    - Pgp_Broccatelli
+    - Bioavailability_Ma
+    - Lipophilicity_AstraZeneca
+    - Solubility_AqSolDB
+    - BBB_Martins
+    - PPBR_AZ
+    - VDss_Lombardo
+    - CYP2C9_Veith
+    - CYP2D6_Veith
+    - CYP3A4_Veith
+    - CYP2C9_Substrate_CarbonMangels
+    - CYP2D6_Substrate_CarbonMangels
+    - CYP3A4_Substrate_CarbonMangels
+    - Half_Life_Obach
+    - Clearance_Hepatocyte_AZ
+    - Clearance_Microsome_AZ
+    - LD50_Zhu
+    - hERG
+    - AMES
+    - DILI
+    - esol
+    - freesolv
+    - lipophilicity
+    - bace_pic50
+    - bace
+    - bbbp
+    - hiv
+    - clintox
+    - sider
+    - tox21
+    - polaris_antiviral_admet
+    - polaris_antiviral_potency
+    - polaris_adme_fang
+    - polaris_pkis2_subset
+    - polaris_pkis2_subset_cls
+    learners:
+    - kind: linear
+      name: linear
+    - kind: lightgbm
+      name: lightgbm
+    - kind: mlp
+      name: mlp
+    split_columns:
+    - split__seed1
+    - split__seed2
+    - split__seed3
+    - split__seed4
+    - split__seed5
+  seed: 0

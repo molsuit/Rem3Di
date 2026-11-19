@@ -15,7 +15,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from remedi.embedding.calculator import RemediConfig
+from remedi.embedding.calculator import EmbeddingConfig
 from remedi.embedding.writer import EmbeddingReport, embed_datasets
 from remedi_data.yaml_io import write_model
 from remedi_eval.descriptors import PrecomputedEmbeddingsConfig
@@ -28,11 +28,12 @@ EMBEDDING_REPORT_FILENAME = "embedding_status.yaml"
 
 
 class EmbedAndEvaluateConfig(BaseModel):
-    """A Rem3Di checkpoint plus the manifest that evaluates its embeddings."""
+    """A descriptor (a Rem3Di checkpoint, or its mean-pooled MACE baseline)
+    plus the manifest that evaluates its embeddings."""
 
     model_config = ConfigDict(extra="forbid")
 
-    embedding: RemediConfig
+    embedding: EmbeddingConfig
     manifest: EvalManifest
 
     @model_validator(mode="after")

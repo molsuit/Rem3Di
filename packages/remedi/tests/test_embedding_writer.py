@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from remedi.embedding import (
     EmbedAndEvaluateConfig,
     EmbeddingReport,
+    MaceMeanConfig,
     RemediConfig,
     embed_and_evaluate,
     embed_datasets,
@@ -138,7 +139,11 @@ def test_one_failing_dataset_is_recorded_and_the_rest_are_embedded(
 
 def _pipeline_config(tmp_path: Path, model_name: str = "remedi_test") -> dict:
     return {
-        "embedding": {"name": "remedi_test", "model_dir": str(_checkpoint(tmp_path))},
+        "embedding": {
+            "kind": "remedi",
+            "name": "remedi_test",
+            "model_dir": str(_checkpoint(tmp_path)),
+        },
         "manifest": {
             "model": {
                 "kind": "precomputed",
@@ -287,3 +292,55 @@ def test_embed_and_evaluate_runs_descriptor_analyses_on_the_embeddings(
     assert run_report.n_failed == 0
     output = tmp_path / "eval_out" / "descriptor_analysis" / "capacity_diagnostic.yaml"
     assert output.exists()
+
+
+def test_the_mace_mean_identity_ignores_the_encoder_weights(tmp_path: Path) -> None:
+    """The mean-pooled MACE baseline depends on the MACE model and the layer
+    selection only: retraining the encoder must not force a re-embedding, and
+    it must never share embeddings with the Rem3Di descriptor."""
+    architecture = (
+        "mace_config: {model_path: null}\n"
+        "embedding_preprocess_config: {mace_layer_indices: [1]}\n"
+    )
+    first = _checkpoint(tmp_path, b"weights-v1", architecture=architecture)
+    retrained = _checkpoint(
+        tmp_path, b"weights-v2", architecture=architecture, name="retrained"
+    )
+    other_layer = _checkpoint(
+        tmp_path,
+        architecture=architecture.replace("[1]", "[0]"),
+        name="other_layer",
+    )
+    identity = MaceMeanConfig(name="mace_mean", model_dir=first).identity()
+    assert MaceMeanConfig(name="mace_mean", model_dir=retrained).identity() == identity
+    assert MaceMeanConfig(name="mace_mean", model_dir=other_layer).identity() != (
+        identity
+    )
+    assert RemediConfig(name="mace_mean", model_dir=first).identity() != identity
+
+
+def test_the_embedding_kind_selects_the_descriptor(tmp_path: Path) -> None:
+    model_dir = _checkpoint(tmp_path)
+    manifest = _pipeline_config(tmp_path, model_name="mace_mean")["manifest"]
+    config = EmbedAndEvaluateConfig.model_validate(
+        {
+            "embedding": {
+                "kind": "mace_mean",
+                "name": "mace_mean",
+                "model_dir": str(model_dir),
+            },
+            "manifest": manifest,
+        }
+    )
+    assert isinstance(config.embedding, MaceMeanConfig)
+    with pytest.raises(ValidationError):
+        EmbedAndEvaluateConfig.model_validate(
+            {
+                "embedding": {
+                    "kind": "average",
+                    "name": "mace_mean",
+                    "model_dir": str(model_dir),
+                },
+                "manifest": manifest,
+            }
+        )

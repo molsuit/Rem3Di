@@ -5,7 +5,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from remedi_data.dataset import Dataset
 from remedi_data.runs.results import ArrayResult
+from remedi_data.selection import RandomMolecules, SelectionConfig, select_structures
+from remedi_eval.dataset_analysis.analysis import unique_isomeric_smiles
 from remedi_eval.dataset_analysis.comparison import (
     DatasetComparison,
     DatasetComparisonSummary,
@@ -20,7 +23,7 @@ from remedi_eval.dataset_analysis.config import (
     NnTanimotoConfig,
     ScaffoldOverlapConfig,
 )
-from testing import write_synthetic_dataset
+from testing import write_small_dataset, write_synthetic_dataset
 
 
 def _written(directory: Path, smiles: list[str]) -> Path:
@@ -265,3 +268,33 @@ def test_each_smiles_gets_its_scaffold_once(
     assert {smiles for smiles, generic in computed if not generic} == set(
         PRETRAIN_SMILES + EVAL_SMILES
     )
+
+
+def test_a_pretrain_entry_is_restricted_to_its_selection(tmp_path: Path) -> None:
+    """A mixture trains on a selection, so the comparison must compare against
+    that selection and not against the whole corpus."""
+    dataset = write_small_dataset(
+        tmp_path,
+        dataset_id="corpus",
+        labels=[],
+        metrics=None,
+        targets=None,
+        smiles=PRETRAIN_SMILES,
+    )
+    select_structures(
+        dataset,
+        SelectionConfig(name="half", steps=[RandomMolecules(count=4, seed=0)]),
+    )
+    eval_path = _written(tmp_path / "ds_eval", EVAL_SMILES)
+    config = _make_config(dataset, eval_path, tmp_path / "out")
+    config.datasets[0].selection = "half"
+
+    comparison = DatasetComparison(config)
+    comparison.load_datasets()
+
+    # The dataset writer canonicalises the SMILES, so compare against what the
+    # dataset itself holds rather than against the literals above.
+    everything = unique_isomeric_smiles(Dataset.open(dataset))
+    selected = comparison.loaded_datasets[0].smiles
+    assert len(selected) == 4
+    assert set(selected) < set(everything)

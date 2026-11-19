@@ -187,7 +187,9 @@ def test_panel_task_scores_multiclass_and_writes_the_per_class_report(
     assert row["metric_name"] == EvalMetric.balanced_accuracy.value
     assert 0.0 <= row["metric_value"] <= 1.0
 
-    cell_dir = benchmark_dir / "toy_multiclass" / "ecfp_256__linear"
+    cell_dir = (
+        benchmark_dir / "toy_multiclass" / "ecfp_256__linear" / row["split_column"]
+    )
     per_class = pd.read_csv(cell_dir / "per_class.csv")
     assert list(per_class["class_name"]) == class_names
 

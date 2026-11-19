@@ -13,14 +13,15 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import numpy as np
 import torch
 from ase import Atoms
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from torch.utils.data import DataLoader, Subset
 
+from remedi.embedding.projection import PooledProjection
 from remedi.model.checkpoint import (
     ARCHITECTURE_FILENAME,
     DESCRIPTOR_IDENTITY_FILES,
@@ -156,6 +157,10 @@ class RemediCalculator:
             multiplicity=torch.tensor(float(multiplicity)),
         )
 
+    def _descriptor(self, model, samples: Sample) -> torch.Tensor:
+        """The ``(molecules, D)`` descriptors of one collated batch."""
+        return model(samples).molecular_descriptor.flat
+
     def _flat_dim(self) -> int:
         assert self._model is not None
         aggregator = self._model.encoder.aggregator
@@ -180,11 +185,41 @@ class RemediCalculator:
             cursor = 0
             for samples in batches:
                 samples.to_(device)
-                batch_descriptor = model(samples).molecular_descriptor.flat.cpu()
+                batch_descriptor = self._descriptor(model, samples).cpu()
                 bs = batch_descriptor.shape[0]
                 descriptors[cursor : cursor + bs] = batch_descriptor
                 cursor += bs
         return descriptors.numpy()
+
+
+class MaceMeanCalculator(RemediCalculator):
+    """The baseline: the checkpoint's per-atom input, the selected raw MACE
+    invariants, averaged over each molecule's atoms. The encoder is loaded but
+    not used."""
+
+    def _descriptor(self, model, samples: Sample) -> torch.Tensor:
+        return model.preprocessor.mean_raw_invariants(samples)
+
+    def _flat_dim(self) -> int:
+        assert self._model is not None
+        atomic_preprocessor = self._model.preprocessor.atomic_preprocessor
+        return int(atomic_preprocessor.config.selected_invariant_dimension)
+
+
+class MaceMeanProjectionCalculator(MaceMeanCalculator):
+    """The mean-pooled MACE baseline mapped by a fixed projection (standardise,
+    then principal components) to a learned descriptor's dimension."""
+
+    def __init__(self, *, projection: PooledProjection, **options) -> None:
+        super().__init__(**options)
+        self.projection = projection
+
+    def _descriptor(self, model, samples: Sample) -> torch.Tensor:
+        pooled = super()._descriptor(model, samples).double().cpu().numpy()
+        return torch.from_numpy(self.projection.apply(pooled))
+
+    def _flat_dim(self) -> int:
+        return self.projection.dimension
 
 
 #: The identity of the MACE model when the yaml names none: ``MaceConfig``
@@ -192,7 +227,11 @@ class RemediCalculator:
 DEFAULT_MACE_MODEL = "mace-off-medium (mace-torch default)"
 
 
-class RemediConfig(BaseModel):
+class _CheckpointEmbeddingConfig(BaseModel):
+    """What both descriptors of a checkpoint directory share."""
+
+    model_config = ConfigDict(extra="forbid")
+
     # The descriptor name of the embeddings files, usually the checkpoint name
     # (e.g. "remedi-geom-350k"); the manifest reads them back under this name.
     name: str
@@ -258,6 +297,12 @@ class RemediConfig(BaseModel):
             )
         return sha256_of_file(mace_model_path)
 
+
+class RemediConfig(_CheckpointEmbeddingConfig):
+    """The molecular descriptor of a trained Rem3Di encoder."""
+
+    kind: Literal["remedi"] = "remedi"
+
     def build(self) -> RemediCalculator:
         return RemediCalculator(
             model_dir=self.model_dir,
@@ -265,3 +310,65 @@ class RemediConfig(BaseModel):
             device=self.device,
             mace_model_path=self.mace_model_path,
         )
+
+
+def _mace_mean_identity(config: _CheckpointEmbeddingConfig) -> str:
+    """sha256 over the MACE model file and the layer selection: the encoder
+    weights do not enter the mean-pooled descriptors."""
+    architecture = read_yaml(Path(config.model_dir) / ARCHITECTURE_FILENAME) or {}
+    preprocess = architecture.get("embedding_preprocess_config") or {}
+    digest = hashlib.sha256()
+    digest.update(b"mace_mean\n")
+    digest.update(f"mace_model:{config._mace_model_identity()}\n".encode())
+    digest.update(
+        f"mace_layer_indices:{preprocess.get('mace_layer_indices')}\n".encode()
+    )
+    return digest.hexdigest()
+
+
+class MaceMeanConfig(_CheckpointEmbeddingConfig):
+    """The mean-pooled MACE baseline of a checkpoint: the same MACE model and
+    layer selection as its encoder's input, averaged over atoms."""
+
+    kind: Literal["mace_mean"] = "mace_mean"
+
+    def _hash_checkpoint(self) -> str:
+        return _mace_mean_identity(self)
+
+    def build(self) -> MaceMeanCalculator:
+        return MaceMeanCalculator(
+            model_dir=self.model_dir,
+            batch_size=self.batch_size,
+            device=self.device,
+            mace_model_path=self.mace_model_path,
+        )
+
+
+class MaceMeanProjectionConfig(_CheckpointEmbeddingConfig):
+    """The mean-pooled MACE baseline projected to fewer dimensions with a
+    :class:`PooledProjection` fitted beforehand (``projection_path``)."""
+
+    kind: Literal["mace_mean_projection"] = "mace_mean_projection"
+    projection_path: Path
+
+    def _hash_checkpoint(self) -> str:
+        """The mean-pooled identity plus the projection file's sha256."""
+        digest = hashlib.sha256(_mace_mean_identity(self).encode())
+        digest.update(f"projection:{sha256_of_file(self.projection_path)}\n".encode())
+        return digest.hexdigest()
+
+    def build(self) -> MaceMeanProjectionCalculator:
+        return MaceMeanProjectionCalculator(
+            projection=PooledProjection.load(self.projection_path),
+            model_dir=self.model_dir,
+            batch_size=self.batch_size,
+            device=self.device,
+            mace_model_path=self.mace_model_path,
+        )
+
+
+EmbeddingConfig = Annotated[
+    RemediConfig | MaceMeanConfig | MaceMeanProjectionConfig,
+    Field(discriminator="kind"),
+]
+"""What an embed-and-evaluate run embeds the datasets with."""

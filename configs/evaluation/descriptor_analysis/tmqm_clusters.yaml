@@ -8,6 +8,7 @@
 #   uv run --no-sync python scripts/evaluation/embed_and_evaluate.py \
 #       --config configs/evaluation/descriptor_analysis/tmqm_clusters.yaml
 embedding:
+  kind: remedi
   name: mixture_smoke_transition_metal_complex
   model_dir: /dais/fs/scratch/wedigs/remedi/training_runs/mixture_smoke/1-2026_11_16_15_08_27-mixture_smoke_transition_metal_complex
 manifest:

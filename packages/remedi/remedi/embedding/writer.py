@@ -15,7 +15,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from remedi.embedding.calculator import RemediConfig
+from remedi.embedding.calculator import EmbeddingConfig
 from remedi_data.dataset import Dataset
 from remedi_data.format import read_spec
 from remedi_eval.descriptors.embeddings_file import ensure_embeddings, producer_record
@@ -39,7 +39,7 @@ class EmbeddingReport(BaseModel):
 
 
 def embed_datasets(
-    config: RemediConfig, dataset_dirs: list[Path], embeddings_root: Path
+    config: EmbeddingConfig, dataset_dirs: list[Path], embeddings_root: Path
 ) -> EmbeddingReport:
     """Embed every dataset in ``dataset_dirs`` into ``embeddings_root``.
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from remedi_eval.descriptors import DescriptorConfig
 from remedi_eval.framework.tasks import BenchmarkPanelConfig, DescriptorAnalysisConfig
@@ -40,6 +40,19 @@ class EvalManifest(BaseModel):
     # When True (default) a task that raises is recorded in status.yaml and the
     # run continues; set False to fail fast.
     keep_going: bool = True
+
+    @model_validator(mode="after")
+    def _one_benchmark_panel(self) -> EvalManifest:
+        """Every panel writes ``benchmark/results.csv`` under ``output_root``:
+        a second panel would overwrite the first one's results."""
+        panels = sum(isinstance(task, BenchmarkPanelConfig) for task in self.tasks)
+        if panels > 1:
+            raise ValueError(
+                f"the manifest has {panels} benchmark_panel tasks, which would "
+                "overwrite each other's benchmark/results.csv; list every "
+                "dataset_id in one panel"
+            )
+        return self
 
     def descriptor_cache(self) -> Path:
         return self.descriptor_cache_dir or (
