@@ -40,8 +40,6 @@ global_aggregator_config:
   output_dim: 64
 kind: encoder_decoder
 mace_config:
-  compute_forces: false
-  compute_stress: false
   device: cuda
   dtype: float32
   enable_cueq: true

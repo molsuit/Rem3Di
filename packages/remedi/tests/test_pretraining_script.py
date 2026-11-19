@@ -64,6 +64,7 @@ def _architecture(update_pair: bool) -> dict:
             "device": "cpu",
             "dtype": "float32",
             "enable_cueq": False,
+            "compile": False,
         },
         "embedding_preprocess_config": {
             "pseudoscalars": False,
@@ -178,7 +179,7 @@ def mace_off_medium() -> Path:
     return MACE_OFF_MEDIUM
 
 
-@pytest.mark.usefixtures("torch_sim_compiler", "mace_off_medium")
+@pytest.mark.usefixtures("mace_off_medium")
 @pytest.mark.parametrize("update_pair", [True, False])
 def test_the_script_trains_checkpoints_and_resumes(
     tmp_path: Path, monkeypatch, update_pair: bool
@@ -240,7 +241,7 @@ def test_the_script_trains_checkpoints_and_resumes(
     )
 
 
-@pytest.mark.usefixtures("torch_sim_compiler", "mace_off_medium")
+@pytest.mark.usefixtures("mace_off_medium")
 def test_a_run_does_not_resume_with_a_changed_schedule(
     tmp_path: Path, monkeypatch
 ) -> None:

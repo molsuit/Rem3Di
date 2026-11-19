@@ -11,26 +11,25 @@ from remedi.configuration.config_utils import StrictBaseModel
 from remedi.utils.model_utils import concatenate_irreps, mace_per_layer_irreps
 
 if TYPE_CHECKING:
-    from mace.calculators.mace import MACECalculator
-    from mace.calculators.mace_torchsim import MaceTorchSimModel
+    from remedi.model.featurizer import MaceFeaturizer
 
 
 class MaceConfig(StrictBaseModel):
-    """Configuration for loading a MACE model for both ASE and torch-sim inference.
+    """The MACE model whose node features describe the atoms, and how to run it.
 
     `model_path=None` falls back to the MACE-OFF medium checkpoint. The raw
     model is always loaded on the CPU (reading its irreps must not need a GPU);
-    `build_torch_sim_model` moves it to `device`, so `device` may still be
-    changed after validation (e.g. to run a checkpoint on another machine).
-    `enable_cueq` only takes effect on CUDA devices.
+    `build_featurizer` moves it to `device`, so `device` may still be changed
+    after validation (e.g. to run a checkpoint on another machine).
+    `enable_cueq` only takes effect on CUDA devices. `compile` evaluates the
+    featurizer through torch.compile (on the CPU that needs gcc >= 10).
     """
 
     model_path: Path | None = None
     device: str = "cuda"
     dtype: Literal["float32", "float64"] = "float64"
-    compute_forces: bool = False
-    compute_stress: bool = False
     enable_cueq: bool = True
+    compile: bool = True
 
     _raw_model: Any | None = PrivateAttr(default=None)
 
@@ -47,10 +46,9 @@ class MaceConfig(StrictBaseModel):
         if self._raw_model is not None:
             return self._raw_model
 
-        from mace.calculators import MACECalculator
-        from mace.calculators.foundations_models import mace_off
-
         if self.model_path is None:
+            from mace.calculators.foundations_models import mace_off
+
             raw = mace_off(
                 model="medium",
                 device="cpu",
@@ -59,15 +57,13 @@ class MaceConfig(StrictBaseModel):
                 enable_cueq=False,
             )
         else:
-            calc = MACECalculator(
-                model_paths=str(self.model_path),
-                device="cpu",
-                default_dtype=self.dtype,
-                enable_cueq=False,
-            )
-            raw = calc.models[0]
+            from mace.modules.polar.conversion import load_model_file
 
-        self._raw_model = raw.to(self.torch_dtype)
+            # The fork's loader also reads PolarMACE files from before its
+            # electrostatics moved into mace.modules.polar.
+            raw = load_model_file(str(self.model_path), map_location="cpu")
+
+        self._raw_model = raw.to(self.torch_dtype).eval()
         return self._raw_model
 
     def get_irrep_signature(self) -> Irreps:
@@ -83,38 +79,14 @@ class MaceConfig(StrictBaseModel):
         """
         return mace_per_layer_irreps(self._load_raw_model())
 
-    def build_ase_calculator(self) -> MACECalculator:
-        from mace.calculators import MACECalculator
-        from mace.calculators.foundations_models import mace_off
+    def build_featurizer(self) -> MaceFeaturizer:
+        """The node-feature model (``remedi.model.featurizer``) on ``device``."""
+        from remedi.model.featurizer import build_mace_featurizer
 
-        if self.model_path is None:
-            return mace_off(
-                model="medium",
-                device=self.device,
-                default_dtype=self.dtype,
-                enable_cueq=self.enable_cueq,
-            )
-        return MACECalculator(
-            model_paths=str(self.model_path),
-            device=self.device,
-            default_dtype=self.dtype,
-            enable_cueq=self.enable_cueq,
-        )
-
-    def build_torch_sim_model(self) -> MaceTorchSimModel:
-        """Build the official mace-torch torch-sim wrapper.
-
-        Introduced in mace-torch 0.3.16; supersedes torch_sim.models.mace.MaceModel
-        and natively handles PolarMACE-specific data_dict entries (rcell, volume,
-        fermi_level, external_field, density_coefficients).
-        """
-        from mace.calculators.mace_torchsim import MaceTorchSimModel
-
-        return MaceTorchSimModel(
-            model=self._load_raw_model(),
+        return build_mace_featurizer(
+            self._load_raw_model(),
             device=torch.device(self.device),
             dtype=self.torch_dtype,
-            compute_forces=self.compute_forces,
-            compute_stress=self.compute_stress,
             enable_cueq=self.uses_cuequivariance,
+            use_compile=self.compile,
         )

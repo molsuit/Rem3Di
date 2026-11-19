@@ -95,9 +95,11 @@ def paired_sample_collate_fn(batch: list[tuple["Sample", "Sample"]]):
 
 
 def yield_molecules_collate_fn(batch: list[Sample]) -> Sample:
-    # Concatenate per-atom tensors and per-system charge/multiplicity scalars from each sample
-    # into a single flat batch suitable for on-the-fly MACE embedding.
-
+    """Concatenate the molecules' atoms into one flat batch for on-the-fly MACE
+    features: per-atom positions, atomic numbers and molecule index, per-molecule
+    charge and multiplicity, and the padding mask ``(molecules, longest molecule)``
+    (True on padding) of the padded layout the features are computed in. The mask's
+    shape gives the padded length without a host read on the device."""
     atomic_positions = torch.cat([s.atomic_positions for s in batch])
     atomic_numbers = torch.cat([s.atomic_numbers for s in batch])
     repeat_counts = torch.as_tensor(
@@ -107,6 +109,11 @@ def yield_molecules_collate_fn(batch: list[Sample]) -> Sample:
     )
     system_idx = torch.repeat_interleave(
         torch.arange(len(batch), device=atomic_positions.device), repeat_counts
+    )
+    longest = int(repeat_counts.max())
+    padding_mask = (
+        torch.arange(longest, device=atomic_positions.device)[None, :]
+        >= repeat_counts[:, None]
     )
 
     total_charge = torch.stack(
@@ -120,6 +127,7 @@ def yield_molecules_collate_fn(batch: list[Sample]) -> Sample:
         atomic_positions=atomic_positions,
         atomic_numbers=atomic_numbers,
         system_index=system_idx,
+        padding_mask=padding_mask,
         total_charge=total_charge,
         multiplicity=multiplicity,
     )

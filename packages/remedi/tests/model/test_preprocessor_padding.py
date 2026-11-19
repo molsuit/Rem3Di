@@ -17,13 +17,9 @@ from remedi.model.preprocessing.preprocessing import (
 from remedi.training.data.samplers import quantize_pad_length
 
 
-class _StubMaceModel:
-    r_max = 5.0
-
-
 def _make_preprocessor(**kwargs) -> PreprocessorWithAtomicEmbedding:
     return PreprocessorWithAtomicEmbedding(
-        mace_model=_StubMaceModel(),
+        mace_featurizer=nn.Identity(),
         atomic_preprocessor=nn.Identity(),
         geometric_preprocessor=nn.Identity(),
         **kwargs,

@@ -20,6 +20,7 @@ from scipy.spatial.transform import Rotation
 from remedi.configuration.architecture_config import EncoderOnlyArchitectureConfig
 from remedi.embedding.calculator import RemediCalculator
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
+from remedi.model.featurizer import MaceFeaturizer
 from remedi.model.pair_block import PairTransition
 from remedi.training.data.sample import Sample, yield_molecules_collate_fn
 from remedi_data.yaml_io import yaml_text
@@ -49,6 +50,7 @@ def _architecture(
                 "device": "cpu",
                 "dtype": dtype,
                 "enable_cueq": False,
+                "compile": False,
             },
             "embedding_preprocess_config": {
                 "pseudoscalars": True,
@@ -136,7 +138,6 @@ def _chiral_embeddings(model, samples: list[Sample]) -> torch.Tensor:
     return preprocessed.chiral_embeddings
 
 
-@pytest.mark.usefixtures("torch_sim_compiler")
 def test_descriptor_is_rotation_invariant(model):
     positions = CHIRAL_MOLECULE.get_positions()
     rotation = Rotation.random(random_state=1).as_matrix()
@@ -146,7 +147,6 @@ def test_descriptor_is_rotation_invariant(model):
     torch.testing.assert_close(rotated, reference, atol=1e-4, rtol=1e-4)
 
 
-@pytest.mark.usefixtures("torch_sim_compiler")
 def test_mirror_image_flips_the_chiral_embedding(model):
     positions = CHIRAL_MOLECULE.get_positions()
     mirrored = positions * np.array([1.0, 1.0, -1.0])
@@ -162,7 +162,6 @@ def test_mirror_image_flips_the_chiral_embedding(model):
     )
 
 
-@pytest.mark.usefixtures("torch_sim_compiler")
 def test_descriptor_is_batch_independent(model):
     # C60 pads the batch beyond 25 atoms (where cdist's matmul path kicked in)
     # and its coordinates are far from those of the small molecule.
@@ -178,41 +177,11 @@ def test_descriptor_is_batch_independent(model):
     torch.testing.assert_close(before_large, alone, atol=1e-5, rtol=1e-4)
 
 
-@pytest.mark.usefixtures("torch_sim_compiler")
-def test_cuequivariance_layout_is_transposed_back(architecture, model, monkeypatch):
-    """Simulate a cueq-converted MACE (node features in ir_mul layout) on the
-    CPU: the descriptor must be unchanged once the preprocessor transposes the
-    features back to mul_ir."""
-    reference = _descriptors(model, [_sample(CHIRAL_MOLECULE)])
-    mace = model.preprocessor.torch_sim_mace_model
-    irreps = architecture.embedding_preprocess_config.input_irreps
-
-    def to_ir_mul(_module, _inputs, output):
-        blocks = []
-        for (multiplicity, irrep), block_slice in zip(
-            irreps, irreps.slices(), strict=True
-        ):
-            block = output["node_feats"][..., block_slice]
-            block = block.reshape(-1, multiplicity, irrep.dim).transpose(1, 2)
-            blocks.append(block.reshape(-1, multiplicity * irrep.dim))
-        return {**output, "node_feats": torch.cat(blocks, dim=-1)}
-
-    monkeypatch.setattr(mace, "_enable_cueq", True)
-    handle = mace.model.register_forward_hook(to_ir_mul)
-    try:
-        simulated = _descriptors(model, [_sample(CHIRAL_MOLECULE)])
-    finally:
-        handle.remove()
-    torch.testing.assert_close(simulated, reference, atol=1e-5, rtol=1e-4)
-
-
-@pytest.mark.usefixtures("torch_sim_compiler")
 def test_float64_mace_runs(mace_off_medium: Path):
-    # Regression: build() cast the whole model with .float(), including the
-    # torch-sim MACE wrapper whose own dtype stayed float64 -> dtype mismatch.
+    # Regression: build() cast the whole model with .float(), including MACE,
+    # whose input dtype then no longer matched.
     model = _architecture(mace_off_medium, dtype="float64").build().eval()
-    mace = model.preprocessor.torch_sim_mace_model
-    assert next(mace.model.parameters()).dtype == torch.float64
+    assert model.preprocessor.mace_featurizer.dtype == torch.float64
     descriptors = _descriptors(
         model, [_sample(molecule("CH3CHO")), _sample(molecule("H2O"))]
     )
@@ -220,7 +189,6 @@ def test_float64_mace_runs(mace_off_medium: Path):
     assert torch.isfinite(descriptors).all()
 
 
-@pytest.mark.usefixtures("torch_sim_compiler")
 def test_calculator_runs_mace_on_the_requested_device(
     tmp_path, architecture, model, mace_off_medium: Path
 ):
@@ -240,9 +208,10 @@ def test_calculator_runs_mace_on_the_requested_device(
     embedded = calculator.embed_atoms([CHIRAL_MOLECULE])
 
     assert calculator._model is not None
-    mace = calculator._model.preprocessor.torch_sim_mace_model
-    assert next(mace.model.parameters()).device.type == "cpu"
-    assert not getattr(mace, "_enable_cueq", False)
+    featurizer = calculator._model.preprocessor.mace_featurizer
+    assert isinstance(featurizer, MaceFeaturizer)
+    assert next(featurizer.parameters()).device.type == "cpu"
+    assert featurizer.layout == "mul_ir"  # no cuequivariance on the CPU
     np.testing.assert_allclose(
         embedded, _descriptors(model, [_sample(CHIRAL_MOLECULE)]).numpy(), atol=1e-5
     )
@@ -255,7 +224,6 @@ def test_architecture_yaml_roundtrip_is_loadable(architecture):
     assert reloaded.dimensions == architecture.dimensions
 
 
-@pytest.mark.usefixtures("torch_sim_compiler")
 def test_mean_raw_invariants_average_each_molecules_atoms(model):
     """The mean-pooled MACE baseline: per molecule, the mean of its atoms'
     selected raw invariants, independent of the batch it is in."""

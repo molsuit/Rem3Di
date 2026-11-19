@@ -45,7 +45,7 @@ from remedi.latent_evaluation.mace_invariant_stats import (
     summarise_layer,
     summarise_total,
 )
-from remedi.model.preprocessing.preprocessing import _sample_to_simstate
+from remedi.model.featurizer import MaceFeaturizer, pad_molecules
 from remedi.training.data import worker_init_fn
 from remedi.training.data.sample import Sample, yield_molecules_collate_fn
 from remedi.training.data.training_dataset import (
@@ -92,18 +92,23 @@ def _setup_logging(output_dir: Path) -> None:
     logger.propagate = False
 
 
-def _run_mace_on_sample(mace_model, sample: Sample) -> torch.Tensor:
-    """Build a SimState from a flat-batched Sample and return MACE node feats.
-
-    Delegates to the official mace-torch wrapper (MaceTorchSimModel) so that
-    PolarMACE's data_dict (rcell, volume, fermi_level, external_field,
-    density_coefficients) is constructed by the same code path the rest of
-    this repo uses.
-    """
-    from remedi.model.preprocessing.preprocessing import _capture_node_feats
-
-    state, _ = _sample_to_simstate(sample, r_max=float(mace_model.r_max))
-    return _capture_node_feats(mace_model, state)
+def _run_mace_on_sample(featurizer: MaceFeaturizer, sample: Sample) -> torch.Tensor:
+    """MACE node features ``(atoms, C)`` of a flat batch's atoms, in its order."""
+    if (
+        sample.atomic_numbers is None
+        or sample.atomic_positions is None
+        or sample.system_index is None
+        or sample.padding_mask is None
+    ):
+        raise ValueError("expected a batch from yield_molecules_collate_fn")
+    molecules = pad_molecules(
+        sample.atomic_numbers,
+        sample.atomic_positions,
+        sample.system_index,
+        sample.padding_mask,
+    )
+    features = featurizer(molecules.atomic_numbers, molecules.positions)
+    return features[~molecules.padding_mask]
 
 
 def main() -> None:
@@ -125,8 +130,7 @@ def main() -> None:
 
     device = torch.device(cfg.mace_config.device)
     logger.info("Loading MACE model from %s", cfg.mace_config.model_path)
-    mace_model = cfg.mace_config.build_torch_sim_model()
-    mace_model.eval()
+    featurizer = cfg.mace_config.build_featurizer()
 
     input_irreps = cfg.mace_config.get_irrep_signature()
     invariant_indices, invariant_irreps = get_invariant_indices(input_irreps)
@@ -182,12 +186,12 @@ def main() -> None:
     n_atoms_seen = 0
     max_batches = cfg.max_batches if cfg.max_batches is not None else len(loader)
 
-    with torch.inference_mode():
+    with torch.no_grad():
         for batch_idx, sample in enumerate(loader):
             if batch_idx >= max_batches:
                 break
             sample.to_(device)
-            node_feats = _run_mace_on_sample(mace_model, sample).detach()
+            node_feats = _run_mace_on_sample(featurizer, sample)
             invariants = node_feats.index_select(-1, invariant_idx_t)
             n_atoms_seen += invariants.shape[0]
 

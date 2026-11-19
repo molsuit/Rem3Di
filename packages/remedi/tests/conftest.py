@@ -1,9 +1,9 @@
 """Shared fixtures for the remedi tests.
 
-``torch_sim_compiler`` skips tests that run MACE through torch-sim: its
-neighbour list is compiled by torch inductor, which needs gcc >= 10 (the DAIS
-system gcc is 7.5; ``module load gcc/15``). Request it with
-``@pytest.mark.usefixtures("torch_sim_compiler")`` or as a fixture argument.
+``inductor_compiler`` skips tests that compile with torch inductor on the CPU,
+which needs gcc >= 10 (the DAIS system gcc is 7.5; ``module load gcc/15``).
+Request it with ``@pytest.mark.usefixtures("inductor_compiler")`` or as a
+fixture argument.
 """
 
 from __future__ import annotations
@@ -25,9 +25,9 @@ def _gcc_major_version() -> int:
 
 
 @pytest.fixture(scope="session")
-def torch_sim_compiler() -> None:
+def inductor_compiler() -> None:
     if _gcc_major_version() < 10:
         pytest.skip(
-            "torch inductor needs gcc >= 10 to build torch-sim's neighbour list "
+            "torch inductor needs gcc >= 10 to compile for the CPU "
             "(on DAIS: module load gcc/15)"
         )

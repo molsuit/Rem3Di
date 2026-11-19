@@ -589,21 +589,13 @@ class _BaseArchitectureConfig(StrictBaseModel):
             descriptor_sequence_length=self.global_aggregator_config.descriptor_seq_len,
         )
 
-    def _build_mace_model(self):
-        if self.mace_config is None:
-            return None
-        return self.mace_config.build_torch_sim_model()
-
     def _build_preprocessor(
         self,
         mean_atomic_embedding: torch.Tensor | None = None,
         std_atomic_embedding: torch.Tensor | None = None,
     ) -> "Preprocessor":
-        """Atomic preprocessor in float64, geometric preprocessor in float32.
-
-        The MACE model keeps the dtype its MaceConfig asks for: casting it
-        would desynchronise it from the torch-sim wrapper's own dtype.
-        """
+        """Atomic preprocessor in float64, geometric preprocessor in float32; the
+        MACE featurizer in the dtype its MaceConfig asks for."""
         from remedi.model.preprocessing.preprocessing import (
             Preprocessor,
             PreprocessorWithAtomicEmbedding,
@@ -613,13 +605,11 @@ class _BaseArchitectureConfig(StrictBaseModel):
             mean_atomic_embedding, std_atomic_embedding
         ).double()
         geometric = self.positional_encoding_config.build().float()
-        mace_model = self._build_mace_model()
-        if mace_model is not None:
+        if self.mace_config is not None:
             return PreprocessorWithAtomicEmbedding(
-                mace_model=mace_model,
+                mace_featurizer=self.mace_config.build_featurizer(),
                 atomic_preprocessor=atomic,
                 geometric_preprocessor=geometric,
-                node_feature_irreps=self.embedding_preprocess_config.input_irreps,
             )
         return Preprocessor(
             atomic_preprocessor=atomic, geometric_preprocessor=geometric

@@ -39,17 +39,6 @@ import torch._dynamo  # noqa: E402 - after the device and logging setup
 
 torch._logging.set_logs(recompiles=True)
 
-# nvalchemiops applies @torch.compile to prepare_batch_idx_ptr, which is on the
-# MACE neighbor-list path called every step. Bucket sampling makes the input
-# shapes (total atoms, num molecules) vary, triggering repeated recompiles. The
-# function does ~µs of cumsum/bincount work — not worth compiling. Override the
-# decorated symbol with a dynamo-disabled version before any model is built.
-import nvalchemiops.torch.neighbors.neighbor_utils as _nv_neighbor_utils  # noqa: E402 - patched before any model is built
-
-_nv_neighbor_utils.prepare_batch_idx_ptr = torch._dynamo.disable(
-    _nv_neighbor_utils.prepare_batch_idx_ptr
-)
-
 
 def parse_args():
     parser = argparse.ArgumentParser(
