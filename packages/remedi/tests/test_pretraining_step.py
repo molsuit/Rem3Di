@@ -276,3 +276,187 @@ def test_descriptor_statistics_detect_collapse() -> None:
     ] == pytest.approx(1.0, abs=1e-6)
     with pytest.raises(ValueError, match="M >= 2"):
         descriptor_statistics(torch.ones(1, 8))
+
+
+def test_the_shuffled_descriptor_loss_uses_the_same_noise() -> None:
+    """The diagnostic reruns the decoder on the same noised atoms with the
+    descriptors rolled by one molecule; with identical descriptors the two
+    losses agree."""
+    torch.manual_seed(0)
+    result = denoising_step(
+        Sample(atomic_positions=torch.zeros(5, 3)),
+        preprocessor=_Preprocessor(),
+        encoder=_Encoder(),
+        decoder=_Decoder(),
+        noise=FixedNoiseLevelConfig(level=0.5),
+        generator=torch.Generator().manual_seed(1),
+        with_shuffled_descriptor=True,
+    )
+    assert result.shuffled_descriptor_loss is not None
+    assert result.shuffled_descriptor_loss.item() != pytest.approx(
+        result.denoising_loss.item()
+    )
+
+    class SameDescriptor(nn.Module):
+        def forward(self, sample: PreprocessedSample) -> MolecularDescriptor:
+            return MolecularDescriptor(tokens=torch.ones(2, 1, TARGET_DIMENSION))
+
+    same = denoising_step(
+        Sample(atomic_positions=torch.zeros(5, 3)),
+        preprocessor=_Preprocessor(),
+        encoder=SameDescriptor(),
+        decoder=_Decoder(),
+        noise=FixedNoiseLevelConfig(level=0.5),
+        generator=torch.Generator().manual_seed(1),
+        with_shuffled_descriptor=True,
+    )
+    assert same.shuffled_descriptor_loss is not None
+    assert same.shuffled_descriptor_loss.item() == pytest.approx(
+        same.denoising_loss.item()
+    )
+    assert _step().shuffled_descriptor_loss is None  # not asked for
+
+
+def _decoder_inputs(atoms: int = 5, pair_scale: float = 1.0):
+    torch.manual_seed(0)
+    dimensions = ModelDimensions(
+        atomic_descriptor_dimension=8,
+        target_dimension=8,
+        embedding_dimension=16,
+        pair_dimension=4,
+        radial_basis_dimension=3,
+        descriptor_dimension=16,
+        descriptor_sequence_length=1,
+    )
+    sample = PreprocessedSample(
+        preprocessed_atomic_embeddings=torch.randn(2, atoms, 8),
+        padding_mask=torch.zeros(2, atoms, dtype=torch.bool),
+        initial_pair_representation=pair_scale * torch.randn(2, atoms, atoms, 4),
+        geometrical_encoding=pair_scale * torch.randn(2, atoms, atoms, 3),
+        pair_mask=torch.ones(2, atoms, atoms, dtype=torch.bool),
+        atomic_numbers=torch.tensor([[6, 6, 8, 1, 1], [7, 6, 1, 1, 1]]),
+    )
+    descriptor = MolecularDescriptor(tokens=torch.randn(2, 1, 16))
+    return dimensions, sample, descriptor
+
+
+def _decoder(dimensions, **options):
+    torch.manual_seed(1)
+    decoder = DecoderConfig(
+        N_layers=2,
+        embedding_dimension=16,
+        attention_layer_config=AttentionLayerConfig(
+            num_heads=2,
+            dim_feedforward=32,
+            dropout=0.0,
+            update_pair=options.pop("update_pair", True),
+        ),
+        **options,
+    ).build(dimensions)
+    # Non-zero output head and pair bias, so the inputs reach the output.
+    for module in decoder.modules():
+        if isinstance(module, nn.Linear):
+            nn.init.normal_(module.weight)
+    return decoder.eval()
+
+
+def test_a_decoder_without_pair_geometry_ignores_the_pair_inputs() -> None:
+    dimensions, sample, descriptor = _decoder_inputs()
+    _, other_geometry, _ = _decoder_inputs(pair_scale=5.0)
+    noise_level = torch.ones(2)
+    with_geometry = _decoder(dimensions)
+    without = _decoder(dimensions, pair_geometry=False, update_pair=False)
+    assert not any("pair" in name for name, _ in without.named_parameters())
+    with torch.no_grad():
+        reference = without(sample, descriptor, noise_level)
+        other_geometry.preprocessed_atomic_embeddings = (
+            sample.preprocessed_atomic_embeddings
+        )
+        torch.testing.assert_close(
+            without(other_geometry, descriptor, noise_level), reference
+        )
+        assert not torch.allclose(
+            with_geometry(other_geometry, descriptor, noise_level),
+            with_geometry(sample, descriptor, noise_level),
+        )
+
+
+def test_element_tokens_read_the_atomic_numbers() -> None:
+    dimensions, sample, descriptor = _decoder_inputs()
+    decoder = _decoder(
+        dimensions, pair_geometry=False, update_pair=False, element_tokens=True
+    )
+    noise_level = torch.ones(2)
+    with torch.no_grad():
+        reference = decoder(sample, descriptor, noise_level)
+        assert sample.atomic_numbers is not None
+        sample.atomic_numbers = sample.atomic_numbers.flip(-1)
+        assert not torch.allclose(decoder(sample, descriptor, noise_level), reference)
+        sample.atomic_numbers = None
+        with pytest.raises(ValueError, match="atomic numbers"):
+            decoder(sample, descriptor, noise_level)
+
+
+def test_a_decoder_without_geometry_has_no_pair_update() -> None:
+    with pytest.raises(ValueError, match="update_pair: false"):
+        DecoderConfig(
+            N_layers=2,
+            embedding_dimension=16,
+            attention_layer_config=AttentionLayerConfig(
+                num_heads=2, dim_feedforward=32, dropout=0.0
+            ),
+            pair_geometry=False,
+        )
+
+
+def test_a_per_atom_decoder_sees_no_other_atom() -> None:
+    """Without atom self-attention an atom's output depends on its own noised
+    descriptor, the noise level and the molecular descriptor only."""
+    dimensions, sample, descriptor = _decoder_inputs()
+    decoder = _decoder(
+        dimensions,
+        pair_geometry=False,
+        update_pair=False,
+        atom_self_attention=False,
+    )
+    noise_level = torch.ones(2)
+    with torch.no_grad():
+        reference = decoder(sample, descriptor, noise_level)
+        assert sample.preprocessed_atomic_embeddings is not None
+        changed = sample.preprocessed_atomic_embeddings.clone()
+        changed[:, 1:] = torch.randn_like(changed[:, 1:])
+        sample.preprocessed_atomic_embeddings = changed
+        output = decoder(sample, descriptor, noise_level)
+        torch.testing.assert_close(output[:, 0], reference[:, 0])
+        assert not torch.allclose(output[:, 1:], reference[:, 1:])
+        other = MolecularDescriptor(tokens=torch.randn_like(descriptor.tokens))
+        assert not torch.allclose(decoder(sample, other, noise_level), output)
+
+
+def test_a_per_atom_decoder_takes_no_pair_geometry() -> None:
+    with pytest.raises(ValueError, match="pair_geometry: false"):
+        DecoderConfig(
+            N_layers=2,
+            embedding_dimension=16,
+            attention_layer_config=AttentionLayerConfig(
+                num_heads=2, dim_feedforward=32, dropout=0.0, update_pair=False
+            ),
+            atom_self_attention=False,
+        )
+
+
+def test_log_uniform_noise_covers_its_range_evenly_in_the_logarithm() -> None:
+    from remedi.configuration.training_config import LogUniformNoiseLevelConfig
+
+    noise = LogUniformNoiseLevelConfig(minimum=0.5, maximum=30.0)
+    levels = noise.sample(
+        20000, device="cpu", generator=torch.Generator().manual_seed(0)
+    )
+    assert levels.min() >= 0.5 and levels.max() <= 30.0
+    logarithms = torch.log(levels)
+    middle = (torch.log(torch.tensor(0.5)) + torch.log(torch.tensor(30.0))) / 2
+    assert logarithms.mean().item() == pytest.approx(middle.item(), abs=0.03)
+    # Each half of the logarithmic range is drawn about equally often.
+    assert (logarithms < middle).float().mean().item() == pytest.approx(0.5, abs=0.02)
+    with pytest.raises(ValueError, match="minimum < maximum"):
+        LogUniformNoiseLevelConfig(minimum=3.0, maximum=1.0)

@@ -88,6 +88,11 @@ class DenoisingStepResult:
     """Real atoms in the batch."""
     noise_level: torch.Tensor
     """The noise level drawn for each molecule, ``(B,)``."""
+    shuffled_descriptor_loss: torch.Tensor | None = None
+    """The loss on the same noise with every molecule given its neighbour's
+    descriptor (rolled by one in the batch); None unless asked for or with a
+    single molecule. Its excess over ``denoising_loss`` is what the descriptor
+    contributes."""
 
 
 def denoising_step(
@@ -98,12 +103,15 @@ def denoising_step(
     decoder: nn.Module,
     noise: NoiseLevelConfig,
     generator: torch.Generator | None = None,
+    with_shuffled_descriptor: bool = False,
 ) -> DenoisingStepResult:
     """One denoising pass, shared by training and validation.
 
     ``generator`` fixes both the noise levels and the noise. Pair and geometric
     inputs are detached for the decoder. Gradients flow as the caller's grad
-    mode allows; none reaches the target.
+    mode allows; none reaches the target. ``with_shuffled_descriptor`` runs the
+    decoder a second time with the descriptors rolled by one molecule (a
+    diagnostic, for validation).
     """
     if samples.atomic_positions is None:
         raise ValueError("denoising_step needs atomic_positions on the samples")
@@ -136,17 +144,28 @@ def denoising_step(
         geometrical_encoding=preprocessed.geometrical_encoding.detach(),
         padding_mask=padding_mask,
         pair_mask=preprocessed.pair_mask,
+        atomic_numbers=preprocessed.atomic_numbers,
     )
-    decoder_output = decoder(noised_sample, molecular_descriptor, noise_level)
     decoder_target = (target - skip_scale * noised) / output_scale
-
     real_atoms = ~padding_mask
-    squared_error = (decoder_output - decoder_target).square()
-    squared_error = squared_error * real_atoms[:, :, None]
-    denoising_loss = squared_error.sum() / (real_atoms.sum() * target.shape[-1])
+
+    def loss_with(descriptor: MolecularDescriptor) -> torch.Tensor:
+        decoder_output = decoder(noised_sample, descriptor, noise_level)
+        squared_error = (decoder_output - decoder_target).square()
+        squared_error = squared_error * real_atoms[:, :, None]
+        return squared_error.sum() / (real_atoms.sum() * target.shape[-1])
+
+    shuffled_descriptor_loss = None
+    if with_shuffled_descriptor and molecular_descriptor.batch_size > 1:
+        shuffled_descriptor_loss = loss_with(
+            MolecularDescriptor(
+                tokens=torch.roll(molecular_descriptor.tokens, shifts=1, dims=0)
+            )
+        )
     return DenoisingStepResult(
-        denoising_loss=denoising_loss,
+        denoising_loss=loss_with(molecular_descriptor),
         molecular_descriptor=molecular_descriptor,
         atom_count=atom_count,
         noise_level=noise_level,
+        shuffled_descriptor_loss=shuffled_descriptor_loss,
     )

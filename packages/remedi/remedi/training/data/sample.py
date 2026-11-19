@@ -152,3 +152,5 @@ class PreprocessedSample:
     pair_mask: torch.Tensor | None = None
     pair_distance_matrix: torch.Tensor | None = None
     chiral_embeddings: torch.Tensor | None = None
+    # (B, N) atomic numbers, 0 at padding.
+    atomic_numbers: torch.Tensor | None = None

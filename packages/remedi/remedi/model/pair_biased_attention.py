@@ -31,7 +31,9 @@ class PairBiasedSelfAttention(nn.Module):
         n_heads: int = 8,
         d_pair: int = 64,
         dropout_p: float = 0.1,
+        pair_bias: bool = True,
     ):
+        """``pair_bias=False``: plain self-attention, no pair input."""
         super().__init__()
 
         self.d_model = d_model
@@ -47,22 +49,32 @@ class PairBiasedSelfAttention(nn.Module):
 
         # pair → per-head bias, zero-initialised so the first forward pass is
         # the plain attention
-        self.ln_pair = nn.LayerNorm(d_pair)
-        self.pair2bias = nn.Linear(d_pair, n_heads, bias=False)
-        nn.init.zeros_(self.pair2bias.weight)
+        self.ln_pair: nn.LayerNorm | None = None
+        self.pair2bias: nn.Linear | None = None
+        if pair_bias:
+            self.ln_pair = nn.LayerNorm(d_pair)
+            self.pair2bias = nn.Linear(d_pair, n_heads, bias=False)
+            nn.init.zeros_(self.pair2bias.weight)
         self.dropout = nn.Dropout(dropout_p)
 
-    def forward(self, S: Tensor, P: Tensor, mask: Tensor | None = None) -> Tensor:
+    def forward(
+        self, S: Tensor, P: Tensor | None, mask: Tensor | None = None
+    ) -> Tensor:
         B, N, _ = S.shape
 
         def heads(W: nn.Linear) -> Tensor:  # (B, N, d) -> (B, H, N, d_k)
             return W(S).view(B, N, self.n_heads, self.d_k).transpose(1, 2)
 
         Q, K, V = heads(self.W_q), heads(self.W_k), heads(self.W_v)
-        # (B, N, N, d_pair) -> (B, H, N, N)
-        bias = self.pair2bias(self.ln_pair(P)).permute(0, 3, 1, 2).to(Q.dtype)
+        bias: Tensor | None = None
+        if self.pair2bias is not None and self.ln_pair is not None:
+            if P is None:
+                raise ValueError("pair-biased attention needs the pair tensor")
+            # (B, N, N, d_pair) -> (B, H, N, N)
+            bias = self.pair2bias(self.ln_pair(P)).permute(0, 3, 1, 2).to(Q.dtype)
         if mask is not None:
-            bias = bias + key_padding_bias(mask, Q.dtype)
+            padding = key_padding_bias(mask, Q.dtype)
+            bias = padding if bias is None else bias + padding
         attended = F.scaled_dot_product_attention(
             Q,
             K,

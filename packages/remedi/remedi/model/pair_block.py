@@ -62,7 +62,11 @@ class PairBlock(nn.Module):
     molecular descriptor tokens follows the self-attention.
     ``update_pair=False`` leaves the pair tensor as it is: the last layer (whose
     pair output nothing reads), or every layer of a model that uses the initial
-    pair representation as a static attention bias.
+    pair representation as a static attention bias. ``pair_bias=False``: plain
+    self-attention, the block neither reads nor writes a pair tensor (``P`` is
+    passed through, usually None). ``self_attention=False``: no attention
+    between atoms, every atom is processed on its own (with the
+    cross-attention, it sees only the descriptor besides itself).
     """
 
     def __init__(
@@ -75,13 +79,22 @@ class PairBlock(nn.Module):
         dropout: float = 0.1,
         descriptor_dimension: int | None = None,
         update_pair: bool = True,
+        pair_bias: bool = True,
+        self_attention: bool = True,
     ):
         super().__init__()
+        if update_pair and not pair_bias:
+            raise ValueError("a block without pair bias has no pair to update")
+        if pair_bias and not self_attention:
+            raise ValueError("the pair bias acts on the self-attention")
 
-        self.self_attention_norm = nn.LayerNorm(embedding_dim)
-        self.self_attention = PairBiasedSelfAttention(
-            embedding_dim, num_heads, d_pair, dropout
-        )
+        self.self_attention_norm: nn.LayerNorm | None = None
+        self.self_attention: PairBiasedSelfAttention | None = None
+        if self_attention:
+            self.self_attention_norm = nn.LayerNorm(embedding_dim)
+            self.self_attention = PairBiasedSelfAttention(
+                embedding_dim, num_heads, d_pair, dropout, pair_bias=pair_bias
+            )
 
         self.cross_attention_norm: nn.LayerNorm | None = None
         self.cross_attention: MultiHeadCrossAttention | None = None
@@ -104,12 +117,13 @@ class PairBlock(nn.Module):
         self,
         S: Tensor,
         padding_mask: Tensor,
-        P: Tensor,
-        p_geo: Tensor,
-        mask_pair: Tensor,
+        P: Tensor | None,
+        p_geo: Tensor | None,
+        mask_pair: Tensor | None,
         descriptor_tokens: Tensor | None = None,
-    ) -> tuple[Tensor, Tensor]:
-        S = S + self.self_attention(self.self_attention_norm(S), P, padding_mask)
+    ) -> tuple[Tensor, Tensor | None]:
+        if self.self_attention is not None and self.self_attention_norm is not None:
+            S = S + self.self_attention(self.self_attention_norm(S), P, padding_mask)
 
         if self.cross_attention is not None and self.cross_attention_norm is not None:
             if descriptor_tokens is None:
@@ -122,6 +136,8 @@ class PairBlock(nn.Module):
 
         # Both pair updates are residual already (they return P + delta).
         if self.pair_update is not None and self.pair_transition is not None:
+            if P is None or p_geo is None or mask_pair is None:
+                raise ValueError("the pair update needs the pair and geometry tensors")
             P = self.pair_update(S, P, p_geo, mask_pair)
             P = self.pair_transition(P)
 

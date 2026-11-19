@@ -450,6 +450,12 @@ def main():  # noqa: C901 - one training loop
             avg_train_loss = (running / training_batches).item()
 
             validation_loss_sum = torch.zeros((), device=device)
+            # The same batches with every molecule given its neighbour's
+            # descriptor: the excess over the real loss is what the decoder
+            # takes from the descriptor.
+            shuffled_loss_sum = torch.zeros((), device=device)
+            shuffled_batches = 0
+            matching_real_loss_sum = torch.zeros((), device=device)
             validation_batches = 0
             validation_descriptors: list[torch.Tensor] = []
             per_component_metrics: dict[str, float] = {}
@@ -481,7 +487,14 @@ def main():  # noqa: C901 - one training loop
                             decoder=decoder,
                             noise=noise,
                             generator=validation_generator,
+                            with_shuffled_descriptor=True,
                         )
+                        if validation_step.shuffled_descriptor_loss is not None:
+                            shuffled_loss_sum += (
+                                validation_step.shuffled_descriptor_loss
+                            )
+                            matching_real_loss_sum += validation_step.denoising_loss
+                            shuffled_batches += 1
                         validation_descriptors.append(
                             validation_step.molecular_descriptor.flat.cpu()
                         )
@@ -507,6 +520,15 @@ def main():  # noqa: C901 - one training loop
                 # Collapse check on the descriptors themselves, over the whole
                 # validation set (training batches are too uniform in size).
                 extra_metrics: dict[str, float] = dict(per_component_metrics)
+                if shuffled_batches:
+                    shuffled_loss = (shuffled_loss_sum / shuffled_batches).item()
+                    extra_metrics["denoising_val_loss_shuffled_descriptor"] = (
+                        shuffled_loss
+                    )
+                    extra_metrics["descriptor_gap"] = (
+                        shuffled_loss
+                        - (matching_real_loss_sum / shuffled_batches).item()
+                    )
                 all_descriptors = torch.cat(validation_descriptors)
                 if all_descriptors.shape[0] >= 2:
                     extra_metrics.update(descriptor_statistics(all_descriptors))

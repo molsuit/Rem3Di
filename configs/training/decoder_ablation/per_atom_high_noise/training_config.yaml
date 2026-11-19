@@ -1,0 +1,50 @@
+# Decoder ablation (per_atom_high_noise): Per-atom decoder and noise median 2.0.
+# Same data, model and noise as drug_like_small; 3 epochs. The validation
+# metric descriptor_gap is the loss increase when every molecule gets its
+# neighbour's descriptor.
+#   uv run python scripts/submit_job.py configs/training/decoder_ablation/*/training_config.yaml --group decoder_ablation --time 01:15:00
+compile:
+  dynamo_cache_size_limit: 16
+  enabled: false
+  pad_multiple: 1
+dataloader:
+  batch_sampling:
+    bucket_size: 512
+    kind: bucket_batch
+    max_atoms_per_batch: 5250
+    max_batch_size: null
+  num_workers: 12
+  persistent_workers: true
+  pin_memory: true
+  prefetch_factor: 4
+data:
+  domain: drug_like
+  components:
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/pcqm4mv2
+    selection: diverse_100k
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/geom_drugs
+    selection: top1
+  validation:
+    kind: molecule_fraction
+    fraction: 0.02
+    seed: 0
+  deduplicate_across_components: nonisomeric_smiles
+epochs: 3
+learning_rate: 0.0003
+max_grad_norm: 1.0
+model_config_path: /dais/u/wedigs/descriptors/Rem3Di/configs/training/decoder_ablation/per_atom_high_noise/architecture_config.yaml
+noise:
+  kind: log_normal
+  median: 2.0
+  log_standard_deviation: 1.2
+normalization_batches: 200
+output_base: /dais/fs/scratch/wedigs/remedi/training_runs/decoder_ablation
+run_group: decoder_ablation
+training_name: per_atom_high_noise
+training_directory: null
+# No WANDB_API_KEY on DAIS yet (no .env); losses go to training_losses.yaml.
+wandb_active: false
+weight_decay: 0.001
+probe:
+  enabled: true
+  every_n_steps: 500

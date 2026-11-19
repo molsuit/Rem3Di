@@ -1,0 +1,49 @@
+# drug_like_small, 15 epochs, with the per-atom decoder (no attention between
+# atoms, no pair geometry) and noise log-uniform in [0.5, 30]: the decoder ablation
+# (configs/training/decoder_ablation) showed the descriptor is used only then.
+#   uv run python scripts/submit_job.py configs/training/drug_like_small/per_atom_log_uniform/training_config.yaml --group drug_like_small --time 06:00:00
+compile:
+  dynamo_cache_size_limit: 16
+  enabled: false
+  pad_multiple: 1
+dataloader:
+  batch_sampling:
+    bucket_size: 512
+    kind: bucket_batch
+    max_atoms_per_batch: 5250
+    max_batch_size: null
+  num_workers: 12
+  persistent_workers: true
+  pin_memory: true
+  prefetch_factor: 4
+data:
+  domain: drug_like
+  components:
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/pcqm4mv2
+    selection: diverse_100k
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/geom_drugs
+    selection: top1
+  validation:
+    kind: molecule_fraction
+    fraction: 0.02
+    seed: 0
+  deduplicate_across_components: nonisomeric_smiles
+epochs: 15
+learning_rate: 0.0003
+max_grad_norm: 1.0
+model_config_path: /dais/u/wedigs/descriptors/Rem3Di/configs/training/drug_like_small/per_atom_log_uniform/architecture_config.yaml
+noise:
+  kind: log_uniform
+  minimum: 0.5
+  maximum: 30.0
+normalization_batches: 200
+output_base: /dais/fs/scratch/wedigs/remedi/training_runs/drug_like_small
+run_group: drug_like_small
+training_name: per_atom_log_uniform
+training_directory: null
+# No WANDB_API_KEY on DAIS yet (no .env); losses go to training_losses.yaml.
+wandb_active: false
+weight_decay: 0.001
+probe:
+  enabled: true
+  every_n_steps: 500

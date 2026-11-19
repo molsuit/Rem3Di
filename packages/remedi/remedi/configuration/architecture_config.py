@@ -101,6 +101,31 @@ class DecoderConfig(StrictBaseModel):
     # Width of the decoder's atom stream (independent of the encoder's).
     embedding_dimension: int = Field(gt=0)
     attention_layer_config: AttentionLayerConfig
+    # The pair geometry biases the decoder's self-attention. Without it the
+    # decoder sees only the noised atoms (and the element tokens): element and
+    # geometry together almost determine the MACE invariants, so with geometry
+    # the decoder can denoise without the molecular descriptor.
+    pair_geometry: bool = True
+    # Each atom's element embedding is added to its decoder token.
+    element_tokens: bool = False
+    # False: no attention between the decoder's atoms. Each atom is denoised
+    # from its own noised descriptor, the noise level and the molecular
+    # descriptor, which is then the only route for molecule-level context.
+    atom_self_attention: bool = True
+
+    @model_validator(mode="after")
+    def _no_pair_update_without_geometry(self) -> Self:
+        if not self.pair_geometry and self.attention_layer_config.update_pair:
+            raise ValueError(
+                "decoder_config.pair_geometry: false has no pair tensor to update; "
+                "set attention_layer_config.update_pair: false"
+            )
+        if not self.atom_self_attention and self.pair_geometry:
+            raise ValueError(
+                "decoder_config.atom_self_attention: false has no attention for the "
+                "pair geometry to bias; set pair_geometry: false"
+            )
+        return self
 
     def build(self, dimensions: ModelDimensions) -> nn.Module:
         from remedi.model.decoder import TransformerPairDecoder

@@ -253,3 +253,22 @@ def test_architecture_yaml_roundtrip_is_loadable(architecture):
         yaml.safe_load(yaml_text(architecture.model_dump(mode="json")))
     )
     assert reloaded.dimensions == architecture.dimensions
+
+
+@pytest.mark.usefixtures("torch_sim_compiler")
+def test_mean_raw_invariants_average_each_molecules_atoms(model):
+    """The mean-pooled MACE baseline: per molecule, the mean of its atoms'
+    selected raw invariants, independent of the batch it is in."""
+    water = molecule("H2O")
+    batch = yield_molecules_collate_fn([_sample(water), _sample(CHIRAL_MOLECULE)])
+    with torch.no_grad():
+        pooled = model.preprocessor.mean_raw_invariants(batch)
+        atoms = model.preprocessor.raw_invariants(batch)
+        alone = model.preprocessor.mean_raw_invariants(
+            yield_molecules_collate_fn([_sample(CHIRAL_MOLECULE)])
+        )
+    water_atoms = len(water)
+    assert pooled.shape == (2, atoms.shape[-1])
+    torch.testing.assert_close(pooled[0], atoms[:water_atoms].mean(dim=0))
+    torch.testing.assert_close(pooled[1], atoms[water_atoms:].mean(dim=0))
+    torch.testing.assert_close(alone[0], pooled[1], atol=1e-5, rtol=1e-4)

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import torch
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from remedi.configuration.dataloader_config import DataLoaderConfig
 from remedi.training.data.mixture import PretrainingDataConfig
@@ -47,9 +47,10 @@ class LogNormalNoiseLevelConfig(BaseModel):
     """A log-normal noise level, drawn per molecule.
 
     Levels are in units of the standardised descriptors' deviation (1). The
-    defaults put 95 % of the levels between about 0.05 and 5: from "the noised
-    descriptor still identifies its atom" to "only the molecular descriptor
-    tells what the atom is".
+    defaults put 95 % of the levels between about 0.05 and 5. Note that the
+    512 noised channels still identify an atom's element at level 10, so these
+    defaults leave the decoder little reason to use the molecular descriptor
+    (decoder ablation, 2026-11-18).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -72,8 +73,41 @@ class LogNormalNoiseLevelConfig(BaseModel):
         )
 
 
+class LogUniformNoiseLevelConfig(BaseModel):
+    """A noise level drawn per molecule, uniform in its logarithm between
+    ``minimum`` and ``maximum``: every factor of ten in that range is drawn
+    equally often."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["log_uniform"] = "log_uniform"
+    minimum: float = Field(gt=0)
+    maximum: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _range_is_ordered(self) -> "LogUniformNoiseLevelConfig":
+        if self.minimum >= self.maximum:
+            raise ValueError(
+                f"log_uniform noise needs minimum < maximum, got {self.minimum} "
+                f"and {self.maximum}"
+            )
+        return self
+
+    def sample(
+        self,
+        count: int,
+        *,
+        device: torch.device | str,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
+        """``(count,)`` noise levels; ``generator`` (on ``device``) fixes them."""
+        uniform = torch.rand(count, generator=generator, device=device)
+        low, high = math.log(self.minimum), math.log(self.maximum)
+        return torch.exp(low + (high - low) * uniform)
+
+
 NoiseLevelConfig = Annotated[
-    FixedNoiseLevelConfig | LogNormalNoiseLevelConfig,
+    FixedNoiseLevelConfig | LogNormalNoiseLevelConfig | LogUniformNoiseLevelConfig,
     Field(discriminator="kind"),
 ]
 

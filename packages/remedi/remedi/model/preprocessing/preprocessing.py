@@ -283,6 +283,19 @@ class PreprocessorWithAtomicEmbedding(Preprocessor):
             atomic_embeddings.clone()[None]
         )[0]
 
+    def mean_raw_invariants(self, sample: Sample) -> torch.Tensor:
+        """The unnormalised selected invariants averaged over each molecule's
+        atoms, ``(systems, D)`` in the batch's system order: the mean-pooled
+        MACE descriptor, the baseline for the learned one. Leaves ``sample``
+        untouched."""
+        atomic_embeddings, state, lengths = self._atomic_embeddings(sample)
+        invariants = self.atomic_preprocessor.select_invariants(
+            atomic_embeddings.clone()[None]
+        )[0].to(torch.float64)
+        totals = invariants.new_zeros((lengths.shape[0], invariants.shape[-1]))
+        totals.index_add_(0, state.system_idx, invariants)
+        return (totals / lengths.to(totals.dtype)[:, None]).to(torch.float32)
+
     def forward(self, sample: Sample) -> PreprocessedSample:
         atomic_embeddings, state, lengths = self._atomic_embeddings(sample)
 
@@ -311,11 +324,22 @@ class PreprocessorWithAtomicEmbedding(Preprocessor):
             n_systems, max_atoms
         ) >= lengths.unsqueeze(1)
 
+        if sample.atomic_numbers is None:
+            raise ValueError("the sample has no atomic numbers")
+        padded_atomic_numbers = pad_per_system(
+            sample.atomic_numbers.to(device=device, dtype=torch.long)[:, None],
+            system_index,
+            lengths,
+            max_atoms,
+        )[..., 0]
+
         sample.embeddings = padded_embeddings
         sample.atomic_positions = padded_positions
         sample.padding_mask = padding_mask
 
-        return super().forward(sample)
+        preprocessed = super().forward(sample)
+        preprocessed.atomic_numbers = padded_atomic_numbers
+        return preprocessed
 
 
 def pad_per_system(

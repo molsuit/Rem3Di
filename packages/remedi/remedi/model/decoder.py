@@ -36,10 +36,17 @@ class TransformerPairDecoder(nn.Module):
     """Noised atomic descriptors + molecular descriptor -> denoising output.
 
     The noised descriptors are projected to the decoder width and the noise
-    level embedding is added to every atom. Each block cross-attends to the
-    descriptor tokens. The output head is zero-initialised and maps back to the
-    width of the denoising target.
+    level embedding (and, with ``element_tokens``, the element embedding) is
+    added to every atom. Each block cross-attends to the descriptor tokens; with
+    ``pair_geometry`` the pair representation biases the self-attention; without
+    ``atom_self_attention`` the atoms do not attend to each other at all. The
+    output head is zero-initialised and maps back to the width of the denoising
+    target. Output atom i is compared with target atom i: the order of the
+    atoms, not the geometry, pairs predictions with targets.
     """
+
+    #: Embedding rows for atomic numbers 0..118.
+    ELEMENT_COUNT = 119
 
     def __init__(self, decoder_config: DecoderConfig, dimensions: ModelDimensions):
         super().__init__()
@@ -52,6 +59,11 @@ class TransformerPairDecoder(nn.Module):
             dimensions.target_dimension, embedding_dimension
         )
         self.noise_level_embedding = NoiseLevelEmbedding(embedding_dimension)
+        self.element_embedding: nn.Embedding | None = None
+        if decoder_config.element_tokens:
+            self.element_embedding = nn.Embedding(
+                self.ELEMENT_COUNT, embedding_dimension
+            )
         self.layers = nn.ModuleList(
             [
                 PairBlock(
@@ -65,6 +77,8 @@ class TransformerPairDecoder(nn.Module):
                     update_pair=(
                         attention.update_pair and index < decoder_config.N_layers - 1
                     ),
+                    pair_bias=decoder_config.pair_geometry,
+                    self_attention=decoder_config.atom_self_attention,
                 )
                 for index in range(decoder_config.N_layers)
             ]
@@ -85,15 +99,20 @@ class TransformerPairDecoder(nn.Module):
         level of each molecule. Returns (B, N, target)."""
         S = self.input_projection(noised_sample.preprocessed_atomic_embeddings)
         S = S + self.noise_level_embedding(noise_level)[:, None, :]
-        P = noised_sample.initial_pair_representation
+        if self.element_embedding is not None:
+            if noised_sample.atomic_numbers is None:
+                raise ValueError("element tokens need the padded atomic numbers")
+            S = S + self.element_embedding(noised_sample.atomic_numbers.long())
+        geometry = self.config.pair_geometry
+        P = noised_sample.initial_pair_representation if geometry else None
 
         for layer in self.layers:
             S, P = layer(
                 S,
                 noised_sample.padding_mask,
                 P,
-                noised_sample.geometrical_encoding,
-                noised_sample.pair_mask,
+                noised_sample.geometrical_encoding if geometry else None,
+                noised_sample.pair_mask if geometry else None,
                 # Cross-attention attends over the full seed sequence (B, L, D).
                 descriptor_tokens=molecular_descriptor.tokens,
             )
