@@ -79,6 +79,33 @@ def descriptor_statistics(descriptors: torch.Tensor) -> dict[str, float]:
     }
 
 
+class FiniteStepGuard:
+    """Detects a non-finite loss or gradient norm without a per-step host sync.
+
+    :meth:`record` folds each step's finiteness into a flag on the device;
+    :meth:`check` reads it (one synchronisation) and raises. A non-finite step
+    corrupts the weights of the steps until the next check, so check before
+    anything that keeps or reports them (a checkpoint, validation).
+    """
+
+    def __init__(self, device: torch.device | str):
+        self._all_finite = torch.ones((), dtype=torch.bool, device=device)
+        self._first_unchecked_step = 0
+
+    def record(self, loss: torch.Tensor, gradient_norm: torch.Tensor) -> None:
+        self._all_finite &= torch.isfinite(loss) & torch.isfinite(gradient_norm)
+
+    def check(self, step: int) -> None:
+        """Raise ``FloatingPointError`` if a step since the last check was
+        non-finite; ``step`` is the number of steps taken so far."""
+        if not bool(self._all_finite):
+            raise FloatingPointError(
+                f"Non-finite loss or gradient norm in steps "
+                f"{self._first_unchecked_step}..{step - 1}."
+            )
+        self._first_unchecked_step = step
+
+
 @dataclass(frozen=True)
 class DenoisingStepResult:
     denoising_loss: torch.Tensor

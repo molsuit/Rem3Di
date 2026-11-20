@@ -74,7 +74,11 @@ def pad_molecules(sample: Sample, pad_multiple: int = 1) -> PaddedMolecules:
             f"expected the neighbour list as [2, pairs], got {tuple(edge_index.shape)}"
         )
     molecules, longest = padding_mask.shape
-    atom_slots = quantize_pad_length(max(longest, MINIMUM_ATOM_SLOTS), pad_multiple)
+    # A comparison, not max(): under torch.export (atom slots at least two) it is
+    # decided statically and leaves no symbolic max in the shapes.
+    atom_slots = quantize_pad_length(
+        longest if longest >= MINIMUM_ATOM_SLOTS else MINIMUM_ATOM_SLOTS, pad_multiple
+    )
     if atom_slots > longest:
         padding_mask = torch.nn.functional.pad(
             padding_mask, (0, atom_slots - longest), value=True

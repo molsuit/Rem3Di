@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import warnings
 from collections.abc import Iterator
 
@@ -140,4 +139,6 @@ def quantize_pad_length(max_length: int, multiple: int) -> int:
     """
     if multiple <= 0:
         raise ValueError("multiple must be positive.")
-    return int(math.ceil(max_length / multiple) * multiple)
+    # Integer ceiling division: exact, and keeps a symbolic size symbolic under
+    # torch.export (math.ceil would specialise it to the example's value).
+    return -(-max_length // multiple) * multiple

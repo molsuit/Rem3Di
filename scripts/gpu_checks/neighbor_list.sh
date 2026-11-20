@@ -31,6 +31,8 @@
 # Environment:
 #   UV_RUN              how to run Python (default "uv run"; on DAIS's shared venv use
 #                       UV_PROJECT_ENVIRONMENT=... UV_RUN="uv run --no-sync")
+#   SMOKE_EPOCHS        epochs of the smoke run (default 1; more on small stand-in
+#                       data from make_test_datasets.py, to reach 400 batches)
 #   CXX                 a C++ compiler >= gcc 10 for torch inductor's CPU code, if the
 #                       system one is older
 # The MACE-OFF23 medium tests read ~/.cache/mace/MACE-OFF23_medium.model; it is
@@ -147,7 +149,7 @@ else
     CONFIG="$("${UV[@]}" python "${CHECKS[@]}" smoke-config \
         --model_path "$MODEL_PATH" --pcqm4mv2 "$PCQM4MV2" --geom_drugs "$GEOM_DRUGS" \
         --output_base "$OUTPUT_DIR/runs" --config_dir "$OUTPUT_DIR/smoke_config" \
-        --num_workers "$NUM_WORKERS" 2> "$OUTPUT_DIR/smoke_config.log" | tail -1)"
+        --num_workers "$NUM_WORKERS" --epochs "${SMOKE_EPOCHS:-1}" 2> "$OUTPUT_DIR/smoke_config.log" | tail -1)"
     SNAPSHOT=""
     if [ -n "$CONFIG" ] && [ -f "$CONFIG" ]; then
         SNAPSHOT="$("${UV[@]}" python scripts/submit_job.py "$CONFIG" --no-submit 2>> "$OUTPUT_DIR/smoke_config.log" | tail -1)"

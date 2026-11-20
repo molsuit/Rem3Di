@@ -100,7 +100,10 @@ def test_loaded_statistics_count_as_set() -> None:
     ensure_invariant_statistics(preprocessor, _batches(), max_batches=1, device="cpu")
     reloaded = _Preprocessor()
     reloaded.load_state_dict(preprocessor.state_dict())
-    assert bool(reloaded.atomic_preprocessor.invariant_normalization.stats_set)
+    normalization = reloaded.atomic_preprocessor.invariant_normalization
+    assert bool(normalization.stats_set)
+    # forward checks the host-side flag (no device read per step).
+    assert normalization.statistics_known
     assert (
         ensure_invariant_statistics(reloaded, _batches(), max_batches=1, device="cpu")
         is None

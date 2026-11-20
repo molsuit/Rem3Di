@@ -151,6 +151,7 @@ def test_smoke_config_validates(checks, tmp_path):
             "output_base": tmp_path / "runs",
             "config_dir": tmp_path / "configs",
             "num_workers": 0,
+            "epochs": 3,
         },
     )
     checks.smoke_config(arguments)
@@ -158,7 +159,7 @@ def test_smoke_config_validates(checks, tmp_path):
         tmp_path / "configs" / "training_config.yaml", PretrainingConfig
     )
     assert not training.compile.enabled
-    assert training.epochs == 1
+    assert training.epochs == 3
     components = training.data.components
     assert all(isinstance(component, DatasetComponent) for component in components)
     assert {

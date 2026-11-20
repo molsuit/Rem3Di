@@ -9,7 +9,6 @@ from remedi.training.data.sample import PreprocessedSample
 from remedi.utils.model_utils import (
     get_equivariant_irreps,
     get_invariant_indices,
-    split_invariants_equivariants,
 )
 
 
@@ -91,6 +90,14 @@ class PrecomputedInvariantNormalization(nn.Module):
         # Whether the statistics were set; saved with them, so a loaded
         # checkpoint knows it carries real statistics.
         self.register_buffer("stats_set", torch.tensor(False), persistent=True)
+        # The same on the host, for forward: reading the buffer there would
+        # synchronise with the device every step and cannot be traced by
+        # torch.export. Kept in step by set_stats and by loading a state dict.
+        self.statistics_known = False
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+        self.statistics_known = bool(self.stats_set)
 
     @torch.no_grad()
     def set_stats(
@@ -144,12 +151,13 @@ class PrecomputedInvariantNormalization(nn.Module):
         self.mean.data.copy_(mean)
         self.std.data.copy_(std)
         self.stats_set.fill_(True)
+        self.statistics_known = True
 
     def forward(
         self, x: torch.Tensor, padding_mask: torch.Tensor | None
     ) -> torch.Tensor:
         # x: (B, N, dim), padding_mask: (B, N) with True = pad
-        if not bool(self.stats_set):
+        if not self.statistics_known:
             raise RuntimeError(
                 "PrecomputedInvariantNormalization has no statistics: call "
                 "set_stats (see ensure_invariant_statistics) or load a checkpoint."
@@ -257,6 +265,9 @@ class AtomicDescriptorPreprocessor(nn.Module):
     the model width live in the encoder and the decoder.
     """
 
+    invariant_channel_index: torch.Tensor
+    equivariant_channel_index: torch.Tensor
+
     def __init__(
         self,
         preprocess_config: EmbeddingPreprocessConfig,
@@ -272,10 +283,28 @@ class AtomicDescriptorPreprocessor(nn.Module):
         # is active these match `input_irreps`.
         selected_input_irreps = self.config.selected_input_irreps
 
-        self.invariant_indices, self.invariant_irreps = get_invariant_indices(
+        invariant_indices, self.invariant_irreps = get_invariant_indices(
             selected_input_irreps
         )
         self.equivariant_irreps = get_equivariant_irreps(selected_input_irreps)
+        # The channel indices of the invariants and of the equivariants, in
+        # ascending order, as device buffers built once: selecting with them needs
+        # no host-device copy and no boolean mask (whose result size the host
+        # would have to wait for) in every forward.
+        invariant_channels = sorted(set(invariant_indices))
+        equivariant_channels = sorted(
+            set(range(selected_input_irreps.dim)) - set(invariant_channels)
+        )
+        self.register_buffer(
+            "invariant_channel_index",
+            torch.tensor(invariant_channels, dtype=torch.long),
+            persistent=False,
+        )
+        self.register_buffer(
+            "equivariant_channel_index",
+            torch.tensor(equivariant_channels, dtype=torch.long),
+            persistent=False,
+        )
 
         if selected_channel_indices is not None:
             self.register_buffer(
@@ -317,22 +346,28 @@ class AtomicDescriptorPreprocessor(nn.Module):
             return embeddings
         return embeddings.index_select(-1, self.selected_channel_indices)
 
+    def _split_invariants_equivariants(
+        self, embeddings: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """The invariant and the equivariant channels of ``(B, N, C)`` features."""
+        return (
+            embeddings.index_select(-1, self.invariant_channel_index),
+            embeddings.index_select(-1, self.equivariant_channel_index),
+        )
+
     def select_invariants(self, embeddings: torch.Tensor) -> torch.Tensor:
         """The raw (unnormalised) invariants of the selected layers, from MACE
         node features ``(B, N, C)``."""
-        invariants, _ = split_invariants_equivariants(
-            self._select_layers(embeddings), self.invariant_indices
+        return self._select_layers(embeddings).index_select(
+            -1, self.invariant_channel_index
         )
-        return invariants
 
     def forward(
         self, embeddings: torch.Tensor, padding_mask: torch.Tensor | None = None
     ) -> PreprocessedSample:
         embeddings = self._select_layers(embeddings)
 
-        invariants, equivariants = split_invariants_equivariants(
-            embeddings, self.invariant_indices
-        )
+        invariants, equivariants = self._split_invariants_equivariants(embeddings)
 
         normalized_invariants = self.invariant_normalization(invariants, padding_mask)
 

@@ -24,7 +24,11 @@ from remedi.training.data.mixture import (
 from remedi.training.data.samplers import BucketBatchSampler
 from remedi.training.data.training_dataset import atoms_getitem
 from remedi.training.linear_probe import LinearProbeMonitor
-from remedi.training.pretraining import denoising_step, descriptor_statistics
+from remedi.training.pretraining import (
+    FiniteStepGuard,
+    denoising_step,
+    descriptor_statistics,
+)
 from remedi.training.telemetry import (
     ForwardTimer,
     ThroughputWindow,
@@ -367,6 +371,20 @@ def main():  # noqa: C901 - one training loop
         # first window includes compile warm-up and the workers' start.
         WINDOW_STEPS = 50
         window = ThroughputWindow(device, forward_timers)
+        # Non-finite losses and gradient norms are collected on the device and
+        # checked every WINDOW_STEPS steps and at the end of each epoch, not with a
+        # host sync per step. A non-finite step stops the run before any state
+        # is saved from it.
+        finite_guard = FiniteStepGuard(device)
+
+        def check_finite(steps_taken: int) -> None:
+            try:
+                finite_guard.check(steps_taken)
+            except FloatingPointError as error:
+                raise FloatingPointError(
+                    f"{error} (epoch {epoch}). The last good state is "
+                    f"{TRAINING_STATE_FILENAME}."
+                ) from error
 
         for epoch in range(start_epoch, training_config.epochs):
             running = torch.zeros((), device=device)
@@ -400,20 +418,13 @@ def main():  # noqa: C901 - one training loop
                 )
                 batch_atoms = step.atom_count
                 denoising_loss = step.denoising_loss
-                if not torch.isfinite(denoising_loss):
-                    raise FloatingPointError(
-                        f"Non-finite denoising loss ({denoising_loss.item()}) at "
-                        f"epoch {epoch}, batch {batch_index}, step {global_step}. "
-                        f"The last good state is {TRAINING_STATE_FILENAME}."
-                    )
 
                 denoising_loss.backward()
 
-                torch.nn.utils.clip_grad_norm_(
-                    all_params,
-                    max_norm=training_config.max_grad_norm,
-                    error_if_nonfinite=True,
+                gradient_norm = torch.nn.utils.clip_grad_norm_(
+                    all_params, max_norm=training_config.max_grad_norm
                 )
+                finite_guard.record(denoising_loss, gradient_norm)
 
                 optimizer.step()
                 lr_scheduler.step()
@@ -424,6 +435,7 @@ def main():  # noqa: C901 - one training loop
                 window.step_done(batch_atoms)
                 global_step += 1
                 if global_step % WINDOW_STEPS == 0:
+                    check_finite(global_step)
                     throughput = {
                         "global_step": global_step,
                         "epoch_idx": epoch,
@@ -451,6 +463,8 @@ def main():  # noqa: C901 - one training loop
 
             if training_batches == 0:
                 raise RuntimeError("The training loader yielded no batches.")
+            # Before validation and the checkpoints: the weights are finite.
+            check_finite(global_step)
             # Already a mean over atoms and channels: 1.0 is a decoder that
             # outputs zero, lower is learned structure.
             avg_train_loss = (running / training_batches).item()

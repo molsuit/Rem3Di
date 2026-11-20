@@ -91,6 +91,7 @@ class MaceFeaturizer(nn.Module):
     """
 
     element_index: torch.Tensor
+    inert_pair_vector: torch.Tensor
     model_atomic_numbers: torch.Tensor
     mul_ir_index: torch.Tensor
 
@@ -136,6 +137,13 @@ class MaceFeaturizer(nn.Module):
             "model_atomic_numbers", atomic_numbers.clone(), persistent=False
         )
 
+        # A buffer, built once: a tensor made from Python numbers in forward is
+        # copied host-to-device on every call, which blocks the host.
+        self.register_buffer(
+            "inert_pair_vector",
+            torch.tensor([self.inert_pair_distance, 0.0, 0.0], device=device),
+            persistent=False,
+        )
         self.layout = layout
         self.register_buffer(
             "mul_ir_index",
@@ -145,6 +153,12 @@ class MaceFeaturizer(nn.Module):
         # A plain attribute (a function, not a module): the parameters stay registered
         # once, under the featurizer.
         self._compiled_features: Callable[..., torch.Tensor] | None = None
+
+    def train(self, mode: bool = True) -> MaceFeaturizer:
+        """The featurizer is frozen: it stays in eval mode whatever ``mode`` is, so
+        that an owner's ``.train()`` (the preprocessor in the training loop) never
+        switches the MACE layers to their training behaviour."""
+        return super().train(False)
 
     def compile_features(self) -> None:
         """Evaluate the features through ``torch.compile`` from now on (whole graph,
@@ -193,8 +207,20 @@ class MaceFeaturizer(nn.Module):
             edge_index = torch.cat(
                 [edge_index, edge_index.new_zeros((2, missing_pairs))], dim=1
             )
+        if self.dtype == torch.float32 and torch.get_float32_matmul_precision() != (
+            "highest"
+        ):
+            # TF32 (or bfloat16) matmuls shift the features by ~1e-3 relative.
+            raise RuntimeError(
+                "the MACE featurizer needs full float32 matmuls, but "
+                f"torch.get_float32_matmul_precision() is "
+                f"{torch.get_float32_matmul_precision()!r}: keep it 'highest' and "
+                "use autocast for the trained modules instead"
+            )
         positions = positions.to(self.dtype)
-        with torch.no_grad():
+        # Frozen and exact: no gradients, and never in an autocast dtype (a caller
+        # may run the trained modules under autocast).
+        with torch.no_grad(), torch.autocast(positions.device.type, enabled=False):
             if self._compiled_features is None:
                 return self.features(atomic_numbers, positions, edge_index)
             for tensor in (atomic_numbers, positions):
@@ -234,8 +260,9 @@ class MaceFeaturizer(nn.Module):
         real_pair = real_atom[sender] & real_atom[receiver] & (sender != receiver)
         flat_positions = positions.reshape(-1, 3)
         vectors = flat_positions[receiver] - flat_positions[sender]
-        inert = vectors.new_tensor([self.inert_pair_distance, 0.0, 0.0])
-        vectors = torch.where(real_pair[:, None], vectors, inert)
+        vectors = torch.where(
+            real_pair[:, None], vectors, self.inert_pair_vector.to(vectors.dtype)
+        )
         lengths = torch.linalg.vector_norm(vectors, dim=-1, keepdim=True)
 
         if self.permute_edge_vectors:

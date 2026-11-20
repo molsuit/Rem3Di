@@ -10,6 +10,7 @@ MACE-POLAR-1-M runs only with RUN_POLAR_TESTS=1, cuequivariance only on CUDA.
 
 from __future__ import annotations
 
+import copy
 import os
 from pathlib import Path
 
@@ -278,6 +279,60 @@ def test_pad_molecules_places_and_centres_each_molecule():
         assert not molecules.positions[index, count:].any()
 
 
+class _PadMolecules(torch.nn.Module):
+    """``pad_molecules`` on plain tensors, as an exported model calls it."""
+
+    def forward(self, atomic_numbers, positions, system_index, padding_mask, edges):
+        sample = Sample(
+            atomic_positions=positions,
+            atomic_numbers=atomic_numbers,
+            system_index=system_index,
+            padding_mask=padding_mask,
+            edge_index=edges,
+            neighbor_cutoff=5.0,
+        )
+        molecules = pad_molecules(sample)
+        return molecules.positions, molecules.edge_index
+
+
+def _flat(batch: Sample) -> tuple[torch.Tensor, ...]:
+    fields = (
+        batch.atomic_numbers,
+        batch.atomic_positions,
+        batch.system_index,
+        batch.padding_mask,
+        batch.edge_index,
+    )
+    assert all(field is not None for field in fields)
+    return tuple(field for field in fields if field is not None)
+
+
+def test_pad_molecules_exports_with_dynamic_shapes():
+    """Regression: math.ceil and max() in the padding specialised the molecule and
+    atom-slot counts, so torch.export could not keep them dynamic."""
+    collate = MoleculeCollator(cutoff=5.0)
+    small = _flat(collate([_sample(molecule(name)) for name in ("H2O", "CH4")]))
+    large = _flat(
+        collate([_sample(molecule(name)) for name in ("C2H6", "CH3OH", "H2O")])
+    )
+    atoms = torch.export.Dim("atoms", min=3)
+    dynamic_shapes = (
+        {0: atoms},
+        {0: atoms},
+        {0: atoms},
+        {0: torch.export.Dim("molecules", min=2), 1: torch.export.Dim("slots", min=2)},
+        {1: torch.export.Dim("pairs", min=2)},
+    )
+    exported = torch.export.export(
+        _PadMolecules(), small, dynamic_shapes=dynamic_shapes, strict=False
+    )
+    for flat_batch in (small, large):
+        for result, expected in zip(
+            exported.module()(*flat_batch), _PadMolecules()(*flat_batch), strict=True
+        ):
+            torch.testing.assert_close(result, expected)
+
+
 def test_pad_molecules_places_the_neighbor_list_on_the_padded_atoms(structures):
     batch = MoleculeCollator(cutoff=5.0)([_sample(atoms) for atoms in structures])
     assert batch.edge_index is not None and batch.atomic_positions is not None
@@ -341,6 +396,38 @@ def test_featurizer_does_not_depend_on_batching_or_padding(
     for atoms, in_batch in zip(structures, batched, strict=True):
         alone = _featurize(mace_off_featurizer, [atoms])[0]
         torch.testing.assert_close(in_batch, alone, rtol=1e-12, atol=1e-12)
+
+
+def test_featurizer_stays_frozen_when_its_owner_trains(mace_off_featurizer):
+    owner = torch.nn.Sequential(mace_off_featurizer, torch.nn.Linear(2, 2))
+    owner.train()
+    assert not any(module.training for module in mace_off_featurizer.modules())
+    assert owner[1].training
+    assert not any(
+        parameter.requires_grad for parameter in mace_off_featurizer.parameters()
+    )
+
+
+def test_featurizer_stays_in_float32_under_autocast(mace_off_featurizer, structures):
+    """The trained modules may run under bfloat16 autocast; MACE never does."""
+    padded = pad_molecules(_collate(mace_off_featurizer, structures[:2]))
+    expected = mace_off_featurizer(padded)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        features = mace_off_featurizer(padded)
+    assert features.dtype == expected.dtype == mace_off_featurizer.dtype
+    torch.testing.assert_close(features, expected, rtol=0.0, atol=0.0)
+
+
+def test_float32_featurizer_refuses_tf32_matmuls(mace_off_featurizer, structures):
+    featurizer = copy.deepcopy(mace_off_featurizer).float()
+    padded = pad_molecules(_collate(featurizer, structures[:1]))
+    previous = torch.get_float32_matmul_precision()
+    torch.set_float32_matmul_precision("high")
+    try:
+        with pytest.raises(RuntimeError, match="full float32 matmuls"):
+            featurizer(padded)
+    finally:
+        torch.set_float32_matmul_precision(previous)
 
 
 def test_featurizer_rejects_unknown_elements(mace_off_featurizer):

@@ -74,7 +74,11 @@ def load_training_state(
     optimizer.load_state_dict(state["optimizer"])
     scheduler.load_state_dict(state["scheduler"])
     telemetry.load_state_dict(state["telemetry"])
-    torch.set_rng_state(state["torch_random_state"])
+    # map_location moves every tensor, the random states too; torch takes them
+    # as CPU byte tensors only.
+    torch.set_rng_state(state["torch_random_state"].cpu())
     if state["cuda_random_states"] and torch.cuda.is_available():
-        torch.cuda.set_rng_state_all(state["cuda_random_states"])
+        torch.cuda.set_rng_state_all(
+            [random_state.cpu() for random_state in state["cuda_random_states"]]
+        )
     return int(state["completed_epochs"]), int(state["global_step"])

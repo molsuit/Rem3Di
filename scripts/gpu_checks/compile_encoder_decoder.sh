@@ -29,6 +29,8 @@
 #   STAGE_DIRECTORY  copy the datasets to this local directory first [unset: read
 #                    them in place]
 #   TRAIN_BATCHES [400], VALIDATION_BATCHES [20]
+#   SMOKE_EPOCHS     epochs of the smoke runs [1; more on small stand-in data
+#                    from make_test_datasets.py, to reach TRAIN_BATCHES]
 #   UV_RUN           the command that runs Python in the repo's environment
 #                    ["uv run"; on DAIS: "uv run --no-sync" with
 #                    UV_PROJECT_ENVIRONMENT set]
@@ -79,7 +81,7 @@ run_step compile_tests "${UV_RUN_COMMAND[@]}" pytest -q -p no:cacheprovider --du
     packages/remedi/tests/model/test_compiled_encoder_decoder.py
 
 if [ "${SKIP_SMOKE:-0}" != "1" ]; then
-    CONFIG_ARGUMENTS=(--output-base "${OUTPUT_DIR}/runs" --configs-directory "${OUTPUT_DIR}/configs")
+    CONFIG_ARGUMENTS=(--output-base "${OUTPUT_DIR}/runs" --configs-directory "${OUTPUT_DIR}/configs" --epochs "${SMOKE_EPOCHS:-1}")
     [ -n "${DATASET_ROOT:-}" ] && CONFIG_ARGUMENTS+=(--dataset-root "${DATASET_ROOT}")
     [ -n "${MACE_MODEL_PATH:-}" ] && CONFIG_ARGUMENTS+=(--mace-model-path "${MACE_MODEL_PATH}")
     run_step smoke_configs python_in_repo scripts/compile_checks.py smoke-configs "${CONFIG_ARGUMENTS[@]}"

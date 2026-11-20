@@ -188,6 +188,7 @@ def smoke_configs(
     configs_directory: Path,
     dataset_root: Path | None,
     mace_model_path: Path | None,
+    epochs: int,
 ) -> int:
     """Writes ``compile_on.yaml`` and ``compile_off.yaml`` (and, with
     ``mace_model_path``, the architecture config they point to) into
@@ -218,7 +219,7 @@ def smoke_configs(
                 f"dataset {component['dataset']} not found: set DATASET_ROOT"
             )
     training.update(
-        epochs=1,
+        epochs=epochs,
         normalization_batches=50,
         model_config_path=str(architecture_path.resolve()),
         output_base=str(output_base.resolve()),
@@ -342,6 +343,9 @@ def main() -> int:
     configs.add_argument("--configs-directory", type=Path, required=True)
     configs.add_argument("--dataset-root", type=Path, default=None)
     configs.add_argument("--mace-model-path", type=Path, default=None)
+    # More than one on small stand-in data (make_test_datasets.py), so the run
+    # reaches the 50-step throughput windows.
+    configs.add_argument("--epochs", type=int, default=1)
     summary = commands.add_parser("summarise")
     summary.add_argument(
         "--run",
@@ -363,6 +367,7 @@ def main() -> int:
             arguments.configs_directory,
             arguments.dataset_root,
             arguments.mace_model_path,
+            arguments.epochs,
         )
     return summarise(
         [

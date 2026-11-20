@@ -20,29 +20,6 @@ def concatenate_irreps(irreps: Iterable[Irreps]) -> Irreps:
     return concatenated
 
 
-def remove_equivariants(atomic_embeddings, invariant_indices):
-    ind = torch.tensor(list(invariant_indices)).to(atomic_embeddings.device)
-    return atomic_embeddings[:, :, ind]
-
-
-def split_invariants_equivariants(
-    emb: torch.Tensor, invariant_indices
-) -> tuple[torch.Tensor, torch.Tensor]:
-    # emb: [B, N, C]
-    C = emb.shape[2]  # ensure tensor of long indices on the correct device
-    if not torch.is_tensor(invariant_indices):
-        invariant_indices = torch.tensor(
-            list(invariant_indices), dtype=torch.long, device=emb.device
-        )
-    # build mask
-    mask = torch.zeros(C, dtype=torch.bool, device=emb.device)
-    mask[invariant_indices] = True
-
-    invariants = emb[:, :, mask]  # picks out the True positions
-    equivariants = emb[:, :, ~mask]  # picks out the False positions
-    return invariants, equivariants
-
-
 def get_invariant_indices(irreps: Irreps) -> Irreps:
     """
     Gets the slices for all irreps indices, and only returns those with degree 0

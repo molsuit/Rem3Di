@@ -32,7 +32,7 @@ from remedi.configuration.architecture_config import (
     ModelDimensions,
 )
 from remedi.model.molecular_descriptor import MolecularDescriptor
-from remedi.model.pair_linear import PairLinear, pair_channel_linear
+from remedi.model.pair_linear import PairLinear, pair_channel_matmul
 from remedi.training.data.sample import PreprocessedSample
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
@@ -202,35 +202,98 @@ def _compiled(modules: EncoderDecoder, backend: str | Callable = "inductor"):
 # --- the pair linear --------------------------------------------------------
 
 
-def test_pair_channel_linear_passes_the_operator_checks():
+def test_pair_channel_matmul_passes_the_operator_checks():
     generator = torch.Generator().manual_seed(0)
     pair = torch.randn(2, 5, 5, 6, generator=generator, requires_grad=True)
     weight = torch.randn(3, 6, generator=generator, requires_grad=True)
-    bias = torch.randn(3, generator=generator, requires_grad=True)
-    torch.library.opcheck(pair_channel_linear, (pair, weight, bias))
-    torch.library.opcheck(pair_channel_linear, (pair, weight, None))
+    torch.library.opcheck(pair_channel_matmul, (pair, weight))
 
 
-def test_pair_linear_matches_linear_in_values_and_gradients():
-    linear = nn.Linear(6, 3)
-    pair_linear = PairLinear(6, 3)
+def test_pair_channel_matmul_rejects_mismatched_inputs():
+    pair = torch.randn(2, 5, 5, 6, device="meta")
+    with pytest.raises(ValueError, match="channels"):
+        pair_channel_matmul(pair, torch.randn(3, 4, device="meta"))
+    with pytest.raises(ValueError, match="the weight"):
+        pair_channel_matmul(pair, torch.randn(3, 6, device="meta").double())
+
+
+def _linear_pair(bias: bool) -> tuple[nn.Linear, PairLinear]:
+    torch.manual_seed(0)
+    linear = nn.Linear(6, 3, bias=bias)
+    pair_linear = PairLinear(6, 3, bias=bias)
     pair_linear.load_state_dict(linear.state_dict())
-    pair = torch.randn(2, 5, 5, 6, requires_grad=True)
+    return linear, pair_linear
 
-    expected = linear(pair)
-    expected.square().sum().backward()
-    expected_gradients = [pair.grad, linear.weight.grad, linear.bias.grad]
-    pair.grad = None
 
-    output = pair_channel_linear(pair, pair_linear.weight, pair_linear.bias)
-    output.square().sum().backward()
+def _values_and_gradients(
+    module: nn.Module, pair: torch.Tensor
+) -> tuple[torch.Tensor, list[torch.Tensor]]:
+    pair = pair.detach().clone().requires_grad_(True)
+    module.zero_grad(set_to_none=True)
+    output = module(pair)
+    output.float().square().sum().backward()
+    gradients = [pair.grad] + [parameter.grad for parameter in module.parameters()]
+    assert all(gradient is not None for gradient in gradients)
+    return output.detach(), [
+        gradient.detach().clone() for gradient in gradients if gradient is not None
+    ]
+
+
+def _compile_eager_backend(module: nn.Module) -> nn.Module:
+    """Traced by dynamo (so ``is_compiling`` holds and the custom operator runs)
+    but executed eagerly: no C++ compiler needed."""
+    return cast(nn.Module, torch.compile(module, dynamic=True, backend="aot_eager"))
+
+
+@pytest.mark.parametrize("bias", [True, False])
+def test_compiled_pair_linear_matches_linear_in_values_and_gradients(bias: bool):
+    linear, pair_linear = _linear_pair(bias)
+    pair = torch.randn(2, 5, 5, 6)
+    expected, expected_gradients = _values_and_gradients(linear, pair)
+    output, gradients = _values_and_gradients(_compile_eager_backend(pair_linear), pair)
     torch.testing.assert_close(output, expected)
-    for gradient, expected_gradient in zip(
-        [pair.grad, pair_linear.weight.grad, pair_linear.bias.grad],
-        expected_gradients,
-        strict=True,
-    ):
+    for gradient, expected_gradient in zip(gradients, expected_gradients, strict=True):
         torch.testing.assert_close(gradient, expected_gradient)
+
+
+@pytest.mark.parametrize("bias", [True, False])
+@pytest.mark.parametrize("compiled", [False, True])
+def test_pair_linear_follows_autocast_like_linear(bias: bool, compiled: bool):
+    linear, pair_linear = _linear_pair(bias)
+    module = _compile_eager_backend(pair_linear) if compiled else pair_linear
+    pair = torch.randn(2, 5, 5, 6)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        expected, expected_gradients = _values_and_gradients(linear, pair)
+        output, gradients = _values_and_gradients(module, pair)
+    assert output.dtype == expected.dtype == torch.bfloat16
+    # nn.Linear adds the bias inside the matmul and rounds to bfloat16 once; the
+    # compiled PairLinear rounds the product, then adds the bias: one extra
+    # bfloat16 rounding (relative 2**-8) on values of order one.
+    relative, absolute = 1.6e-2, 1e-2
+    torch.testing.assert_close(output, expected, rtol=relative, atol=absolute)
+    for gradient, expected_gradient in zip(gradients, expected_gradients, strict=True):
+        assert gradient.dtype == expected_gradient.dtype
+        torch.testing.assert_close(
+            gradient, expected_gradient, rtol=relative, atol=absolute
+        )
+
+
+def test_pair_linear_exports_without_the_custom_operator():
+    """torch.export (for AOTInductor) takes the plain linear: a Python custom
+    operator cannot run inside an AOTInductor package."""
+    linear, pair_linear = _linear_pair(bias=True)
+    pair = torch.randn(2, 5, 5, 6)
+    atoms = torch.export.Dim("atoms", min=2)
+    exported = torch.export.export(
+        pair_linear,
+        (pair,),
+        dynamic_shapes=({0: torch.export.Dim("molecules", min=2), 1: atoms, 2: atoms},),
+        strict=False,
+    )
+    operators = {str(node.target) for node in exported.graph.nodes}
+    assert not any("pair_channel_matmul" in operator for operator in operators)
+    larger = torch.randn(3, 7, 7, 6)
+    torch.testing.assert_close(exported.module()(larger), linear(larger))
 
 
 # --- the root cause: no floor-divided sizes in the traced graphs -------------

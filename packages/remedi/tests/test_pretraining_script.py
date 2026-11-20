@@ -8,6 +8,7 @@ run directory resumes instead of starting over.
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import logging
 import math
@@ -140,10 +141,15 @@ class _JobKilled(Exception):
 
 
 def _run_script(
-    training_config: Path, monkeypatch, *, kill_after_epoch: int | None = None
+    training_config: Path,
+    monkeypatch,
+    *,
+    kill_after_epoch: int | None = None,
+    non_finite_loss_at_step: int | None = None,
 ) -> None:
     """Run the script's ``main``; ``kill_after_epoch`` ends it (with
-    :class:`_JobKilled`) right after that epoch's training state is saved."""
+    :class:`_JobKilled`) right after that epoch's training state is saved;
+    ``non_finite_loss_at_step`` makes that training step's loss NaN."""
     specification = importlib.util.spec_from_file_location("pretraining", SCRIPT)
     assert specification is not None and specification.loader is not None
     module = importlib.util.module_from_spec(specification)
@@ -160,6 +166,24 @@ def _run_script(
                 raise _JobKilled
 
         module.save_training_state = save_then_kill
+    if non_finite_loss_at_step is not None:
+        denoising_step = module.denoising_step
+        training_steps = 0
+
+        def denoising_step_with_nan(*arguments, **options):
+            nonlocal training_steps
+            result = denoising_step(*arguments, **options)
+            if not torch.is_grad_enabled():
+                return result
+            training_steps += 1
+            if training_steps - 1 != non_finite_loss_at_step:
+                return result
+            # Still attached to the graph, so the backward runs as usual.
+            return dataclasses.replace(
+                result, denoising_loss=result.denoising_loss * float("nan")
+            )
+
+        module.denoising_step = denoising_step_with_nan
     try:
         module.main()
     finally:
@@ -248,3 +272,17 @@ def test_a_run_does_not_resume_with_a_changed_schedule(
         _run_script(_write_configs(tmp_path, epochs=2), monkeypatch, kill_after_epoch=1)
     with pytest.raises(ValueError, match="resumes only with the epochs"):
         _run_script(_write_configs(tmp_path, epochs=3), monkeypatch)
+
+
+@pytest.mark.usefixtures("mace_off_medium")
+def test_a_non_finite_step_stops_the_run_before_any_state_is_saved(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The finiteness checks are deferred (no host sync per step), but a NaN loss
+    still ends the run before an epoch's state or checkpoint is written."""
+    run_directory = tmp_path / "runs" / "smoke"
+    training_config = _write_configs(tmp_path, epochs=2, update_pair=False)
+    with pytest.raises(FloatingPointError, match=r"Non-finite loss or gradient norm"):
+        _run_script(training_config, monkeypatch, non_finite_loss_at_step=1)
+    assert not (run_directory / TRAINING_STATE_FILENAME).exists()
+    assert not (run_directory / ENCODER_FILENAME).exists()

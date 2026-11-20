@@ -277,7 +277,7 @@ def smoke_config(arguments: argparse.Namespace) -> None:
     if arguments.num_workers == 0:
         training["dataloader"].pop("prefetch_factor", None)
     training.update(
-        epochs=1,
+        epochs=arguments.epochs,
         normalization_batches=50,
         model_config_path=str(architecture_path),
         output_base=str(arguments.output_base),
@@ -427,6 +427,9 @@ def main() -> None:
     smoke_parser.add_argument("--output_base", type=Path, required=True)
     smoke_parser.add_argument("--config_dir", type=Path, required=True)
     smoke_parser.add_argument("--num_workers", type=int, default=12)
+    # More than one on small stand-in data (make_test_datasets.py), so the run
+    # reaches the 50-step throughput windows.
+    smoke_parser.add_argument("--epochs", type=int, default=1)
     smoke_parser.set_defaults(run=smoke_config)
 
     summary_parser = subcommands.add_parser("summary")

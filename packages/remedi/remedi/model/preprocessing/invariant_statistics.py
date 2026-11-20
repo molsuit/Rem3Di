@@ -99,7 +99,7 @@ def ensure_invariant_statistics(
     normalization = preprocessor.atomic_preprocessor.invariant_normalization
     if not isinstance(normalization, PrecomputedInvariantNormalization):
         return None
-    if bool(normalization.stats_set):
+    if normalization.statistics_known:
         return None
     statistics = estimate_invariant_statistics(
         preprocessor, islice(batches, max_batches), device

@@ -49,7 +49,7 @@ def get_layer_invariant_specs(input_irreps: Irreps) -> list[LayerSpec]:
     block as a layer's invariant feature group. The returned slices are
     coordinates in the concatenated *invariant* tensor (after dropping the
     equivariant blocks), so they index directly into the per-atom invariant
-    tensor produced by ``split_invariants_equivariants``.
+    tensor (the preprocessor's ``select_invariants``).
     """
     specs: list[LayerSpec] = []
     cursor = 0
