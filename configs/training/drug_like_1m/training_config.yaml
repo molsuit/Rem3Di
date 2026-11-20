@@ -1,0 +1,58 @@
+# Production pretraining on the closed-shell drug-like corpora at the agreed setup:
+# per-atom decoder, noise median 2.0, 256-d descriptor (experiments
+# 2026-11-18_decoder_ablation and 2026-11-18_per_atom_descriptor_width), on
+# PCQM4Mv2 diverse_1m (1.07M Butina-cluster draw) plus the lowest-energy conformer
+# of every GEOM entry (288k), benchmark molecules included: 3.5x the data of
+# drug_like_small. Compiled (smoke runs 934500/934501, 2026-11-20: ~45 ms per step on
+# B200, about 9k steps per epoch). Submit with
+#   uv run python scripts/submit_job.py configs/training/drug_like_1m/training_config.yaml --time 03:30:00
+# A job that ran out of time continues from its last finished epoch:
+#   sbatch scripts/pretrain.slurm <run directory>/training_config.yaml
+compile:
+  dynamo_cache_size_limit: 16
+  enabled: true
+  pad_multiple: 1
+dataloader:
+  batch_sampling:
+    kind: bucket_batch
+    max_atoms_per_batch: 5250
+    max_batch_size: null
+  num_workers: 12
+  persistent_workers: true
+  pin_memory: true
+  prefetch_factor: 4
+data:
+  domain: drug_like
+  components:
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/pcqm4mv2
+    selection: diverse_1m
+  - dataset: /dais/fs/scratch/wedigs/remedi/pretraining/geom_drugs
+    selection: top1
+  validation:
+    kind: molecule_fraction
+    fraction: 0.02
+    seed: 0
+  deduplicate_across_components: nonisomeric_smiles
+epochs: 15
+learning_rate: 0.0003
+learning_rate_schedule:
+  kind: warm_up_cosine
+  warm_up_fraction: 0.05
+  final_learning_rate_fraction: 0.01
+max_grad_norm: 1.0
+model_config_path: /dais/u/wedigs/descriptors/Rem3Di/configs/training/drug_like_1m/architecture_config.yaml
+noise:
+  kind: log_normal
+  median: 2.0
+  log_standard_deviation: 1.2
+normalization_batches: 200
+output_base: /dais/fs/scratch/wedigs/remedi/training_runs/drug_like_1m
+run_group: drug_like_1m
+training_name: per_atom_256
+training_directory: null
+# No WANDB_API_KEY on DAIS yet (no .env); losses go to training_losses.yaml.
+wandb_active: false
+weight_decay: 0.001
+probe:
+  enabled: true
+  every_n_steps: 500
