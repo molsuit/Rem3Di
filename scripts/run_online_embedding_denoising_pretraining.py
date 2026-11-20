@@ -15,6 +15,7 @@ from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
 from remedi.model.preprocessing.invariant_statistics import (
     ensure_invariant_statistics,
 )
+from remedi.model.preprocessing.preprocessing import PreprocessorWithAtomicEmbedding
 from remedi.training.data.mixture import (
     MixtureDatasets,
     resolve_mixture,
@@ -25,7 +26,11 @@ from remedi.training.data.samplers import BucketBatchSampler
 from remedi.training.data.training_dataset import atoms_getitem
 from remedi.training.linear_probe import LinearProbeMonitor
 from remedi.training.pretraining import denoising_step, descriptor_statistics
-from remedi.training.telemetry import ThroughputWindow, TrainingTelemetry
+from remedi.training.telemetry import (
+    ForwardTimer,
+    ThroughputWindow,
+    TrainingTelemetry,
+)
 from remedi.training.training_state import (
     TRAINING_STATE_FILENAME,
     load_training_state,
@@ -248,8 +253,18 @@ def main():  # noqa: C901 - one training loop
 
     compile_cfg = training_config.compile
     torch._dynamo.config.cache_size_limit = compile_cfg.dynamo_cache_size_limit
-    if hasattr(preprocessor, "pad_multiple"):
+    # Step-time breakdown in the throughput records: the whole preprocessor and,
+    # inside it, the MACE featurizer.
+    forward_timers = {"preprocessor": ForwardTimer(preprocessor, device)}
+    if isinstance(preprocessor, PreprocessorWithAtomicEmbedding):
         preprocessor.pad_multiple = compile_cfg.pad_multiple
+        forward_timers["featurizer"] = ForwardTimer(
+            preprocessor.mace_featurizer, device
+        )
+        # Compiled with the encoder and decoder; before the invariant statistics,
+        # which then run on the compiled featurizer too.
+        if compile_cfg.enabled:
+            preprocessor.mace_featurizer.compile_features()
 
     # MACE is frozen: only the parameters that train go to the optimizer.
     all_params = [
@@ -349,7 +364,7 @@ def main():  # noqa: C901 - one training loop
         # spent waiting for the loader, GPU utilisation and peak memory. The
         # first window includes compile warm-up and the workers' start.
         WINDOW_STEPS = 50
-        window = ThroughputWindow(device)
+        window = ThroughputWindow(device, forward_timers)
 
         for epoch in range(start_epoch, training_config.epochs):
             running = torch.zeros((), device=device)
@@ -549,7 +564,7 @@ def main():  # noqa: C901 - one training loop
 
             # A fresh window, so the next epoch's first window does not count
             # validation and checkpointing time.
-            window = ThroughputWindow(device)
+            window = ThroughputWindow(device, forward_timers)
 
 
 if __name__ == "__main__":

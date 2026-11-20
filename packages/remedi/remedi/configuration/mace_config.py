@@ -21,15 +21,15 @@ class MaceConfig(StrictBaseModel):
     model is always loaded on the CPU (reading its irreps must not need a GPU);
     `build_featurizer` moves it to `device`, so `device` may still be changed
     after validation (e.g. to run a checkpoint on another machine).
-    `enable_cueq` only takes effect on CUDA devices. `compile` evaluates the
-    featurizer through torch.compile (on the CPU that needs gcc >= 10).
+    `enable_cueq` only takes effect on CUDA devices. Whether the featurizer is
+    compiled is a run setting, not part of the model: the pretraining script
+    compiles it with the encoder and decoder (`CompileConfig.enabled`).
     """
 
     model_path: Path | None = None
     device: str = "cuda"
     dtype: Literal["float32", "float64"] = "float64"
     enable_cueq: bool = True
-    compile: bool = True
 
     _raw_model: Any | None = PrivateAttr(default=None)
 
@@ -80,7 +80,8 @@ class MaceConfig(StrictBaseModel):
         return mace_per_layer_irreps(self._load_raw_model())
 
     def build_featurizer(self) -> MaceFeaturizer:
-        """The node-feature model (``remedi.model.featurizer``) on ``device``."""
+        """The node-feature model (``remedi.model.featurizer``) on ``device``,
+        eager (``compile_features`` compiles it)."""
         from remedi.model.featurizer import build_mace_featurizer
 
         return build_mace_featurizer(
@@ -88,5 +89,4 @@ class MaceConfig(StrictBaseModel):
             device=torch.device(self.device),
             dtype=self.torch_dtype,
             enable_cueq=self.uses_cuequivariance,
-            use_compile=self.compile,
         )

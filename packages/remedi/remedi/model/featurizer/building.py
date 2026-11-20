@@ -130,11 +130,10 @@ def build_mace_featurizer(
     device: torch.device,
     dtype: torch.dtype,
     enable_cueq: bool,
-    use_compile: bool,
 ) -> MaceFeaturizer:
     """The featurizer of ``model`` (a loaded MACE model, left unchanged) on
     ``device`` in ``dtype``, with cuequivariance kernels if ``enable_cueq`` (CUDA
-    only), compiled if ``use_compile``."""
+    only). It runs eagerly; ``MaceFeaturizer.compile_features`` compiles it."""
     if enable_cueq and device.type != "cuda":
         raise ValueError("cuequivariance kernels need a CUDA device")
     check_distant_pairs_are_inert(model)
@@ -154,5 +153,4 @@ def build_mace_featurizer(
         per_layer_irreps=per_layer_irreps,
         layout="ir_mul" if enable_cueq else "mul_ir",
         permute_edge_vectors=permute_edge_vectors,
-        use_compile=use_compile,
     ).eval()

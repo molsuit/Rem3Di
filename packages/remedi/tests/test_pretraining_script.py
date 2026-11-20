@@ -64,7 +64,6 @@ def _architecture(update_pair: bool) -> dict:
             "device": "cpu",
             "dtype": "float32",
             "enable_cueq": False,
-            "compile": False,
         },
         "embedding_preprocess_config": {
             "pseudoscalars": False,

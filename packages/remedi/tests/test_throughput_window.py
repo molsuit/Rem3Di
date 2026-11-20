@@ -7,9 +7,12 @@ import time
 from pathlib import Path
 
 import pytest
+import torch
+from torch import nn
 
 from remedi.training.telemetry import (
     THROUGHPUT_FILENAME,
+    ForwardTimer,
     ThroughputWindow,
     TrainingTelemetry,
 )
@@ -49,3 +52,42 @@ def test_throughput_records_are_appended_as_json_lines(tmp_path: Path) -> None:
     telemetry.log_throughput({"global_step": 100, "step_ms": 2.5})
     lines = (tmp_path / THROUGHPUT_FILENAME).read_text().splitlines()
     assert [json.loads(line)["global_step"] for line in lines] == [50, 100]
+
+
+class _Sleeper(nn.Module):
+    def __init__(self, seconds: float):
+        super().__init__()
+        self.seconds = seconds
+
+    def forward(self, value: torch.Tensor) -> torch.Tensor:
+        time.sleep(self.seconds)
+        return value
+
+
+def test_forward_timer_counts_the_calls_since_the_last_take() -> None:
+    module = _Sleeper(0.01)
+    timer = ForwardTimer(module, "cpu")
+    module(torch.zeros(1))
+    module(torch.zeros(1))
+    seconds, calls = timer.take_seconds()
+    assert calls == 2
+    assert seconds == pytest.approx(0.02, rel=0.5)
+    assert timer.take_seconds() == (0.0, 0)
+    timer.remove()
+    module(torch.zeros(1))
+    assert timer.take_seconds() == (0.0, 0)
+
+
+def test_the_window_reports_the_share_of_timed_modules() -> None:
+    module = _Sleeper(0.02)
+    timer = ForwardTimer(module, "cpu")
+    module(torch.zeros(1))  # before the window: not counted
+    window = ThroughputWindow("cpu", {"featurizer": timer})
+    for _ in range(2):
+        window.batch_ready()
+        module(torch.zeros(1))
+        time.sleep(0.02)  # the rest of the step
+        window.step_done(atom_count=10)
+    metrics = window.metrics()
+    assert metrics["featurizer_ms"] == pytest.approx(20.0, rel=0.5)
+    assert 0.3 < metrics["featurizer_fraction"] < 0.7

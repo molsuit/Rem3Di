@@ -17,6 +17,7 @@ radius graph.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Literal
 
 import torch
@@ -94,7 +95,7 @@ class MaceFeaturizer(nn.Module):
     (``ir_mul`` after a cuequivariance conversion); the featurizer always returns
     ``mul_ir``. ``permute_edge_vectors``: whether the model feeds its edge vectors to
     the spherical harmonics as ``(y, z, x)`` (PolarMACE) instead of ``(x, y, z)``.
-    ``use_compile``: evaluate through ``torch.compile`` (whole graph, dynamic shapes).
+    It runs eagerly until :meth:`compile_features` is called.
     """
 
     element_index: torch.Tensor
@@ -108,7 +109,6 @@ class MaceFeaturizer(nn.Module):
         per_layer_irreps: list[Irreps],
         layout: NodeFeatureLayout,
         permute_edge_vectors: bool,
-        use_compile: bool,
     ):
         super().__init__()
         self.node_embedding = _submodule(model, "node_embedding")
@@ -151,11 +151,16 @@ class MaceFeaturizer(nn.Module):
         )
         # A plain attribute (a function, not a module): the parameters stay registered
         # once, under the featurizer.
-        self._compiled_features = (
-            torch.compile(self.features, fullgraph=True, dynamic=True)
-            if use_compile
-            else None
-        )
+        self._compiled_features: Callable[..., torch.Tensor] | None = None
+
+    def compile_features(self) -> None:
+        """Evaluate the features through ``torch.compile`` from now on (whole graph,
+        dynamic shapes): one graph for every ``(molecules, atoms)`` shape, built on
+        the first call."""
+        if self._compiled_features is None:
+            self._compiled_features = torch.compile(
+                self.features, fullgraph=True, dynamic=True
+            )
 
     @property
     def dtype(self) -> torch.dtype:

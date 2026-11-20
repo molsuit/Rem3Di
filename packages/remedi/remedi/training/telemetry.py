@@ -6,6 +6,7 @@ from time import perf_counter
 from typing import Any
 
 import torch
+from torch import nn
 
 from remedi_data.yaml_io import write_yaml
 
@@ -25,6 +26,63 @@ def gpu_utilization_percent(device: torch.device | str) -> float | None:
         return None
 
 
+class ForwardTimer:
+    """The time spent in a module's forward calls, for a breakdown of the step.
+
+    On CUDA the calls are bracketed by CUDA events, so timing adds no host
+    synchronisation; the events are read in :meth:`take_seconds`. An interval runs
+    from the call's start to the GPU finishing the work it queued, so it also counts
+    the GPU waiting for the host to launch that work. On the CPU it is host time.
+    """
+
+    def __init__(self, module: nn.Module, device: torch.device | str):
+        self.uses_cuda_events = torch.device(device).type == "cuda"
+        self._intervals: list[tuple[Any, Any]] = []
+        self._started: Any = None
+        self._hooks = [
+            module.register_forward_pre_hook(self._start),
+            module.register_forward_hook(self._stop),
+        ]
+
+    def _mark(self) -> Any:
+        if not self.uses_cuda_events:
+            return perf_counter()
+        event = torch.cuda.Event(enable_timing=True)
+        event.record()
+        return event
+
+    def _start(self, module: nn.Module, inputs: Any) -> None:
+        self._started = self._mark()
+
+    def _stop(self, module: nn.Module, inputs: Any, output: Any) -> None:
+        if self._started is not None:
+            self._intervals.append((self._started, self._mark()))
+            self._started = None
+
+    def take_seconds(self) -> tuple[float, int]:
+        """The total seconds and number of the calls since the last take (or
+        :meth:`reset`); starts counting anew."""
+        intervals, self._intervals = self._intervals, []
+        if not intervals:
+            return 0.0, 0
+        if self.uses_cuda_events:
+            intervals[-1][1].synchronize()
+            seconds = sum(start.elapsed_time(end) for start, end in intervals) / 1000.0
+        else:
+            seconds = sum(end - start for start, end in intervals)
+        return seconds, len(intervals)
+
+    def reset(self) -> None:
+        self._intervals = []
+        self._started = None
+
+    def remove(self) -> None:
+        """Detach from the module."""
+        for hook in self._hooks:
+            hook.remove()
+        self.reset()
+
+
 @dataclass
 class ThroughputWindow:
     """Wall time of a window of training steps, split into waiting for the
@@ -33,10 +91,13 @@ class ThroughputWindow:
     The training step synchronises with the GPU every step (the finiteness
     checks of loss and gradients), so host-side times are GPU times. Call
     :meth:`batch_ready` when the loader has handed over a batch and
-    :meth:`step_done` when the optimiser step is finished.
+    :meth:`step_done` when the optimiser step is finished. ``forward_timers``
+    add, per name, the milliseconds per step spent in that module's forward and
+    their share of the window's wall time (``<name>_ms``, ``<name>_fraction``).
     """
 
     device: torch.device | str
+    forward_timers: dict[str, ForwardTimer] = field(default_factory=dict)
     started: float = field(default_factory=perf_counter)
     last_step_end: float = field(default_factory=perf_counter)
     steps: int = 0
@@ -45,6 +106,8 @@ class ThroughputWindow:
 
     def __post_init__(self) -> None:
         self._reset_peak_memory()
+        for timer in self.forward_timers.values():
+            timer.reset()
 
     def batch_ready(self) -> None:
         self.data_wait_seconds += perf_counter() - self.last_step_end
@@ -64,6 +127,10 @@ class ThroughputWindow:
             "data_wait_ms": 1000.0 * self.data_wait_seconds / steps,
             "data_wait_fraction": self.data_wait_seconds / seconds,
         }
+        for name, timer in self.forward_timers.items():
+            timed_seconds, _ = timer.take_seconds()
+            result[f"{name}_ms"] = 1000.0 * timed_seconds / steps
+            result[f"{name}_fraction"] = timed_seconds / seconds
         utilization = gpu_utilization_percent(self.device)
         if utilization is not None:
             result["gpu_utilization_percent"] = utilization

@@ -130,7 +130,6 @@ def _config(model_path: Path, **overrides) -> MaceConfig:
         "device": "cpu",
         "dtype": "float64",
         "enable_cueq": False,
-        "compile": False,
     }
     settings.update(overrides)
     return MaceConfig.model_validate(settings)
@@ -313,7 +312,8 @@ def test_featurizer_rejects_models_whose_distant_pairs_contribute(mace_off_mediu
 def test_compiled_featurizer_is_one_graph_for_every_shape(
     mace_off_medium, mace_off_references, structures
 ):
-    featurizer = _config(mace_off_medium, compile=True).build_featurizer()
+    featurizer = _config(mace_off_medium).build_featurizer()
+    featurizer.compile_features()
     torch._dynamo.reset()
     with torch._dynamo.config.patch(
         recompile_limit=1, fail_on_recompile_limit_hit=True
@@ -349,8 +349,9 @@ def _cueq_against_e3nn(model_path: Path, structures: list[Atoms]) -> None:
         structures,
     )
     featurizer = _config(
-        model_path, device="cuda", dtype="float32", enable_cueq=True, compile=True
+        model_path, device="cuda", dtype="float32", enable_cueq=True
     ).build_featurizer()
+    featurizer.compile_features()
     assert featurizer.layout == "ir_mul"
     torch._dynamo.reset()
     with torch._dynamo.config.patch(

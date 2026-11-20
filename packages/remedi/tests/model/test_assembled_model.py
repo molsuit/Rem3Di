@@ -50,7 +50,6 @@ def _architecture(
                 "device": "cpu",
                 "dtype": dtype,
                 "enable_cueq": False,
-                "compile": False,
             },
             "embedding_preprocess_config": {
                 "pseudoscalars": True,
