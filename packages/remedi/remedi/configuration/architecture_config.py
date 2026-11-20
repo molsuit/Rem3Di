@@ -614,8 +614,8 @@ class _BaseArchitectureConfig(StrictBaseModel):
         mean_atomic_embedding: torch.Tensor | None = None,
         std_atomic_embedding: torch.Tensor | None = None,
     ) -> "Preprocessor":
-        """Atomic preprocessor in float64, geometric preprocessor in float32; the
-        MACE featurizer in the dtype its MaceConfig asks for."""
+        """Atomic and geometric preprocessors in float32; the MACE featurizer in
+        the dtype its MaceConfig asks for."""
         from remedi.model.preprocessing.preprocessing import (
             Preprocessor,
             PreprocessorWithAtomicEmbedding,
@@ -623,7 +623,7 @@ class _BaseArchitectureConfig(StrictBaseModel):
 
         atomic = self.embedding_preprocess_config.build(
             mean_atomic_embedding, std_atomic_embedding
-        ).double()
+        ).float()
         geometric = self.positional_encoding_config.build().float()
         if self.mace_config is not None:
             return PreprocessorWithAtomicEmbedding(

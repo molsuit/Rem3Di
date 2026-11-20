@@ -7,6 +7,7 @@ molecule's descriptor does not depend on what it is batched with.
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import numpy as np
@@ -20,7 +21,7 @@ from scipy.spatial.transform import Rotation
 from remedi.configuration.architecture_config import EncoderOnlyArchitectureConfig
 from remedi.embedding.calculator import RemediCalculator
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
-from remedi.model.featurizer import MaceFeaturizer
+from remedi.model.featurizer import MaceFeaturizer, pad_molecules
 from remedi.model.pair_block import PairTransition
 from remedi.training.data.sample import Sample
 from remedi_data.yaml_io import yaml_text
@@ -165,6 +166,48 @@ def test_mirror_image_flips_the_chiral_embedding(model):
     )
 
 
+def _chiral_embedding_in(atomic_preprocessor, features, padding_mask, dtype):
+    """The chiral embedding with the whole chiral path (normalisation, RMS norm,
+    tensor products, LayerNorm, gate, projection) in ``dtype``."""
+    module = copy.deepcopy(atomic_preprocessor).to(dtype)
+    with torch.no_grad():
+        embeddings = module._select_layers(features).to(dtype)
+        invariants, equivariants = module._split_invariants_equivariants(embeddings)
+        return module.chiral_embedding_model(
+            module.invariant_normalization(invariants, padding_mask),
+            module.equivariant_rms_norm(equivariants, padding_mask),
+            padding_mask,
+        )
+
+
+def test_float32_chiral_embedding_matches_float64(mace_off_medium: Path):
+    """The atomic preprocessor runs in float32: its chiral embedding stays within
+    1e-5 of the float64 one on float64 MACE features (float32 MACE features
+    themselves differ by ~5e-6)."""
+    torch.manual_seed(0)
+    model = _architecture(mace_off_medium, dtype="float64").build().eval()
+    preprocessor = model.preprocessor
+    molecules = pad_molecules(
+        preprocessor.molecule_collator()(
+            [_sample(CHIRAL_MOLECULE), _sample(molecule("CH3CH2OH"))]
+        ),
+        1,
+    )
+    with torch.no_grad():
+        features = preprocessor.mace_featurizer(molecules)
+    mask = molecules.padding_mask
+    float64 = _chiral_embedding_in(
+        preprocessor.atomic_preprocessor, features, mask, torch.float64
+    )
+    float32 = _chiral_embedding_in(
+        preprocessor.atomic_preprocessor, features, mask, torch.float32
+    )
+    real = ~mask
+    assert float64[real].abs().max() > 1e-3
+    relative = (float32 - float64)[real].norm() / float64[real].norm()
+    assert relative < 1e-5
+
+
 def test_descriptor_is_batch_independent(model):
     # C60 pads the batch beyond 25 atoms (where cdist's matmul path kicked in)
     # and its coordinates are far from those of the small molecule.
@@ -185,6 +228,16 @@ def test_float64_mace_runs(mace_off_medium: Path):
     # whose input dtype then no longer matched.
     model = _architecture(mace_off_medium, dtype="float64").build().eval()
     assert model.preprocessor.mace_featurizer.dtype == torch.float64
+    # Only MACE runs in float64; the trained preprocessing is float32.
+    assert {
+        parameter.dtype
+        for parameter in model.preprocessor.atomic_preprocessor.parameters()
+    } <= {torch.float32}
+    assert {
+        buffer.dtype
+        for buffer in model.preprocessor.atomic_preprocessor.buffers()
+        if buffer.is_floating_point()
+    } == {torch.float32}
     descriptors = _descriptors(
         model, [_sample(molecule("CH3CHO")), _sample(molecule("H2O"))]
     )

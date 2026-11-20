@@ -17,12 +17,15 @@ class RandomShuffleSamplingConfig(BaseModel):
 
 
 class BucketBatchSamplingConfig(BaseModel):
+    """Batches of structures of similar size (``BucketBatchSampler``): packed in
+    length order under ``max_atoms_per_batch`` (and ``max_batch_size``), regrouped
+    and reordered every epoch."""
+
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["bucket_batch"] = "bucket_batch"
     max_atoms_per_batch: int = Field(gt=0)
     max_batch_size: int | None = Field(default=None, gt=0)
-    bucket_size: int = Field(default=512, gt=0)
 
 
 BatchSamplingConfig = Annotated[
@@ -48,6 +51,7 @@ class DataLoaderConfig(BaseModel):
         collate_fn=None,
         shuffle: bool = True,
         seed: int = 0,
+        persistent_workers: bool | None = None,
     ) -> DataLoader:
         """Construct a DataLoader from this config.
 
@@ -55,13 +59,17 @@ class DataLoaderConfig(BaseModel):
         otherwise. `shuffle` is honored by both sampling kinds (random shuffle
         vs per-epoch bucket regrouping and batch-order shuffle). `seed` fixes
         the order and grouping of every epoch; training passes
-        ``TrainingRunConfig.seed``.
+        ``TrainingRunConfig.seed``. ``persistent_workers`` overrides the config's
+        setting (validation loaders pass False: their workers should not stay
+        alive next to the training loader's between validation passes).
         """
         from remedi.training.data.samplers import BucketBatchSampler
         from remedi.training.data.util import worker_init_fn
 
         prefetch_factor = self.prefetch_factor if self.num_workers > 0 else None
-        persistent_workers = self.persistent_workers and self.num_workers > 0
+        if persistent_workers is None:
+            persistent_workers = self.persistent_workers
+        persistent_workers = persistent_workers and self.num_workers > 0
 
         sampling = self.batch_sampling
         if isinstance(sampling, RandomShuffleSamplingConfig):
@@ -87,7 +95,6 @@ class DataLoaderConfig(BaseModel):
             lengths,
             max_atoms_per_batch=sampling.max_atoms_per_batch,
             max_batch_size=sampling.max_batch_size,
-            bucket_size=sampling.bucket_size,
             shuffle=shuffle,
             seed=seed,
         )

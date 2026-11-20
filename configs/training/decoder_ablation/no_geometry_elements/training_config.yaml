@@ -9,7 +9,6 @@ compile:
   pad_multiple: 1
 dataloader:
   batch_sampling:
-    bucket_size: 512
     kind: bucket_batch
     max_atoms_per_batch: 5250
     max_batch_size: null

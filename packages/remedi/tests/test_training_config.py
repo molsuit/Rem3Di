@@ -58,7 +58,7 @@ def _pretraining_config(tmp_path: Path, **overrides) -> PretrainingConfig:
         (FixedNoiseLevelConfig, {"level": 0.3, "noise_level": 0.3}),
         (ClassificationConfig, {"focal_gama": 1.0}),
         (RandomShuffleSamplingConfig, {"batch_size": 2, "shufle": True}),
-        (BucketBatchSamplingConfig, {"max_atoms_per_batch": 10, "bucket": 4}),
+        (BucketBatchSamplingConfig, {"max_atoms_per_batch": 10, "bucket_size": 4}),
         (
             DataLoaderConfig,
             {

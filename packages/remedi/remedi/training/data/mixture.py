@@ -322,7 +322,9 @@ class PretrainingData:
         def concatenate(views: list[tuple[Dataset, np.ndarray]]) -> Dataset:
             return ConcatDataset(
                 [
-                    Subset(dataset, positions.tolist())
+                    # An index array, not a list: a list of Python ints is
+                    # copied into every loader worker as its refcounts change.
+                    Subset(dataset, positions)  # ty: ignore[invalid-argument-type]
                     for dataset, positions in views
                     if len(positions)
                 ]

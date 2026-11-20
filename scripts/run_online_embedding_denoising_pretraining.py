@@ -4,7 +4,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import Dataset, Subset
 
 from remedi.configuration.architecture_config import (
@@ -24,6 +23,7 @@ from remedi.training.data.mixture import (
 from remedi.training.data.samplers import BucketBatchSampler
 from remedi.training.data.training_dataset import atoms_getitem
 from remedi.training.linear_probe import LinearProbeMonitor
+from remedi.training.optimization import parameter_groups
 from remedi.training.pretraining import (
     FiniteStepGuard,
     denoising_step,
@@ -242,6 +242,9 @@ def main():  # noqa: C901 - one training loop
             collate_fn=collate_molecules,
             shuffle=False,
             seed=training_config.seed,
+            # Workers only while validating: persistent ones would sit next to
+            # the training loader's for the whole run, one set per component.
+            persistent_workers=False,
         )
         for name, (dataset, lengths) in validation_sets.items()
     }
@@ -273,25 +276,16 @@ def main():  # noqa: C901 - one training loop
             preprocessor.mace_featurizer.compile_features()
 
     # MACE is frozen: only the parameters that train go to the optimizer.
-    all_params = [
-        parameter
-        for module in (encoder, decoder, preprocessor)
-        for parameter in module.parameters()
-        if parameter.requires_grad
-    ]
+    groups = parameter_groups((encoder, decoder, preprocessor))
+    all_params = groups.all
 
     optimizer = torch.optim.AdamW(
-        all_params,
+        groups.for_optimizer(training_config.weight_decay),
         lr=training_config.learning_rate,
-        weight_decay=training_config.weight_decay,
     )
 
     total_steps = training_config.epochs * len(training_loader)
-    lr_scheduler = OneCycleLR(
-        optimizer,
-        max_lr=[training_config.learning_rate],
-        total_steps=total_steps,
-    )
+    lr_scheduler = training_config.learning_rate_schedule.build(optimizer, total_steps)
 
     write_model(
         training_data_dir / ARCHITECTURE_FILENAME,

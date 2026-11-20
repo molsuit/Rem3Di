@@ -205,9 +205,8 @@ class OnTheFlyInvariantNormalization(nn.Module):
             batch_mean = x_valid.mean(dim=0)
             batch_var = x_valid.var(dim=0, unbiased=False)
 
-            # Match the buffer dtype: the atomic preprocessor is cast to float64
-            # at build time, but the MACE embeddings (hence batch stats) may be
-            # float32. ``copy_`` casts implicitly; in-place ``lerp_`` does not
+            # Match the buffer dtype (float32) when the MACE features are
+            # float64: ``copy_`` casts implicitly; in-place ``lerp_`` does not
             # and would raise on a dtype mismatch.
             batch_mean = batch_mean.to(self.running_mean.dtype)
             batch_var = batch_var.to(self.running_var.dtype)
@@ -365,7 +364,9 @@ class AtomicDescriptorPreprocessor(nn.Module):
     def forward(
         self, embeddings: torch.Tensor, padding_mask: torch.Tensor | None = None
     ) -> PreprocessedSample:
-        embeddings = self._select_layers(embeddings)
+        # The preprocessing, encoder and decoder run in float32; float64 MACE
+        # features (a float64 MaceConfig) are cast on the way in.
+        embeddings = self._select_layers(embeddings).to(torch.float32)
 
         invariants, equivariants = self._split_invariants_equivariants(embeddings)
 
@@ -383,9 +384,7 @@ class AtomicDescriptorPreprocessor(nn.Module):
                 normalized_invariants, normalized_equivariants, padding_mask
             )
 
-        # Normalisation runs in the module's working dtype (float64: the atomic
-        # preprocessor is .double()'d after build). Cast to float32 only at the
-        # boundary that hands data to the downstream encoder.
+        # The encoder takes float32, also from a preprocessor cast to float64.
         normalized_invariants = normalized_invariants.to(dtype=torch.float32)
         if padding_mask is not None:
             normalized_invariants = normalized_invariants.masked_fill(

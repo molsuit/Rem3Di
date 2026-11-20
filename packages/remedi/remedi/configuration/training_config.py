@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from remedi.configuration.dataloader_config import DataLoaderConfig
 from remedi.training.data.mixture import PretrainingDataConfig
+from remedi.training.optimization import PlannedLearningRateSchedule, WarmUpThenDecay
 
 
 class CompileConfig(BaseModel):
@@ -18,7 +19,7 @@ class CompileConfig(BaseModel):
     enabled: bool = True
     # Round padded atom count up to this multiple to bound the inductor graph
     # cache. 1 = off; 8 / 16 are typical for FFN-heavy decoders. Pairs with
-    # bucketed batching: with bucket_size choosing a narrow length range and
+    # bucketed batching: with every batch drawn from a narrow length range and
     # pad_multiple quantizing the max, inductor sees only a handful of shapes.
     pad_multiple: int = Field(default=1, gt=0)
     dynamo_cache_size_limit: int = Field(default=16, gt=0)
@@ -112,6 +113,60 @@ NoiseLevelConfig = Annotated[
 ]
 
 
+class WarmUpCosineScheduleConfig(BaseModel):
+    """Linear warm-up from ``learning_rate / warm_up_steps`` to ``learning_rate``
+    over the first ``warm_up_fraction`` of the run's steps, then a cosine decay to
+    ``final_learning_rate_fraction * learning_rate`` at the last step."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["warm_up_cosine"] = "warm_up_cosine"
+    warm_up_fraction: float = Field(default=0.05, ge=0.0, lt=1.0)
+    final_learning_rate_fraction: float = Field(default=0.01, ge=0.0, le=1.0)
+
+    def build(
+        self, optimizer: torch.optim.Optimizer, total_steps: int
+    ) -> PlannedLearningRateSchedule:
+        return PlannedLearningRateSchedule(
+            optimizer,
+            WarmUpThenDecay(
+                total_steps=total_steps,
+                warm_up_steps=round(self.warm_up_fraction * total_steps),
+                cosine_decay=True,
+                final_fraction=self.final_learning_rate_fraction,
+            ),
+        )
+
+
+class ConstantScheduleConfig(BaseModel):
+    """``learning_rate`` throughout, after an optional linear warm-up over the
+    first ``warm_up_fraction`` of the run's steps."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["constant"] = "constant"
+    warm_up_fraction: float = Field(default=0.0, ge=0.0, lt=1.0)
+
+    def build(
+        self, optimizer: torch.optim.Optimizer, total_steps: int
+    ) -> PlannedLearningRateSchedule:
+        return PlannedLearningRateSchedule(
+            optimizer,
+            WarmUpThenDecay(
+                total_steps=total_steps,
+                warm_up_steps=round(self.warm_up_fraction * total_steps),
+                cosine_decay=False,
+                final_fraction=1.0,
+            ),
+        )
+
+
+LearningRateScheduleConfig = Annotated[
+    WarmUpCosineScheduleConfig | ConstantScheduleConfig,
+    Field(discriminator="kind"),
+]
+
+
 class ProbeConfig(BaseModel):
     """Frozen diagnostic linear probes on the molecular descriptor.
 
@@ -164,7 +219,11 @@ class TrainingRunConfig(BaseModel):
     dataloader: DataLoaderConfig
     epochs: int
     learning_rate: float
+    """The peak learning rate (after the warm-up)."""
+    learning_rate_schedule: LearningRateScheduleConfig = WarmUpCosineScheduleConfig()
     weight_decay: float
+    """AdamW weight decay on the weight matrices of linear layers; biases,
+    normalisation scales, embeddings and pooling queries are not decayed."""
     max_grad_norm: float = Field(default=1.0, gt=0)
     """Gradients are clipped to this total norm every step."""
     seed: int = 0

@@ -12,14 +12,15 @@ class BucketBatchSampler(Sampler[list[int]]):
 
     Pipeline per epoch:
       1. With ``shuffle``, permute the indices with the epoch's generator, then
-         stable-sort them by length, and split the order into contiguous
-         buckets of ``bucket_size``. Structures of equal length land in a
+         stable-sort them by length. Structures of equal length land in a
          different order (so in different batches) every epoch, while the
-         sorted lengths, and with them the bucket boundaries, never change.
-      2. Pack each bucket into batches under ``max_atoms_per_batch``
-         (sum-of-lengths cap) and optional ``max_batch_size``. The packing
-         depends only on the sorted lengths, so it is computed once and
-         ``__len__`` is exact.
+         sorted lengths never change.
+      2. Pack the sorted order greedily into batches under
+         ``max_atoms_per_batch`` (sum-of-lengths cap) and optional
+         ``max_batch_size``: each batch holds structures of nearly the same
+         length (few padded atom slots, few distinct shapes for torch.compile).
+         The packing depends only on the sorted lengths, so it is computed once
+         and ``__len__`` is exact.
       3. With ``shuffle``, shuffle the order of the batches.
 
     Epoch ``e`` draws from ``numpy.random.default_rng([seed, e])``: a run is
@@ -31,7 +32,6 @@ class BucketBatchSampler(Sampler[list[int]]):
         lengths,
         max_atoms_per_batch: int,
         max_batch_size: int | None = None,
-        bucket_size: int = 512,
         shuffle: bool = True,
         *,
         seed: int,
@@ -50,9 +50,6 @@ class BucketBatchSampler(Sampler[list[int]]):
             int(max_batch_size) if max_batch_size is not None else None
         )
 
-        if bucket_size <= 0:
-            raise ValueError("bucket_size must be positive.")
-        self.bucket_size = int(bucket_size)
         self.shuffle = bool(shuffle)
         self.seed = int(seed)
         self.epoch = 0
@@ -70,33 +67,32 @@ class BucketBatchSampler(Sampler[list[int]]):
         self._batch_bounds = self._pack(np.sort(self.lengths, kind="stable"))
 
     def _pack(self, sorted_lengths: np.ndarray) -> list[tuple[int, int]]:
-        """Greedy-pack every bucket; ``(start, stop)`` positions in the sorted order."""
+        """Greedy-pack the sorted lengths; ``(start, stop)`` positions in the sorted
+        order. A structure above ``max_atoms_per_batch`` is a batch of its own."""
         bounds: list[tuple[int, int]] = []
-        for bucket_start in range(0, sorted_lengths.size, self.bucket_size):
-            bucket_stop = min(bucket_start + self.bucket_size, sorted_lengths.size)
-            start = bucket_start
-            atoms = 0
-            for position in range(bucket_start, bucket_stop):
-                length = int(sorted_lengths[position])
-                if length > self.max_atoms_per_batch:
-                    if position > start:
-                        bounds.append((start, position))
-                    bounds.append((position, position + 1))
-                    start = position + 1
-                    atoms = 0
-                    continue
-                would_exceed_atoms = atoms + length > self.max_atoms_per_batch
-                would_exceed_count = (
-                    self.max_batch_size is not None
-                    and position - start >= self.max_batch_size
-                )
-                if position > start and (would_exceed_atoms or would_exceed_count):
+        start = 0
+        atoms = 0
+        for position in range(sorted_lengths.size):
+            length = int(sorted_lengths[position])
+            if length > self.max_atoms_per_batch:
+                if position > start:
                     bounds.append((start, position))
-                    start = position
-                    atoms = 0
-                atoms += length
-            if bucket_stop > start:
-                bounds.append((start, bucket_stop))
+                bounds.append((position, position + 1))
+                start = position + 1
+                atoms = 0
+                continue
+            would_exceed_atoms = atoms + length > self.max_atoms_per_batch
+            would_exceed_count = (
+                self.max_batch_size is not None
+                and position - start >= self.max_batch_size
+            )
+            if position > start and (would_exceed_atoms or would_exceed_count):
+                bounds.append((start, position))
+                start = position
+                atoms = 0
+            atoms += length
+        if sorted_lengths.size > start:
+            bounds.append((start, sorted_lengths.size))
         return bounds
 
     def set_epoch(self, epoch: int) -> None:

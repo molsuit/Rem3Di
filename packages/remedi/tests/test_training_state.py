@@ -7,10 +7,11 @@ from pathlib import Path
 import pytest
 import torch
 from torch import nn
-from torch.optim.lr_scheduler import OneCycleLR
 
+from remedi.configuration.training_config import WarmUpCosineScheduleConfig
 from remedi.model.checkpoint import atomic_torch_save
 from remedi.training.data.samplers import BucketBatchSampler
+from remedi.training.optimization import parameter_groups
 from remedi.training.telemetry import TrainingTelemetry
 from remedi.training.training_state import (
     TRAINING_STATE_FILENAME,
@@ -28,9 +29,11 @@ class _Run:
             "encoder": nn.Linear(3, 3),
             "decoder": nn.Linear(3, 3),
         }
-        parameters = [p for m in self.modules.values() for p in m.parameters()]
-        self.optimizer = torch.optim.AdamW(parameters, lr=1e-2)
-        self.scheduler = OneCycleLR(self.optimizer, max_lr=1e-2, total_steps=20)
+        groups = parameter_groups(self.modules.values())
+        self.optimizer = torch.optim.AdamW(groups.for_optimizer(1e-3), lr=1e-2)
+        self.scheduler = WarmUpCosineScheduleConfig(warm_up_fraction=0.2).build(
+            self.optimizer, total_steps=20
+        )
         self.telemetry = TrainingTelemetry(
             wandb_active=False,
             run_name="run",

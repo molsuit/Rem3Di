@@ -33,6 +33,7 @@ from remedi.model.preprocessing.invariant_statistics import (
 from remedi.model.preprocessing.preprocessing import PreprocessorWithAtomicEmbedding
 from remedi.training.data.mixture import resolve_mixture
 from remedi.training.data.training_dataset import atoms_getitem
+from remedi.training.optimization import parameter_groups
 from remedi.training.pretraining import denoising_step
 from remedi_data.yaml_io import read_model
 
@@ -179,16 +180,11 @@ def main() -> None:
         preprocessor.pad_multiple = compile_config.pad_multiple
         if compile_config.enabled:
             preprocessor.mace_featurizer.compile_features()
-    parameters = [
-        parameter
-        for module in (encoder, decoder, preprocessor)
-        for parameter in module.parameters()
-        if parameter.requires_grad
-    ]
+    groups = parameter_groups((encoder, decoder, preprocessor))
+    parameters = groups.all
     optimizer = torch.optim.AdamW(
-        parameters,
+        groups.for_optimizer(training_config.weight_decay),
         lr=training_config.learning_rate,
-        weight_decay=training_config.weight_decay,
     )
     ensure_invariant_statistics(
         preprocessor,

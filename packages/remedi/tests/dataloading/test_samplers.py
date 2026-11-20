@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 import pytest
 
@@ -52,9 +54,7 @@ def test_token_cap_respected():
 def test_token_cap_respected_with_shuffle():
     rng = np.random.default_rng(1)
     lengths = rng.integers(low=2, high=40, size=500).tolist()
-    sampler = _make_sampler(
-        lengths, max_atoms_per_batch=120, bucket_size=64, shuffle=True
-    )
+    sampler = _make_sampler(lengths, max_atoms_per_batch=120, shuffle=True)
     for batch in sampler:
         if len(batch) == 1 and lengths[batch[0]] > 120:
             continue
@@ -126,23 +126,22 @@ def test_single_item():
     assert len(sampler) == 1
 
 
-# ----------------------------- bucket_size extremes --------------------------
+# ----------------------------- packing ---------------------------------------
 
 
-def test_bucket_size_larger_than_dataset():
-    sampler = _make_sampler(
-        [3, 4, 5, 6, 7], max_atoms_per_batch=15, bucket_size=10_000, shuffle=True
-    )
-    flat = _flatten(list(sampler))
-    assert sorted(flat) == [0, 1, 2, 3, 4]
+def test_packing_has_no_forced_breaks():
+    """Equal lengths fill every batch to the cap: only the last one is partial."""
+    sampler = _make_sampler([10] * 1000, max_atoms_per_batch=50, shuffle=True)
+    batches = list(sampler)
+    assert len(batches) == 200
+    assert all(len(batch) == 5 for batch in batches)
 
 
-def test_bucket_size_one():
-    sampler = _make_sampler(
-        [3, 4, 5, 6, 7], max_atoms_per_batch=20, bucket_size=1, shuffle=True
-    )
-    flat = _flatten(list(sampler))
-    assert sorted(flat) == [0, 1, 2, 3, 4]
+def test_packing_is_shuffle_invariant_in_count():
+    lengths = np.random.default_rng(3).integers(2, 40, size=2000).tolist()
+    shuffled = _make_sampler(lengths, max_atoms_per_batch=120, shuffle=True)
+    ordered = _make_sampler(lengths, max_atoms_per_batch=120, shuffle=False)
+    assert len(list(shuffled)) == len(list(ordered)) == len(shuffled)
 
 
 # ----------------------------- input validation ------------------------------
@@ -172,11 +171,6 @@ def test_rejects_zero_max_atoms():
 def test_rejects_zero_max_batch_size():
     with pytest.raises(ValueError, match="positive"):
         _make_sampler([1, 2, 3], max_atoms_per_batch=10, max_batch_size=0)
-
-
-def test_rejects_zero_bucket_size():
-    with pytest.raises(ValueError, match="positive"):
-        _make_sampler([1, 2, 3], max_atoms_per_batch=10, bucket_size=0)
 
 
 # ----------------------------- determinism -----------------------------------
@@ -212,14 +206,13 @@ def test_two_iterations_differ_under_shuffle():
 
 
 def test_first_batch_is_not_always_smallest():
-    """Bucket-order shuffle should mean the first batch isn't always smallest."""
+    """The batch-order shuffle means the first batch is not always the smallest."""
     lengths = list(range(1, 201))
     first_batch_means = []
     for seed in range(20):
         sampler = BucketBatchSampler(
             lengths,
             max_atoms_per_batch=50,
-            bucket_size=10,
             shuffle=True,
             seed=seed,
         )
@@ -228,31 +221,21 @@ def test_first_batch_is_not_always_smallest():
     assert max(first_batch_means) - min(first_batch_means) > 50
 
 
-# ----------------------------- bucket isolation (compile-friendliness) -------
+# ----------------------------- similar lengths (compile-friendliness) --------
 
 
-def test_batches_do_not_cross_bucket_boundaries():
-    """Every batch's items must come from a single bucket (similar lengths)."""
-    lengths = list(range(1, 201))
-    bucket_size = 20
-    sampler = BucketBatchSampler(
-        lengths,
-        max_atoms_per_batch=80,
-        bucket_size=bucket_size,
-        shuffle=True,
-        seed=0,
+def test_every_batch_is_a_contiguous_range_of_the_sorted_lengths():
+    """A batch never mixes a short structure with a long one."""
+    rng = np.random.default_rng(0)
+    lengths = rng.integers(1, 60, size=400)
+    sampler = BucketBatchSampler(lengths, max_atoms_per_batch=80, shuffle=True, seed=0)
+    sorted_lengths = np.sort(lengths)
+    batch_ranges = sorted(
+        (int(lengths[batch].min()), int(lengths[batch].max())) for batch in sampler
     )
-    sorted_order = np.argsort(lengths, kind="stable")
-    bucket_of = {}
-    for bucket_id, start in enumerate(range(0, len(sorted_order), bucket_size)):
-        for i in sorted_order[start : start + bucket_size]:
-            bucket_of[int(i)] = bucket_id
-
-    for batch in sampler:
-        if len(batch) <= 1:
-            continue
-        ids = {bucket_of[i] for i in batch}
-        assert len(ids) == 1, f"Batch crosses buckets: {batch} -> bucket ids {ids}"
+    for (_, previous_maximum), (minimum, _) in itertools.pairwise(batch_ranges):
+        assert previous_maximum <= minimum
+    assert batch_ranges[0][0] == sorted_lengths[0]
 
 
 # ----------------------------- length self-consistency -----------------------
@@ -266,13 +249,12 @@ def test_len_matches_iteration_no_shuffle():
 
 
 def test_len_exactly_matches_iteration_with_shuffle():
-    """Bucket-local packing makes batch count shuffle-invariant."""
+    """Packing the sorted lengths makes the batch count shuffle-invariant."""
     rng = np.random.default_rng(0)
     lengths = rng.integers(low=2, high=40, size=300).tolist()
     sampler = BucketBatchSampler(
         lengths,
         max_atoms_per_batch=120,
-        bucket_size=64,
         shuffle=True,
         seed=42,
     )
@@ -324,7 +306,7 @@ def test_batch_composition_changes_between_epochs():
     """Equal-length structures are regrouped every epoch, not always batched
     with the same neighbours."""
     lengths = [10] * 100
-    sampler = _make_sampler(lengths, max_atoms_per_batch=50, bucket_size=100)
+    sampler = _make_sampler(lengths, max_atoms_per_batch=50)
     first = {frozenset(batch) for batch in sampler}
     second = {frozenset(batch) for batch in sampler}
     assert first != second
@@ -370,3 +352,32 @@ def test_dataloader_bucket_batches_follow_the_seed():
 
     assert batches(1) == batches(1)
     assert batches(1) != batches(2)
+
+
+def test_validation_loaders_can_drop_persistent_workers():
+    from torch.utils.data import Dataset
+
+    from remedi.configuration.dataloader_config import (
+        BucketBatchSamplingConfig,
+        DataLoaderConfig,
+    )
+
+    class _Indices(Dataset):
+        def __len__(self) -> int:
+            return 10
+
+        def __getitem__(self, index: int) -> int:
+            return index
+
+    config = DataLoaderConfig(
+        batch_sampling=BucketBatchSamplingConfig(max_atoms_per_batch=40),
+        num_workers=1,
+        pin_memory=False,
+    )
+    lengths = np.full(10, 8)
+    training = config.build(_Indices(), lengths=lengths, collate_fn=list)
+    validation = config.build(
+        _Indices(), lengths=lengths, collate_fn=list, persistent_workers=False
+    )
+    assert training.persistent_workers
+    assert not validation.persistent_workers

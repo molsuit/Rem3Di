@@ -35,7 +35,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import Subset
 
 from remedi.configuration.architecture_config import (
@@ -52,6 +51,7 @@ from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
 )
+from remedi.training.optimization import ParameterGroups, parameter_groups
 from remedi.training.telemetry import TrainingTelemetry
 from remedi_data.logging_setup import setup_logging
 from remedi_data.yaml_io import read_model, write_model
@@ -85,14 +85,16 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def _trainable_parameters(model) -> list[torch.nn.Parameter]:
+def _trainable_parameters(model) -> ParameterGroups:
     """Encoder + heads + pseudoscalar/geometric preprocessors. Excludes the
     frozen MACE foundation model living inside the preprocessor."""
-    return (
-        list(model.encoder.parameters())
-        + list(model.multitask_heads.parameters())
-        + list(model.preprocessor.atomic_preprocessor.parameters())
-        + list(model.preprocessor.geometric_preprocessor.parameters())
+    return parameter_groups(
+        (
+            model.encoder,
+            model.multitask_heads,
+            model.preprocessor.atomic_preprocessor,
+            model.preprocessor.geometric_preprocessor,
+        )
     )
 
 
@@ -173,6 +175,7 @@ def main() -> None:
         collate_fn=collate_molecules,
         shuffle=False,
         seed=training_config.seed,
+        persistent_workers=False,
     )
 
     out_base = training_config.create_run_directory()
@@ -201,16 +204,14 @@ def main() -> None:
         None if alpha is None else [round(float(a), 3) for a in alpha],
     )
 
-    params = _trainable_parameters(model)
+    groups = _trainable_parameters(model)
+    params = groups.all
     optimizer = torch.optim.AdamW(
-        params,
+        groups.for_optimizer(training_config.weight_decay),
         lr=training_config.learning_rate,
-        weight_decay=training_config.weight_decay,
     )
-    scheduler = OneCycleLR(
-        optimizer,
-        max_lr=training_config.learning_rate,
-        total_steps=training_config.epochs * max(1, len(train_loader)),
+    scheduler = training_config.learning_rate_schedule.build(
+        optimizer, training_config.epochs * max(1, len(train_loader))
     )
 
     write_model(out_base / ARCHITECTURE_FILENAME, architecture_config)
