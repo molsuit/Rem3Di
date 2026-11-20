@@ -24,8 +24,8 @@ from remedi.configuration.architecture_config import (
 )
 from remedi.model.regression_models import RegressionHead
 from remedi.training.data.sample import (
+    MoleculeCollator,
     Sample,
-    yield_molecules_supervised_collate_fn,
 )
 from remedi_data.yaml_io import read_model
 from remedi_eval.benchmark.losses import (
@@ -96,7 +96,9 @@ def test_supervised_collate_stacks_labels() -> None:
             regression_targets=torch.tensor(label, dtype=torch.long),
         )
 
-    batch = yield_molecules_supervised_collate_fn([_mk(0), _mk(3), _mk(1)])
+    batch = MoleculeCollator(cutoff=5.0, with_regression_targets=True)(
+        [_mk(0), _mk(3), _mk(1)]
+    )
     assert batch.regression_targets.shape == (3,)
     assert batch.regression_targets.tolist() == [0, 3, 1]
     # 3 molecules x 3 atoms concatenated flat for on-the-fly MACE.

@@ -9,7 +9,7 @@ import pytest
 import torch
 from torch import nn
 
-from remedi.training.data.sample import Sample, yield_molecules_collate_fn
+from remedi.training.data.sample import MoleculeCollator, Sample
 from remedi.training.linear_probe import LinearProbeMonitor
 
 
@@ -30,7 +30,7 @@ def _make_monitor(labels, masks, *, every_n_steps=1, val_fraction=0.3):
         labels=labels,
         masks=masks,
         property_names=names,
-        collate_fn=yield_molecules_collate_fn,
+        collate_fn=MoleculeCollator(cutoff=5.0),
         device="cpu",
         every_n_steps=every_n_steps,
         ridge_alpha=1.0,

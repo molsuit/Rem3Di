@@ -27,7 +27,7 @@ from remedi.training.data.mixture import (
     resolve_mixture,
     stage_datasets,
 )
-from remedi.training.data.sample import yield_molecules_collate_fn
+from remedi.training.data.sample import MoleculeCollator
 from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
@@ -189,7 +189,7 @@ def test_the_training_dataset_concatenates_the_components(tmp_path: Path) -> Non
             training,
             batch_size=4,
             num_workers=2,
-            collate_fn=yield_molecules_collate_fn,
+            collate_fn=MoleculeCollator(cutoff=5.0),
         )
     )
     assert sum(len(batch.total_charge) for batch in batches) == len(training)

@@ -47,7 +47,7 @@ from remedi.latent_evaluation.mace_invariant_stats import (
 )
 from remedi.model.featurizer import MaceFeaturizer, pad_molecules
 from remedi.training.data import worker_init_fn
-from remedi.training.data.sample import Sample, yield_molecules_collate_fn
+from remedi.training.data.sample import MoleculeCollator, Sample
 from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
@@ -94,21 +94,8 @@ def _setup_logging(output_dir: Path) -> None:
 
 def _run_mace_on_sample(featurizer: MaceFeaturizer, sample: Sample) -> torch.Tensor:
     """MACE node features ``(atoms, C)`` of a flat batch's atoms, in its order."""
-    if (
-        sample.atomic_numbers is None
-        or sample.atomic_positions is None
-        or sample.system_index is None
-        or sample.padding_mask is None
-    ):
-        raise ValueError("expected a batch from yield_molecules_collate_fn")
-    molecules = pad_molecules(
-        sample.atomic_numbers,
-        sample.atomic_positions,
-        sample.system_index,
-        sample.padding_mask,
-    )
-    features = featurizer(molecules.atomic_numbers, molecules.positions)
-    return features[~molecules.padding_mask]
+    molecules = pad_molecules(sample)
+    return featurizer(molecules)[~molecules.padding_mask]
 
 
 def main() -> None:
@@ -162,7 +149,7 @@ def main() -> None:
         worker_init_fn=worker_init_fn,
         num_workers=cfg.num_workers,
         shuffle=True,
-        collate_fn=yield_molecules_collate_fn,
+        collate_fn=MoleculeCollator(cutoff=featurizer.r_max),
         pin_memory=True,
         persistent_workers=cfg.num_workers > 0,
     )

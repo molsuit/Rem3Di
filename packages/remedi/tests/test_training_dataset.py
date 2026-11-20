@@ -13,7 +13,7 @@ import torch
 from ase import Atoms
 from torch.utils.data import DataLoader
 
-from remedi.training.data.sample import Sample, yield_molecules_collate_fn
+from remedi.training.data.sample import MoleculeCollator, Sample
 from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
@@ -41,7 +41,7 @@ def batches(dataset: TrainingMoleculeDataset, num_workers: int) -> list[Sample]:
         batch_size=3,
         shuffle=False,
         num_workers=num_workers,
-        collate_fn=yield_molecules_collate_fn,
+        collate_fn=MoleculeCollator(cutoff=5.0),
     )
     return list(loader)
 
@@ -141,7 +141,7 @@ def test_forked_workers_read_no_table(
         shuffle=False,
         num_workers=2,
         multiprocessing_context="fork",
-        collate_fn=yield_molecules_collate_fn,
+        collate_fn=MoleculeCollator(cutoff=5.0),
     )
     assert_same_batches(in_process, list(loader))
 

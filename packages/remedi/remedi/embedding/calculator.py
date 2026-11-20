@@ -19,6 +19,7 @@ import numpy as np
 import torch
 from ase import Atoms
 from pydantic import BaseModel, ConfigDict, Field
+from torch import nn
 from torch.utils.data import DataLoader, Subset
 
 from remedi.embedding.projection import PooledProjection
@@ -27,7 +28,7 @@ from remedi.model.checkpoint import (
     DESCRIPTOR_IDENTITY_FILES,
     load_checkpoint,
 )
-from remedi.training.data.sample import Sample, yield_molecules_collate_fn
+from remedi.training.data.sample import MoleculeCollator, Sample
 from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
@@ -35,6 +36,21 @@ from remedi.training.data.training_dataset import (
 from remedi_data.dataset import Dataset
 from remedi_data.format import sha256_of_file
 from remedi_data.yaml_io import read_yaml
+
+
+def _molecule_collator(model: nn.Module) -> MoleculeCollator:
+    """The collate function of ``model``'s batches: flat molecules with their
+    neighbour list at its MACE model's cutoff."""
+    from remedi.model.preprocessing.preprocessing import (
+        PreprocessorWithAtomicEmbedding,
+    )
+
+    preprocessor = model.preprocessor
+    if not isinstance(preprocessor, PreprocessorWithAtomicEmbedding):
+        raise TypeError(
+            "the calculator needs a model that computes MACE features on the fly"
+        )
+    return preprocessor.molecule_collator()
 
 
 class RemediCalculator:
@@ -106,7 +122,7 @@ class RemediCalculator:
             batch_size=min(self.batch_size, max(n, 1)),
             shuffle=False,
             drop_last=False,
-            collate_fn=yield_molecules_collate_fn,
+            collate_fn=_molecule_collator(model),
         )
         return self._embed_batches(model, device, loader, n)
 
@@ -139,9 +155,8 @@ class RemediCalculator:
         n = len(atoms)
         bs = min(self.batch_size, max(n, 1))
         samples = [self._atoms_to_sample(a, total_charge, multiplicity) for a in atoms]
-        batches = [
-            yield_molecules_collate_fn(samples[i : i + bs]) for i in range(0, n, bs)
-        ]
+        collate_molecules = _molecule_collator(model)
+        batches = [collate_molecules(samples[i : i + bs]) for i in range(0, n, bs)]
         return self._embed_batches(model, device, batches, n)
 
     @staticmethod

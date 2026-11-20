@@ -1,8 +1,10 @@
 """The MACE featurizer against the full MACE model it is lifted from.
 
-MACE-OFF23 medium on the CPU in float64: the featurizer's node features equal the
-model's own (radius graph, readouts and all), do not depend on batching or padding,
-and compile into one graph that serves further shapes without recompiling.
+MACE-OFF23 medium on the CPU in float64: the featurizer's node features on the
+collated neighbour list equal the model's own (radius graph, readouts and all), also
+for atoms without neighbours and molecules with pairs beyond the cutoff, do not
+depend on batching or padding, and compile into one graph that serves further
+shapes and pair counts without recompiling.
 MACE-POLAR-1-M runs only with RUN_POLAR_TESTS=1, cuequivariance only on CUDA.
 """
 
@@ -23,10 +25,10 @@ from remedi.model.featurizer import (
     MaceFeaturizer,
     check_distant_pairs_are_inert,
     ir_mul_to_mul_ir_index,
-    molecule_pair_index,
     pad_molecules,
 )
-from remedi.training.data.sample import Sample, yield_molecules_collate_fn
+from remedi.training.data.neighbor_list import molecule_neighbor_list
+from remedi.training.data.sample import MoleculeCollator, Sample
 
 MACE_OFF_MEDIUM = Path.home() / ".cache" / "mace" / "MACE-OFF23_medium.model"
 MACE_POLAR = Path(
@@ -44,18 +46,41 @@ CUDA_TESTS = pytest.mark.skipif(
 )
 
 
+# A peptide of 79 atoms (with hydrogens), embedded by RDKit: a large molecule.
+LARGE_MOLECULE_SMILES = (
+    "NCC(=O)N[C@@H](CO)C(=O)N[C@@H](Cc1ccccc1)C(=O)N[C@@H](CC(C)C)C(=O)O"
+)
+
+
+def _large_molecule() -> Atoms:
+    from rdkit import Chem
+    from rdkit.Chem import rdDistGeom
+
+    rdkit_molecule = Chem.AddHs(Chem.MolFromSmiles(LARGE_MOLECULE_SMILES))
+    if rdDistGeom.EmbedMolecule(rdkit_molecule, randomSeed=0) != 0:
+        raise RuntimeError("RDKit could not embed the large test molecule")
+    return Atoms(
+        numbers=[atom.GetAtomicNum() for atom in rdkit_molecule.GetAtoms()],
+        positions=rdkit_molecule.GetConformer().GetPositions(),
+    )
+
+
 def _molecules() -> list[Atoms]:
-    """Small molecules and C60, whose atoms are up to 7 A apart (beyond the cutoff
-    of MACE-OFF, 5 A, and of MACE-POLAR, 6 A)."""
+    """Small molecules, C60 and a peptide, whose atoms are up to 7 A and more apart
+    (beyond the cutoff of MACE-OFF, 5 A, and of MACE-POLAR, 6 A), a lone atom, and
+    two waters 12 A apart (atoms without neighbours, pairs beyond the cutoff)."""
     names = ["H2O", "CH3CH2OH", "C6H6", "CH3COOH", "C60"]
-    structures = []
+    structures = [molecule(name) for name in names]
+    structures.append(_large_molecule())
+    structures.append(Atoms("O", positions=[[0.3, -0.2, 0.1]]))
+    distant_waters = molecule("H2O") + molecule("H2O")
+    distant_waters.positions[3:] += [12.0, 0.0, 0.0]
+    structures.append(distant_waters)
     generator = torch.Generator().manual_seed(0)
-    for name in names:
-        atoms = molecule(name)
+    for atoms in structures:
         # Off the symmetric equilibrium frame, so no feature vanishes by symmetry.
         noise = torch.randn(len(atoms), 3, generator=generator, dtype=torch.float64)
         atoms.positions += 0.05 * noise.numpy()
-        structures.append(atoms)
     return structures
 
 
@@ -68,23 +93,19 @@ def _sample(atoms: Atoms) -> Sample:
     )
 
 
+def _collate(featurizer: MaceFeaturizer, structures: list[Atoms]) -> Sample:
+    return MoleculeCollator(cutoff=featurizer.r_max)(
+        [_sample(atoms) for atoms in structures]
+    )
+
+
 def _featurize(
     featurizer: MaceFeaturizer, structures: list[Atoms], pad_multiple: int = 1
 ) -> list[torch.Tensor]:
     """The featurizer's features of each structure, ``(atoms, C)``, on the CPU."""
-    batch = yield_molecules_collate_fn([_sample(atoms) for atoms in structures])
-    device = next(featurizer.parameters()).device
-    batch.to_(device)
-    assert batch.atomic_numbers is not None and batch.atomic_positions is not None
-    assert batch.system_index is not None and batch.padding_mask is not None
-    molecules = pad_molecules(
-        batch.atomic_numbers,
-        batch.atomic_positions,
-        batch.system_index,
-        batch.padding_mask,
-        pad_multiple,
-    )
-    features = featurizer(molecules.atomic_numbers, molecules.positions).cpu()
+    batch = _collate(featurizer, structures)
+    batch.to_(next(featurizer.parameters()).device)
+    features = featurizer(pad_molecules(batch, pad_multiple)).cpu()
     return [features[index, : len(atoms)] for index, atoms in enumerate(structures)]
 
 
@@ -121,6 +142,9 @@ def _assert_matches(
     for feature, reference in zip(features, references, strict=True):
         assert feature.shape == reference.shape
         scale = reference.abs().max()
+        if scale == 0:  # a lone atom of a model without residual first layer
+            assert torch.equal(feature, reference)
+            continue
         assert float((feature - reference).abs().max() / scale) < tolerance
 
 
@@ -160,18 +184,40 @@ def mace_off_featurizer(mace_off_medium: Path) -> MaceFeaturizer:
 # ---------------------------------------------------------------- building blocks
 
 
-def test_molecule_pair_index_lists_every_ordered_pair_within_each_molecule():
-    pairs = molecule_pair_index(molecules=2, atoms=3, device=torch.device("cpu"))
-    expected = {
-        (molecule_index * 3 + sender, molecule_index * 3 + receiver)
-        for molecule_index in range(2)
-        for sender in range(3)
-        for receiver in range(3)
-        if sender != receiver
-    }
+def test_neighbor_list_holds_the_pairs_within_the_cutoff(structures):
+    cutoff = 5.0
+    positions = [torch.tensor(atoms.positions) for atoms in structures]
+    pairs = molecule_neighbor_list(positions, cutoff)
+    expected = set()
+    first_atom = 0
+    for molecule_positions in positions:
+        distances = torch.cdist(molecule_positions, molecule_positions)
+        for sender in range(len(molecule_positions)):
+            for receiver in range(len(molecule_positions)):
+                if sender != receiver and distances[sender, receiver] < cutoff:
+                    expected.add((first_atom + sender, first_atom + receiver))
+        first_atom += len(molecule_positions)
     listed = [tuple(pair) for pair in pairs.T.tolist()]
+    assert pairs.dtype == torch.long
     assert len(listed) == len(expected)
     assert set(listed) == expected
+    # Some pairs are beyond the cutoff (C60, the peptide, the distant waters).
+    assert len(listed) < sum(len(p) * (len(p) - 1) for p in positions)
+
+
+def test_neighbor_list_of_atoms_without_neighbors_is_empty():
+    lone_atoms = [torch.zeros((1, 3)), torch.tensor([[0.0, 0, 0], [9.0, 0, 0]])]
+    assert molecule_neighbor_list(lone_atoms, 5.0).shape == (2, 0)
+    with pytest.raises(ValueError, match="positive"):
+        molecule_neighbor_list(lone_atoms, 0.0)
+
+
+def test_collator_records_its_cutoff_and_rejects_a_bad_one():
+    batch = MoleculeCollator(cutoff=4.0)([_sample(molecule("H2O"))])
+    assert batch.neighbor_cutoff == 4.0
+    assert batch.edge_index is not None and batch.edge_index.shape == (2, 6)
+    with pytest.raises(ValueError, match="positive"):
+        MoleculeCollator(cutoff=float("nan"))
 
 
 def _mul_ir_to_ir_mul(features: torch.Tensor, irreps: Irreps) -> torch.Tensor:
@@ -214,18 +260,11 @@ def test_ir_mul_index_restores_e3nn_equivariance():
 
 def test_pad_molecules_places_and_centres_each_molecule():
     structures = [molecule("H2O"), molecule("CH4")]
-    batch = yield_molecules_collate_fn([_sample(atoms) for atoms in structures])
-    assert batch.atomic_numbers is not None and batch.atomic_positions is not None
-    assert batch.system_index is not None and batch.padding_mask is not None
-    molecules = pad_molecules(
-        batch.atomic_numbers,
-        batch.atomic_positions,
-        batch.system_index,
-        batch.padding_mask,
-        pad_multiple=4,
-    )
+    batch = MoleculeCollator(cutoff=5.0)([_sample(atoms) for atoms in structures])
+    molecules = pad_molecules(batch, pad_multiple=4)
     assert molecules.atomic_numbers.shape == (2, 8)
     assert molecules.atom_counts.tolist() == [3, 5]
+    assert molecules.neighbor_cutoff == 5.0
     for index, atoms in enumerate(structures):
         count = len(atoms)
         assert molecules.atomic_numbers[index, :count].tolist() == list(atoms.numbers)
@@ -239,30 +278,46 @@ def test_pad_molecules_places_and_centres_each_molecule():
         assert not molecules.positions[index, count:].any()
 
 
-def test_pad_molecules_gives_single_atoms_two_slots():
-    batch = yield_molecules_collate_fn([_sample(Atoms("Ne", positions=[[1.0, 2, 3]]))])
-    assert batch.atomic_numbers is not None and batch.atomic_positions is not None
-    assert batch.system_index is not None and batch.padding_mask is not None
-    molecules = pad_molecules(
-        batch.atomic_numbers,
-        batch.atomic_positions,
-        batch.system_index,
-        batch.padding_mask,
+def test_pad_molecules_places_the_neighbor_list_on_the_padded_atoms(structures):
+    batch = MoleculeCollator(cutoff=5.0)([_sample(atoms) for atoms in structures])
+    assert batch.edge_index is not None and batch.atomic_positions is not None
+    molecules = pad_molecules(batch, pad_multiple=8)
+    atom_slots = molecules.atomic_numbers.shape[1]
+    assert molecules.edge_index.shape == batch.edge_index.shape
+    flat_vectors = (
+        batch.atomic_positions[batch.edge_index[1]]
+        - batch.atomic_positions[batch.edge_index[0]]
     )
+    padded_positions = molecules.positions.reshape(-1, 3)
+    sender, receiver = molecules.edge_index
+    torch.testing.assert_close(
+        padded_positions[receiver] - padded_positions[sender], flat_vectors
+    )
+    assert torch.equal(sender // atom_slots, receiver // atom_slots)
+    assert not molecules.padding_mask.reshape(-1)[sender].any()
+    assert not molecules.padding_mask.reshape(-1)[receiver].any()
+
+
+def test_pad_molecules_gives_single_atoms_two_slots():
+    lone_atom = _sample(Atoms("Ne", positions=[[1.0, 2, 3]]))
+    molecules = pad_molecules(MoleculeCollator(cutoff=5.0)([lone_atom]))
     assert molecules.padding_mask.tolist() == [[False, True]]
+    assert molecules.edge_index.shape == (2, 0)
+
+
+def test_pad_molecules_needs_the_neighbor_list():
+    batch = MoleculeCollator(cutoff=5.0)([_sample(molecule("H2O"))])
+    batch.edge_index = None
+    with pytest.raises(ValueError, match="neighbour list"):
+        pad_molecules(batch)
 
 
 def test_unsorted_system_index_is_rejected():
-    batch = yield_molecules_collate_fn([_sample(molecule("H2O"))] * 2)
-    assert batch.atomic_numbers is not None and batch.atomic_positions is not None
-    assert batch.system_index is not None and batch.padding_mask is not None
+    batch = MoleculeCollator(cutoff=5.0)([_sample(molecule("H2O"))] * 2)
+    assert batch.system_index is not None
+    batch.system_index = batch.system_index.flip(0)
     with pytest.raises(RuntimeError, match="sorted"):
-        pad_molecules(
-            batch.atomic_numbers,
-            batch.atomic_positions,
-            batch.system_index.flip(0),
-            batch.padding_mask,
-        )
+        pad_molecules(batch)
 
 
 # ---------------------------------------------------------------- MACE-OFF, CPU
@@ -271,8 +326,10 @@ def test_unsorted_system_index_is_rejected():
 def test_featurizer_matches_the_full_model(
     mace_off_featurizer, mace_off_references, structures
 ):
-    distances = torch.cdist(*(2 * [torch.tensor(structures[-1].positions)]))
-    assert (distances > mace_off_featurizer.r_max).any()
+    for atoms in structures[-4:]:  # C60, the peptide, the distant waters
+        if len(atoms) > 1:
+            distances = torch.cdist(*(2 * [torch.tensor(atoms.positions)]))
+            assert (distances > mace_off_featurizer.r_max).any()
     features = _featurize(mace_off_featurizer, structures)
     _assert_matches(features, mace_off_references, tolerance=1e-12)
 
@@ -287,10 +344,27 @@ def test_featurizer_does_not_depend_on_batching_or_padding(
 
 
 def test_featurizer_rejects_unknown_elements(mace_off_featurizer):
-    atomic_numbers = torch.tensor([[6, 2]])  # helium: not a MACE-OFF element
-    positions = torch.tensor([[[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]]])
+    helium = Atoms("CHe", positions=[[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]])
+    batch = _collate(mace_off_featurizer, [helium])
     with pytest.raises(RuntimeError, match="element"):
-        mace_off_featurizer(atomic_numbers, positions)
+        mace_off_featurizer(pad_molecules(batch))
+
+
+def test_featurizer_rejects_a_neighbor_list_of_another_cutoff(
+    mace_off_featurizer, structures
+):
+    batch = MoleculeCollator(cutoff=mace_off_featurizer.r_max - 1.0)(
+        [_sample(atoms) for atoms in structures]
+    )
+    with pytest.raises(ValueError, match="cutoff"):
+        mace_off_featurizer(pad_molecules(batch))
+
+
+def test_featurizer_rejects_pairs_across_molecules(mace_off_featurizer):
+    batch = _collate(mace_off_featurizer, [molecule("H2O"), molecule("H2O")])
+    batch.edge_index = torch.tensor([[0], [3]])
+    with pytest.raises(RuntimeError, match="different molecules"):
+        mace_off_featurizer(pad_molecules(batch))
 
 
 def test_featurizer_rejects_models_whose_distant_pairs_contribute(mace_off_medium):
@@ -321,10 +395,17 @@ def test_compiled_featurizer_is_one_graph_for_every_shape(
         _assert_matches(
             _featurize(featurizer, structures), mace_off_references, tolerance=1e-12
         )
-        # Fewer molecules, other atom slots: the same graph.
+        # Fewer molecules, other atom slots and pair counts: the same graph.
         _assert_matches(
             _featurize(featurizer, structures[1:4], pad_multiple=3),
             mace_off_references[1:4],
+            tolerance=1e-12,
+        )
+        # No pairs at all (lone atoms): inert pairs fill in, the same graph.
+        lone_atom = structures[-2]
+        _assert_matches(
+            _featurize(featurizer, [lone_atom, lone_atom]),
+            [mace_off_references[-2]] * 2,
             tolerance=1e-12,
         )
 
@@ -359,6 +440,7 @@ def _cueq_against_e3nn(model_path: Path, structures: list[Atoms]) -> None:
     ):
         cueq_features = _featurize(featurizer, structures)
         _featurize(featurizer, structures[1:4], pad_multiple=3)
+        _featurize(featurizer, [structures[-2]] * 2)
     _assert_matches(cueq_features, e3nn_features, tolerance=1e-4)
 
 

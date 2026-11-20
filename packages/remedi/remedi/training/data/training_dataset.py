@@ -47,7 +47,7 @@ def make_supervised_getitem(
     ``labels[i]`` is the target for structure ``i``. The label is attached as a
     scalar ``Sample.regression_targets`` tensor (``long`` for classification
     class indices, ``float`` for regression), which
-    :func:`yield_molecules_supervised_collate_fn` stacks into a ``(B,)`` batch.
+    ``MoleculeCollator(with_regression_targets=True)`` stacks into a ``(B,)`` batch.
     """
 
     def _getitem(ds: TrainingMoleculeDataset, i: int) -> Sample:

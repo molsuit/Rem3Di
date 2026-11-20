@@ -16,6 +16,7 @@ from remedi.model.preprocessing.radial_basis_functions import (
     BesselBasisFunctions,
     GaussianBasisFunctions,
 )
+from remedi.training.data.sample import MoleculeCollator
 from remedi.utils.model_utils import concatenate_irreps, get_invariant_indices
 from remedi_data.yaml_io import read_yaml
 
@@ -587,6 +588,25 @@ class _BaseArchitectureConfig(StrictBaseModel):
                 embedding_dimension if output_dim is None else output_dim
             ),
             descriptor_sequence_length=self.global_aggregator_config.descriptor_seq_len,
+        )
+
+    def molecule_collator(
+        self, with_regression_targets: bool = False
+    ) -> MoleculeCollator:
+        """The collate function of the flat molecule batches the MACE preprocessor
+        takes, with their neighbour list at the MACE model's cutoff.
+
+        Raises:
+            ValueError: if there is no ``mace_config``.
+        """
+        if self.mace_config is None:
+            raise ValueError(
+                "flat molecule batches need a mace_config: the neighbour list's "
+                "cutoff is the MACE model's r_max"
+            )
+        return MoleculeCollator(
+            cutoff=self.mace_config.r_max,
+            with_regression_targets=with_regression_targets,
         )
 
     def _build_preprocessor(

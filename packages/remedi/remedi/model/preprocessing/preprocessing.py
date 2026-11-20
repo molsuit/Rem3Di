@@ -8,7 +8,7 @@ from remedi.model.preprocessing.atomic_descriptor_preprocessor import (
 from remedi.model.preprocessing.geometric_preprocessor import (
     PairDistanceMatrixGeometricPreprocessor,
 )
-from remedi.training.data.sample import PreprocessedSample, Sample
+from remedi.training.data.sample import MoleculeCollator, PreprocessedSample, Sample
 
 
 class Preprocessor(nn.Module):
@@ -40,7 +40,7 @@ class Preprocessor(nn.Module):
 
 class PreprocessorWithAtomicEmbedding(Preprocessor):
     """Computes the atoms' MACE features on the fly from a flat batch of molecules
-    (``yield_molecules_collate_fn``) and preprocesses them.
+    (``molecule_collator``) and preprocesses them.
 
     The batch is padded to ``(molecules, atoms)`` on the device without host reads;
     the padded atom count is the longest molecule rounded up to a multiple of
@@ -61,23 +61,14 @@ class PreprocessorWithAtomicEmbedding(Preprocessor):
             raise ValueError("pad_multiple must be a positive integer.")
         self.pad_multiple = int(pad_multiple)
 
-    def _padded_molecules(self, sample: Sample) -> PaddedMolecules:
-        if (
-            sample.atomic_positions is None
-            or sample.atomic_numbers is None
-            or sample.system_index is None
-            or sample.padding_mask is None
-        ):
-            raise ValueError(
-                "MACE features need a flat batch with atomic positions and numbers, "
-                "system_index and the padding mask (yield_molecules_collate_fn)."
-            )
-        return pad_molecules(
-            sample.atomic_numbers,
-            sample.atomic_positions,
-            sample.system_index,
-            sample.padding_mask,
-            self.pad_multiple,
+    def molecule_collator(
+        self, with_regression_targets: bool = False
+    ) -> MoleculeCollator:
+        """The collate function of the batches this preprocessor takes: flat
+        molecules with their neighbour list at the MACE model's cutoff."""
+        return MoleculeCollator(
+            cutoff=self.mace_featurizer.r_max,
+            with_regression_targets=with_regression_targets,
         )
 
     def _atomic_embeddings(
@@ -85,9 +76,8 @@ class PreprocessorWithAtomicEmbedding(Preprocessor):
     ) -> tuple[torch.Tensor, PaddedMolecules]:
         """MACE node features ``(molecules, atoms, C)`` of a flat batch, zero on
         padding, with the padded molecules they were computed on."""
-        molecules = self._padded_molecules(sample)
-        features = self.mace_featurizer(molecules.atomic_numbers, molecules.positions)
-        return features, molecules
+        molecules = pad_molecules(sample, self.pad_multiple)
+        return self.mace_featurizer(molecules), molecules
 
     def raw_invariants(self, sample: Sample) -> torch.Tensor:
         """The unnormalised invariants ``(atoms, D)`` of a flat batch's real atoms:

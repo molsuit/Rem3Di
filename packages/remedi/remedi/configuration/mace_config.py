@@ -66,6 +66,12 @@ class MaceConfig(StrictBaseModel):
         self._raw_model = raw.to(self.torch_dtype).eval()
         return self._raw_model
 
+    @property
+    def r_max(self) -> float:
+        """The model's cutoff in Angstrom: the cutoff of the batches' neighbour lists
+        (``MoleculeCollator``)."""
+        return float(self._load_raw_model().r_max)
+
     def get_irrep_signature(self) -> Irreps:
         """The irreps of the full node features: every layer's, concatenated."""
         return concatenate_irreps(self.get_per_layer_irreps())

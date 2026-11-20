@@ -2,21 +2,23 @@
 
 A MACE model's node features are the outputs of its product layers. In PolarMACE the
 charges, the self-consistent field and the electrostatics only read them, so the
-features need neither those nor the readouts, the forces or a neighbour list. The
-featurizer runs the embedding, the edge harmonics and radial basis, and the
-interaction and product layers, sharing the model's parameters, without gradients.
+features need neither those nor the readouts or the forces. The featurizer runs the
+embedding, the edge harmonics and radial basis, and the interaction and product
+layers, sharing the model's parameters, without gradients.
 
-The graph of a padded batch ``(molecules, atoms)`` is every ordered pair of atoms
-within a molecule, built from the shape alone (no host reads, no data-dependent
-sizes): one graph per ``(molecules, atoms)`` shape, which ``torch.compile`` captures
-whole. Pairs beyond the model's cutoff, and pairs with a padding atom (placed beyond
-the cutoff), carry exactly nothing for the supported models
-(``check_distant_pairs_are_inert``), so the features equal those of the model's own
-radius graph.
+The graph of a padded batch ``(molecules, atoms)`` is its neighbour list: the ordered
+atom pairs of a molecule within the model's cutoff, built on the CPU when the batch
+is collated (``MoleculeCollator``), so the pair count is an input shape and the
+computation has no data-dependent sizes and no host reads. ``torch.compile`` captures
+it whole, as one graph for every ``(molecules, atoms, pairs)`` shape. The features
+equal those of the model's own radius graph: pairs beyond the cutoff, and the inert
+pairs the featurizer may add (placed beyond the cutoff), carry exactly nothing for
+the supported models (``check_distant_pairs_are_inert``).
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import Literal
 
@@ -24,12 +26,20 @@ import torch
 from e3nn.o3 import Irreps
 from torch import nn
 
+from remedi.model.featurizer.padding import PaddedMolecules
 from remedi.utils.model_utils import concatenate_irreps
 
 NodeFeatureLayout = Literal["mul_ir", "ir_mul"]
 
 # The element lookup covers atomic numbers 0 (padding) to 118.
 _LARGEST_ATOMIC_NUMBER = 118
+# torch.compile specialises (and recompiles for) dimensions of size 0 and 1: a batch
+# with fewer pairs (single atoms, or atoms beyond the cutoff of each other) gets inert
+# pairs up to this count.
+MINIMUM_PAIRS = 2
+# The cutoff of a batch's neighbour list and the model's agree up to the rounding of
+# the model's r_max to float32.
+_CUTOFF_RELATIVE_TOLERANCE = 1e-6
 
 
 def ir_mul_to_mul_ir_index(irreps: Irreps) -> torch.Tensor:
@@ -45,24 +55,6 @@ def ir_mul_to_mul_ir_index(irreps: Irreps) -> torch.Tensor:
             for component in range(irrep.dim):
                 index.append(block.start + component * multiplicity + channel)
     return torch.tensor(index, dtype=torch.long)
-
-
-def molecule_pair_index(
-    molecules: int, atoms: int, device: torch.device
-) -> torch.Tensor:
-    """Every ordered pair ``(sender, receiver)`` of distinct atoms within each molecule
-    of a padded batch, as flat atom indices ``[2, molecules * atoms * (atoms - 1)]``.
-
-    Arithmetic on ``arange`` only, so the pair count follows from the shape.
-    """
-    pair = torch.arange(atoms * (atoms - 1), device=device)
-    sender_slot = pair // (atoms - 1)
-    remainder = pair % (atoms - 1)
-    receiver_slot = remainder + (remainder >= sender_slot).long()
-    molecule_offset = torch.arange(molecules, device=device)[:, None] * atoms
-    sender = (molecule_offset + sender_slot[None, :]).reshape(-1)
-    receiver = (molecule_offset + receiver_slot[None, :]).reshape(-1)
-    return torch.stack([sender, receiver])
 
 
 def _submodule(model: nn.Module, name: str) -> nn.Module:
@@ -123,8 +115,9 @@ class MaceFeaturizer(nn.Module):
         self.per_layer_irreps = list(per_layer_irreps)
         self.permute_edge_vectors = permute_edge_vectors
         self.r_max = float(_tensor(model, "r_max"))
-        # Padding pairs are placed this far apart: beyond the cutoff, so they carry
-        # nothing, at a finite length (a zero vector would give NaN harmonics).
+        # Inert pairs (an atom with itself, or a pair with a padding atom) are placed
+        # this far apart: beyond the cutoff, so they carry nothing, at a finite length
+        # (a zero vector would give NaN harmonics).
         self.inert_pair_distance = 2.0 * self.r_max
 
         atomic_numbers = _tensor(model, "atomic_numbers")
@@ -155,8 +148,8 @@ class MaceFeaturizer(nn.Module):
 
     def compile_features(self) -> None:
         """Evaluate the features through ``torch.compile`` from now on (whole graph,
-        dynamic shapes): one graph for every ``(molecules, atoms)`` shape, built on
-        the first call."""
+        dynamic shapes): one graph for every ``(molecules, atoms, pairs)`` shape,
+        built on the first call."""
         if self._compiled_features is None:
             self._compiled_features = torch.compile(
                 self.features, fullgraph=True, dynamic=True
@@ -167,36 +160,57 @@ class MaceFeaturizer(nn.Module):
         """The dtype of the features: the parameters' (follows ``.to``)."""
         return next(self.parameters()).dtype
 
-    def forward(
-        self, atomic_numbers: torch.Tensor, positions: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, molecules: PaddedMolecules) -> torch.Tensor:
         """Node features ``(molecules, atoms, channels)`` in ``mul_ir`` layout, zero on
-        padding atoms.
-
-        ``atomic_numbers``: ``(molecules, atoms)``, 0 marks a padding atom.
-        ``positions``: ``(molecules, atoms, 3)`` in Angstrom.
-        """
+        padding atoms, of a padded batch (``pad_molecules``) whose neighbour list was
+        built with the model's cutoff."""
+        atomic_numbers, positions = molecules.atomic_numbers, molecules.positions
+        edge_index = molecules.edge_index
         if atomic_numbers.dim() != 2 or positions.shape != (*atomic_numbers.shape, 3):
             raise ValueError(
                 f"expected atomic numbers (molecules, atoms) and positions "
                 f"(molecules, atoms, 3), got {tuple(atomic_numbers.shape)} and "
                 f"{tuple(positions.shape)}"
             )
-        if atomic_numbers.shape[1] < 2:
-            raise ValueError("pad the batch to at least two atoms per molecule")
+        if edge_index.dim() != 2 or edge_index.shape[0] != 2:
+            raise ValueError(
+                f"expected the neighbour list as [2, pairs], got "
+                f"{tuple(edge_index.shape)}"
+            )
+        if not math.isclose(
+            molecules.neighbor_cutoff,
+            self.r_max,
+            rel_tol=_CUTOFF_RELATIVE_TOLERANCE,
+        ):
+            raise ValueError(
+                f"the batch's neighbour list was built with cutoff "
+                f"{molecules.neighbor_cutoff}, the MACE model's is {self.r_max}: "
+                f"collate with MoleculeCollator(cutoff=<the model's r_max>)"
+            )
+        missing_pairs = MINIMUM_PAIRS - edge_index.shape[1]
+        if missing_pairs > 0:
+            # Pairs of the first atom with itself: inert.
+            edge_index = torch.cat(
+                [edge_index, edge_index.new_zeros((2, missing_pairs))], dim=1
+            )
         positions = positions.to(self.dtype)
         with torch.no_grad():
             if self._compiled_features is None:
-                return self.features(atomic_numbers, positions)
+                return self.features(atomic_numbers, positions, edge_index)
             for tensor in (atomic_numbers, positions):
                 torch._dynamo.maybe_mark_dynamic(tensor, 0)
                 torch._dynamo.maybe_mark_dynamic(tensor, 1)
-            return self._compiled_features(atomic_numbers, positions)
+            torch._dynamo.maybe_mark_dynamic(edge_index, 1)
+            return self._compiled_features(atomic_numbers, positions, edge_index)
 
     def features(
-        self, atomic_numbers: torch.Tensor, positions: torch.Tensor
+        self,
+        atomic_numbers: torch.Tensor,
+        positions: torch.Tensor,
+        edge_index: torch.Tensor,
     ) -> torch.Tensor:
-        """The computation of ``forward`` (the compiled region)."""
+        """The computation of ``forward`` (the compiled region): ``edge_index``
+        indexes the flattened padded atoms (``molecule * atoms + slot``)."""
         molecules, atoms = atomic_numbers.shape
         flat_atomic_numbers = atomic_numbers.reshape(-1)
         real_atom = flat_atomic_numbers > 0
@@ -212,9 +226,12 @@ class MaceFeaturizer(nn.Module):
             element.clamp_min(0), self.number_of_elements
         ).to(self.dtype) * real_atom[:, None].to(self.dtype)
 
-        edge_index = molecule_pair_index(molecules, atoms, positions.device)
         sender, receiver = edge_index[0], edge_index[1]
-        real_pair = real_atom[sender] & real_atom[receiver]
+        torch._assert_async(
+            (sender // atoms == receiver // atoms).all(),
+            "a pair of the neighbour list joins atoms of different molecules",
+        )
+        real_pair = real_atom[sender] & real_atom[receiver] & (sender != receiver)
         flat_positions = positions.reshape(-1, 3)
         vectors = flat_positions[receiver] - flat_positions[sender]
         inert = vectors.new_tensor([self.inert_pair_distance, 0.0, 0.0])

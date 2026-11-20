@@ -21,7 +21,6 @@ from remedi.training.data.mixture import (
     resolve_mixture,
     stage_datasets,
 )
-from remedi.training.data.sample import yield_molecules_collate_fn
 from remedi.training.data.samplers import BucketBatchSampler
 from remedi.training.data.training_dataset import atoms_getitem
 from remedi.training.linear_probe import LinearProbeMonitor
@@ -222,10 +221,13 @@ def main():  # noqa: C901 - one training loop
     )
 
     noise = training_config.noise
+    # The neighbour list of every batch is built in the loader workers at the
+    # MACE model's cutoff; the featurizer rejects batches built for another one.
+    collate_molecules = architecture_config.molecule_collator()
     training_loader = training_config.dataloader.build(
         train_dataset,
         lengths=train_lengths,
-        collate_fn=yield_molecules_collate_fn,
+        collate_fn=collate_molecules,
         shuffle=True,
         seed=training_config.seed,
     )
@@ -233,7 +235,7 @@ def main():  # noqa: C901 - one training loop
         name: training_config.dataloader.build(
             dataset,
             lengths=lengths,
-            collate_fn=yield_molecules_collate_fn,
+            collate_fn=collate_molecules,
             shuffle=False,
             seed=training_config.seed,
         )
@@ -243,7 +245,7 @@ def main():  # noqa: C901 - one training loop
     logger.info("Data Loaders Prepared")
 
     probe_monitor = build_probe_monitor(
-        training_config.probe, datasets, yield_molecules_collate_fn, device, logger
+        training_config.probe, datasets, collate_molecules, device, logger
     )
 
     bundle = architecture_config.build()

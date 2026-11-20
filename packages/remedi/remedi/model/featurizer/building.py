@@ -58,9 +58,9 @@ def permutes_edge_vectors(model: nn.Module) -> bool:
 def check_distant_pairs_are_inert(model: nn.Module) -> None:
     """Raise unless every pair beyond the model's cutoff carries exactly nothing.
 
-    The featurizer's graph holds every pair within a molecule, so its features equal
-    the model's only when those beyond the cutoff (and the padding pairs, placed
-    beyond it) add nothing to any message, density or weight.
+    The featurizer's graph is the neighbour list plus inert pairs (an atom with
+    itself, or a pair with a padding atom) placed beyond the cutoff, so its features
+    equal the model's only when those add nothing to any message, density or weight.
     """
     if hasattr(model, "joint_embedding"):
         raise ValueError(

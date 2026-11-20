@@ -48,7 +48,6 @@ from remedi.model.preprocessing.invariant_statistics import (
     ensure_invariant_statistics,
 )
 from remedi.model.preprocessing.preprocessing import PreprocessorWithAtomicEmbedding
-from remedi.training.data.sample import yield_molecules_supervised_collate_fn
 from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
@@ -158,17 +157,20 @@ def main() -> None:
 
     ds = TrainingMoleculeDataset(dataset_path, get_item=make_supervised_getitem(labels))
     all_lengths = full_dataset.structures.atom_counts()
+    collate_molecules = architecture_config.molecule_collator(
+        with_regression_targets=True
+    )
     train_loader = training_config.dataloader.build(
         Subset(ds, train_idx),
         lengths=all_lengths[train_idx],
-        collate_fn=yield_molecules_supervised_collate_fn,
+        collate_fn=collate_molecules,
         shuffle=True,
         seed=training_config.seed,
     )
     val_loader = training_config.dataloader.build(
         Subset(ds, val_idx),
         lengths=all_lengths[val_idx],
-        collate_fn=yield_molecules_supervised_collate_fn,
+        collate_fn=collate_molecules,
         shuffle=False,
         seed=training_config.seed,
     )

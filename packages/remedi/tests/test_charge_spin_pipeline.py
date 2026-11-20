@@ -2,7 +2,7 @@
 
 ``TrainingMoleculeDataset`` exposes each structure's ``total_charge`` and
 ``multiplicity`` per ``Sample`` via ``atoms_getitem``, and
-``yield_molecules_collate_fn`` batches them per system.
+``MoleculeCollator`` batches them per system.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from remedi.training.data.sample import Sample, yield_molecules_collate_fn
+from remedi.training.data.sample import MoleculeCollator, Sample
 from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     atoms_getitem,
@@ -39,7 +39,7 @@ def test_atoms_getitem_returns_charge_and_spin_per_sample(tmp_path: Path) -> Non
     torch.testing.assert_close(radical.multiplicity, torch.tensor(2.0))
 
 
-def test_yield_molecules_collate_batches_charge_and_spin() -> None:
+def test_molecule_collator_batches_charge_and_spin() -> None:
     s1 = Sample(
         atomic_positions=torch.zeros((2, 3)),
         atomic_numbers=torch.tensor([1, 1], dtype=torch.uint8),
@@ -53,7 +53,7 @@ def test_yield_molecules_collate_batches_charge_and_spin() -> None:
         multiplicity=torch.tensor(0.5),
     )
 
-    batched = yield_molecules_collate_fn([s1, s2])
+    batched = MoleculeCollator(cutoff=5.0)([s1, s2])
 
     assert batched.atomic_positions.shape == (5, 3)
     assert batched.atomic_numbers.shape == (5,)
@@ -64,10 +64,10 @@ def test_yield_molecules_collate_batches_charge_and_spin() -> None:
     torch.testing.assert_close(batched.multiplicity, torch.tensor([2.0, 0.5]))
 
 
-def test_yield_molecules_collate_requires_charge_and_spin() -> None:
+def test_molecule_collator_requires_charge_and_spin() -> None:
     s = Sample(
         atomic_positions=torch.zeros((1, 3)),
         atomic_numbers=torch.tensor([1], dtype=torch.uint8),
     )
     with pytest.raises((TypeError, ValueError, AttributeError)):
-        yield_molecules_collate_fn([s])
+        MoleculeCollator(cutoff=5.0)([s])

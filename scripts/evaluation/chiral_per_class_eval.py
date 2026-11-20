@@ -34,7 +34,6 @@ from torch.utils.data import Subset
 from remedi.configuration.architecture_config import ArchitectureConfig
 from remedi.configuration.training_config import ClassifierTrainingConfig
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, load_checkpoint
-from remedi.training.data.sample import yield_molecules_supervised_collate_fn
 from remedi.training.data.training_dataset import (
     TrainingMoleculeDataset,
     make_supervised_getitem,
@@ -106,14 +105,13 @@ def evaluate_run(
 
     ds = TrainingMoleculeDataset(dataset_path, get_item=make_supervised_getitem(labels))
     all_lengths = benchmark.dataset.structures.atom_counts()
+    model = _load_model(run_dir)
     loader = training_config.dataloader.build(
         Subset(ds, idx),
         lengths=all_lengths[idx],
-        collate_fn=yield_molecules_supervised_collate_fn,
+        collate_fn=model.preprocessor.molecule_collator(with_regression_targets=True),
         shuffle=False,
     )
-
-    model = _load_model(run_dir)
     y_true, y_pred = _predict(model, loader)
 
     # ``y_pred`` holds argmax labels, which multiclass_report takes as-is.

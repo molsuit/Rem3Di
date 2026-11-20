@@ -22,7 +22,7 @@ from remedi.embedding.calculator import RemediCalculator
 from remedi.model.checkpoint import ARCHITECTURE_FILENAME, save_checkpoint
 from remedi.model.featurizer import MaceFeaturizer
 from remedi.model.pair_block import PairTransition
-from remedi.training.data.sample import Sample, yield_molecules_collate_fn
+from remedi.training.data.sample import Sample
 from remedi_data.yaml_io import yaml_text
 
 MACE_OFF_MEDIUM = Path.home() / ".cache" / "mace" / "MACE-OFF23_medium.model"
@@ -127,12 +127,16 @@ def _sample(atoms: Atoms, positions: np.ndarray | None = None) -> Sample:
 
 def _descriptors(model, samples: list[Sample]) -> torch.Tensor:
     with torch.no_grad():
-        return model(yield_molecules_collate_fn(samples)).molecular_descriptor.flat
+        return model(
+            model.preprocessor.molecule_collator()(samples)
+        ).molecular_descriptor.flat
 
 
 def _chiral_embeddings(model, samples: list[Sample]) -> torch.Tensor:
     with torch.no_grad():
-        preprocessed = model.preprocessor(yield_molecules_collate_fn(samples))
+        preprocessed = model.preprocessor(
+            model.preprocessor.molecule_collator()(samples)
+        )
     assert preprocessed.chiral_embeddings is not None
     return preprocessed.chiral_embeddings
 
@@ -227,12 +231,13 @@ def test_mean_raw_invariants_average_each_molecules_atoms(model):
     """The mean-pooled MACE baseline: per molecule, the mean of its atoms'
     selected raw invariants, independent of the batch it is in."""
     water = molecule("H2O")
-    batch = yield_molecules_collate_fn([_sample(water), _sample(CHIRAL_MOLECULE)])
+    collate_molecules = model.preprocessor.molecule_collator()
+    batch = collate_molecules([_sample(water), _sample(CHIRAL_MOLECULE)])
     with torch.no_grad():
         pooled = model.preprocessor.mean_raw_invariants(batch)
         atoms = model.preprocessor.raw_invariants(batch)
         alone = model.preprocessor.mean_raw_invariants(
-            yield_molecules_collate_fn([_sample(CHIRAL_MOLECULE)])
+            collate_molecules([_sample(CHIRAL_MOLECULE)])
         )
     water_atoms = len(water)
     assert pooled.shape == (2, atoms.shape[-1])
