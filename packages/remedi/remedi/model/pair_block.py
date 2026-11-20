@@ -14,6 +14,7 @@ from remedi.model.pair_biased_attention import (
     PairBiasedSelfAttention,
     PairOuterProdUpdate,
 )
+from remedi.model.pair_linear import PairLinear
 
 
 class FeedForward(nn.Module):
@@ -43,8 +44,8 @@ class PairTransition(nn.Module):
     def __init__(self, d_pair: int, dropout: float = 0.1, expansion: int = 2):
         super().__init__()
         self.norm = nn.LayerNorm(d_pair)
-        self.proj_in = nn.Linear(d_pair, expansion * d_pair)
-        self.proj_out = nn.Linear(expansion * d_pair, d_pair)
+        self.proj_in = PairLinear(d_pair, expansion * d_pair)
+        self.proj_out = PairLinear(expansion * d_pair, d_pair)
         nn.init.zeros_(self.proj_out.weight)
         nn.init.zeros_(self.proj_out.bias)
         self.dropout = nn.Dropout(dropout)

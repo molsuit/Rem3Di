@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from remedi.model.attention import key_padding_bias
+from remedi.model.pair_linear import PairLinear
 from remedi.model.preprocessing.geometric_preprocessor import RadialFilter
 
 
@@ -50,10 +51,10 @@ class PairBiasedSelfAttention(nn.Module):
         # pair → per-head bias, zero-initialised so the first forward pass is
         # the plain attention
         self.ln_pair: nn.LayerNorm | None = None
-        self.pair2bias: nn.Linear | None = None
+        self.pair2bias: PairLinear | None = None
         if pair_bias:
             self.ln_pair = nn.LayerNorm(d_pair)
-            self.pair2bias = nn.Linear(d_pair, n_heads, bias=False)
+            self.pair2bias = PairLinear(d_pair, n_heads, bias=False)
             nn.init.zeros_(self.pair2bias.weight)
         self.dropout = nn.Dropout(dropout_p)
 

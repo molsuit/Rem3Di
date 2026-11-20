@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+from remedi.model.pair_linear import PairLinear
 from remedi.training.data.sample import Sample
 
 
@@ -8,7 +9,7 @@ class RadialFilter(nn.Module):
     def __init__(self, n_rad, out_dim, hidden=64):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(n_rad, hidden), nn.SiLU(), nn.Linear(hidden, out_dim)
+            PairLinear(n_rad, hidden), nn.SiLU(), PairLinear(hidden, out_dim)
         )
 
     def forward(self, p_geo):  # (N, N, n_rad)
@@ -31,7 +32,7 @@ class PairDistanceMatrixGeometricPreprocessor(nn.Module):
 
         self.radial_basis = radial_basis
 
-        self.proj = nn.Linear(N_radial_basis_functions, d_projection, bias=False)
+        self.proj = PairLinear(N_radial_basis_functions, d_projection, bias=False)
 
     def forward(self, sample: Sample):
         positions = sample.atomic_positions.to(dtype=torch.float32)
