@@ -22,6 +22,10 @@ _.pbc
 _._run
 
 # --- Language and library hooks called by name ------------------------------------------------
+# torch.library fake (meta) kernel, registered by decorator and called by torch.compile.
+_pair_channel_matmul_fake  # model/pair_linear.py
+# nn.Module submodule of a test model, reached through named_parameters (test_optimization.py).
+_.pair_projection
 
 # --- Record fields written for the reports, read by humans and serialization --------------------
 # Dataclass fields of the ChiralCat preparer's audit records and Sample.

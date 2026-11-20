@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 import numpy as np
 import polars as pl
 import pytest
-import torch
 
 from remedi_data.chemistry.fingerprints import (
     morgan_fingerprints,
@@ -28,8 +28,9 @@ from remedi_eval.dataset_analysis.molecule_clustering import (
 )
 from testing import write_small_dataset
 
-needs_gpu = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="Butina clustering runs on the GPU"
+needs_nvmolkit = pytest.mark.skipif(
+    importlib.util.find_spec("nvmolkit") is None,
+    reason="Butina clustering needs nvmolkit (the remedi-eval[cuda] extra)",
 )
 
 FAMILIES = [
@@ -53,7 +54,8 @@ def test_cluster_size_summary() -> None:
     assert summary["coarse_largest"] == 3
 
 
-@needs_gpu
+@pytest.mark.gpu
+@needs_nvmolkit
 def test_two_level_butina_nests_and_respects_the_cutoffs() -> None:
     smiles = [text for family in FAMILIES for text in family]
     fingerprints = morgan_fingerprints(smiles, layout="packed_words")
@@ -69,7 +71,8 @@ def test_two_level_butina_nests_and_respects_the_cutoffs() -> None:
     assert len(np.unique(clusters.fine)) >= len(np.unique(clusters.coarse))
 
 
-@needs_gpu
+@pytest.mark.gpu
+@needs_nvmolkit
 def test_cluster_molecules_writes_a_file_selections_can_draw_from(
     tmp_path: Path,
 ) -> None:

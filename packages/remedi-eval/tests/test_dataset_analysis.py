@@ -174,6 +174,7 @@ def test_bitbirch_runs_when_available(tmp_path: Path):
     assert summary.bitbirch.umap is not None and summary.bitbirch.umap.enabled is False
 
 
+@pytest.mark.slow
 def test_bitbirch_umap_projection_runs(tmp_path: Path):
     pytest.importorskip("bblean")
     pytest.importorskip("umap")

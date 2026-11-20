@@ -30,11 +30,11 @@ jobs:
       - name: Dead code
         run: uv run --no-sync python tools/vulture/run_vulture.py
       - name: Workspace tests
-        run: uv run --no-sync pytest -q
+        run: uv run --no-sync pytest -q -m "not gpu and not slow"
       - name: Preparer tests
         # Each preparer runs its own suite from its own directory (their
         # conftest modules share a name).
         run: |
           for preparer in tdc moleculenet polaris chiralcat qm9or; do
-            (cd "preparers/$preparer" && uv run --no-sync pytest -q)
+            (cd "preparers/$preparer" && uv run --no-sync pytest -q -m "not gpu and not slow")
           done

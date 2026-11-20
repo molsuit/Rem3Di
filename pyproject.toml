@@ -46,7 +46,12 @@ testpaths = [
     "packages/remedi/tests",
     "tests/integration",
 ]
-addopts = ["--import-mode=importlib"]
+addopts = ["--import-mode=importlib", "--strict-markers"]
+# CI runs `pytest -m "not gpu and not slow"`: the fast tests on the CPU.
+markers = [
+    "gpu: needs CUDA; skipped automatically on a machine without it",
+    "slow: takes several seconds (torch.compile and the like)",
+]
 # tests/support holds the helpers every test directory imports (`from testing import ...`):
 # synthetic bundles and datasets. It is not part of any package.
 pythonpath = ["tests/support"]

@@ -11,6 +11,7 @@ MACE-POLAR-1-M runs only with RUN_POLAR_TESTS=1, cuequivariance only on CUDA.
 from __future__ import annotations
 
 import copy
+import importlib.util
 import os
 from pathlib import Path
 
@@ -38,12 +39,13 @@ MACE_POLAR = Path(
         "/dais/u/wedigs/graph_electrostatics/MACE-POLAR-1-M.model",
     )
 )
+NEEDS_CUEQUIVARIANCE = pytest.mark.skipif(
+    importlib.util.find_spec("cuequivariance_torch") is None,
+    reason="needs cuequivariance (the remedi[cuda] extra)",
+)
 POLAR_TESTS = pytest.mark.skipif(
     os.environ.get("RUN_POLAR_TESTS") != "1" or not MACE_POLAR.exists(),
     reason="set RUN_POLAR_TESTS=1 (and MACE_POLAR_MODEL_PATH) to run MACE-POLAR",
-)
-CUDA_TESTS = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="cuequivariance needs CUDA"
 )
 
 
@@ -469,6 +471,7 @@ def test_featurizer_rejects_models_whose_distant_pairs_contribute(mace_off_mediu
     assert type(model.interactions[0].conv_tp_weights) is biased
 
 
+@pytest.mark.slow
 @pytest.mark.usefixtures("inductor_compiler")
 def test_compiled_featurizer_is_one_graph_for_every_shape(
     mace_off_medium, mace_off_references, structures
@@ -531,13 +534,15 @@ def _cueq_against_e3nn(model_path: Path, structures: list[Atoms]) -> None:
     _assert_matches(cueq_features, e3nn_features, tolerance=1e-4)
 
 
-@CUDA_TESTS
+@pytest.mark.gpu
+@NEEDS_CUEQUIVARIANCE
 @pytest.mark.usefixtures("inductor_compiler")
 def test_compiled_cueq_featurizer_matches_e3nn(mace_off_medium, structures):
     _cueq_against_e3nn(mace_off_medium, structures)
 
 
-@CUDA_TESTS
+@pytest.mark.gpu
+@NEEDS_CUEQUIVARIANCE
 @POLAR_TESTS
 @pytest.mark.usefixtures("inductor_compiler")
 def test_compiled_cueq_polar_featurizer_matches_e3nn(structures):

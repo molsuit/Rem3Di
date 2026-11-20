@@ -32,7 +32,7 @@ class ProbeResult:
     macro_r2: float = float("nan")
 
     def to_metrics(self) -> dict[str, float]:
-        """Flatten to dotted keys for ``TrainingTelemetry.log_metrics``."""
+        """Flatten to dotted keys for ``TrainingTelemetry.log_probe``."""
         out: dict[str, float] = {}
         for name, v in self.r2.items():
             out[f"probe/{name}/r2"] = v

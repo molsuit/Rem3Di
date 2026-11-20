@@ -258,14 +258,6 @@ class TrainingTelemetry:
         self.dump_loss_history()
         self._log_to_wandb(metrics)
 
-    def log_metrics(self, metrics: dict[str, float]) -> None:
-        """Mid-epoch metric flush (e.g. rolling throughput).
-
-        Auto-steps via wandb's internal counter so it stays monotonic
-        alongside epoch-level logs that don't pin step explicitly.
-        """
-        self._log_to_wandb(metrics)
-
     def log_throughput(self, record: dict[str, float]) -> None:
         """Append one throughput window to ``throughput.jsonl`` and log it to wandb."""
         with open(Path(self.out_dir) / THROUGHPUT_FILENAME, "a") as handle:
@@ -275,7 +267,7 @@ class TrainingTelemetry:
     def log_probe(self, global_step: int, metrics: dict[str, float]) -> None:
         """Record one linear-probe point: persisted to disk AND logged to wandb.
 
-        Unlike ``log_metrics`` (wandb-only throughput flush), the probe
+        Unlike ``log_throughput`` (wandb plus a jsonl line), the probe
         trajectory is accumulated into ``probe_data`` so it is dumped to
         ``probe_history.yaml`` as a first-class, parseable artifact.
         """

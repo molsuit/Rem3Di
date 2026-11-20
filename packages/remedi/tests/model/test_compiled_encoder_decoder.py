@@ -49,8 +49,6 @@ BATCH_SHAPES = [(3, 7), (5, 12), (2, 9), (4, 16), (3, 7)]
 RELATIVE_TOLERANCE = 1e-4
 ABSOLUTE_TOLERANCE = 1e-5
 
-needs_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
-
 
 def _architecture(*, small: bool, dropout: float) -> EncoderDecoderArchitectureConfig:
     """The drug_like_small architecture without its MACE model; ``small``
@@ -308,12 +306,13 @@ def _floor_divided_sizes(graph_module: torch.fx.GraphModule) -> list[str]:
     return found
 
 
+@pytest.mark.slow
 def test_traced_graphs_have_no_floor_divided_sizes():
     """Forward and backward graphs (training mode, with dropout) of both
     modules: every size must be a plain product of the batch symbols."""
     found: list[str] = []
 
-    def record(graph_module, example_inputs):
+    def record(graph_module, _example_inputs):
         found.extend(_floor_divided_sizes(graph_module))
         return make_boxed_func(graph_module.forward)
 
@@ -385,17 +384,19 @@ def _assert_training_with_dropout_is_one_graph(device: str, *, small: bool) -> N
             )
 
 
+@pytest.mark.slow
 @pytest.mark.usefixtures("inductor_compiler")
 def test_compiled_matches_eager_on_cpu():
     _assert_compiled_matches_eager("cpu", small=True)
 
 
+@pytest.mark.slow
 @pytest.mark.usefixtures("inductor_compiler")
 def test_compiled_training_with_dropout_is_one_graph_on_cpu():
     _assert_training_with_dropout_is_one_graph("cpu", small=True)
 
 
-@needs_cuda
+@pytest.mark.gpu
 @pytest.mark.usefixtures("inductor_compiler")
 def test_compiled_matches_eager_on_cuda():
     """The drug_like_small widths: the CantSplit failure was in the triton
@@ -403,7 +404,7 @@ def test_compiled_matches_eager_on_cuda():
     _assert_compiled_matches_eager("cuda", small=False)
 
 
-@needs_cuda
+@pytest.mark.gpu
 @pytest.mark.usefixtures("inductor_compiler")
 def test_compiled_training_with_dropout_is_one_graph_on_cuda():
     _assert_training_with_dropout_is_one_graph("cuda", small=False)

@@ -194,7 +194,7 @@ def test_cross_attention_with_pma_seeds():
     assert _finite_tensor(out)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.gpu
 def test_cuda_forward_backward_and_amp():
     torch.manual_seed(42)
     device = torch.device("cuda")

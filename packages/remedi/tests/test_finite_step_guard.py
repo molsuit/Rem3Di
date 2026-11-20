@@ -34,7 +34,7 @@ def test_a_non_finite_step_raises_with_the_unchecked_steps(
         guard.check(3)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+@pytest.mark.gpu
 def test_recording_does_not_synchronise() -> None:
     guard = FiniteStepGuard("cuda")
     loss = torch.tensor(0.5, device="cuda")
