@@ -30,22 +30,17 @@ downstream heads, training from scratch, and concepts) are online at
 
 ## Setup
 
-Install with [uv](https://docs.astral.sh/uv/) (requires Python >=3.12):
+Install from a checkout with [uv](https://docs.astral.sh/uv/) (requires Python >=3.12). The committed `uv.lock` pins the workspace packages, the MACE fork and the CUDA 13.2 build of PyTorch. It covers Linux x86_64, and Linux aarch64 and Windows without the `cuda` extra; it does not cover macOS.
 
 ```bash
-uv pip install remedi                     # PyTorch + MACE, descriptors on CPU or GPU
-uv pip install "remedi[cuda]"             # adds the cuEquivariance GPU kernels
-uv pip install "remedi[telemetry]"        # adds Weights & Biases logging of training runs
-uv pip install "remedi-eval[descriptor-analysis]"  # tmQM chemistry and chemiscope exports
+git clone https://github.com/molsuit/Rem3Di.git && cd Rem3Di
+# PyTorch + MACE, descriptors on CPU or GPU, chemiscope exports, W&B logging
+uv sync --all-packages --extra descriptor-analysis --extra telemetry
+# the same plus the cuEquivariance kernels and nvmolkit (Linux x86_64 only)
+uv sync --all-packages --extra descriptor-analysis --extra telemetry --extra cuda
 ```
 
-Or with pip:
-
-```bash
-pip install remedi
-```
-
-See the [installation docs](https://molsuit.github.io/Rem3Di/) for extras, GPU builds, and full detail.
+See the [documentation](https://molsuit.github.io/Rem3Di/) for usage and full detail.
 
 ## Raw dataset download
 We work with a number of different datasets for benchmarking Rem3Di.
